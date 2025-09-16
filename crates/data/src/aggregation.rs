@@ -36,7 +36,7 @@ use nautilus_model::{
         bar::{Bar, BarType, get_bar_interval_ns, get_time_bar_start},
     },
     enums::{AggregationSource, BarAggregation, BarIntervalType},
-    types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
+    types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
 };
 
 /// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
@@ -852,7 +852,7 @@ where
     H: FnMut(Bar),
 {
     core: BarAggregatorCore<H>,
-    pub brick_size: f64,
+    pub brick_size: PriceRaw,
     last_close: Option<Price>,
 }
 
@@ -885,7 +885,8 @@ where
         handler: H,
         await_partial: bool,
     ) -> Self {
-        let brick_size = bar_type.spec().step.get() as f64 * price_increment.as_f64();
+        // Calculate brick size in raw price units (step * price_increment.raw)
+        let brick_size = bar_type.spec().step.get() as PriceRaw * price_increment.raw;
 
         Self {
             core: BarAggregatorCore::new(
@@ -940,24 +941,26 @@ where
         }
 
         let last_close = self.last_close.unwrap();
-        let price_diff = price.as_f64() - last_close.as_f64();
-        let abs_price_diff = price_diff.abs();
+
+        // Convert prices to raw units (integers) to avoid floating point precision issues
+        let current_raw = price.raw;
+        let last_close_raw = last_close.raw;
+        let price_diff_raw = current_raw - last_close_raw;
+        let abs_price_diff_raw = price_diff_raw.abs();
 
         // Check if we need to create one or more Renko bars
-        if abs_price_diff >= self.brick_size {
-            let num_bricks = (abs_price_diff / self.brick_size).floor() as usize;
-            let direction = if price_diff > 0.0 { 1.0 } else { -1.0 };
+        if abs_price_diff_raw >= self.brick_size {
+            let num_bricks = (abs_price_diff_raw / self.brick_size) as usize;
+            let direction = if price_diff_raw > 0 { 1.0 } else { -1.0 };
             let mut current_close = last_close;
 
             // Store the current builder volume to distribute across bricks
             let total_volume = self.core.builder.volume;
 
             for _i in 0..num_bricks {
-                // Calculate the close price for this brick
-                let brick_close = Price::new(
-                    current_close.as_f64() + direction * self.brick_size,
-                    price.precision,
-                );
+                // Calculate the close price for this brick using raw price units
+                let brick_close_raw = current_close.raw + (direction as PriceRaw) * self.brick_size;
+                let brick_close = Price::from_raw(brick_close_raw, price.precision);
 
                 // For Renko bars: open = previous close, high/low depend on direction
                 let (brick_high, brick_low) = if direction > 0.0 {
@@ -978,7 +981,7 @@ where
                 self.core.builder.initialized = true;
 
                 // Build and send the bar
-                self.core.build_now_and_send();
+                self.core.build_and_send(ts_init, ts_init);
 
                 // Update for the next brick
                 current_close = brick_close;
@@ -998,24 +1001,26 @@ where
         }
 
         let last_close = self.last_close.unwrap();
-        let price_diff = bar.close.as_f64() - last_close.as_f64();
-        let abs_price_diff = price_diff.abs();
+
+        // Convert prices to raw units (integers) to avoid floating point precision issues
+        let current_raw = bar.close.raw;
+        let last_close_raw = last_close.raw;
+        let price_diff_raw = current_raw - last_close_raw;
+        let abs_price_diff_raw = price_diff_raw.abs();
 
         // Check if we need to create one or more Renko bars
-        if abs_price_diff >= self.brick_size {
-            let num_bricks = (abs_price_diff / self.brick_size).floor() as usize;
-            let direction = if price_diff > 0.0 { 1.0 } else { -1.0 };
+        if abs_price_diff_raw >= self.brick_size {
+            let num_bricks = (abs_price_diff_raw / self.brick_size) as usize;
+            let direction = if price_diff_raw > 0 { 1.0 } else { -1.0 };
             let mut current_close = last_close;
 
             // Store the current builder volume to distribute across bricks
             let total_volume = self.core.builder.volume;
 
             for _i in 0..num_bricks {
-                // Calculate the close price for this brick
-                let brick_close = Price::new(
-                    current_close.as_f64() + direction * self.brick_size,
-                    bar.close.precision,
-                );
+                // Calculate the close price for this brick using raw price units
+                let brick_close_raw = current_close.raw + (direction as PriceRaw) * self.brick_size;
+                let brick_close = Price::from_raw(brick_close_raw, bar.close.precision);
 
                 // For Renko bars: open = previous close, high/low depend on direction
                 let (brick_high, brick_low) = if direction > 0.0 {
@@ -1036,7 +1041,7 @@ where
                 self.core.builder.initialized = true;
 
                 // Build and send the bar
-                self.core.build_now_and_send();
+                self.core.build_and_send(ts_init, ts_init);
 
                 // Update for the next brick
                 current_close = brick_close;
@@ -2486,5 +2491,624 @@ mod tests {
 
         let handler_guard = handler.lock().unwrap();
         assert_eq!(handler_guard.len(), 0);
+    }
+
+    // ========================================================================
+    // RenkoBarAggregator Tests
+    // ========================================================================
+
+    #[rstest]
+    fn test_renko_bar_aggregator_initialization(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        assert_eq!(aggregator.bar_type(), bar_type);
+        assert!(!aggregator.is_running());
+        assert!(!aggregator.await_partial());
+        // 10 pips * price_increment.raw (depends on precision mode)
+        let expected_brick_size = 10 * instrument.price_increment().raw;
+        assert_eq!(aggregator.brick_size, expected_brick_size);
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_update_below_brick_size_no_bar(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Small price movement (5 pips, less than 10 pip brick size)
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00005"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 0); // No bar created yet
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_update_exceeds_brick_size_creates_bar(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Price movement exceeding brick size (15 pips)
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00015"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 1);
+
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.open, Price::from("1.00000"));
+        assert_eq!(bar.high, Price::from("1.00010"));
+        assert_eq!(bar.low, Price::from("1.00000"));
+        assert_eq!(bar.close, Price::from("1.00010"));
+        assert_eq!(bar.volume, Quantity::from(2));
+        assert_eq!(bar.ts_event, UnixNanos::from(1000));
+        assert_eq!(bar.ts_init, UnixNanos::from(1000));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_multiple_bricks_in_one_update(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Large price movement creating multiple bricks (25 pips = 2 bricks)
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00025"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 2);
+
+        let bar1 = &handler_guard[0];
+        assert_eq!(bar1.open, Price::from("1.00000"));
+        assert_eq!(bar1.high, Price::from("1.00010"));
+        assert_eq!(bar1.low, Price::from("1.00000"));
+        assert_eq!(bar1.close, Price::from("1.00010"));
+
+        let bar2 = &handler_guard[1];
+        assert_eq!(bar2.open, Price::from("1.00010"));
+        assert_eq!(bar2.high, Price::from("1.00020"));
+        assert_eq!(bar2.low, Price::from("1.00010"));
+        assert_eq!(bar2.close, Price::from("1.00020"));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_downward_movement(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Start at higher price and move down
+        aggregator.update(
+            Price::from("1.00020"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00005"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 1);
+
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.open, Price::from("1.00020"));
+        assert_eq!(bar.high, Price::from("1.00020"));
+        assert_eq!(bar.low, Price::from("1.00010"));
+        assert_eq!(bar.close, Price::from("1.00010"));
+        assert_eq!(bar.volume, Quantity::from(2));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_below_brick_size(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Create a bar with small price movement (5 pips)
+        let input_bar = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00000"),
+            Price::from("1.00005"),
+            Price::from("0.99995"),
+            Price::from("1.00005"), // 5 pip move up (less than 10 pip brick)
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::from(1000),
+        );
+
+        aggregator.handle_bar(input_bar);
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 0); // No bar created yet
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_exceeds_brick_size(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // First bar to establish baseline
+        let bar1 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00000"),
+            Price::from("1.00005"),
+            Price::from("0.99995"),
+            Price::from("1.00000"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Second bar with price movement exceeding brick size (10 pips)
+        let bar2 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00000"),
+            Price::from("1.00015"),
+            Price::from("0.99995"),
+            Price::from("1.00010"), // 10 pip move up (exactly 1 brick)
+            Quantity::from(50),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(60_000_000_000),
+        );
+
+        aggregator.handle_bar(bar1);
+        aggregator.handle_bar(bar2);
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 1);
+
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.open, Price::from("1.00000"));
+        assert_eq!(bar.high, Price::from("1.00010"));
+        assert_eq!(bar.low, Price::from("1.00000"));
+        assert_eq!(bar.close, Price::from("1.00010"));
+        assert_eq!(bar.volume, Quantity::from(150));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_multiple_bricks(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // First bar to establish baseline
+        let bar1 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00000"),
+            Price::from("1.00005"),
+            Price::from("0.99995"),
+            Price::from("1.00000"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Second bar with large price movement (30 pips = 3 bricks)
+        let bar2 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00000"),
+            Price::from("1.00035"),
+            Price::from("0.99995"),
+            Price::from("1.00030"), // 30 pip move up (exactly 3 bricks)
+            Quantity::from(50),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(60_000_000_000),
+        );
+
+        aggregator.handle_bar(bar1);
+        aggregator.handle_bar(bar2);
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 3);
+
+        let bar1 = &handler_guard[0];
+        assert_eq!(bar1.open, Price::from("1.00000"));
+        assert_eq!(bar1.close, Price::from("1.00010"));
+
+        let bar2 = &handler_guard[1];
+        assert_eq!(bar2.open, Price::from("1.00010"));
+        assert_eq!(bar2.close, Price::from("1.00020"));
+
+        let bar3 = &handler_guard[2];
+        assert_eq!(bar3.open, Price::from("1.00020"));
+        assert_eq!(bar3.close, Price::from("1.00030"));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_downward_movement(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // First bar to establish baseline
+        let bar1 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00020"),
+            Price::from("1.00025"),
+            Price::from("1.00015"),
+            Price::from("1.00020"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Second bar with downward price movement (10 pips down)
+        let bar2 = Bar::new(
+            BarType::new(
+                instrument.id(),
+                BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+                AggregationSource::Internal,
+            ),
+            Price::from("1.00020"),
+            Price::from("1.00025"),
+            Price::from("1.00005"),
+            Price::from("1.00010"), // 10 pip move down (exactly 1 brick)
+            Quantity::from(50),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(60_000_000_000),
+        );
+
+        aggregator.handle_bar(bar1);
+        aggregator.handle_bar(bar2);
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 1);
+
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.open, Price::from("1.00020"));
+        assert_eq!(bar.high, Price::from("1.00020"));
+        assert_eq!(bar.low, Price::from("1.00010"));
+        assert_eq!(bar.close, Price::from("1.00010"));
+        assert_eq!(bar.volume, Quantity::from(150));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_brick_size_calculation(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+        // Test different brick sizes
+        let bar_spec_5 = BarSpecification::new(5, BarAggregation::Renko, PriceType::Mid); // 5 pip brick size
+        let bar_type_5 = BarType::new(instrument.id(), bar_spec_5, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let aggregator_5 = RenkoBarAggregator::new(
+            bar_type_5,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |_bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(_bar);
+            },
+            false,
+        );
+
+        // 5 pips * price_increment.raw (depends on precision mode)
+        let expected_brick_size_5 = 5 * instrument.price_increment().raw;
+        assert_eq!(aggregator_5.brick_size, expected_brick_size_5);
+
+        let bar_spec_20 = BarSpecification::new(20, BarAggregation::Renko, PriceType::Mid); // 20 pip brick size
+        let bar_type_20 = BarType::new(instrument.id(), bar_spec_20, AggregationSource::Internal);
+        let handler2 = Arc::new(Mutex::new(Vec::new()));
+        let handler2_clone = Arc::clone(&handler2);
+
+        let aggregator_20 = RenkoBarAggregator::new(
+            bar_type_20,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |_bar: Bar| {
+                let mut handler_guard = handler2_clone.lock().unwrap();
+                handler_guard.push(_bar);
+            },
+            false,
+        );
+
+        // 20 pips * price_increment.raw (depends on precision mode)
+        let expected_brick_size_20 = 20 * instrument.price_increment().raw;
+        assert_eq!(aggregator_20.brick_size, expected_brick_size_20);
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_sequential_updates(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Sequential updates creating multiple bars
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+        aggregator.update(
+            Price::from("1.00010"),
+            Quantity::from(1),
+            UnixNanos::from(2000),
+        ); // First brick
+        aggregator.update(
+            Price::from("1.00020"),
+            Quantity::from(1),
+            UnixNanos::from(3000),
+        ); // Second brick
+        aggregator.update(
+            Price::from("1.00025"),
+            Quantity::from(1),
+            UnixNanos::from(4000),
+        ); // Partial third brick
+        aggregator.update(
+            Price::from("1.00030"),
+            Quantity::from(1),
+            UnixNanos::from(5000),
+        ); // Complete third brick
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 3);
+
+        let bar1 = &handler_guard[0];
+        assert_eq!(bar1.open, Price::from("1.00000"));
+        assert_eq!(bar1.close, Price::from("1.00010"));
+
+        let bar2 = &handler_guard[1];
+        assert_eq!(bar2.open, Price::from("1.00010"));
+        assert_eq!(bar2.close, Price::from("1.00020"));
+
+        let bar3 = &handler_guard[2];
+        assert_eq!(bar3.open, Price::from("1.00020"));
+        assert_eq!(bar3.close, Price::from("1.00030"));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_mixed_direction_movement(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        // Mixed direction movement: up then down
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+        aggregator.update(
+            Price::from("1.00010"),
+            Quantity::from(1),
+            UnixNanos::from(2000),
+        ); // Up brick
+        aggregator.update(
+            Price::from("0.99990"),
+            Quantity::from(1),
+            UnixNanos::from(3000),
+        ); // Down 2 bricks (20 pips)
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 3);
+
+        let bar1 = &handler_guard[0]; // Up brick
+        assert_eq!(bar1.open, Price::from("1.00000"));
+        assert_eq!(bar1.high, Price::from("1.00010"));
+        assert_eq!(bar1.low, Price::from("1.00000"));
+        assert_eq!(bar1.close, Price::from("1.00010"));
+
+        let bar2 = &handler_guard[1]; // First down brick
+        assert_eq!(bar2.open, Price::from("1.00010"));
+        assert_eq!(bar2.high, Price::from("1.00010"));
+        assert_eq!(bar2.low, Price::from("1.00000"));
+        assert_eq!(bar2.close, Price::from("1.00000"));
+
+        let bar3 = &handler_guard[2]; // Second down brick
+        assert_eq!(bar3.open, Price::from("1.00000"));
+        assert_eq!(bar3.high, Price::from("1.00000"));
+        assert_eq!(bar3.low, Price::from("0.99990"));
+        assert_eq!(bar3.close, Price::from("0.99990"));
     }
 }

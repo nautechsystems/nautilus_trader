@@ -1250,7 +1250,6 @@ class OptionStrategy(Strategy):
                 "time_range_generator": "default",
                 "durations_seconds": (pd.Timedelta(minutes=2).seconds,),
             },
-            # params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
         self.subscribe_quote_ticks(
             self.config.option_id2,
