@@ -64,56 +64,203 @@ The same Rust implemented Nautilus decoder is used for:
 
 ## Schema selection for live subscriptions
 
-When subscribing to live data, you can specify a `schema` parameter to choose the most appropriate data format:
+:::info
+The examples below assume you're within a `Strategy` or `Actor` class context where `self` has access to subscription methods.
+Remember to import the necessary types:
 
-### Quote subscriptions
+```python
+from nautilus_trader.model import BarType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.identifiers import InstrumentId
+```
 
-- **Default**: `mbp-1` (market by price level 1)
-- **Allowed schemas**: `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo`
-- **Note**: TBBO and TCBBO schemas will provide both quotes AND trades in a single subscription
+:::
+
+### Nautilus subscription methods to Databento schemas
+
+The following table shows how Nautilus subscription methods map to Databento schemas:
+
+| Nautilus Method                 | Default Schema | Available Schemas                                                            | Data Type   |
+|:--------------------------------|:---------------|:-----------------------------------------------------------------------------|:------------|
+| `subscribe_quote_ticks()`       | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick` |
+| `subscribe_trade_ticks()`       | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick` |
+| `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
+| `subscribe_order_book_deltas()` | `mbo`          | `mbo`                                                                        | `OrderBookDeltas` |
+| `subscribe_bars()`              | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar` |
+
+### Quote subscriptions (MBP / L1)
+
+```python
+# Default MBP-1 quotes (may include trades)
+self.subscribe_quote_ticks(instrument_id)
+
+# Explicit MBP-1 schema
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "mbp-1"}
+)
+
+# 1-second BBO snapshots (quotes only, no trades)
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "bbo-1s"}
+)
+
+# Consolidated quotes across venues
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "cbbo-1s"}  # or "cmbp-1" for consolidated MBP
+)
+
+# Trade-sampled BBO (includes both quotes AND trades)
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "tbbo"}  # Will receive both QuoteTick and TradeTick onto the message bus
+)
+```
 
 ### Trade subscriptions
 
-- **Default**: `trades`
-- **Allowed schemas**: `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`
-- **Note**: MBP-1 and CMBP-1 only emit trades when the message represents a trade event
-
-Example of subscribing with a specific schema:
-
 ```python
-# Subscribe to quotes and trades using TBBO (more efficient than separate subscriptions)
-self.subscribe_quote_ticks(
+# Pure trade ticks
+self.subscribe_trade_ticks(instrument_id)
+
+# Trades from MBP-1 feed (only when trade events occur)
+self.subscribe_trade_ticks(
     instrument_id=instrument_id,
-    params={"schema": "tbbo"}  # Will receive both quotes and trades
+    params={"schema": "mbp-1"}
+)
+
+# Trade-sampled data (includes quotes at trade time)
+self.subscribe_trade_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "tbbo"}  # Also provides quotes at trade events
 )
 ```
+
+### Order book depth subscriptions (MBP / L2)
+
+```python
+# Subscribe to top 10 levels of market depth
+self.subscribe_order_book_depth(
+    instrument_id=instrument_id,
+    depth=10  # MBP-10 schema is automatically selected
+)
+
+# The depth parameter must be 10 for Databento
+# This will receive OrderBookDepth10 updates
+```
+
+### Order book deltas subscriptions (MBO / L3)
+
+```python
+# Subscribe to full order book updates (market by order)
+self.subscribe_order_book_deltas(
+    instrument_id=instrument_id,
+    book_type=BookType.L3_MBO  # Uses MBO schema
+)
+
+# Note: MBO subscriptions must be made at node startup for Databento
+# to ensure proper replay from session start
+```
+
+### Bar subscriptions
+
+```python
+# Subscribe to 1-minute bars (automatically uses ohlcv-1m schema)
+self.subscribe_bars(
+    bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
+)
+
+# Subscribe to 1-second bars (automatically uses ohlcv-1s schema)
+self.subscribe_bars(
+    bar_type=BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL")
+)
+
+# Subscribe to hourly bars (automatically uses ohlcv-1h schema)
+self.subscribe_bars(
+    bar_type=BarType.from_str(f"{instrument_id}-1-HOUR-LAST-EXTERNAL")
+)
+
+# Subscribe to daily bars (automatically uses ohlcv-1d schema)
+self.subscribe_bars(
+    bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL")
+)
+
+# Subscribe to daily bars with end-of-day schema (only valid for DAY aggregation)
+self.subscribe_bars(
+    bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL"),
+    params={"schema": "ohlcv-eod"},  # Override to use end-of-day bars
+)
+```
+
+### Custom data type subscriptions
+
+For specialized Databento data types like imbalance and statistics, use the generic `subscribe_data` method:
+
+```python
+from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento import DatabentoImbalance
+from nautilus_trader.adapters.databento import DatabentoStatistics
+from nautilus_trader.model import DataType
+
+# Subscribe to imbalance data
+self.subscribe_data(
+    data_type=DataType(DatabentoImbalance, metadata={"instrument_id": instrument_id}),
+    client_id=DATABENTO_CLIENT_ID,
+)
+
+# Subscribe to statistics data
+self.subscribe_data(
+    data_type=DataType(DatabentoStatistics, metadata={"instrument_id": instrument_id}),
+    client_id=DATABENTO_CLIENT_ID,
+)
+
+# Subscribe to instrument status updates
+from nautilus_trader.model.data import InstrumentStatus
+self.subscribe_data(
+    data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
+    client_id=DATABENTO_CLIENT_ID,
+)
+```
+
+### Schema selection considerations
+
+- **TBBO and TCBBO**: Trade-sampled feeds that pair every trade with the BBO immediately before the trade's effect (TBBO per-venue, TCBBO consolidated across venues). Use when you need trades aligned with contemporaneous quotes without managing two streams.
+- **MBP-1 and CMBP-1**: Event-level L1 updates; emit trades only on trade events. Choose for a complete top-of-book event tape. For quote+trade alignment, prefer TBBO/TCBBO; for prints only, use TRADES.
+- **MBP-10**: L2 depth (top 10) with trades. Good for depth-aware strategies that don't need per-order detail; lighter than MBO with much of the structure you need.
+- **MBO (L3)**: Per-order events enable queue position modeling and exact book reconstruction. Highest volume/cost; start at node initialization to ensure proper replay context.
+- **BBO_1S/BBO_1M and CBBO_1S/CBBO_1M**: Sampled top-of-book quotes at fixed intervals (1s/1m), no trades. Best for monitoring/spreads/low-cost signal generation; not suited for fine-grained microstructure.
+- **TRADES**: Trade prints only. Pair with MBP-1 (include_trades=True) or use TBBO/TCBBO if you need quote context aligned with trades.
+- **OHLCV_* (incl. OHLCV_EOD)**: Aggregated bars derived from trades. Prefer for higher-timeframe analytics/backtests; ensure bar timestamps represent close time (set `bars_timestamp_on_close=True`).
+- **Imbalance / Statistics / Status**: Venue operational data; subscribe via `subscribe_data` with a `DataType` carrying `instrument_id` metadata.
 
 ## Supported schemas
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema | Nautilus data type                | Description                                |
-|:-----------------|:----------------------------------|:-------------------------------------------|
-| MBO              | `OrderBookDelta`                  | Market by order (L3).                     |
-| MBP_1            | `(QuoteTick, Option<TradeTick>)`  | Market by price (L1).                     |
-| MBP_10           | `OrderBookDepth10`                | Market depth (L2).                        |
-| BBO_1S           | `QuoteTick`                       | 1-second best bid/offer.                  |
-| BBO_1M           | `QuoteTick`                       | 1-minute best bid/offer.                  |
-| CMBP_1           | `(QuoteTick, Option<TradeTick>)`  | Consolidated MBP across venues.           |
-| CBBO_1S          | `QuoteTick`                       | Consolidated 1-second BBO.                |
-| CBBO_1M          | `QuoteTick`                       | Consolidated 1-minute BBO.                |
-| TCBBO            | `(QuoteTick, TradeTick)`          | Trade-sampled consolidated BBO.           |
-| TBBO             | `(QuoteTick, TradeTick)`          | Trade-sampled best bid/offer.             |
-| TRADES           | `TradeTick`                       | Trade ticks.                              |
-| OHLCV_1S         | `Bar`                             | 1-second bars.                            |
-| OHLCV_1M         | `Bar`                             | 1-minute bars.                            |
-| OHLCV_1H         | `Bar`                             | 1-hour bars.                              |
-| OHLCV_1D         | `Bar`                             | Daily bars.                               |
-| OHLCV_EOD        | `Bar`                             | End-of-day bars.                          |
-| DEFINITION       | `Instrument` (various types)      | Instrument definitions.                   |
-| IMBALANCE        | `DatabentoImbalance`              | Auction imbalance data.                   |
-| STATISTICS       | `DatabentoStatistics`             | Market statistics.                        |
-| STATUS           | `InstrumentStatus`                | Market status updates.                    |
+| Databento schema | Nautilus data type                | Description                     |
+|:-----------------|:----------------------------------|:--------------------------------|
+| MBO              | `OrderBookDelta`                  | Market by order (L3).           |
+| MBP_1            | `(QuoteTick, TradeTick | None)`   | Market by price (L1).           |
+| MBP_10           | `OrderBookDepth10`                | Market depth (L2).              |
+| BBO_1S           | `QuoteTick`                       | 1-second best bid/offer.        |
+| BBO_1M           | `QuoteTick`                       | 1-minute best bid/offer.        |
+| CMBP_1           | `(QuoteTick, TradeTick | None)`   | Consolidated MBP across venues. |
+| CBBO_1S          | `QuoteTick`                       | Consolidated 1-second BBO.      |
+| CBBO_1M          | `QuoteTick`                       | Consolidated 1-minute BBO.      |
+| TCBBO            | `(QuoteTick, TradeTick)`          | Trade-sampled consolidated BBO. |
+| TBBO             | `(QuoteTick, TradeTick)`          | Trade-sampled best bid/offer.   |
+| TRADES           | `TradeTick`                       | Trade ticks.                    |
+| OHLCV_1S         | `Bar`                             | 1-second bars.                  |
+| OHLCV_1M         | `Bar`                             | 1-minute bars.                  |
+| OHLCV_1H         | `Bar`                             | 1-hour bars.                    |
+| OHLCV_1D         | `Bar`                             | Daily bars.                     |
+| OHLCV_EOD        | `Bar`                             | End-of-day bars.                |
+| DEFINITION       | `Instrument` (various types)      | Instrument definitions.         |
+| IMBALANCE        | `DatabentoImbalance`              | Auction imbalance data.         |
+| STATISTICS       | `DatabentoStatistics`             | Market statistics.              |
+| STATUS           | `InstrumentStatus`                | Market status updates.          |
 
 :::tip
 **Consolidated schemas** (CMBP_1, CBBO_1S, CBBO_1M, TCBBO) aggregate data across multiple venues,
@@ -388,7 +535,7 @@ The `from_dbn_file` method supports several important parameters:
 - `as_legacy_cython`: Set to `False` when loading IMBALANCE or STATISTICS schemas (required) or for performance when writing to catalog.
 
 :::warning
-IMBALANCE and STATISTICS schemas require `as_legacy_cython=False` as these are PyO3-only types.
+IMBALANCE and STATISTICS schemas require `as_legacy_cython=False` as these are PyO3-only types. Setting `as_legacy_cython=True` will raise a `ValueError`.
 :::
 
 ### Loading consolidated data
@@ -412,13 +559,21 @@ cbbo_quotes = loader.from_dbn_file(
     as_legacy_cython=False,  # Use PyO3 for better performance
 )
 
-# Load TCBBO (consolidated trade-sampled BBO) - provides both quotes and trades
-tcbbo_data = loader.from_dbn_file(
+# Load TCBBO (trade-sampled consolidated BBO) - provides both quotes and trades
+# Note: include_trades=True loads quotes, include_trades=False loads trades
+tcbbo_quotes = loader.from_dbn_file(
     path="consolidated.tcbbo.dbn.zst",
     instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    include_trades=True,  # Loads quotes
     as_legacy_cython=True,
 )
-# tcbbo_data will contain interleaved QuoteTick and TradeTick objects
+
+tcbbo_trades = loader.from_dbn_file(
+    path="consolidated.tcbbo.dbn.zst",
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    include_trades=False,  # Loads trades
+    as_legacy_cython=True,
+)
 ```
 
 :::tip
