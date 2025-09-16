@@ -43,7 +43,7 @@ product_type = BybitProductType.LINEAR
 
 if product_type == BybitProductType.SPOT:
     symbol = f"DOGEUSDT-{product_type.value.upper()}"
-    order_qty = Decimal("100")
+    order_qty = Decimal("50")
     order_params = {"is_leverage": True}
 elif product_type == BybitProductType.LINEAR:
     symbol = f"ETHUSDT-{product_type.value.upper()}"
@@ -70,7 +70,7 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_lookback_mins=2880,
+        reconciliation_lookback_mins=60,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=False,
