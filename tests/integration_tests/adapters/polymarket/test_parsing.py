@@ -28,6 +28,7 @@ from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeC
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
+from nautilus_trader.adapters.polymarket.websocket.types import USER_WS_MESSAGE
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -182,6 +183,31 @@ def test_parse_order_placement() -> None:
 
     # Assert
     assert isinstance(msg, PolymarketUserOrder)
+
+
+@pytest.mark.parametrize("wrap_list", [False, True])
+def test_parse_user_ws_message(wrap_list: bool) -> None:
+    # Arrange
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.ws_messages",
+        "order_placement.json",
+    )
+    assert data
+
+    decoder = msgspec.json.Decoder(USER_WS_MESSAGE)
+
+    if wrap_list:
+        data = b"[" + data + b"]"
+
+    # Act
+    msg = decoder.decode(data)
+
+    # Assert
+    if wrap_list:
+        assert isinstance(msg, list)
+        assert isinstance(msg[0], PolymarketUserOrder)
+    else:
+        assert isinstance(msg, PolymarketUserOrder)
 
 
 def test_parse_order_cancel() -> None:

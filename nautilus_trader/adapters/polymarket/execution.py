@@ -961,6 +961,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
 
             ws_message = self._decoder_user_msg.decode(raw)
+            if not isinstance(ws_message, list):
+                ws_message = [ws_message]
             for msg in ws_message:
                 if isinstance(msg, PolymarketUserOrder):
                     self._handle_ws_order_msg(msg, wait_for_ack=True)
