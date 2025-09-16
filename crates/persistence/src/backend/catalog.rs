@@ -1844,7 +1844,7 @@ pub fn extract_identifier_from_path(file_path: &str) -> String {
 #[must_use]
 pub fn make_sql_safe_identifier(identifier: &str) -> String {
     urisafe_instrument_id(identifier)
-        .replace(['.', '-', ' '], "_")
+        .replace(['.', '-', ' ', '%'], "_")
         .to_lowercase()
 }
 
