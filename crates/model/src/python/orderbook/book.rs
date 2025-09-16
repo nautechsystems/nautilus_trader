@@ -128,8 +128,9 @@ impl OrderBook {
     }
 
     #[pyo3(name = "clear_stale_levels")]
-    fn py_clear_stale_levels(&mut self) -> Option<Vec<BookLevel>> {
-        self.clear_stale_levels()
+    #[pyo3(signature = (side=None))]
+    fn py_clear_stale_levels(&mut self, side: Option<OrderSide>) -> Option<Vec<BookLevel>> {
+        self.clear_stale_levels(side)
     }
 
     #[pyo3(name = "apply_delta")]
