@@ -19,3 +19,11 @@ pub mod enums;
 pub mod models;
 pub mod parse;
 pub mod types;
+
+// Orderbook functionality
+pub mod orderbook;
+
+// Re-export key orderbook types for convenience
+pub use orderbook::{
+    ApplyError, BookConfig, ConversionError, HyperliquidBookManager, L2Book, PxQty,
+};
