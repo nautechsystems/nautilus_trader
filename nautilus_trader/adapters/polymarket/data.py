@@ -24,12 +24,14 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import update_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
@@ -56,9 +58,14 @@ from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
@@ -357,33 +364,41 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Uncomment for development
         # self._log.info(str(raw), LogColor.MAGENTA)
         try:
-            ws_message = self._decoder_market_msg.decode(raw)
-            for msg in ws_message:
-                if isinstance(msg, list):
-                    if isinstance(msg, PolymarketBookSnapshot):
-                        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                        instrument = self._cache.instrument(instrument_id)
-                        if instrument is None:
-                            self._log.error(f"Cannot find instrument for {instrument_id}")
-                            return
-                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
-                else:
+            msg = self._decoder_market_msg.decode(raw)
+            if isinstance(msg, list):
+                if isinstance(msg, PolymarketBookSnapshot):
                     instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
                         self._log.error(f"Cannot find instrument for {instrument_id}")
                         return
-
-                    if isinstance(msg, PolymarketBookSnapshot):
-                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
-                    elif isinstance(msg, PolymarketQuotes):
-                        self._handle_quote(instrument=instrument, ws_message=msg)
-                    elif isinstance(msg, PolymarketTrade):
-                        self._handle_trade(instrument=instrument, ws_message=msg)
-                    elif isinstance(msg, PolymarketTickSizeChange):
-                        self._handle_instrument_update(instrument=instrument, ws_message=msg)
-                    else:
-                        self._log.error(f"Unknown websocket message topic: {ws_message}")
+                    self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+            else:
+                if isinstance(msg, PolymarketQuotes):
+                    self._handle_quotes(ws_message=msg)
+                elif isinstance(msg, PolymarketBookSnapshot):
+                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+                    instrument = self._cache.instrument(instrument_id)
+                    if instrument is None:
+                        self._log.error(f"Cannot find instrument for {instrument_id}")
+                        return
+                    self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+                elif isinstance(msg, PolymarketTrade):
+                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+                    instrument = self._cache.instrument(instrument_id)
+                    if instrument is None:
+                        self._log.error(f"Cannot find instrument for {instrument_id}")
+                        return
+                    self._handle_trade(instrument=instrument, ws_message=msg)
+                elif isinstance(msg, PolymarketTickSizeChange):
+                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+                    instrument = self._cache.instrument(instrument_id)
+                    if instrument is None:
+                        self._log.error(f"Cannot find instrument for {instrument_id}")
+                        return
+                    self._handle_instrument_update(instrument=instrument, ws_message=msg)
+                else:
+                    self._log.error(f"Unknown websocket message topic: {msg}")
         except Exception as e:
             self._log.exception(f"Failed to parse websocket message: {raw.decode()} with error", e)
 
@@ -430,13 +445,46 @@ class PolymarketDataClient(LiveMarketDataClient):
         if deltas:
             self._handle_data(deltas)
 
+    def _handle_quotes(
+        self,
+        ws_message: PolymarketQuotes,
+    ) -> None:
+        for price_change in ws_message.price_changes:
+            instrument_id = get_polymarket_instrument_id(ws_message.market, price_change.asset_id)
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                continue
+            self._handle_quote(
+                instrument=instrument,
+                ws_message=ws_message,
+                price_change=price_change,
+            )
+
     def _handle_quote(
         self,
         instrument: BinaryOption,
         ws_message: PolymarketQuotes,
+        price_change: PolymarketQuote,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
-        deltas = ws_message.parse_to_deltas(instrument=instrument, ts_init=now_ns)
+
+        order = BookOrder(
+            side=OrderSide.BUY if price_change.side == PolymarketOrderSide.BUY else OrderSide.SELL,
+            price=instrument.make_price(float(price_change.price)),
+            size=instrument.make_qty(float(price_change.size)),
+            order_id=0,
+        )
+        delta = OrderBookDelta(
+            instrument_id=instrument.id,
+            action=BookAction.UPDATE if order.size > 0 else BookAction.DELETE,
+            order=order,
+            flags=RecordFlag.F_LAST,
+            sequence=0,
+            ts_event=millis_to_nanos(float(ws_message.timestamp)),
+            ts_init=now_ns,
+        )
+        deltas = OrderBookDeltas(instrument.id, [delta])
 
         local_book = self._local_books[instrument.id]
         local_book.apply(deltas)

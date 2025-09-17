@@ -317,7 +317,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
             "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
@@ -343,7 +343,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
         venue_order_id = VenueOrderId(
             "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
         )
@@ -368,7 +368,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
@@ -394,7 +394,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
         venue_order_id = VenueOrderId(
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
         )
@@ -493,7 +493,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         # Act
         self.exec_client._add_trade_to_cache(msg, raw_message)
