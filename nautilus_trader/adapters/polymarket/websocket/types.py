@@ -30,4 +30,6 @@ MARKET_WS_MESSAGE: Final = list[
     | PolymarketTrade
     | PolymarketTickSizeChange
 ]
-USER_WS_MESSAGE: Final = list[PolymarketUserOrder | PolymarketUserTrade]
+USER_WS_MESSAGE: Final = (
+    list[PolymarketUserOrder | PolymarketUserTrade] | PolymarketUserOrder | PolymarketUserTrade
+)
