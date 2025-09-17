@@ -111,10 +111,18 @@ the same asset - Bitcoin.
 
 Futures contracts use standard futures month codes:
 
-- `F` = January, `G` = February, `H` = March
-- `J` = April, `K` = May, `M` = June
-- `N` = July, `Q` = August, `U` = September
-- `V` = October, `X` = November, `Z` = December
+- `F` = January
+- `G` = February
+- `H` = March
+- `J` = April
+- `K` = May
+- `M` = June
+- `N` = July
+- `Q` = August
+- `U` = September
+- `V` = October
+- `X` = November
+- `Z` = December
 
 Followed by the year (e.g., `24` for 2024, `25` for 2025).
 
@@ -154,66 +162,75 @@ with additional functionality being actively developed.
 |------------------------|-----------|-----------------------------------------------|
 | `MARKET`               | ✓         | Executed immediately at current market price. |
 | `LIMIT`                | ✓         | Executed only at specified price or better.   |
-| `STOP_MARKET`          | -         | *Currently under development*.                |
-| `STOP_LIMIT`           | -         | *Currently under development*.                |
-| `MARKET_IF_TOUCHED`    | -         | *Currently under development*.                |
-| `LIMIT_IF_TOUCHED`     | -         | *Currently under development*.                |
+| `STOP_MARKET`          | ✓         | Supported (set `trigger_price`).              |
+| `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |
+| `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
+| `LIMIT_IF_TOUCHED`     | ✓         | Supported.                                    |
 | `TRAILING_STOP_MARKET` | -         | *Not yet implemented*.                        |
 
 ### Execution instructions
 
-| Instruction   | Supported | Notes                                                       |
-|---------------|-----------|-------------------------------------------------------------|
-| `post_only`   | ✓         | Supported via `ParticipateDoNotInitiate` on `LIMIT` orders. |
-| `reduce_only` | -         | *Currently under development*.                              |
+| Instruction   | Supported | Notes                                                                             |
+|---------------|-----------|-----------------------------------------------------------------------------------|
+| `post_only`   | ✓         | Supported via `ParticipateDoNotInitiate` execution instruction on `LIMIT` orders. |
+| `reduce_only` | ✓         | Supported via `ReduceOnly` execution instruction.                                 |
 
 :::note
-Post-only orders are implemented using BitMEX's `ParticipateDoNotInitiate` execution
-instruction, which ensures orders are added to the order book as maker orders only.
+Post-only orders that would cross the spread are canceled by BitMEX rather than rejected. The
+integration surfaces these as rejections with `due_post_only=True` so strategies can handle them
+consistently.
 :::
 
 ### Time in force
 
-| Time in force | Supported | Notes                                          |
-|---------------|-----------|------------------------------------------------|
-| `GTC`         | ✓         | Good Till Canceled (default).                  |
-| `GTD`         | -         | *Not supported by BitMEX*.                     |
-| `FOK`         | -         | *Currently under development*.                 |
-| `IOC`         | -         | *Currently under development*.                 |
+| Time in force | Supported | Notes                                         |
+|---------------|-----------|-----------------------------------------------|
+| `GTC`         | ✓         | Good Till Canceled (default).                 |
+| `GTD`         | -         | *Not yet implemented*.                        |
+| `FOK`         | ✓         | Fill or Kill - fills entire order or cancels. |
+| `IOC`         | ✓         | Immediate or Cancel - partial fill allowed.   |
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                       |
-|--------------------|-----------|---------------------------------------------|
-| Order Modification | -         | *Currently under development*.              |
-| Bracket Orders     | -         | *Not yet implemented*.                      |
-| Iceberg Orders     | -         | *Supported by BitMEX, not yet implemented*. |
+| Feature            | Supported | Notes                                      |
+|--------------------|-----------|--------------------------------------------|
+| Order Modification | ✓         | Modify price, quantity, and trigger price. |
+| Bracket Orders     | -         | *Not yet implemented*.                     |
+| Iceberg Orders     | ✓         | Use `display_qty`.                         |
 
 ### Batch operations
 
-| Operation          | Supported | Notes                                         |
-|--------------------|-----------|-----------------------------------------------|
-| Batch Submit       | -         | *Not yet implemented*.                        |
-| Batch Modify       | -         | *Not yet implemented*.                        |
-| Batch Cancel       | -         | *Not yet implemented*.                        |
+| Operation          | Supported | Notes                                      |
+|--------------------|-----------|--------------------------------------------|
+| Batch Submit       | -         | *Not yet implemented*.                     |
+| Batch Modify       | -         | *Not yet implemented*.                     |
+| Batch Cancel       | -         | *Not yet implemented*.                     |
+
+Low-level HTTP bulk endpoints exist (place/amend), but are not yet exposed via the execution client.
 
 ### Position management
 
-| Feature             | Supported | Notes                                        |
-|---------------------|-----------|----------------------------------------------|
-| Query positions     | ✓         | Real-time position updates via WebSocket.    |
-| Leverage control    | -         | *Currently under development*.               |
-| Cross margin        | ✓         | Default margin mode.                         |
-| Isolated margin     | -         | *Currently under development*.               |
+| Feature             | Supported | Notes                                              |
+|---------------------|-----------|----------------------------------------------------|
+| Query positions     | ✓         | REST and real-time position updates via WebSocket. |
+| Cross margin        | ✓         | Default margin mode.                               |
+| Isolated margin     | ✓         |                                                    |
 
 ### Order querying
 
-| Feature             | Supported | Notes                                        |
-|---------------------|-----------|----------------------------------------------|
-| Query open orders   | ✓         | List all active orders.                      |
-| Query order history | ✓         | Historical order data.                       |
-| Order status updates| ✓         | Real-time order state changes via WebSocket. |
-| Trade history       | ✓         | Execution and fill reports.                  |
+| Feature              | Supported | Notes                                        |
+|----------------------|-----------|----------------------------------------------|
+| Query open orders    | ✓         | List all active orders.                      |
+| Query order history  | ✓         | Historical order data.                       |
+| Order status updates | ✓         | Real-time order state changes via WebSocket. |
+| Trade history        | ✓         | Execution and fill reports.                  |
+
+## Market data
+
+- Order book deltas: `L2_MBP` only; `depth` 0 (full book) or 25.
+- Order book snapshots: `L2_MBP` only; `depth` 0 (default 10) or 10.
+- Quotes, trades, and instrument updates are supported via WebSocket.
+- Funding rates, mark prices, and index prices are supported where applicable.
 
 ## Rate limits
 
@@ -237,17 +254,17 @@ The adapter automatically respects these limits through built-in rate limiting w
 
 ### WebSocket limits
 
-- 20 connections per hour per IP address
-- Authentication required for private data streams
+- Refer to the BitMEX documentation for current connection limits.
+- Authentication is required for private data streams.
 
 ### Rate limit headers
 
 BitMEX provides rate limit information in response headers:
 
-- `x-ratelimit-limit`: Total allowed requests
-- `x-ratelimit-remaining`: Remaining requests in current window
-- `x-ratelimit-reset`: Unix timestamp when limits reset
-- `retry-after`: Seconds to wait if rate limited (429 response)
+- `x-ratelimit-limit`: Total allowed requests.
+- `x-ratelimit-remaining`: Remaining requests in current window.
+- `x-ratelimit-reset`: Unix timestamp when limits reset.
+- `retry-after`: Seconds to wait if rate limited (429 response).
 
 :::warning
 Exceeding rate limits will result in HTTP 429 responses and potential temporary IP bans.
@@ -339,16 +356,6 @@ mainnet_exec_config = BitmexExecClientConfig(
 - **Maker fees**: Typically negative (rebate) for providing liquidity.
 - **Taker fees**: Positive fee for taking liquidity.
 - **Funding rates**: Apply to perpetual contracts every 8 hours.
-
-## Known limitations
-
-The BitMEX integration is actively being developed. Current limitations include:
-
-- Limited order type support (only MARKET and LIMIT orders for now).
-- Post-only functionality pending full implementation.
-- Stop orders and advanced order types not yet available.
-- Batch operations not implemented.
-- Margin mode switching not available.
 
 :::note
 We welcome contributions to extend the BitMEX adapter functionality. Please see our
