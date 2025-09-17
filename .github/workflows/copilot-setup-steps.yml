@@ -2,12 +2,6 @@ name: "Copilot Setup Steps"
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
 
 jobs:
   copilot-setup-steps:
@@ -48,10 +42,10 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: 3.13
-
-

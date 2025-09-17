@@ -19,7 +19,7 @@ jobs:
 
       - name: Fire event to nautilus_docs
         run: |
-          curl -L \
+          curl -sS -L --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 60 --fail-with-body \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.REPOSITORY_ACCESS_TOKEN }}" \

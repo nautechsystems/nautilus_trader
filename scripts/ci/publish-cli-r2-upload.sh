@@ -113,17 +113,54 @@ for latest_file in "${LATEST_LIST[@]}"; do
   versioned_fname="nautilus-cli-${VERSION}-${target}.${ext}"
   cp -f "$latest_file" "$ART_DIR/versioned/$versioned_fname"
   echo "Uploading versioned: $versioned_fname"
-  aws s3 cp "$ART_DIR/versioned/$versioned_fname" "s3://${BUCKET}/${PREFIX}/${VERSION}/${versioned_fname}" \
-    --endpoint-url="$R2_URL" --content-type application/octet-stream
+  set +e
+  success=false
+  for i in {1..5}; do
+    aws s3 cp "$ART_DIR/versioned/$versioned_fname" "s3://${BUCKET}/${PREFIX}/${VERSION}/${versioned_fname}" \
+      --endpoint-url="$R2_URL" --content-type application/octet-stream \
+      --cli-connect-timeout 10 --cli-read-timeout 60
+    status=$?
+    if [ $status -eq 0 ]; then success=true; break; else echo "Upload versioned failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+  done
+  set -e
+  if [ "$success" = false ]; then echo "Failed to upload versioned artifact after retries"; exit 1; fi
   echo "Uploading latest: $b"
-  aws s3 cp "$latest_file" "s3://${BUCKET}/${PREFIX}/latest/${b}" \
-    --endpoint-url="$R2_URL" --content-type application/octet-stream --cache-control "$LATEST_CACHE_CONTROL"
+  set +e
+  success=false
+  for i in {1..5}; do
+    aws s3 cp "$latest_file" "s3://${BUCKET}/${PREFIX}/latest/${b}" \
+      --endpoint-url="$R2_URL" --content-type application/octet-stream --cache-control "$LATEST_CACHE_CONTROL" \
+      --cli-connect-timeout 10 --cli-read-timeout 60
+    status=$?
+    if [ $status -eq 0 ]; then success=true; break; else echo "Upload latest failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+  done
+  set -e
+  if [ "$success" = false ]; then echo "Failed to upload latest artifact after retries"; exit 1; fi
 done
 
 echo "Uploading latest checksums and manifest"
-aws s3 cp "$ART_DIR/latest/checksums.txt" "s3://${BUCKET}/${PREFIX}/latest/checksums.txt" \
-  --endpoint-url="$R2_URL" --content-type text/plain --cache-control "$LATEST_CACHE_CONTROL"
-aws s3 cp "$MANIFEST" "s3://${BUCKET}/${PREFIX}/latest/manifest.json" \
-  --endpoint-url="$R2_URL" --content-type application/json --cache-control "$LATEST_CACHE_CONTROL"
+set +e
+success=false
+for i in {1..5}; do
+  aws s3 cp "$ART_DIR/latest/checksums.txt" "s3://${BUCKET}/${PREFIX}/latest/checksums.txt" \
+    --endpoint-url="$R2_URL" --content-type text/plain --cache-control "$LATEST_CACHE_CONTROL" \
+    --cli-connect-timeout 10 --cli-read-timeout 60
+  status=$?
+  if [ $status -eq 0 ]; then success=true; break; else echo "Upload checksums failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+done
+set -e
+if [ "$success" = false ]; then echo "Failed to upload checksums.txt after retries"; exit 1; fi
+
+set +e
+success=false
+for i in {1..5}; do
+  aws s3 cp "$MANIFEST" "s3://${BUCKET}/${PREFIX}/latest/manifest.json" \
+    --endpoint-url="$R2_URL" --content-type application/json --cache-control "$LATEST_CACHE_CONTROL" \
+    --cli-connect-timeout 10 --cli-read-timeout 60
+  status=$?
+  if [ $status -eq 0 ]; then success=true; break; else echo "Upload manifest failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+done
+set -e
+if [ "$success" = false ]; then echo "Failed to upload manifest.json after retries"; exit 1; fi
 
 echo "Publish complete"

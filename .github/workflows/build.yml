@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop]
+    branches: [master, nightly, develop, test-ci]
   pull_request:
     branches: ['*']
 
@@ -22,6 +22,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -82,6 +84,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -172,6 +176,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -239,6 +245,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -295,6 +303,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -353,6 +363,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -403,6 +415,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -456,6 +470,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Get uv version
         shell: bash
@@ -482,7 +498,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload wheels to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -491,7 +515,15 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           # Use --check-url to skip files that already exist on PyPI
-          uv publish --check-url https://pypi.org/simple/
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to publish wheels to PyPI after retries"; exit 1; fi
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -526,6 +558,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
           fetch-depth: 2
 
       - name: Common setup
@@ -586,6 +619,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -620,7 +655,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload sdist to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -629,4 +672,12 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           # Use --check-url to skip files that already exist on PyPI
-          uv publish --check-url https://pypi.org/simple/
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to publish sdist to PyPI after retries"; exit 1; fi

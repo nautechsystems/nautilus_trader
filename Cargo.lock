@@ -5198,6 +5198,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "nautilus-network",
  "pyo3",
  "rand 0.9.2",
  "reqwest",

@@ -39,10 +39,10 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y curl clang git make pkg-config
-        sudo apt-get install -y python3-dev libpython3-dev
-        sudo apt-get install -y capnproto libcapnp-dev
+        sudo apt-get update -o Acquire::Retries=5
+        sudo apt-get install -y curl clang git make pkg-config -o Acquire::Retries=5
+        sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
+        sudo apt-get install -y capnproto libcapnp-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
 
@@ -50,15 +50,15 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew update
-        brew install capnp
+        brew update || { sleep 5; brew update; }
+        brew install capnp || { sleep 5; brew install capnp; }
         brew cleanup
 
     - name: Install capnproto (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        choco install capnproto -y || echo "capnproto install via choco failed or unavailable"
+        choco install capnproto -y || { echo "capnproto install via choco failed or unavailable"; sleep 5; choco install capnproto -y || true; }
 
     # > --------------------------------------------------
     # > Rust

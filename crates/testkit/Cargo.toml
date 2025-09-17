@@ -37,6 +37,7 @@ high-precision = ["nautilus-model/high-precision"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-network = { workspace = true }
 
 anyhow = { workspace = true }
 hex = { workspace = true }

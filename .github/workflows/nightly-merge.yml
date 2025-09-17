@@ -27,7 +27,8 @@ jobs:
           set -eo pipefail
           url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=20"
           echo "Fetching workflows from: $url"
-          if ! curl -s --max-time 30 -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
+          if ! curl -sS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 60 \
+               -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
               echo "Failed to fetch workflows, exiting"
               exit 1
           fi
@@ -105,6 +106,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0  # Fetch all history for all tags and branches
 

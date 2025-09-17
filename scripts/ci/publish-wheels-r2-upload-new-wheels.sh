@@ -38,21 +38,27 @@ for file in dist/all/*.whl; do
   echo "sha256:$(sha256sum "$file" | awk '{print $1}')"
 
   echo "Uploading $file..."
-  for i in {1..3}; do
-    if aws s3 cp "$file" "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/" \
+  set +e
+  success=false
+  for i in {1..5}; do
+    aws s3 cp "$file" "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/" \
       --endpoint-url="${CLOUDFLARE_R2_URL}" \
-      --content-type "application/zip"; then
+      --content-type "application/zip"
+    status=$?
+    if [ $status -eq 0 ]; then
       echo "Successfully uploaded $file"
+      success=true
       break
     else
-      echo "Upload failed for $file, retrying ($i/3)..."
-      sleep 5
-    fi
-
-    if [ $i -eq 3 ]; then
-      echo "Failed to upload $file after 3 attempts"
+      echo "Upload failed for $file (exit=$status), retrying ($i/5)..."
+      sleep $((2**i))
     fi
   done
+  set -e
+  if [ "$success" = false ]; then
+    echo "Failed to upload $file after 5 attempts"
+    exit 1
+  fi
 done
 
 if [ "$wheel_count" -eq 0 ]; then
