@@ -45,10 +45,14 @@ if product_type == BybitProductType.SPOT:
     symbol = f"DOGEUSDT-{product_type.value.upper()}"
     order_qty = Decimal("50")
     order_params = {"is_leverage": True}
+    enable_sells = False
+    use_spot_position_reports = True  # CAUTION: Experimental feature
 elif product_type == BybitProductType.LINEAR:
     symbol = f"ETHUSDT-{product_type.value.upper()}"
     order_qty = Decimal("0.01")
     order_params = {}
+    enable_sells = True
+    use_spot_position_reports = False
 else:
     raise NotImplementedError
 
@@ -131,7 +135,7 @@ config_node = TradingNodeConfig(
             use_ws_trade_api=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
-            # use_spot_position_reports=True,  # Experimental feature
+            use_spot_position_reports=use_spot_position_reports,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
             max_retries=3,
@@ -157,7 +161,7 @@ config_tester = ExecTesterConfig(
     subscribe_quotes=True,
     subscribe_trades=True,
     # subscribe_book=True,
-    # enable_sells=False,
+    enable_sells=enable_sells,
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
     # tob_offset_ticks=1,

@@ -28,6 +28,7 @@ None
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
+- Fixed safe encoded symbols (#2964), thanks @ms32035
 
 ### Documentation Updates
 None

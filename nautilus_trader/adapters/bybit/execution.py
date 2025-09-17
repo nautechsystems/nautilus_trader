@@ -216,9 +216,9 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if self._use_spot_position_reports:
             self._log.warning(
-                "SPOT position reports enabled - wallet balances will be treated as LONG positions; "
-                "this may lead to unintended liquidation of wallet assets if strategies are not "
-                "designed to handle SPOT positions properly",
+                "SPOT position reports enabled - positive wallet balances will be treated as LONG positions "
+                "and negative balances (borrowing) as SHORT positions; this may lead to unintended "
+                "liquidation of wallet assets if strategies are not designed to handle SPOT positions properly",
                 LogColor.YELLOW,
             )
 
@@ -634,23 +634,34 @@ class BybitExecutionClient(LiveExecutionClient):
 
             for wallet in balances:
                 for coin_balance in wallet.coin:
-                    # Skip if balance is zero or negative
                     wallet_balance = Decimal(coin_balance.walletBalance or "0")
-                    if wallet_balance <= 0:
+
+                    # Skip if balance is zero
+                    if wallet_balance == 0:
                         continue
 
                     # If specific instrument requested, check if this coin matches
                     if instrument_id:
                         instrument = self._cache.instrument(instrument_id)
                         if instrument and instrument.base_currency.code == coin_balance.coin:
+                            # Determine position side based on balance sign
+                            if wallet_balance > 0:
+                                position_side = PositionSide.LONG
+                            else:
+                                position_side = PositionSide.SHORT
+
+                            # Always use absolute value for quantity calculation
+                            abs_balance = abs(wallet_balance)
+
                             try:
                                 quantity = instrument.make_qty(
-                                    coin_balance.walletBalance,
+                                    str(abs_balance),
                                     round_down=True,
                                 )
                             except ValueError:
                                 quantity = Quantity.zero(instrument.size_precision)
 
+                            # Check if quantity is zero after rounding to instrument precision
                             if quantity == 0:
                                 report = PositionStatusReport.create_flat(
                                     account_id=self.account_id,
@@ -663,7 +674,7 @@ class BybitExecutionClient(LiveExecutionClient):
                                 report = PositionStatusReport(
                                     account_id=self.account_id,
                                     instrument_id=instrument_id,
-                                    position_side=PositionSide.LONG,
+                                    position_side=position_side,
                                     quantity=quantity,
                                     avg_px_open=None,  # No average price available from wallet balance
                                     report_id=UUID4(),

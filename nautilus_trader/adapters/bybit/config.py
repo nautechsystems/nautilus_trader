@@ -110,7 +110,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is using http api to send batch order requests.
         Effective only when `use_ws_trade_api` is set to `True`.
     use_spot_position_reports : bool, default False
-        If True, wallet balances for SPOT instruments will be reported as LONG positions.
+        If True, wallet balances for SPOT instruments will be reported as positions:
+        - Positive balances are reported as LONG positions.
+        - Negative balances (borrowing) are reported as SHORT positions.
+        - Zero balances (after rounding to instrument precision) are reported as FLAT.
         WARNING: This may lead to unintended liquidation of wallet assets if strategies
         are not designed to handle spot positions appropriately.
     max_retries : PositiveInt, optional
