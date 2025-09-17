@@ -48,14 +48,14 @@ pub enum ApplyError {
 
 /// L2 order book (pure state).
 #[derive(Debug, Default, Clone)]
-pub struct L2Book {
+pub struct HyperliquidOrderBook {
     pub seq: u64,
     pub bids: Vec<PxQty>, // sorted DESC by price
     pub asks: Vec<PxQty>, // sorted ASC by price
     pub digest: u64,      // deterministic state hash (for assertions)
 }
 
-impl L2Book {
+impl HyperliquidOrderBook {
     /// Apply full snapshot (replaces state). Caller must pass canonicalized sides or rely on internal sort.
     pub fn apply_snapshot(
         &mut self,
@@ -147,8 +147,6 @@ impl L2Book {
         Ok(())
     }
 }
-
-/* ===== Implementation helpers (pure, deterministic) ===== */
 
 #[inline]
 fn sort_desc(levels: &mut [PxQty]) {
@@ -266,13 +264,11 @@ pub fn compute_digest64(bids: &[PxQty], asks: &[PxQty], seq: u64) -> u64 {
     h
 }
 
-/* ===== Hyperliquid Integration (Book Manager) ===== */
-
 /// Manages orderbooks for multiple coins and handles conversions
 #[derive(Debug, Default)]
 pub struct HyperliquidBookManager {
     /// Active orderbooks by coin symbol
-    books: HashMap<String, L2Book>,
+    books: HashMap<String, HyperliquidOrderBook>,
     /// Price multipliers for converting to integer ticks (coin -> multiplier)
     price_multipliers: HashMap<String, i64>,
     /// Size multipliers for converting to integer ticks (coin -> multiplier)
@@ -323,12 +319,12 @@ impl HyperliquidBookManager {
     }
 
     /// Get or create orderbook for a coin
-    pub fn get_book(&mut self, coin: &str) -> &mut L2Book {
+    pub fn get_book(&mut self, coin: &str) -> &mut HyperliquidOrderBook {
         self.books.entry(coin.to_string()).or_default()
     }
 
     /// Get read-only access to a book
-    pub fn get_book_readonly(&self, coin: &str) -> Option<&L2Book> {
+    pub fn get_book_readonly(&self, coin: &str) -> Option<&HyperliquidOrderBook> {
         self.books.get(coin)
     }
 
@@ -539,7 +535,7 @@ mod tests {
 
     #[rstest]
     fn snapshot_establishes_canonical_sort_and_digest() {
-        let mut book = L2Book::default();
+        let mut book = HyperliquidOrderBook::default();
         // Unsorted input to ensure we canonicalize.
         let bids = vec![PxQty::new(101, 5), PxQty::new(103, 3), PxQty::new(102, 4)];
         let asks = vec![PxQty::new(106, 7), PxQty::new(104, 9), PxQty::new(105, 1)];
@@ -563,7 +559,7 @@ mod tests {
 
     #[rstest]
     fn delta_upserts_and_removals_preserve_order_and_hash() {
-        let mut book = L2Book::default();
+        let mut book = HyperliquidOrderBook::default();
         // Snapshot
         book.apply_snapshot(
             1,
@@ -602,7 +598,7 @@ mod tests {
 
     #[rstest]
     fn zero_qty_upsert_equals_removal() {
-        let mut book = L2Book::default();
+        let mut book = HyperliquidOrderBook::default();
         book.apply_snapshot(5, mk_levels(100..=100, 10), mk_levels(101..=101, 20), None)
             .unwrap();
         assert_eq!(book.bids.len(), 1);
@@ -614,7 +610,7 @@ mod tests {
 
     #[rstest]
     fn gap_detection_and_resync_via_snapshot() {
-        let mut book = L2Book::default();
+        let mut book = HyperliquidOrderBook::default();
         book.apply_snapshot(10, mk_levels(100..=101, 5), mk_levels(102..=103, 7), None)
             .unwrap();
 
@@ -642,7 +638,7 @@ mod tests {
 
     #[rstest]
     fn checksum_mismatch_is_detected_on_snapshot_and_delta() {
-        let mut book = L2Book::default();
+        let mut book = HyperliquidOrderBook::default();
 
         // Prepare a snapshot and compute its checksum, then corrupt expected
         let bids = mk_levels(100..=100, 10);
@@ -674,7 +670,7 @@ mod tests {
         let snapshot_asks = vec![PxQty::new(101, 7), PxQty::new(102, 9)];
 
         // Stream A (single deltas)
-        let mut a = L2Book::default();
+        let mut a = HyperliquidOrderBook::default();
         a.apply_snapshot(100, snapshot_bids.clone(), snapshot_asks.clone(), None)
             .unwrap();
         a.apply_delta(101, &[PxQty::new(99, 6)], &[], &[], &[], None)
@@ -684,7 +680,7 @@ mod tests {
         a.apply_delta(103, &[], &[], &[99], &[], None).unwrap();
 
         // Stream B (equivalent changes packed differently)
-        let mut b = L2Book::default();
+        let mut b = HyperliquidOrderBook::default();
         b.apply_snapshot(100, snapshot_bids, snapshot_asks, None)
             .unwrap();
         // Combine two ops into one delta that yields the same end state.
