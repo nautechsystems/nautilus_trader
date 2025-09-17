@@ -69,6 +69,7 @@ impl OKXInstrumentType {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
@@ -149,6 +150,7 @@ impl OKXContractType {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
@@ -223,6 +225,7 @@ impl OKXMarginMode {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
@@ -291,6 +294,7 @@ impl OKXTradeMode {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
@@ -365,6 +369,7 @@ impl OKXPositionMode {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
@@ -427,6 +432,7 @@ impl OKXVipLevel {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)

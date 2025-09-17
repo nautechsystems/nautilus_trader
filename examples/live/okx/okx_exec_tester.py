@@ -158,6 +158,7 @@ config_tester = ExecTesterConfig(
     # open_position_time_in_force=TimeInForce.FOK,
     tob_offset_ticks=100,
     order_qty=order_qty,
+    order_params={"td_mode": "isolatedd"},
     # modify_orders_to_maintain_tob_offset=True,
     use_post_only=True,
     # cancel_orders_on_stop=False,

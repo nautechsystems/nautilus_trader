@@ -659,12 +659,26 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
+        td_mode = self._trade_mode
+
+        if command.params:
+            td_mode_str = command.params.get("td_mode")
+            if td_mode_str:
+                try:
+                    td_mode = OKXTradeMode(td_mode_str)
+                except ValueError:
+                    self._log.warning(
+                        f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
+                        f"falling back to '{str(self._trade_mode).lower()}'",
+                    )
+                    td_mode = self._trade_mode
+
         try:
             await self._ws_client.submit_order(
                 trader_id=pyo3_trader_id,
                 strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
-                td_mode=self._trade_mode,
+                td_mode=td_mode,
                 client_order_id=pyo3_client_order_id,
                 order_side=pyo3_order_side,
                 order_type=pyo3_order_type,

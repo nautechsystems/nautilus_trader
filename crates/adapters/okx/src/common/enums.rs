@@ -349,6 +349,7 @@ impl From<OKXOptionType> for OptionKind {
     Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(ascii_case_insensitive)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.okx")
@@ -358,6 +359,7 @@ pub enum OKXTradeMode {
     Cash,
     Isolated,
     Cross,
+    #[strum(serialize = "spot_isolated")]
     SpotIsolated,
 }
 

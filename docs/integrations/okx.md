@@ -202,7 +202,53 @@ which will handle the order expiration by canceling the order at expiry.
 | Query positions   | ✓                     | Real-time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode.                              |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
-| Margin mode       | Isolated              | Currently isolated only. *Cross margin coming soon*. |
+| Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
+
+### Margin modes
+
+OKX's unified account system allows trading with different margin modes on a per-order basis. The adapter supports specifying the trade mode (`td_mode`) when submitting orders.
+
+:::note
+**Important**: Account modes must be initially configured via the OKX Web/App interface. The API cannot set the account mode for the first time.
+:::
+
+For more details on OKX's account modes and margin system, see the [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+
+#### Available margin modes
+
+- **`cash`**: Spot trading without margin (default for spot trading).
+- **`isolated`**: Isolated margin mode where risk is confined to specific positions.
+- **`cross`**: Cross margin mode where all positions share the same margin pool.
+- **`spot_isolated`**: Isolated margin for spot trading.
+
+#### Setting margin mode per order
+
+You can specify the margin mode for individual orders using the `params` parameter:
+
+```python
+# Submit an order with isolated margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "isolated"}
+)
+
+# Submit an order with cross margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "cross"}
+)
+```
+
+If no `td_mode` is specified in params, the adapter will use the default mode configured for your account type:
+
+- Cash accounts default to `cash` mode.
+- Margin accounts default to `isolated` mode.
+
+This flexibility allows you to:
+
+- Run multiple strategies with different risk profiles simultaneously.
+- Isolate high-risk trades while using cross margin for capital-efficient positions.
+- Mix spot and margin trades within the same account.
 
 ### Order querying
 

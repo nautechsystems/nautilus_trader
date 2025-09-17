@@ -26,11 +26,11 @@
 //! • Conversion of raw exchange errors into the rich [`OKXHttpError`] enum.
 //!
 //! # Quick links to official docs
-//! | Domain                               | OKX reference                                                             |
-//! |--------------------------------------|---------------------------------------------------------------------------|
-//! | Market data                          | <https://www.okx.com/docs-v5/en/#rest-api-market-data>                    |
-//! | Account & positions                  | <https://www.okx.com/docs-v5/en/#rest-api-account>                       |
-//! | Funding & asset balances             | <https://www.okx.com/docs-v5/en/#rest-api-funding>                       |
+//! | Domain                               | OKX reference                                          |
+//! |--------------------------------------|--------------------------------------------------------|
+//! | Market data                          | <https://www.okx.com/docs-v5/en/#rest-api-market-data> |
+//! | Account & positions                  | <https://www.okx.com/docs-v5/en/#rest-api-account>     |
+//! | Funding & asset balances             | <https://www.okx.com/docs-v5/en/#rest-api-funding>     |
 
 use std::{
     collections::HashMap,
