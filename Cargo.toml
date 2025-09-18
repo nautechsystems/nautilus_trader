@@ -167,7 +167,7 @@ redis = { version = "0.32.5", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ] }
-regex = { version = "1.11.2", default-features = false, features = ["std", "perf"] }
+regex = { version = "1.11.2", default-features = false, features = ["std", "perf", "unicode-perl"] }
 reqwest = { version = "0.12.23", default-features = false, features = [
   "blocking",
   "rustls-tls",
