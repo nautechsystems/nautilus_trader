@@ -180,7 +180,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._clock,
             base_url=self._config.base_url_ws,
             channel=PolymarketWebSocketChannel.MARKET,
-            handler=self._handle_ws_message,
+            handler=self._handle_raw_ws_message,
             handler_reconnect=None,
             loop=self._loop,
         )
@@ -360,47 +360,46 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         self._log.error("Cannot request historical bars: not published by Polymarket")
 
-    def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901 (too complex)
+    def _handle_raw_ws_message(self, raw: bytes) -> None:
         # Uncomment for development
         # self._log.info(str(raw), LogColor.MAGENTA)
         try:
             msg = self._decoder_market_msg.decode(raw)
+
             if isinstance(msg, list):
-                if isinstance(msg, PolymarketBookSnapshot):
-                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                    instrument = self._cache.instrument(instrument_id)
-                    if instrument is None:
-                        self._log.error(f"Cannot find instrument for {instrument_id}")
-                        return
-                    self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+                for item in msg:
+                    self._handle_ws_message(item)
             else:
-                if isinstance(msg, PolymarketQuotes):
-                    self._handle_quotes(ws_message=msg)
-                elif isinstance(msg, PolymarketBookSnapshot):
-                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                    instrument = self._cache.instrument(instrument_id)
-                    if instrument is None:
-                        self._log.error(f"Cannot find instrument for {instrument_id}")
-                        return
-                    self._handle_book_snapshot(instrument=instrument, ws_message=msg)
-                elif isinstance(msg, PolymarketTrade):
-                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                    instrument = self._cache.instrument(instrument_id)
-                    if instrument is None:
-                        self._log.error(f"Cannot find instrument for {instrument_id}")
-                        return
-                    self._handle_trade(instrument=instrument, ws_message=msg)
-                elif isinstance(msg, PolymarketTickSizeChange):
-                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                    instrument = self._cache.instrument(instrument_id)
-                    if instrument is None:
-                        self._log.error(f"Cannot find instrument for {instrument_id}")
-                        return
-                    self._handle_instrument_update(instrument=instrument, ws_message=msg)
-                else:
-                    self._log.error(f"Unknown websocket message topic: {msg}")
+                self._handle_ws_message(msg)
         except Exception as e:
             self._log.exception(f"Failed to parse websocket message: {raw.decode()} with error", e)
+
+    def _handle_ws_message(self, msg: Any) -> None:
+        if isinstance(msg, PolymarketQuotes):
+            self._handle_quotes(ws_message=msg)
+        elif isinstance(msg, PolymarketBookSnapshot):
+            instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+            self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+        elif isinstance(msg, PolymarketTrade):
+            instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+            self._handle_trade(instrument=instrument, ws_message=msg)
+        elif isinstance(msg, PolymarketTickSizeChange):
+            instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+            self._handle_instrument_update(instrument=instrument, ws_message=msg)
+        else:
+            self._log.error(f"Unknown websocket message topic: {msg}")
 
     def _handle_book_snapshot(
         self,
@@ -455,6 +454,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             if instrument is None:
                 self._log.error(f"Cannot find instrument for {instrument_id}")
                 continue
+
             self._handle_quote(
                 instrument=instrument,
                 ws_message=ws_message,
@@ -485,6 +485,16 @@ class PolymarketDataClient(LiveMarketDataClient):
             ts_init=now_ns,
         )
         deltas = OrderBookDeltas(instrument.id, [delta])
+
+        # Check if local book exists, create if needed
+        if instrument.id not in self._local_books:
+            # Skip this quote if we're not subscribed to anything for this instrument
+            if (
+                instrument.id not in self.subscribed_quote_ticks()
+                and instrument.id not in self.subscribed_order_book_deltas()
+            ):
+                return
+            self._create_local_book(instrument.id)
 
         local_book = self._local_books[instrument.id]
         local_book.apply(deltas)
