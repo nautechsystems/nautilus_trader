@@ -474,9 +474,11 @@ mod tests {
         atomic::{AtomicU32, Ordering},
     };
 
+    use rstest::rstest;
+
     use super::{test_utils::*, *};
 
-    #[test]
+    #[rstest]
     fn test_retry_config_default() {
         let config = RetryConfig::default();
         assert_eq!(config.max_retries, 3);
@@ -610,7 +612,7 @@ mod tests {
         assert!(elapsed.as_millis() < 1000);
     }
 
-    #[test]
+    #[rstest]
     fn test_http_retry_manager_config() {
         let manager = create_http_retry_manager::<TestError>().unwrap();
         assert_eq!(manager.config.max_retries, 3);
@@ -618,7 +620,7 @@ mod tests {
         assert_eq!(manager.config.max_elapsed_ms, Some(180_000));
     }
 
-    #[test]
+    #[rstest]
     fn test_websocket_retry_manager_config() {
         let manager = create_websocket_retry_manager::<TestError>().unwrap();
         assert_eq!(manager.config.max_retries, 5);
@@ -1137,11 +1139,13 @@ mod proptest_tests {
     };
 
     use proptest::prelude::*;
+    // Import rstest attribute macro used within proptest! tests
+    use rstest::rstest;
 
     use super::{test_utils::*, *};
 
     proptest! {
-        #[test]
+        #[rstest]
         fn test_retry_config_valid_ranges(
             max_retries in 0u32..100,
             initial_delay_ms in 1u64..10_000,
@@ -1171,7 +1175,7 @@ mod proptest_tests {
             prop_assert!(manager.is_ok());
         }
 
-        #[test]
+        #[rstest]
         fn test_retry_attempts_bounded(
             max_retries in 0u32..5,
             initial_delay_ms in 1u64..10,
@@ -1215,7 +1219,7 @@ mod proptest_tests {
             prop_assert_eq!(attempts, max_retries + 1);
         }
 
-        #[test]
+        #[rstest]
         fn test_timeout_always_respected(
             timeout_ms in 10u64..50,
             operation_delay_ms in 60u64..100,
@@ -1260,7 +1264,7 @@ mod proptest_tests {
             prop_assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
         }
 
-        #[test]
+        #[rstest]
         fn test_max_elapsed_always_respected(
             max_elapsed_ms in 20u64..50,
             delay_per_retry in 15u64..30,
@@ -1317,7 +1321,7 @@ mod proptest_tests {
             prop_assert!(attempts <= max_retries + 1);
         }
 
-        #[test]
+        #[rstest]
         #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
         fn test_jitter_bounds(
             jitter_ms in 0u64..20,
@@ -1389,7 +1393,7 @@ mod proptest_tests {
             }
         }
 
-        #[test]
+        #[rstest]
         #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
         fn test_immediate_first_property(
             immediate_first in any::<bool>(),
@@ -1446,7 +1450,7 @@ mod proptest_tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn test_non_retryable_stops_immediately(
             attempt_before_non_retryable in 0usize..3,
             max_retries in 3u32..5,
@@ -1496,7 +1500,7 @@ mod proptest_tests {
             prop_assert_eq!(attempts, attempt_before_non_retryable + 1);
         }
 
-        #[test]
+        #[rstest]
         fn test_cancellation_stops_immediately(
             cancel_after_ms in 10u64..100,
             initial_delay_ms in 200u64..500,
@@ -1552,7 +1556,7 @@ mod proptest_tests {
             prop_assert!(error_msg.contains("canceled"));
         }
 
-        #[test]
+        #[rstest]
         fn test_budget_clamp_prevents_overshoot(
             max_elapsed_ms in 10u64..30,
             delay_per_retry in 20u64..50,
@@ -1597,7 +1601,7 @@ mod proptest_tests {
             // The budget constraint is still enforced by the retry manager
         }
 
-        #[test]
+        #[rstest]
         fn test_success_on_kth_attempt(
             k in 1usize..5,
             initial_delay_ms in 5u64..20,

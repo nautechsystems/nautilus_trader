@@ -19,3 +19,4 @@ pub mod enums;
 pub mod models;
 pub mod parse;
 pub mod types;
+pub use models::{ConversionError, HyperliquidDataConverter};

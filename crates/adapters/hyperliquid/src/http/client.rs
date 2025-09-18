@@ -410,9 +410,11 @@ impl HyperliquidHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::http::query::InfoRequest;
 
-    #[test]
+    #[rstest]
     fn stable_json_roundtrips() {
         let v = serde_json::json!({"type":"l2Book","coin":"BTC"});
         let s = serde_json::to_string(&v).unwrap();
@@ -423,7 +425,7 @@ mod tests {
         assert_eq!(parsed, v);
     }
 
-    #[test]
+    #[rstest]
     fn info_pretty_shape() {
         let r = InfoRequest::l2_book("BTC");
         let val = serde_json::to_value(&r).unwrap();
