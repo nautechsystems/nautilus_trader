@@ -17,9 +17,6 @@ pub mod consts;
 pub mod credential;
 pub mod enums;
 pub mod models;
-pub mod orderbook;
 pub mod parse;
 pub mod types;
-pub use orderbook::{
-    ApplyError, BookConfig, ConversionError, HyperliquidBookManager, HyperliquidOrderBook, PxQty,
-};
+pub use models::{BookConfig, ConversionError, HyperliquidDataConverter};
