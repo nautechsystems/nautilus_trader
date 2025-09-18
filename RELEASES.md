@@ -20,6 +20,7 @@ None
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
+- Upgraded `datafusion` crate to v0.50.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
@@ -28,6 +29,7 @@ None
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
+- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 
