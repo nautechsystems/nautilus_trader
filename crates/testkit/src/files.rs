@@ -95,6 +95,9 @@ where
 /// If the file does not exist, it downloads the file from the specified `url` and updates the
 /// checksums file (if provided) with the calculated SHA-256 checksum of the downloaded file.
 ///
+/// The `timeout_secs` parameter specifies the timeout in seconds for the HTTP request.
+/// If `None` is provided, a default timeout of 30 seconds will be used.
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -105,8 +108,14 @@ pub fn ensure_file_exists_or_download_http(
     filepath: &Path,
     url: &str,
     checksums: Option<&Path>,
+    timeout_secs: Option<u64>,
 ) -> anyhow::Result<()> {
-    ensure_file_exists_or_download_http_with_timeout(filepath, url, checksums, 30)
+    ensure_file_exists_or_download_http_with_timeout(
+        filepath,
+        url,
+        checksums,
+        timeout_secs.unwrap_or(30),
+    )
 }
 
 /// Ensures that a file exists at the specified path by downloading it if necessary, with a custom timeout.
@@ -360,7 +369,7 @@ mod tests {
         fs::write(&file_path, "Existing file content").unwrap();
 
         let url = "http://example.com/testfile.txt".to_string();
-        let result = ensure_file_exists_or_download_http(&file_path, &url, None);
+        let result = ensure_file_exists_or_download_http(&file_path, &url, None, Some(5));
 
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
@@ -379,7 +388,7 @@ mod tests {
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None)
+            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
         })
         .await
         .unwrap();
@@ -422,7 +431,7 @@ mod tests {
         let url = "http://127.0.0.1:0/testfile.txt".to_string();
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&file_path, &url, None)
+            ensure_file_exists_or_download_http(&file_path, &url, None, Some(2))
         })
         .await
         .unwrap();
@@ -469,7 +478,7 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None)
+            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
         })
         .await
         .unwrap();
@@ -514,7 +523,7 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None)
+            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
         })
         .await
         .unwrap();
@@ -555,7 +564,7 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None)
+            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
         })
         .await
         .unwrap();

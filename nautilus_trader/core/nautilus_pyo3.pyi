@@ -6725,7 +6725,7 @@ class YieldCurveData(Data):
 # Test Kit
 ###################################################################################################
 
-def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None) -> None: ...
+def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None, timeout_secs = 30) -> None: ...
 
 ###################################################################################################
 # Trading
