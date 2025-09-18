@@ -211,14 +211,14 @@ This ensures the trading node maintains a consistent execution state even under 
 
 | Setting                             | Default   | Description                                                                                                                         |
 |-------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`        | 2,000 ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
-| `inflight_check_threshold_ms`       | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
-| `inflight_check_retries`            | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
+| `inflight_check_interval_ms`        | 2,000&nbsp;ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
+| `inflight_check_threshold_ms`       | 5,000&nbsp;ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
+| `inflight_check_retries`            | 5&nbsp;retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
 | `open_check_interval_secs`          | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
 | `open_check_open_only`              | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
-| `open_check_lookback_mins`          | 60 min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
-| `open_check_missing_retries`        | 5 retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
-| `reconciliation_startup_delay_secs` | 10.0 s    | Initial delay (seconds) before starting continuous reconciliation loop. Provides time for system stabilization after startup. |
+| `open_check_lookback_mins`          | 60&nbsp;min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
+| `open_check_missing_retries`        | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
+| `reconciliation_startup_delay_secs` | 10.0&nbsp;s    | Initial delay (seconds) before starting continuous reconciliation loop. Provides time for system stabilization after startup. |
 | `own_books_audit_interval_secs`     | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
 
 :::warning

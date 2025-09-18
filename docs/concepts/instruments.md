@@ -425,6 +425,6 @@ synthetic instruments. Despite this, caution is advised as invalid or erroneous 
 undefined behavior.
 
 :::info
-See the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrument-1)
+See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
 :::

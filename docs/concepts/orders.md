@@ -711,7 +711,7 @@ The following `Cache` methods are available:
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
-See the full [API reference](../../api_reference/cache) for additional details.
+See the full [API reference](../api_reference/cache) for additional details.
 
 #### Direct order queries
 

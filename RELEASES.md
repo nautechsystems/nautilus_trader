@@ -35,7 +35,8 @@ None
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 
 ### Documentation Updates
-None
+- Improved dark and light themes for readability
+- Fixed some broken links
 
 ### Deprecations
 None

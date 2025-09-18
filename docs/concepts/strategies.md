@@ -383,7 +383,7 @@ of all available methods.
 :::
 
 :::info
-See the [Portfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
+See the [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
 :::
 
 ### Trading commands
@@ -409,7 +409,7 @@ The component a `SubmitOrder` or `SubmitOrderList` command will flow to for exec
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`.
 - Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
-This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
+This example submits a `LIMIT` BUY order for emulation (see [Emulated Orders](orders.md#emulated-orders)):
 
 ```python
 from nautilus_trader.model.enums import OrderSide
