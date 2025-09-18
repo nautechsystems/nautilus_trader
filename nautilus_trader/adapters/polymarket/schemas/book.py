@@ -166,15 +166,18 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
 
 
 class PolymarketQuote(msgspec.Struct, frozen=True):
+    asset_id: str
     price: str
     side: PolymarketOrderSide
     size: str
+    hash: str
+    best_bid: str
+    best_ask: str
 
 
 class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type", frozen=True):
     market: str
-    asset_id: str
-    changes: list[PolymarketQuote]
+    price_changes: list[PolymarketQuote]
     timestamp: str
 
     def parse_to_deltas(
@@ -183,7 +186,7 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         ts_init: int,
     ) -> OrderBookDeltas:
         deltas: list[OrderBookDelta] = []
-        for change in self.changes:
+        for change in self.price_changes:
             order = BookOrder(
                 side=OrderSide.BUY if change.side == PolymarketOrderSide.BUY else OrderSide.SELL,
                 price=instrument.make_price(float(change.price)),
@@ -210,7 +213,7 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         ts_init: int,
     ) -> list[QuoteTick]:
         quotes: list[QuoteTick] = []
-        for change in self.changes:
+        for change in self.price_changes:
             if change.side == PolymarketOrderSide.BUY:
                 ask_price = last_quote.ask_price
                 ask_size = last_quote.ask_size

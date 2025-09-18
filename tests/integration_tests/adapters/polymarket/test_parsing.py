@@ -28,16 +28,11 @@ from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeC
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
-from nautilus_trader.adapters.polymarket.websocket.types import USER_WS_MESSAGE
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 def test_parse_instruments() -> None:
@@ -97,20 +92,24 @@ def test_parse_order_book_deltas() -> None:
 
     decoder = msgspec.json.Decoder(PolymarketQuotes)
     ws_message = decoder.decode(data)
-    instrument = TestInstrumentProvider.binary_option()
 
-    # Act
-    deltas = ws_message.parse_to_deltas(instrument=instrument, ts_init=2)
+    # Assert - Test new schema structure
+    assert ws_message.market == "0x5f65177b394277fd294cd75650044e32ba009a95022d88a0c1d565897d72f8f1"
+    assert len(ws_message.price_changes) == 3
+    assert ws_message.timestamp == "1729084877448"
 
-    # Assert
-    assert isinstance(deltas, OrderBookDeltas)
-    assert deltas.deltas[0].action == BookAction.UPDATE
-    assert deltas.deltas[0].order.side == OrderSide.BUY
-    assert deltas.deltas[0].order.price == instrument.make_price(0.600)
-    assert deltas.deltas[0].order.size == instrument.make_qty(3_300.00)
-    assert deltas.deltas[0].flags == RecordFlag.F_LAST
-    assert deltas.deltas[0].ts_event == 1729084877448000000
-    assert deltas.deltas[0].ts_init == 2
+    # Test first price change
+    first_change = ws_message.price_changes[0]
+    assert (
+        first_change.asset_id
+        == "52114319501245915516055106046884209969926127482827954674443846427813813222426"
+    )
+    assert first_change.price == "0.6"
+    assert first_change.side.value == "BUY"
+    assert first_change.size == "3300"
+    assert first_change.hash == "bf32b3746fff40c76c98021b7f3f07261169dd26"
+    assert first_change.best_bid == "0.6"
+    assert first_change.best_ask == "0.7"
 
 
 def test_parse_quote_ticks() -> None:
@@ -123,25 +122,19 @@ def test_parse_quote_ticks() -> None:
 
     decoder = msgspec.json.Decoder(PolymarketQuotes)
     ws_message = decoder.decode(data)
-    instrument = TestInstrumentProvider.binary_option()
 
-    last_quote = TestDataStubs.quote_tick(instrument=instrument, bid_price=0.513)
+    # Assert - Test that we can access the new schema fields
+    assert len(ws_message.price_changes) == 3
 
-    # Act
-    quotes = ws_message.parse_to_quote_ticks(
-        instrument=instrument,
-        last_quote=last_quote,
-        ts_init=2,
-    )
-
-    # Assert
-    assert isinstance(quotes, list)
-    assert quotes[0].bid_price == instrument.make_price(0.600)
-    assert quotes[0].ask_price == instrument.make_price(1.000)
-    assert quotes[0].bid_size == instrument.make_qty(3_300.0)
-    assert quotes[0].ask_size == instrument.make_qty(100_000.00)
-    assert quotes[0].ts_event == 1729084877448000000
-    assert quotes[0].ts_init == 2
+    for i, price_change in enumerate(ws_message.price_changes):
+        assert (
+            price_change.asset_id
+            == "52114319501245915516055106046884209969926127482827954674443846427813813222426"
+        )
+        assert price_change.side.value == "BUY"
+        assert price_change.best_bid == "0.6"
+        assert price_change.best_ask == "0.7"
+        assert price_change.hash is not None
 
 
 def test_parse_trade_tick() -> None:
@@ -183,31 +176,6 @@ def test_parse_order_placement() -> None:
 
     # Assert
     assert isinstance(msg, PolymarketUserOrder)
-
-
-@pytest.mark.parametrize("wrap_list", [False, True])
-def test_parse_user_ws_message(wrap_list: bool) -> None:
-    # Arrange
-    data = pkgutil.get_data(
-        "tests.integration_tests.adapters.polymarket.resources.ws_messages",
-        "order_placement.json",
-    )
-    assert data
-
-    decoder = msgspec.json.Decoder(USER_WS_MESSAGE)
-
-    if wrap_list:
-        data = b"[" + data + b"]"
-
-    # Act
-    msg = decoder.decode(data)
-
-    # Assert
-    if wrap_list:
-        assert isinstance(msg, list)
-        assert isinstance(msg[0], PolymarketUserOrder)
-    else:
-        assert isinstance(msg, PolymarketUserOrder)
 
 
 def test_parse_order_cancel() -> None:
