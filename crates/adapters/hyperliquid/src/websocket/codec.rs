@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::websocket::messages::{
     HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest, WsLevelData,
@@ -53,7 +54,7 @@ pub type TradeSide = Side;
 pub struct SubArg {
     pub channel: String, // e.g. "trades" | "l2Book" | "bbo" | "candle"
     #[serde(default)]
-    pub symbol: Option<String>, // unified symbol (coin in Hyperliquid)
+    pub symbol: Option<Ustr>, // unified symbol (coin in Hyperliquid)
     #[serde(default)]
     pub params: Option<serde_json::Value>, // {"interval":"1m","user":"0x123"} etc.
 }
@@ -102,7 +103,7 @@ pub struct PostAck {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTrade {
-    pub instrument: String,
+    pub instrument: Ustr,
     #[serde(with = "decimal_serde")]
     pub px: Decimal,
     #[serde(with = "decimal_serde")]
@@ -121,7 +122,7 @@ pub enum Side {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsBbo {
-    pub instrument: String,
+    pub instrument: Ustr,
     #[serde(with = "decimal_serde")]
     pub bid_px: Decimal,
     #[serde(with = "decimal_serde")]
@@ -135,7 +136,7 @@ pub struct WsBbo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCandle {
-    pub instrument: String,
+    pub instrument: Ustr,
     pub interval: String, // "1m", "5m", ...
     pub open_ts: i64,
     #[serde(with = "decimal_serde")]
@@ -152,7 +153,7 @@ pub struct WsCandle {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsBook {
-    pub instrument: String,
+    pub instrument: Ustr,
     pub is_snapshot: bool,
     pub seq: Option<u64>,
     pub checksum: Option<u32>,
@@ -235,10 +236,10 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
             if let Some(arg) = args.first() {
                 let subscription = match arg.channel.as_str() {
                     "trades" => SubscriptionRequest::Trades {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                     },
                     "l2Book" => SubscriptionRequest::L2Book {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                         n_sig_figs: arg
                             .params
                             .as_ref()
@@ -253,10 +254,10 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .map(|u| u as u32),
                     },
                     "bbo" => SubscriptionRequest::Bbo {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                     },
                     "candle" => SubscriptionRequest::Candle {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                         interval: arg
                             .params
                             .as_ref()
@@ -294,18 +295,18 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
             if let Some(arg) = args.first() {
                 let subscription = match arg.channel.as_str() {
                     "trades" => SubscriptionRequest::Trades {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                     },
                     "l2Book" => SubscriptionRequest::L2Book {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                         n_sig_figs: None,
                         mantissa: None,
                     },
                     "bbo" => SubscriptionRequest::Bbo {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                     },
                     "candle" => SubscriptionRequest::Candle {
-                        coin: arg.symbol.clone().unwrap_or_default(),
+                        coin: arg.symbol.unwrap_or_default(),
                         interval: arg
                             .params
                             .as_ref()
@@ -357,7 +358,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
             let trades = data
                 .iter()
                 .map(|t| WsTrade {
-                    instrument: t.coin.clone(),
+                    instrument: t.coin,
                     px: Decimal::from_str(&t.px).unwrap_or_default(),
                     qty: Decimal::from_str(&t.sz).unwrap_or_default(),
                     side: if t.side == "A" { Side::Sell } else { Side::Buy },
@@ -387,7 +388,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
                 .collect();
 
             WsInbound::L2Book(WsBook {
-                instrument: data.coin.clone(),
+                instrument: data.coin,
                 is_snapshot: true, // Hyperliquid sends snapshots
                 seq: Some(data.time),
                 checksum: None,
@@ -407,7 +408,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
             let ask = data.bbo[1].as_ref().unwrap_or(&default_level);
 
             WsInbound::Bbo(WsBbo {
-                instrument: data.coin.clone(),
+                instrument: data.coin,
                 bid_px: Decimal::from_str(&bid.px).unwrap_or_default(),
                 bid_qty: Decimal::from_str(&bid.sz).unwrap_or_default(),
                 ask_px: Decimal::from_str(&ask.px).unwrap_or_default(),
@@ -419,7 +420,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
             let candles = data
                 .iter()
                 .map(|c| WsCandle {
-                    instrument: c.s.clone(),
+                    instrument: c.s,
                     interval: c.i.clone(),
                     open_ts: c.t as i64,
                     o: Decimal::try_from(c.o).unwrap_or_default(),

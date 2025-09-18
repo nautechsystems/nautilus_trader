@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
 #[derive(Debug, Clone, Serialize)]
@@ -58,10 +59,10 @@ pub enum SubscriptionRequest {
     /// Web data for frontend
     WebData2 { user: String },
     /// Candlestick data
-    Candle { coin: String, interval: String },
+    Candle { coin: Ustr, interval: String },
     /// Level 2 order book
     L2Book {
-        coin: String,
+        coin: Ustr,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(rename = "nSigFigs")]
         n_sig_figs: Option<u32>,
@@ -69,7 +70,7 @@ pub enum SubscriptionRequest {
         mantissa: Option<u32>,
     },
     /// Trade updates
-    Trades { coin: String },
+    Trades { coin: Ustr },
     /// Order updates for a user
     OrderUpdates { user: String },
     /// User events (fills, funding, liquidations)
@@ -86,7 +87,7 @@ pub enum SubscriptionRequest {
     /// User ledger updates (non-funding)
     UserNonFundingLedgerUpdates { user: String },
     /// Active asset context
-    ActiveAssetCtx { coin: String },
+    ActiveAssetCtx { coin: Ustr },
     /// Active asset data for user
     ActiveAssetData { user: String, coin: String },
     /// TWAP slice fills
@@ -94,7 +95,7 @@ pub enum SubscriptionRequest {
     /// TWAP history
     UserTwapHistory { user: String },
     /// Best bid/offer updates
-    Bbo { coin: String },
+    Bbo { coin: Ustr },
 }
 
 /// Post request wrapper for info and action requests
@@ -309,7 +310,7 @@ pub struct CandleData {
     #[serde(rename = "T")]
     pub close_time: u64,
     /// Symbol
-    pub s: String,
+    pub s: Ustr,
     /// Interval
     pub i: String,
     /// Open price
@@ -329,7 +330,7 @@ pub struct CandleData {
 /// WebSocket book data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBookData {
-    pub coin: String,
+    pub coin: Ustr,
     pub levels: [Vec<WsLevelData>; 2], // [bids, asks]
     pub time: u64,
 }
@@ -348,7 +349,7 @@ pub struct WsLevelData {
 /// WebSocket trade data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTradeData {
-    pub coin: String,
+    pub coin: Ustr,
     pub side: String,
     pub px: String,
     pub sz: String,
@@ -370,7 +371,7 @@ pub struct WsOrderData {
 /// Basic order data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBasicOrderData {
-    pub coin: String,
+    pub coin: Ustr,
     pub side: String,
     #[serde(rename = "limitPx")]
     pub limit_px: String,
@@ -404,7 +405,7 @@ pub enum WsUserEventData {
 /// WebSocket fill data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsFillData {
-    pub coin: String,
+    pub coin: Ustr,
     pub px: String,
     pub sz: String,
     pub side: String,
@@ -440,7 +441,7 @@ pub struct FillLiquidationData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserFundingData {
     pub time: u64,
-    pub coin: String,
+    pub coin: Ustr,
     pub usdc: String,
     pub szi: String,
     #[serde(rename = "fundingRate")]
@@ -460,7 +461,7 @@ pub struct WsLiquidationData {
 /// WebSocket non-user cancel data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsNonUserCancelData {
-    pub coin: String,
+    pub coin: Ustr,
     pub oid: u64,
 }
 
@@ -486,8 +487,8 @@ pub struct WsUserFundingsData {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum WsActiveAssetCtxData {
-    Perp { coin: String, ctx: PerpsAssetCtx },
-    Spot { coin: String, ctx: SpotAssetCtx },
+    Perp { coin: Ustr, ctx: PerpsAssetCtx },
+    Spot { coin: Ustr, ctx: SpotAssetCtx },
 }
 
 /// Shared asset context fields
@@ -528,7 +529,7 @@ pub struct SpotAssetCtx {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsActiveAssetData {
     pub user: String,
-    pub coin: String,
+    pub coin: Ustr,
     pub leverage: LeverageData,
     #[serde(rename = "maxTradeSzs")]
     pub max_trade_szs: [f64; 2],
@@ -581,7 +582,7 @@ pub struct WsTwapHistoryData {
 /// TWAP state data
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwapStateData {
-    pub coin: String,
+    pub coin: Ustr,
     pub user: String,
     pub side: String,
     pub sz: f64,
@@ -606,7 +607,7 @@ pub struct TwapStatusData {
 /// WebSocket BBO data
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBboData {
-    pub coin: String,
+    pub coin: Ustr,
     pub time: u64,
     pub bbo: [Option<WsLevelData>; 2], // [bid, ask]
 }
@@ -625,7 +626,7 @@ mod tests {
     #[rstest]
     fn test_subscription_request_serialization() {
         let sub = SubscriptionRequest::L2Book {
-            coin: "BTC".to_string(),
+            coin: Ustr::from("BTC"),
             n_sig_figs: Some(5),
             mantissa: None,
         };
@@ -639,7 +640,7 @@ mod tests {
     fn test_hyperliquid_ws_request_serialization() {
         let req = HyperliquidWsRequest::Subscribe {
             subscription: SubscriptionRequest::Trades {
-                coin: "ETH".to_string(),
+                coin: Ustr::from("ETH"),
             },
         };
 

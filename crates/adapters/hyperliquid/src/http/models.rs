@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::common::enums::HyperliquidSide;
 
@@ -28,7 +29,7 @@ pub struct HyperliquidMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidAssetInfo {
     /// Asset name (e.g., "BTC").
-    pub name: String,
+    pub name: Ustr,
     /// Number of decimal places for size.
     #[serde(rename = "szDecimals")]
     pub sz_decimals: u32,
@@ -38,7 +39,7 @@ pub struct HyperliquidAssetInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidL2Book {
     /// Coin symbol.
-    pub coin: String,
+    pub coin: Ustr,
     /// Order book levels: [bids, asks].
     pub levels: Vec<Vec<HyperliquidLevel>>,
     /// Timestamp in milliseconds.
@@ -65,7 +66,7 @@ pub struct HyperliquidFills {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidFill {
     /// Coin symbol.
-    pub coin: String,
+    pub coin: Ustr,
     /// Fill price.
     pub px: String,
     /// Fill size.
@@ -115,7 +116,7 @@ pub struct HyperliquidOrderStatusEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidOrderInfo {
     /// Coin symbol.
-    pub coin: String,
+    pub coin: Ustr,
     /// Order side (buy/sell).
     pub side: HyperliquidSide,
     /// Limit price.

@@ -32,14 +32,14 @@ use crate::{
 
 /// Configuration for price/size precision when converting Hyperliquid data
 #[derive(Debug, Clone)]
-pub struct HyperliquidInstrumentMiniInfo {
+pub struct HyperliquidInstrumentInfo {
     /// Price precision (number of decimal places)
     pub price_decimals: u8,
     /// Size precision (number of decimal places)
     pub size_decimals: u8,
 }
 
-impl HyperliquidInstrumentMiniInfo {
+impl HyperliquidInstrumentInfo {
     /// Create config with specific precision
     pub fn new(price_decimals: u8, size_decimals: u8) -> Self {
         Self {
@@ -58,7 +58,7 @@ impl HyperliquidInstrumentMiniInfo {
 #[derive(Debug, Default)]
 pub struct HyperliquidDataConverter {
     /// Configuration by instrument symbol
-    configs: HashMap<Ustr, HyperliquidInstrumentMiniInfo>,
+    configs: HashMap<Ustr, HyperliquidInstrumentInfo>,
 }
 
 impl HyperliquidDataConverter {
@@ -68,16 +68,16 @@ impl HyperliquidDataConverter {
     }
 
     /// Configure precision for an instrument
-    pub fn configure_instrument(&mut self, symbol: &str, config: HyperliquidInstrumentMiniInfo) {
+    pub fn configure_instrument(&mut self, symbol: &str, config: HyperliquidInstrumentInfo) {
         self.configs.insert(Ustr::from(symbol), config);
     }
 
     /// Get configuration for an instrument, using default if not configured
-    fn get_config(&self, symbol: &str) -> HyperliquidInstrumentMiniInfo {
+    fn get_config(&self, symbol: &Ustr) -> HyperliquidInstrumentInfo {
         self.configs
-            .get(&Ustr::from(symbol))
+            .get(symbol)
             .cloned()
-            .unwrap_or_else(HyperliquidInstrumentMiniInfo::default_crypto)
+            .unwrap_or_else(HyperliquidInstrumentInfo::default_crypto)
     }
 
     /// Convert Hyperliquid HTTP L2Book snapshot to OrderBookDeltas
@@ -212,7 +212,7 @@ impl HyperliquidDataConverter {
         bid_removals: &[String],          // prices to remove
         ask_removals: &[String],          // prices to remove
     ) -> Result<OrderBookDeltas, ConversionError> {
-        let config = self.get_config(instrument_id.symbol.as_str());
+        let config = self.get_config(&instrument_id.symbol.inner());
         let mut deltas = Vec::new();
         let mut order_id = sequence * 1000; // Ensure unique order IDs
 
@@ -319,17 +319,17 @@ impl HyperliquidDataConverter {
 /// Convert HTTP level to price and size
 fn parse_level(
     level: &HyperliquidLevel,
-    config: &HyperliquidInstrumentMiniInfo,
+    inst_info: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
-    let price = parse_price(&level.px, config)?;
-    let size = parse_size(&level.sz, config)?;
+    let price = parse_price(&level.px, inst_info)?;
+    let size = parse_size(&level.sz, inst_info)?;
     Ok((price, size))
 }
 
 /// Convert WebSocket level to price and size
 fn parse_ws_level(
     level: &WsLevelData,
-    config: &HyperliquidInstrumentMiniInfo,
+    config: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
     let price = parse_price(&level.px, config)?;
     let size = parse_size(&level.sz, config)?;
@@ -339,7 +339,7 @@ fn parse_ws_level(
 /// Parse price string to Price with proper precision
 fn parse_price(
     price_str: &str,
-    _config: &HyperliquidInstrumentMiniInfo,
+    _config: &HyperliquidInstrumentInfo,
 ) -> Result<Price, ConversionError> {
     let _decimal = Decimal::from_str(price_str).map_err(|_| ConversionError::InvalidPrice {
         value: price_str.to_string(),
@@ -353,7 +353,7 @@ fn parse_price(
 /// Parse size string to Quantity with proper precision
 fn parse_size(
     size_str: &str,
-    _config: &HyperliquidInstrumentMiniInfo,
+    _config: &HyperliquidInstrumentInfo,
 ) -> Result<Quantity, ConversionError> {
     let _decimal = Decimal::from_str(size_str).map_err(|_| ConversionError::InvalidSize {
         value: size_str.to_string(),
@@ -576,7 +576,7 @@ mod tests {
 
     #[rstest]
     fn test_price_size_parsing() {
-        let config = HyperliquidInstrumentMiniInfo::new(2, 5);
+        let config = HyperliquidInstrumentInfo::new(2, 5);
 
         let price = parse_price("98450.50", &config).unwrap();
         assert_eq!(price.to_string(), "98450.50");
@@ -588,19 +588,19 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_instrument_mini_info() {
         // Test constructor with all fields
-        let config = HyperliquidInstrumentMiniInfo::new(4, 6);
+        let config = HyperliquidInstrumentInfo::new(4, 6);
         assert_eq!(config.price_decimals, 4);
         assert_eq!(config.size_decimals, 6);
 
         // Test default crypto configuration - assert all fields
-        let default_config = HyperliquidInstrumentMiniInfo::default_crypto();
+        let default_config = HyperliquidInstrumentInfo::default_crypto();
         assert_eq!(default_config.price_decimals, 2);
         assert_eq!(default_config.size_decimals, 5);
     }
 
     #[rstest]
     fn test_invalid_price_parsing() {
-        let config = HyperliquidInstrumentMiniInfo::new(2, 5);
+        let config = HyperliquidInstrumentInfo::new(2, 5);
 
         // Test invalid price parsing
         let result = parse_price("invalid", &config);
@@ -632,17 +632,19 @@ mod tests {
     #[rstest]
     fn test_configuration() {
         let mut converter = HyperliquidDataConverter::new();
-        let config = HyperliquidInstrumentMiniInfo::new(4, 8);
+        let config = HyperliquidInstrumentInfo::new(4, 8);
 
-        converter.configure_instrument("ETH", config.clone());
+        let asset = Ustr::from("ETH");
+
+        converter.configure_instrument(asset.as_str(), config.clone());
 
         // Assert all fields of the retrieved config
-        let retrieved_config = converter.get_config("ETH");
+        let retrieved_config = converter.get_config(&asset);
         assert_eq!(retrieved_config.price_decimals, 4);
         assert_eq!(retrieved_config.size_decimals, 8);
 
         // Assert all fields of the default config for unknown symbol
-        let default_config = converter.get_config("UNKNOWN");
+        let default_config = converter.get_config(&Ustr::from("UNKNOWN"));
         assert_eq!(default_config.price_decimals, 2);
         assert_eq!(default_config.size_decimals, 5);
 

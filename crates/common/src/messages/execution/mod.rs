@@ -62,6 +62,11 @@ impl TradingCommand {
         }
     }
 
+    /// Returns the instrument ID for the command.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the command is `QueryAccount` which does not have an instrument ID.
     #[must_use]
     pub const fn instrument_id(&self) -> InstrumentId {
         match self {
