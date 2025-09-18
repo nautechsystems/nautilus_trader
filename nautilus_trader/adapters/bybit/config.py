@@ -116,6 +116,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         - Zero balances (after rounding to instrument precision) are reported as FLAT.
         WARNING: This may lead to unintended liquidation of wallet assets if strategies
         are not designed to handle spot positions appropriately.
+    ignore_uncached_instrument_executions : bool, default False
+        If True, execution message for instruments not contained in the cache are ignored instead of raising an error.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -153,6 +155,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_ws_execution_fast: bool = False
     use_ws_trade_api: bool = False
     use_http_batch_api: bool = False
+    ignore_uncached_instrument_executions: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

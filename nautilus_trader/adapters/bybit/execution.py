@@ -197,6 +197,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._margin_mode = config.margin_mode
         self._position_mode = config.position_mode
         self._use_spot_position_reports = config.use_spot_position_reports
+        self._ignore_uncached_instrument_executions = config.ignore_uncached_instrument_executions
 
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
@@ -205,6 +206,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -1429,6 +1431,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_account_execution_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_execution_update.decode(raw)
+
             for trade in msg.data:
                 self._process_execution(trade)
         except Exception as e:
@@ -1437,12 +1440,13 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_account_execution_fast_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_execution_fast_update.decode(raw)
+
             for trade in msg.data:
                 self._process_execution(trade)
         except Exception as e:
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
-    def _process_execution(
+    def _process_execution(  # noqa: C901 (too complex)
         self,
         execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
     ) -> None:
@@ -1489,6 +1493,9 @@ class BybitExecutionClient(LiveExecutionClient):
 
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
+            if self._ignore_uncached_instrument_executions:
+                return
+
             raise ValueError(
                 f"Cannot handle trade event: instrument {instrument_id} not found",
             )
