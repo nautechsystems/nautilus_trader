@@ -20,6 +20,7 @@ None
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
+- Upgraded Cython to v3.1.4
 - Upgraded `datafusion` crate to v0.50.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
