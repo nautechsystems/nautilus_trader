@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -23,6 +23,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     http::models::{HyperliquidL2Book, HyperliquidLevel},
@@ -31,14 +32,14 @@ use crate::{
 
 /// Configuration for price/size precision when converting Hyperliquid data
 #[derive(Debug, Clone)]
-pub struct BookConfig {
+pub struct HyperliquidInstrumentMiniInfo {
     /// Price precision (number of decimal places)
     pub price_decimals: u8,
     /// Size precision (number of decimal places)
     pub size_decimals: u8,
 }
 
-impl BookConfig {
+impl HyperliquidInstrumentMiniInfo {
     /// Create config with specific precision
     pub fn new(price_decimals: u8, size_decimals: u8) -> Self {
         Self {
@@ -57,7 +58,7 @@ impl BookConfig {
 #[derive(Debug, Default)]
 pub struct HyperliquidDataConverter {
     /// Configuration by instrument symbol
-    configs: HashMap<String, BookConfig>,
+    configs: HashMap<Ustr, HyperliquidInstrumentMiniInfo>,
 }
 
 impl HyperliquidDataConverter {
@@ -67,16 +68,16 @@ impl HyperliquidDataConverter {
     }
 
     /// Configure precision for an instrument
-    pub fn configure_instrument(&mut self, symbol: &str, config: BookConfig) {
-        self.configs.insert(symbol.to_string(), config);
+    pub fn configure_instrument(&mut self, symbol: &str, config: HyperliquidInstrumentMiniInfo) {
+        self.configs.insert(Ustr::from(symbol), config);
     }
 
     /// Get configuration for an instrument, using default if not configured
-    fn get_config(&self, symbol: &str) -> BookConfig {
+    fn get_config(&self, symbol: &str) -> HyperliquidInstrumentMiniInfo {
         self.configs
-            .get(symbol)
+            .get(&Ustr::from(symbol))
             .cloned()
-            .unwrap_or_else(BookConfig::default_crypto)
+            .unwrap_or_else(HyperliquidInstrumentMiniInfo::default_crypto)
     }
 
     /// Convert Hyperliquid HTTP L2Book snapshot to OrderBookDeltas
@@ -102,7 +103,7 @@ impl HyperliquidDataConverter {
         // Convert bid levels
         for level in &data.levels[0] {
             let (price, size) = parse_level(level, &config)?;
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -120,7 +121,7 @@ impl HyperliquidDataConverter {
         // Convert ask levels
         for level in &data.levels[1] {
             let (price, size) = parse_level(level, &config)?;
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -161,7 +162,7 @@ impl HyperliquidDataConverter {
         // Convert bid levels
         for level in &data.levels[0] {
             let (price, size) = parse_ws_level(level, &config)?;
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -179,7 +180,7 @@ impl HyperliquidDataConverter {
         // Convert ask levels
         for level in &data.levels[1] {
             let (price, size) = parse_ws_level(level, &config)?;
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -202,7 +203,6 @@ impl HyperliquidDataConverter {
     #[allow(clippy::too_many_arguments)]
     pub fn convert_delta_update(
         &self,
-        symbol: &str,
         instrument_id: InstrumentId,
         sequence: u64,
         ts_event: UnixNanos,
@@ -212,7 +212,7 @@ impl HyperliquidDataConverter {
         bid_removals: &[String],          // prices to remove
         ask_removals: &[String],          // prices to remove
     ) -> Result<OrderBookDeltas, ConversionError> {
-        let config = self.get_config(symbol);
+        let config = self.get_config(instrument_id.symbol.as_str());
         let mut deltas = Vec::new();
         let mut order_id = sequence * 1000; // Ensure unique order IDs
 
@@ -253,7 +253,7 @@ impl HyperliquidDataConverter {
             let price = parse_price(price_str, &config)?;
             let size = parse_size(size_str, &config)?;
 
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -285,7 +285,7 @@ impl HyperliquidDataConverter {
             let price = parse_price(price_str, &config)?;
             let size = parse_size(size_str, &config)?;
 
-            if size.as_f64() > 0.0 {
+            if size.is_positive() {
                 let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
@@ -319,7 +319,7 @@ impl HyperliquidDataConverter {
 /// Convert HTTP level to price and size
 fn parse_level(
     level: &HyperliquidLevel,
-    config: &BookConfig,
+    config: &HyperliquidInstrumentMiniInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
     let price = parse_price(&level.px, config)?;
     let size = parse_size(&level.sz, config)?;
@@ -329,7 +329,7 @@ fn parse_level(
 /// Convert WebSocket level to price and size
 fn parse_ws_level(
     level: &WsLevelData,
-    config: &BookConfig,
+    config: &HyperliquidInstrumentMiniInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
     let price = parse_price(&level.px, config)?;
     let size = parse_size(&level.sz, config)?;
@@ -337,7 +337,10 @@ fn parse_ws_level(
 }
 
 /// Parse price string to Price with proper precision
-fn parse_price(price_str: &str, _config: &BookConfig) -> Result<Price, ConversionError> {
+fn parse_price(
+    price_str: &str,
+    _config: &HyperliquidInstrumentMiniInfo,
+) -> Result<Price, ConversionError> {
     let _decimal = Decimal::from_str(price_str).map_err(|_| ConversionError::InvalidPrice {
         value: price_str.to_string(),
     })?;
@@ -348,7 +351,10 @@ fn parse_price(price_str: &str, _config: &BookConfig) -> Result<Price, Conversio
 }
 
 /// Parse size string to Quantity with proper precision
-fn parse_size(size_str: &str, _config: &BookConfig) -> Result<Quantity, ConversionError> {
+fn parse_size(
+    size_str: &str,
+    _config: &HyperliquidInstrumentMiniInfo,
+) -> Result<Quantity, ConversionError> {
     let _decimal = Decimal::from_str(size_str).map_err(|_| ConversionError::InvalidSize {
         value: size_str.to_string(),
     })?;
@@ -375,7 +381,7 @@ impl From<anyhow::Error> for ConversionError {
     }
 }
 
-impl std::fmt::Display for ConversionError {
+impl Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConversionError::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
@@ -400,70 +406,25 @@ mod tests {
 
     use super::*;
 
+    fn load_test_data<T>(filename: &str) -> T
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let path = format!("test_data/{}", filename);
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
     fn test_instrument_id() -> InstrumentId {
         InstrumentId::from("BTC.HYPER")
     }
 
     fn sample_http_book() -> HyperliquidL2Book {
-        HyperliquidL2Book {
-            coin: "BTC".to_string(),
-            levels: vec![
-                vec![
-                    HyperliquidLevel {
-                        px: "50000.00".to_string(),
-                        sz: "1.5".to_string(),
-                    },
-                    HyperliquidLevel {
-                        px: "49999.50".to_string(),
-                        sz: "2.0".to_string(),
-                    },
-                ],
-                vec![
-                    HyperliquidLevel {
-                        px: "50001.00".to_string(),
-                        sz: "1.0".to_string(),
-                    },
-                    HyperliquidLevel {
-                        px: "50002.50".to_string(),
-                        sz: "3.0".to_string(),
-                    },
-                ],
-            ],
-            time: 1234567890,
-        }
+        load_test_data("http_l2_book_snapshot.json")
     }
 
     fn sample_ws_book() -> WsBookData {
-        WsBookData {
-            coin: "BTC".to_string(),
-            levels: [
-                vec![
-                    WsLevelData {
-                        px: "50000.00".to_string(),
-                        sz: "1.5".to_string(),
-                        n: 1,
-                    },
-                    WsLevelData {
-                        px: "49999.50".to_string(),
-                        sz: "2.0".to_string(),
-                        n: 2,
-                    },
-                ],
-                vec![
-                    WsLevelData {
-                        px: "50001.00".to_string(),
-                        sz: "1.0".to_string(),
-                        n: 1,
-                    },
-                    WsLevelData {
-                        px: "50002.50".to_string(),
-                        sz: "3.0".to_string(),
-                        n: 1,
-                    },
-                ],
-            ],
-            time: 1234567890,
-        }
+        load_test_data("ws_book_data.json")
     }
 
     #[rstest]
@@ -478,15 +439,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len(), 5); // 1 clear + 2 bids + 2 asks
+        assert_eq!(deltas.deltas.len(), 11); // 1 clear + 5 bids + 5 asks
 
-        // First delta should be Clear
-        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        // First delta should be Clear - assert all fields
+        let clear_delta = &deltas.deltas[0];
+        assert_eq!(clear_delta.instrument_id, instrument_id);
+        assert_eq!(clear_delta.action, BookAction::Clear);
+        assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(clear_delta.order.price, Price::from("0"));
+        assert_eq!(clear_delta.order.size, Quantity::from("0"));
+        assert_eq!(clear_delta.order.order_id, 0);
+        assert_eq!(clear_delta.flags, 0);
+        assert_eq!(clear_delta.sequence, 0);
+        assert_eq!(
+            clear_delta.ts_event,
+            UnixNanos::from(book_data.time * 1_000_000)
+        );
+        assert_eq!(clear_delta.ts_init, ts_init);
 
-        // Next deltas should be Add actions
+        // Second delta should be first bid Add - assert all fields
+        let first_bid_delta = &deltas.deltas[1];
+        assert_eq!(first_bid_delta.instrument_id, instrument_id);
+        assert_eq!(first_bid_delta.action, BookAction::Add);
+        assert_eq!(first_bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_bid_delta.order.price, Price::from("98450.50"));
+        assert_eq!(first_bid_delta.order.size, Quantity::from("2.5"));
+        assert_eq!(first_bid_delta.order.order_id, 1);
+        assert_eq!(first_bid_delta.flags, RecordFlag::F_LAST as u8);
+        assert_eq!(first_bid_delta.sequence, 1);
+        assert_eq!(
+            first_bid_delta.ts_event,
+            UnixNanos::from(book_data.time * 1_000_000)
+        );
+        assert_eq!(first_bid_delta.ts_init, ts_init);
+
+        // Verify remaining deltas are Add actions with positive sizes
         for delta in &deltas.deltas[1..] {
             assert_eq!(delta.action, BookAction::Add);
-            assert!(delta.order.size.as_f64() > 0.0);
+            assert!(delta.order.size.is_positive());
         }
     }
 
@@ -502,10 +492,39 @@ mod tests {
             .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len(), 5); // 1 clear + 2 bids + 2 asks
+        assert_eq!(deltas.deltas.len(), 11); // 1 clear + 5 bids + 5 asks
 
-        // First delta should be Clear
-        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        // First delta should be Clear - assert all fields
+        let clear_delta = &deltas.deltas[0];
+        assert_eq!(clear_delta.instrument_id, instrument_id);
+        assert_eq!(clear_delta.action, BookAction::Clear);
+        assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(clear_delta.order.price, Price::from("0"));
+        assert_eq!(clear_delta.order.size, Quantity::from("0"));
+        assert_eq!(clear_delta.order.order_id, 0);
+        assert_eq!(clear_delta.flags, 0);
+        assert_eq!(clear_delta.sequence, 0);
+        assert_eq!(
+            clear_delta.ts_event,
+            UnixNanos::from(book_data.time * 1_000_000)
+        );
+        assert_eq!(clear_delta.ts_init, ts_init);
+
+        // Second delta should be first bid Add - assert all fields
+        let first_bid_delta = &deltas.deltas[1];
+        assert_eq!(first_bid_delta.instrument_id, instrument_id);
+        assert_eq!(first_bid_delta.action, BookAction::Add);
+        assert_eq!(first_bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_bid_delta.order.price, Price::from("98450.50"));
+        assert_eq!(first_bid_delta.order.size, Quantity::from("2.5"));
+        assert_eq!(first_bid_delta.order.order_id, 1);
+        assert_eq!(first_bid_delta.flags, RecordFlag::F_LAST as u8);
+        assert_eq!(first_bid_delta.sequence, 1);
+        assert_eq!(
+            first_bid_delta.ts_event,
+            UnixNanos::from(book_data.time * 1_000_000)
+        );
+        assert_eq!(first_bid_delta.ts_init, ts_init);
     }
 
     #[rstest]
@@ -515,14 +534,13 @@ mod tests {
         let ts_event = UnixNanos::default();
         let ts_init = UnixNanos::default();
 
-        let bid_updates = vec![("50000.00".to_string(), "1.5".to_string())];
-        let ask_updates = vec![("50001.00".to_string(), "2.0".to_string())];
-        let bid_removals = vec!["49999.00".to_string()];
-        let ask_removals = vec!["50002.00".to_string()];
+        let bid_updates = vec![("98450.00".to_string(), "1.5".to_string())];
+        let ask_updates = vec![("98451.00".to_string(), "2.0".to_string())];
+        let bid_removals = vec!["98449.00".to_string()];
+        let ask_removals = vec!["98452.00".to_string()];
 
         let deltas = converter
             .convert_delta_update(
-                "BTC",
                 instrument_id,
                 123,
                 ts_event,
@@ -537,46 +555,95 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 4); // 2 removals + 2 updates
         assert_eq!(deltas.sequence, 123);
+
+        // First delta should be bid removal - assert all fields
+        let first_delta = &deltas.deltas[0];
+        assert_eq!(first_delta.instrument_id, instrument_id);
+        assert_eq!(first_delta.action, BookAction::Delete);
+        assert_eq!(first_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_delta.order.price, Price::from("98449.00"));
+        assert_eq!(first_delta.order.size, Quantity::from("0"));
+        assert_eq!(first_delta.order.order_id, 123000);
+        assert_eq!(first_delta.flags, 0);
+        assert_eq!(first_delta.sequence, 123);
+        assert_eq!(first_delta.ts_event, ts_event);
+        assert_eq!(first_delta.ts_init, ts_init);
     }
 
     #[rstest]
     fn test_price_size_parsing() {
-        let config = BookConfig::new(2, 5);
+        let config = HyperliquidInstrumentMiniInfo::new(2, 5);
 
-        let price = parse_price("50000.12", &config).unwrap();
-        assert_eq!(price.to_string(), "50000.12");
+        let price = parse_price("98450.50", &config).unwrap();
+        assert_eq!(price.to_string(), "98450.50");
 
-        let size = parse_size("1.23456", &config).unwrap();
-        assert_eq!(size.to_string(), "1.23456");
+        let size = parse_size("2.5", &config).unwrap();
+        assert_eq!(size.to_string(), "2.5");
+    }
+
+    #[rstest]
+    fn test_hyperliquid_instrument_mini_info() {
+        // Test constructor with all fields
+        let config = HyperliquidInstrumentMiniInfo::new(4, 6);
+        assert_eq!(config.price_decimals, 4);
+        assert_eq!(config.size_decimals, 6);
+
+        // Test default crypto configuration - assert all fields
+        let default_config = HyperliquidInstrumentMiniInfo::default_crypto();
+        assert_eq!(default_config.price_decimals, 2);
+        assert_eq!(default_config.size_decimals, 5);
     }
 
     #[rstest]
     fn test_invalid_price_parsing() {
-        let config = BookConfig::new(2, 5);
+        let config = HyperliquidInstrumentMiniInfo::new(2, 5);
 
+        // Test invalid price parsing
         let result = parse_price("invalid", &config);
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            ConversionError::InvalidPrice { value } => assert_eq!(value, "invalid"),
+            ConversionError::InvalidPrice { value } => {
+                assert_eq!(value, "invalid");
+                // Verify the error displays correctly
+                assert!(value.contains("invalid"));
+            }
             _ => panic!("Expected InvalidPrice error"),
+        }
+
+        // Test invalid size parsing
+        let size_result = parse_size("not_a_number", &config);
+        assert!(size_result.is_err());
+
+        match size_result.unwrap_err() {
+            ConversionError::InvalidSize { value } => {
+                assert_eq!(value, "not_a_number");
+                // Verify the error displays correctly
+                assert!(value.contains("not_a_number"));
+            }
+            _ => panic!("Expected InvalidSize error"),
         }
     }
 
     #[rstest]
     fn test_configuration() {
         let mut converter = HyperliquidDataConverter::new();
-        let config = BookConfig::new(4, 8);
+        let config = HyperliquidInstrumentMiniInfo::new(4, 8);
 
         converter.configure_instrument("ETH", config.clone());
 
+        // Assert all fields of the retrieved config
         let retrieved_config = converter.get_config("ETH");
         assert_eq!(retrieved_config.price_decimals, 4);
         assert_eq!(retrieved_config.size_decimals, 8);
 
-        // Unknown symbol should return default
+        // Assert all fields of the default config for unknown symbol
         let default_config = converter.get_config("UNKNOWN");
         assert_eq!(default_config.price_decimals, 2);
         assert_eq!(default_config.size_decimals, 5);
+
+        // Verify the original config object has expected values
+        assert_eq!(config.price_decimals, 4);
+        assert_eq!(config.size_decimals, 8);
     }
 }
