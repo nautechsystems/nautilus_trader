@@ -19,6 +19,7 @@ None
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
+- Implemented Hyperliquid L2 order book with tick-based pricing (#2967), thanks @nicolad
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded Cython to v3.1.4
@@ -34,6 +35,7 @@ None
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed safe encoded symbols (#2964), thanks @ms32035
+- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
 
 ### Documentation Updates
 - Improved dark and light themes for readability
