@@ -446,10 +446,12 @@ mod tests {
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
         assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
-        assert_eq!(clear_delta.order.price, Price::from("0"));
-        assert_eq!(clear_delta.order.size, Quantity::from("0"));
+        assert_eq!(clear_delta.order.price.raw, 0);
+        assert_eq!(clear_delta.order.price.precision, 0);
+        assert_eq!(clear_delta.order.size.raw, 0);
+        assert_eq!(clear_delta.order.size.precision, 0);
         assert_eq!(clear_delta.order.order_id, 0);
-        assert_eq!(clear_delta.flags, 0);
+        assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(clear_delta.sequence, 0);
         assert_eq!(
             clear_delta.ts_event,
@@ -499,10 +501,12 @@ mod tests {
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
         assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
-        assert_eq!(clear_delta.order.price, Price::from("0"));
-        assert_eq!(clear_delta.order.size, Quantity::from("0"));
+        assert_eq!(clear_delta.order.price.raw, 0);
+        assert_eq!(clear_delta.order.price.precision, 0);
+        assert_eq!(clear_delta.order.size.raw, 0);
+        assert_eq!(clear_delta.order.size.precision, 0);
         assert_eq!(clear_delta.order.order_id, 0);
-        assert_eq!(clear_delta.flags, 0);
+        assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(clear_delta.sequence, 0);
         assert_eq!(
             clear_delta.ts_event,
