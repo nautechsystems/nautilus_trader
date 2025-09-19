@@ -1382,6 +1382,177 @@ class TestReconciliationEdgeCases:
         assert order.filled_qty == Quantity.from_int(100)  # No inferred fill
 
     @pytest.mark.asyncio()
+    async def test_reconcile_order_report_with_missing_instrument_defers(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that order reconciliation is deferred when instrument is not in cache.
+
+        This prevents creating invalid orders without instrument information and allows
+        reconciliation to succeed later when the instrument is loaded.
+
+        """
+        # Arrange
+        # Instrument NOT added to cache
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,  # Instrument not in cache
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(report, trades=[])
+
+        # Assert
+        assert result is True  # Deferred, not failed
+        assert len(self.cache.orders()) == 0  # No order created
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_fill_report_preventing_overfill(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that fill reports that would cause overfill are rejected.
+
+        This prevents order corruption from excessive fills.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Create an order with quantity 100
+        order = TestExecStubs.limit_order(
+            instrument=instrument,
+            quantity=Quantity.from_int(100),
+        )
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Partially fill with 80
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            last_qty=Quantity.from_int(80),
+        )
+        order.apply(fill1)
+        self.cache.add_order(order)
+
+        # Create a fill report that would cause overfill (80 + 30 > 100)
+        overfill_report = FillReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("2"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(30),  # This would make total 110 > 100
+            last_px=Price.from_str("1.00001"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_fill_report(order, overfill_report, instrument)
+
+        # Assert
+        assert result is False
+        assert order.filled_qty == Quantity.from_int(80)  # Fill not applied
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_existing_order_with_missing_instrument_defers(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that reconciling an existing order is deferred when instrument is missing.
+
+        This tests the second instrument check for already cached orders.
+
+        """
+        # Arrange
+        # Create an order with an instrument NOT in cache
+        instrument = AUDUSD_SIM  # Not added to cache
+
+        # Create an order manually (bypassing normal flow)
+        order = TestExecStubs.limit_order(instrument=instrument)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Add order to cache without adding instrument
+        self.cache.add_order(order, position_id=None)
+
+        # Create a report for the existing order
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.CANCELED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_triggered=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(report, trades=[])
+
+        # Assert
+        assert result is True  # Deferred, not failed
+        assert order.status == OrderStatus.ACCEPTED  # Status unchanged
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_position_report_with_missing_instrument_defers(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that position reconciliation is deferred when instrument is missing.
+        """
+        # Arrange
+        # Instrument NOT added to cache
+        report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,  # Instrument not in cache
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(report)
+
+        # Assert
+        assert result is True  # Deferred, not failed
+        assert len(self.cache.positions()) == 0  # No position created
+
+    @pytest.mark.asyncio()
     async def test_internal_diff_order_not_filtered_when_filter_unclaimed_external_orders_enabled(
         self,
         live_exec_engine,

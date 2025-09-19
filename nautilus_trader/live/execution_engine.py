@@ -779,6 +779,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
             open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
             open_orders: list[Order] = self._cache.orders_open()
+
+            if self.reconciliation_instrument_ids:
+                open_orders = [
+                    o for o in open_orders if o.instrument_id in self.reconciliation_instrument_ids
+                ]
+                open_order_ids = {o.client_order_id for o in open_orders}
+
             open_len = len(open_orders)
             self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open in cache")
 
@@ -855,6 +862,14 @@ class LiveExecutionEngine(ExecutionEngine):
                         reconcile_reason = f"filled_qty mismatch: venue={report.filled_qty}, cache={order.filled_qty}"
 
                 if should_reconcile:
+                    # Apply include filter before reconciling
+                    if not self._consider_for_reconciliation(report.instrument_id):
+                        self._log.debug(
+                            f"Skipping reconciliation for {report.client_order_id!r}: "
+                            f"instrument {report.instrument_id} not in include list",
+                        )
+                        continue
+
                     self._log.debug(
                         f"Reconciling {report.client_order_id!r}: {reconcile_reason}",
                         LogColor.BLUE,
@@ -1312,6 +1327,14 @@ class LiveExecutionEngine(ExecutionEngine):
         order: Order = self._cache.order(client_order_id)
 
         if order is None:
+            instrument = self._cache.instrument(report.instrument_id)
+            if instrument is None:
+                self._log.debug(
+                    f"Cannot reconcile order for {client_order_id!r}: "
+                    f"instrument {report.instrument_id} not found",
+                )
+                return True  # Filtered instrument not loaded
+
             order = self._generate_order(report, is_external)
 
             if order is None:
@@ -1324,14 +1347,15 @@ class LiveExecutionEngine(ExecutionEngine):
             if self.manage_own_order_books and py_should_handle_own_book_order(order):
                 self._add_own_book_order(order)
 
-        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
-
-        if instrument is None:
-            self._log.error(
-                f"Cannot reconcile order for {order.client_order_id!r}: "
-                f"instrument {order.instrument_id} not found",
-            )
-            return False  # Failed
+        else:
+            # Order already exists, check instrument
+            instrument = self._cache.instrument(order.instrument_id)
+            if instrument is None:
+                self._log.debug(
+                    f"Cannot reconcile order for {order.client_order_id!r}: "
+                    f"instrument {order.instrument_id} not found",
+                )
+                return True  # Filtered instrument not loaded
 
         if report.order_status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
@@ -1460,13 +1484,12 @@ class LiveExecutionEngine(ExecutionEngine):
             return False  # Failed
 
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
-
         if instrument is None:
-            self._log.error(
+            self._log.debug(
                 f"Cannot reconcile order for {order.client_order_id!r}: "
                 f"instrument {order.instrument_id} not found",
             )
-            return False  # Failed
+            return True  # Filtered instrument not loaded
 
         return self._reconcile_fill_report(order, report, instrument)
 
@@ -1528,10 +1551,27 @@ class LiveExecutionEngine(ExecutionEngine):
 
             return True  # Fill already applied, continue with existing data
 
+        # Check if fill would cause overfill
+        potential_filled_qty = order.filled_qty + report.last_qty
+        if potential_filled_qty > order.quantity:
+            self._log.warning(
+                f"Rejecting fill that would cause overfill for {order.client_order_id!r}: "
+                f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
+                f"fill.last_qty={report.last_qty}, would result in filled_qty={potential_filled_qty}",
+            )
+            return False  # Reject fill to prevent overfill
+
         try:
             self._generate_order_filled(order, report, instrument)
         except InvalidStateTrigger as e:
             self._log.error(str(e))
+            return False
+        except ValueError as e:
+            # Handle the negative leaves_qty error
+            self._log.exception(
+                f"ValueError when applying fill to {order.client_order_id!r}: {e}",
+                e,
+            )
             return False
 
         # Check correct ordering of fills
@@ -1615,12 +1655,11 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"Reconciling NET position for {report.instrument_id}", LogColor.BLUE)
 
         instrument = self._cache.instrument(report.instrument_id)
-
         if instrument is None:
-            self._log.error(
+            self._log.debug(
                 f"Cannot reconcile position for {report.instrument_id}: instrument not found",
             )
-            return False  # Failed
+            return True  # Filtered instrument not loaded
 
         positions_open: list[Position] = self._cache.positions_open(
             venue=None,  # Faster query filtering
@@ -1641,7 +1680,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     f"Discrepancy for {report.instrument_id} position "
                     "when `generate_missing_orders` disabled, skipping further reconciliation",
                 )
-                return False
+                return True
 
             diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
             diff_quantity = Quantity(diff, instrument.size_precision)
@@ -1776,7 +1815,7 @@ class LiveExecutionEngine(ExecutionEngine):
             report=report,
             instrument=instrument,
         )
-        self._log.warning(f"Generated inferred {filled}")
+        self._log.info(f"Generated inferred {filled}", LogColor.BLUE)
         return filled
 
     def _generate_order(  # noqa: C901 (too complex)

@@ -42,8 +42,8 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 product_type = BybitProductType.LINEAR
 
 if product_type == BybitProductType.SPOT:
-    symbol = f"DOGEUSDT-{product_type.value.upper()}"
-    order_qty = Decimal("50")
+    symbol = f"ETHUSDT-{product_type.value.upper()}"
+    order_qty = Decimal("0.01")
     order_params = {"is_leverage": True}
     enable_sells = False
     use_spot_position_reports = True  # CAUTION: Experimental feature
@@ -53,10 +53,23 @@ elif product_type == BybitProductType.LINEAR:
     order_params = {}
     enable_sells = True
     use_spot_position_reports = False
+elif product_type == BybitProductType.INVERSE:
+    symbol = f"XRPUSD-{product_type.value.upper()}"
+    order_qty = Decimal("50")
+    enable_sells = True
+    use_spot_position_reports = False
 else:
     raise NotImplementedError
 
 instrument_id = InstrumentId.from_str(f"{symbol}.{BYBIT}")
+# instrument_id2 = InstrumentId.from_str(f"ETHUSDT-LINEAR.{BYBIT}")
+
+# Only reconcile these instruments
+reconciliation_instrument_ids = [instrument_id]
+# reconciliation_instrument_ids = [instrument_id, instrument_id2]
+
+product_types: list[BybitProductType] = [product_type]
+# product_types: list[BybitProductType] = [product_type, BybitProductType.LINEAR]
 
 # INVERSE
 # product_type = BybitProductType.INVERSE
@@ -75,7 +88,7 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=60,
-        reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
+        reconciliation_instrument_ids=reconciliation_instrument_ids,
         open_check_interval_secs=5.0,
         open_check_open_only=False,
         # filtered_client_order_ids=[ClientOrderId("1757985206157")],  # For demonstration
@@ -120,7 +133,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],  # Will load all instruments
+            product_types=product_types,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
             recv_window_ms=5_000,  # Default
@@ -134,7 +147,7 @@ config_node = TradingNodeConfig(
             base_url_ws_private=None,  # Override with custom endpoint
             use_ws_trade_api=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            product_types=product_types,
             use_spot_position_reports=use_spot_position_reports,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
