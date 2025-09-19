@@ -141,7 +141,6 @@ object_store = { version = "0.12.3", default-features = false, features = [
 # Keep parquet major version in line with datafusion
 parquet = { version = "56.1.0", default-features = false, features = ["arrow", "async"] }
 pem = "3.0.5"
-procfs = "0.18.0"
 pyo3 = { version = "0.26.0", default-features = false, features = [
   "chrono",
   "hashbrown",

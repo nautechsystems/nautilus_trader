@@ -112,6 +112,7 @@ dev = [
     "types-pytz>=2025.2,<2026.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",
+    "zizmor>=1.13.0",
 ]
 test = [
     "aiohttp==3.11.18,<4.0.0",  # Pinned to 3.11.8 for wheel compatibility on supported platforms
