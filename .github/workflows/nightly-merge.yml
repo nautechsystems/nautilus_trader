@@ -8,7 +8,7 @@ on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: '0 14 * * *' # At 14:00 UTC every day
+    - cron: '0 14 * * *' # At 14:00 UTC daily
 
 jobs:
   check-develop-status:
@@ -112,10 +112,10 @@ jobs:
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0  # Fetch all history for all tags and branches
 
-
       - name: Configure authenticated git remote
         run: |
           git remote set-url origin "https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}"
+
       - name: Configure Git user
         run: |
           git config --global user.name "nautilus-trader-bot"
