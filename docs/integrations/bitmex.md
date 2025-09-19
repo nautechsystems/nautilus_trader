@@ -60,7 +60,7 @@ NautilusTrader integration guide.
 | Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.         |
 | Futures           | ✓         | ✓       | Traditional fixed expiration contracts.         |
 | Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.  |
-| Options           | -         | -       | *Discontinued by BitMEX in April 2025*.         |
+| Options           | -         | -       | *Not available*.                                |
 
 :::info
 BitMEX discontinued their options products in April 2025 to focus on their core derivatives and spot offerings.
@@ -149,8 +149,7 @@ BitMEX UI. Use `XBTUSDT` instead of `XBT/USDT`.
 
 ## Order capability
 
-BitMEX currently supports a limited set of order types in this integration,
-with additional functionality being actively developed.
+The BitMEX integration supports the following order types and execution features.
 
 ### Order types
 
@@ -161,8 +160,8 @@ with additional functionality being actively developed.
 | `STOP_MARKET`          | ✓         | Supported (set `trigger_price`).              |
 | `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |
 | `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
-| `LIMIT_IF_TOUCHED`     | ✓         | Supported.                                    |
-| `TRAILING_STOP_MARKET` | -         | *Not yet implemented*.                        |
+| `LIMIT_IF_TOUCHED`     | ✓         | Supported (set `price` and `trigger_price`).  |
+| `TRAILING_STOP_MARKET` | -         | *Not implemented*.                            |
 
 ### Execution instructions
 
@@ -188,11 +187,11 @@ BitMEX supports multiple reference prices to evaluate stop/conditional order tri
 
 Choose the trigger type that matches your strategy and/or risk preferences.
 
-| Reference price | Nautilus `TriggerType` | BitMEX value  |  Notes                                                                |
-|-----------------|------------------------|---------------|-----------------------------------------------------------------------|
-| Last trade      | `LAST_PRICE`           | `LastPrice`   |  BitMEX default; triggers on the last traded price.                   |
-| Mark price      | `MARK_PRICE`           | `MarkPrice`   |  Recommended for many stop-loss use cases to reduce wick sensitivity. |
-| Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                 |
+| Reference price | Nautilus `TriggerType` | BitMEX value  | Notes                                                                           |
+|-----------------|------------------------|---------------|---------------------------------------------------------------------------------|
+| Last trade      | `LAST_PRICE`           | `LastPrice`   | BitMEX default; triggers on the last traded price.                              |
+| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop-loss use cases to reduce stop-outs from price spikes. |
+| Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                           |
 
 - If no `trigger_type` is provided, BitMEX uses its venue default (`LastPrice`).
 - These trigger references are exchange-evaluated; the order remains resting at the venue until triggered.
@@ -216,30 +215,38 @@ in `examples/live/bitmex/bitmex_exec_tester.py`.
 
 ### Time in force
 
-| Time in force | Supported | Notes                                         |
-|---------------|-----------|-----------------------------------------------|
-| `GTC`         | ✓         | Good Till Canceled (default).                 |
-| `GTD`         | -         | *Not yet implemented*.                        |
-| `FOK`         | ✓         | Fill or Kill - fills entire order or cancels. |
-| `IOC`         | ✓         | Immediate or Cancel - partial fill allowed.   |
+| Time in force  | Supported | Notes                                                     |
+|----------------|-----------|-----------------------------------------------------------|
+| `GTC`          | ✓         | Good Till Canceled (default).                             |
+| `GTD`          | -         | *Not supported by BitMEX*.                                |
+| `FOK`          | ✓         | Fill or Kill - fills entire order or cancels.             |
+| `IOC`          | ✓         | Immediate or Cancel - partial fill allowed.               |
+| `DAY`          | ✓         | Valid for the current trading day.                        |
+
+:::info
+BitMEX supports Day, GoodTillCancel, ImmediateOrCancel, and FillOrKill time-in-force values.
+Day orders expire at the end of the current trading day as defined by the venue; consult the [BitMEX API documentation](https://www.bitmex.com/api/explorer/) if you rely on daily expiry.
+:::
 
 ### Advanced order features
 
 | Feature            | Supported | Notes                                      |
 |--------------------|-----------|--------------------------------------------|
 | Order Modification | ✓         | Modify price, quantity, and trigger price. |
-| Bracket Orders     | -         | *Not yet implemented*.                     |
+| Bracket Orders     | -         | *Not implemented*.                         |
 | Iceberg Orders     | ✓         | Use `display_qty`.                         |
 
 ### Batch operations
 
 | Operation          | Supported | Notes                                      |
 |--------------------|-----------|--------------------------------------------|
-| Batch Submit       | -         | *Not yet implemented*.                     |
-| Batch Modify       | -         | *Not yet implemented*.                     |
-| Batch Cancel       | -         | *Not yet implemented*.                     |
+| Batch Submit       | -         | *Not implemented*.                         |
+| Batch Modify       | -         | *Not implemented*.                         |
+| Batch Cancel       | -         | *Not implemented*.                         |
 
-Low-level HTTP bulk endpoints exist (place/amend), but are not yet exposed via the execution client.
+:::note
+Low-level HTTP bulk endpoints exist (place/amend), but are not currently exposed via the execution client.
+:::
 
 ### Position management
 
@@ -390,8 +397,7 @@ mainnet_exec_config = BitmexExecClientConfig(
 - **Taker fees**: Positive fee for taking liquidity.
 - **Funding rates**: Apply to perpetual contracts every 8 hours.
 
-:::note
-We welcome contributions to extend the BitMEX adapter functionality. Please see our
-[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md)
-for more information.
+:::info
+For additional features or to contribute to the BitMEX adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
 :::
