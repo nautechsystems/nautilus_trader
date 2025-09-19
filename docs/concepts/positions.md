@@ -11,15 +11,15 @@ fundamental to tracking trading performance and risk, as they aggregate all fill
 instrument and continuously calculate metrics like unrealized PnL, average entry price, and total
 exposure.
 
-In NautilusTrader, positions are created automatically when orders are filled and are tracked
-throughout their lifecycle from opening through to closing. The platform supports both netting
+The system automatically creates positions when orders fill and tracks them
+from open to close. The platform supports both netting
 and hedging position management styles through its OMS (Order Management System) configuration.
 
 ## Position lifecycle
 
 ### Creation
 
-Positions are created (opened) when the first order fill event occurs for an instrument. The position tracks:
+The system opens a position on the first fill for an instrument. A position tracks:
 
 - Opening order and fill details.
 - Entry side (`LONG` or `SHORT`).
@@ -57,7 +57,7 @@ process handles both sides of trading activity:
 
 ### Buy fills
 
-When a BUY order is filled:
+When a BUY order fills:
 
 - Increases long exposure or reduces short exposure.
 - Updates average entry price for opening trades.
@@ -66,7 +66,7 @@ When a BUY order is filled:
 
 ### Sell fills
 
-When a SELL order is filled:
+When a SELL order fills:
 
 - Increases short exposure or reduces long exposure.
 - Updates average entry price for opening trades.

@@ -18,7 +18,7 @@ Throughout the documentation, the term *"Nautilus system boundary"* refers to op
 the runtime of a single Nautilus node (also known as a "trader instance").
 :::
 
-## Design Philosophy
+## Design philosophy
 
 The major architectural techniques and design patterns employed by NautilusTrader are:
 
@@ -43,7 +43,7 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 - Maintainability
 - Deployability
 
-## System Architecture
+## System architecture
 
 The NautilusTrader codebase is actually both a framework for composing trading
  systems, and a set of default system implementations which can operate in various

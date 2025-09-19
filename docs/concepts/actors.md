@@ -11,10 +11,10 @@ order management methods.
 
 **Key capabilities**:
 
-- Event subscription and handling
-- Market data reception
-- State management
-- System interaction primitives
+- Event subscription and handling.
+- Market data reception.
+- State management.
+- System interaction primitives.
 
 ## Basic example
 

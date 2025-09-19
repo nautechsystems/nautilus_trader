@@ -228,7 +228,7 @@ While maker/taker fees are common in cryptocurrency markets, traditional exchang
 employ other fee structures, such as per-contract commissions.
 NautilusTrader supports multiple commission models to accommodate diverse fee structures across different markets.
 
-### Built-in Fee Models
+### Built-in fee models
 
 The framework provides two built-in fee model implementations:
 
@@ -236,7 +236,7 @@ The framework provides two built-in fee model implementations:
     calculated as a percentage of the trade value.
 2. `FixedFeeModel`: Applies a fixed commission per trade, regardless of the trade size.
 
-### Creating Custom Fee Models
+### Creating custom fee models
 
 While the built-in fee models cover common scenarios, you might encounter situations requiring specific commission structures.
 NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
@@ -276,7 +276,7 @@ These parameter names follow NautilusTrader's Cython naming conventions, where t
 While this might seem verbose compared to typical Python naming conventions, it ensures type safety and consistency
 with the framework's Cython codebase.
 
-### Using Fee Models in Practice
+### Using fee models in practice
 
 To use any fee model in your trading system, whether built-in or custom, you specify it when setting up the venue.
 Here's an example using the custom per-contract fee model:
@@ -307,7 +307,7 @@ included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user
 at runtime by calling the `.info` property.
 
-## Synthetic Instruments
+## Synthetic instruments
 
 The platform supports creating customized synthetic instruments, which can generate synthetic quote
 and trades. These are useful for:

@@ -18,7 +18,7 @@ The Cache serves multiple key purposes:
    - Any user-defined objects or data can be stored in the `Cache` for later use.
    - Enables data sharing between different strategies.
 
-## How Cache works
+## How caching works
 
 **Built-in types**:
 
@@ -145,7 +145,7 @@ config = CacheConfig(
 )
 ```
 
-## Using the Cache
+## Using the cache
 
 ### Accessing Market data
 
@@ -429,7 +429,7 @@ For more complex use cases, the `Cache` can store custom data objects that inher
 The `Cache` is not designed to be a full database replacement. For large datasets or complex querying needs, consider using a dedicated database system.
 :::
 
-## Best Practices and Common Questions
+## Best practices and common questions
 
 ### Cache vs. Portfolio Usage
 

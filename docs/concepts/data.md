@@ -65,7 +65,7 @@ price and volume information over a specific period, including:
 - Closing price
 - Traded volume (or ticks as a volume proxy)
 
-These bars are generated using an *aggregation method*, which groups data based on specific criteria.
+The system generates bars using an *aggregation method* that groups data by specific criteria.
 
 ### Purpose of data aggregation
 
@@ -389,7 +389,7 @@ The dual timestamp system enables latency analysis within the platform:
 
 #### Live trading environment
 
-- Data is processed as it arrives, ensuring minimal latency and allowing for real-time decision-making.
+- The system processes data as it arrives to minimize latency and enable real-time decisions.
   - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
   - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
 - We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
@@ -549,8 +549,8 @@ The `NAUTILUS_PATH` environment variable should point to the **root** directory 
 
 For example:
 
-- If `NAUTILUS_PATH=/home/user/trading_data`
-- Then the catalog will be located at `/home/user/trading_data/catalog`
+- If `NAUTILUS_PATH=/home/user/trading_data`.
+- Then the catalog will be located at `/home/user/trading_data/catalog`.
 
 This is a common pattern when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
 :::
@@ -1350,7 +1350,7 @@ This will create a `trades.parquet` file with the new schema.
 - Verify data integrity after migration.
 - Perform migrations in a staging environment before applying them to production data.
 
-## Custom Data
+## Custom data
 
 Due to the modular nature of the Nautilus design, it is possible to set up systems
 with very flexible data streams, including custom user-defined data types. This

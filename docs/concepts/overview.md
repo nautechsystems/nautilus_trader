@@ -55,7 +55,7 @@ have all been written entirely in [Rust](https://www.rust-lang.org/) or [Cython]
 This means we're using the right tools for the job, where systems programming languages compile performant binaries,
 with CPython C extension modules then able to offer a Python-native environment, suitable for professional quantitative traders and trading firms.
 
-## Use Cases
+## Use cases
 
 There are three main use cases for this software package:
 
@@ -80,7 +80,7 @@ include the application and infrastructure layers.
 The platform is designed to be easily integrated into a larger distributed system.
 To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
-## Common Core
+## Common core
 
 The common system core is utilized by all node [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
 User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed consistently across these environment contexts.
@@ -90,7 +90,7 @@ User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed cons
 Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
 a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the data through the system with nanosecond resolution.
 
-## Live Trading
+## Live trading
 
 A `TradingNode` can ingest data and events from multiple data and execution clients.
 Live deployments can use both demo/paper trading accounts, or real accounts.
@@ -100,7 +100,7 @@ The platform supports both demo/paper trading accounts and real accounts. High p
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html),
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
-## Domain Model
+## Domain model
 
 The platform features a comprehensive trading domain model that includes various value types such as
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects,
@@ -142,7 +142,7 @@ Example: `2d89666b-1a1e-4a75-b193-4eb3b454c757`
 
 For the complete specification, refer to [RFC 4122: A Universally Unique IDentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
 
-## Data Types
+## Data types
 
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 
@@ -163,7 +163,7 @@ The following `PriceType` options can be used for bar aggregations:
 - `MID`
 - `LAST`
 
-## Bar Aggregations
+## Bar aggregations
 
 The following `BarAggregation` methods are available:
 
@@ -189,7 +189,7 @@ The following `BarAggregation` methods are available:
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
 This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
-## Account Types
+## Account types
 
 The following account types are available for both live and backtest environments:
 
@@ -199,7 +199,7 @@ The following account types are available for both live and backtest environment
 - `Margin` multi-currency
 - `Betting` single-currency
 
-## Order Types
+## Order types
 
 The following order types are available (when possible on a venue):
 
@@ -213,7 +213,7 @@ The following order types are available (when possible on a venue):
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
 
-## Value Types
+## Value types
 
 The following value types are backed by either 128-bit or 64-bit raw integer values, depending on the
 [precision mode](../getting_started/installation.md#precision-mode) used during compilation.
