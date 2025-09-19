@@ -34,7 +34,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, bar::BarType},
-    identifiers::{AccountId, InstrumentId},
+    enums::OrderType,
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -83,9 +84,10 @@ pub struct BitmexWebSocketClient {
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    account_id: AccountId,
     subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
-    account_id: AccountId,
+    order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
 }
 
 impl BitmexWebSocketClient {
@@ -117,9 +119,10 @@ impl BitmexWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
+            account_id,
             subscriptions: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
-            account_id,
+            order_type_cache: Arc::new(DashMap::new()),
         })
     }
 
@@ -203,15 +206,16 @@ impl BitmexWebSocketClient {
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
 
-        let instruments_cache = self.instruments_cache.clone();
         let account_id = self.account_id;
         let inner_client = self.inner.clone();
         let credential = self.credential.clone();
         let subscriptions = self.subscriptions.clone();
+        let instruments_cache = self.instruments_cache.clone();
+        let order_type_cache = self.order_type_cache.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler =
-                BitmexWsMessageHandler::new(reader, signal, tx, instruments_cache, account_id);
+                BitmexWsMessageHandler::new(reader, signal, tx, account_id, instruments_cache, order_type_cache);
 
             // Run message processing with reconnection handling
             loop {
@@ -1233,9 +1237,10 @@ impl BitmexFeedHandler {
 struct BitmexWsMessageHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     #[allow(dead_code)] // May be needed for future account-specific processing
     account_id: AccountId,
+    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
 }
 
 impl BitmexWsMessageHandler {
@@ -1244,15 +1249,17 @@ impl BitmexWsMessageHandler {
         receiver: tokio::sync::mpsc::UnboundedReceiver<Message>,
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-        instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
         account_id: AccountId,
+        instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+        order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     ) -> Self {
         let handler = BitmexFeedHandler::new(receiver, signal);
         Self {
             handler,
             tx,
-            instruments_cache,
             account_id,
+            instruments_cache,
+            order_type_cache,
         }
     }
 
@@ -1403,7 +1410,23 @@ impl BitmexWsMessageHandler {
                                     OrderData::Full(order_msg) => {
                                         let price_precision =
                                             self.get_price_precision(&order_msg.symbol);
-                                        match parse_order_msg(&order_msg, price_precision) {
+
+                                        // Cache the order type if we have both client order ID and order type
+                                        if let (Some(client_order_id), Some(ord_type)) =
+                                            (&order_msg.cl_ord_id, &order_msg.ord_type)
+                                        {
+                                            let client_order_id =
+                                                ClientOrderId::new(client_order_id);
+                                            let order_type: OrderType = (*ord_type).into();
+                                            self.order_type_cache
+                                                .insert(client_order_id, order_type);
+                                        }
+
+                                        match parse_order_msg(
+                                            &order_msg,
+                                            price_precision,
+                                            &self.order_type_cache,
+                                        ) {
                                             Ok(report) => reports.push(report),
                                             Err(e) => {
                                                 tracing::error!(

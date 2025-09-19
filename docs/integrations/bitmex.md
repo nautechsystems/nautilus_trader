@@ -1,9 +1,5 @@
 # BitMEX
 
-:::warning
-The BitMEX integration is still under active development.
-:::
-
 Founded in 2014, BitMEX (Bitcoin Mercantile Exchange) is a cryptocurrency derivatives
 trading platform offering spot, perpetual contracts, traditional futures, and other
 advanced trading products. This integration supports live market data ingest and order
@@ -180,6 +176,43 @@ Post-only orders that would cross the spread are canceled by BitMEX rather than 
 integration surfaces these as rejections with `due_post_only=True` so strategies can handle them
 consistently.
 :::
+
+### Trigger types
+
+BitMEX supports multiple reference prices to evaluate stop/conditional order triggers for:
+
+- `STOP_MARKET`
+- `STOP_LIMIT`
+- `MARKET_IF_TOUCHED`
+- `LIMIT_IF_TOUCHED`
+
+Choose the trigger type that matches your strategy and/or risk preferences.
+
+| Reference price | Nautilus `TriggerType` | BitMEX value  |  Notes                                                                |
+|-----------------|------------------------|---------------|-----------------------------------------------------------------------|
+| Last trade      | `LAST_PRICE`           | `LastPrice`   |  BitMEX default; triggers on the last traded price.                   |
+| Mark price      | `MARK_PRICE`           | `MarkPrice`   |  Recommended for many stop-loss use cases to reduce wick sensitivity. |
+| Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                 |
+
+- If no `trigger_type` is provided, BitMEX uses its venue default (`LastPrice`).
+- These trigger references are exchange-evaluated; the order remains resting at the venue until triggered.
+
+**Example**:
+
+```python
+from nautilus_trader.model.enums import TriggerType
+
+order = self.order_factory.stop_market(
+    instrument_id=instrument_id,
+    order_side=order_side,
+    quantity=qty,
+    trigger_price=trigger,
+    trigger_type=TriggerType.MARK_PRICE,  # Use BitMEX Mark Price as reference
+)
+```
+
+`ExecTester` example configuration also demonstrates setting `stop_trigger_type=TriggerType.MARK_PRICE`
+in `examples/live/bitmex/bitmex_exec_tester.py`.
 
 ### Time in force
 

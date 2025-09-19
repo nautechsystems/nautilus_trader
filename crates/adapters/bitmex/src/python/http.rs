@@ -15,7 +15,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -314,6 +314,7 @@ impl BitmexHttpClient {
         time_in_force,
         price = None,
         trigger_price = None,
+        trigger_type = None,
         display_qty = None,
         post_only = false,
         reduce_only = false
@@ -330,6 +331,7 @@ impl BitmexHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
@@ -347,6 +349,7 @@ impl BitmexHttpClient {
                     time_in_force,
                     price,
                     trigger_price,
+                    trigger_type,
                     display_qty,
                     post_only,
                     reduce_only,

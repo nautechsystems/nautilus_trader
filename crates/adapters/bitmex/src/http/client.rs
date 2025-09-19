@@ -38,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::TradeTick,
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
@@ -1060,6 +1060,7 @@ impl BitmexHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
@@ -1104,6 +1105,17 @@ impl BitmexHttpClient {
 
         if reduce_only {
             exec_inst.push(BitmexExecInstruction::ReduceOnly);
+        }
+
+        if trigger_price.is_some()
+            && let Some(trigger_type) = trigger_type
+        {
+            match trigger_type {
+                TriggerType::LastPrice => exec_inst.push(BitmexExecInstruction::LastPrice),
+                TriggerType::MarkPrice => exec_inst.push(BitmexExecInstruction::MarkPrice),
+                TriggerType::IndexPrice => exec_inst.push(BitmexExecInstruction::IndexPrice),
+                _ => {} // Use BitMEX default (LastPrice) for other trigger types
+            }
         }
 
         if !exec_inst.is_empty() {

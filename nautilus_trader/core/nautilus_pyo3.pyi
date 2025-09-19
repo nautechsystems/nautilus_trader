@@ -5982,6 +5982,7 @@ class CoinbaseIntxHttpClient:
         expire_time: dt.datetime | None = None,
         price: Price | None = None,
         trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
         post_only: bool | None = None,
         reduce_only: bool | None = None,
     ) -> OrderStatusReport: ...
@@ -6406,6 +6407,7 @@ class BitmexHttpClient:
         time_in_force: TimeInForce,
         price: Price | None = None,
         trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
         display_qty: Quantity | None = None,
         post_only: bool = False,
         reduce_only: bool = False,

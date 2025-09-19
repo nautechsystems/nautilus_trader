@@ -16,6 +16,7 @@
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
+use dashmap::DashMap;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -25,7 +26,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
-        PriceType, RecordFlag, TimeInForce,
+        PriceType, RecordFlag, TimeInForce, TriggerType,
     },
     events::{OrderUpdated, account::state::AccountState},
     identifiers::{
@@ -415,17 +416,34 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
 pub fn parse_order_msg(
     msg: &BitmexOrderMsg,
     price_precision: u8,
+    order_type_cache: &DashMap<ClientOrderId, OrderType>,
 ) -> anyhow::Result<OrderStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let common_side: BitmexSide = msg.side.into();
     let order_side: OrderSide = common_side.into();
-    let order_type: OrderType = msg.ord_type.into();
-    let time_in_force: TimeInForce = msg
-        .time_in_force
-        .try_into()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let order_type: OrderType = if let Some(ord_type) = msg.ord_type {
+        ord_type.into()
+    } else if let Some(client_order_id) = msg.cl_ord_id {
+        let client_order_id = ClientOrderId::new(client_order_id);
+        order_type_cache
+            .get(&client_order_id)
+            .map(|entry| *entry.value())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Order type not found in cache for client_order_id: {client_order_id} (order missing ord_type field)",
+                )
+            })?
+    } else {
+        anyhow::bail!("Order missing both ord_type and cl_ord_id");
+    };
+
+    let time_in_force: TimeInForce = match msg.time_in_force {
+        Some(tif) => tif.try_into().map_err(|e| anyhow::anyhow!("{e}"))?,
+        None => TimeInForce::Gtc,
+    };
     let order_status: OrderStatus = msg.ord_status.into();
     let quantity = Quantity::from(msg.order_qty);
     let filled_qty = Quantity::from(msg.cum_qty);
@@ -469,18 +487,37 @@ pub fn parse_order_msg(
     }
 
     if let Some(trigger_price) = msg.stop_px {
-        report = report.with_trigger_price(Price::new(trigger_price, price_precision));
+        let trigger_type = if let Some(exec_insts) = &msg.exec_inst {
+            // Check if any trigger type instruction is present
+            if exec_insts.contains(&BitmexExecInstruction::MarkPrice) {
+                TriggerType::MarkPrice
+            } else if exec_insts.contains(&BitmexExecInstruction::IndexPrice) {
+                TriggerType::IndexPrice
+            } else if exec_insts.contains(&BitmexExecInstruction::LastPrice) {
+                TriggerType::LastPrice
+            } else {
+                TriggerType::Default
+            }
+        } else {
+            TriggerType::Default // BitMEX defaults to LastPrice when not specified
+        };
+
+        report = report
+            .with_trigger_price(Price::new(trigger_price, price_precision))
+            .with_trigger_type(trigger_type);
     }
 
-    if let Some(exec_inst) = &msg.exec_inst {
-        match exec_inst {
-            BitmexExecInstruction::ParticipateDoNotInitiate => {
-                report = report.with_post_only(true);
+    if let Some(exec_insts) = &msg.exec_inst {
+        for exec_inst in exec_insts {
+            match exec_inst {
+                BitmexExecInstruction::ParticipateDoNotInitiate => {
+                    report = report.with_post_only(true);
+                }
+                BitmexExecInstruction::ReduceOnly => {
+                    report = report.with_reduce_only(true);
+                }
+                _ => {}
             }
-            BitmexExecInstruction::ReduceOnly => {
-                report = report.with_reduce_only(true);
-            }
-            _ => {}
         }
     }
 
@@ -994,7 +1031,8 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
-        let report = parse_order_msg(&msg, 1).unwrap();
+        let cache = dashmap::DashMap::new();
+        let report = parse_order_msg(&msg, 1, &cache).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));

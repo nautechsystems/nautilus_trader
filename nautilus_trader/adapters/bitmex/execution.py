@@ -53,6 +53,7 @@ from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
+from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -374,6 +375,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             if order.has_trigger_price
             else None
         )
+        pyo3_trigger_type = (
+            trigger_type_to_pyo3(order.trigger_type)
+            if order.has_trigger_price and hasattr(order, "trigger_type")
+            else None
+        )
         pyo3_display_qty = (
             nautilus_pyo3.Quantity.from_str(str(order.display_qty))
             if hasattr(order, "display_qty") and order.display_qty
@@ -390,6 +396,7 @@ class BitmexExecutionClient(LiveExecutionClient):
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
+                trigger_type=pyo3_trigger_type,
                 display_qty=pyo3_display_qty,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,

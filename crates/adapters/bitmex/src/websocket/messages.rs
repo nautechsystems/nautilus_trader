@@ -34,6 +34,43 @@ use crate::common::enums::{
     BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce,
 };
 
+/// Custom deserializer for comma-separated `ExecInstruction` values.
+fn deserialize_exec_instructions<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<BitmexExecInstruction>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    match s {
+        None => Ok(None),
+        Some(ref s) if s.is_empty() => Ok(None),
+        Some(s) => {
+            let instructions: Result<Vec<BitmexExecInstruction>, _> = s
+                .split(',')
+                .map(|inst| {
+                    let trimmed = inst.trim();
+                    match trimmed {
+                        "ParticipateDoNotInitiate" => {
+                            Ok(BitmexExecInstruction::ParticipateDoNotInitiate)
+                        }
+                        "AllOrNone" => Ok(BitmexExecInstruction::AllOrNone),
+                        "MarkPrice" => Ok(BitmexExecInstruction::MarkPrice),
+                        "IndexPrice" => Ok(BitmexExecInstruction::IndexPrice),
+                        "LastPrice" => Ok(BitmexExecInstruction::LastPrice),
+                        "Close" => Ok(BitmexExecInstruction::Close),
+                        "ReduceOnly" => Ok(BitmexExecInstruction::ReduceOnly),
+                        "Fixed" => Ok(BitmexExecInstruction::Fixed),
+                        "" => Ok(BitmexExecInstruction::Unknown),
+                        _ => Err(format!("Unknown exec instruction: {trimmed}")),
+                    }
+                })
+                .collect();
+            instructions.map(Some).map_err(de::Error::custom)
+        }
+    }
+}
+
 /// BitMEX WebSocket authentication message.
 ///
 /// The args array contains [api_key, expires/nonce, signature].
@@ -391,9 +428,10 @@ pub struct BitmexOrderMsg {
     pub peg_price_type: Option<BitmexPegPriceType>,
     pub currency: Ustr,
     pub settl_currency: Ustr,
-    pub ord_type: BitmexOrderType,
-    pub time_in_force: BitmexTimeInForce,
-    pub exec_inst: Option<BitmexExecInstruction>,
+    pub ord_type: Option<BitmexOrderType>,
+    pub time_in_force: Option<BitmexTimeInForce>,
+    #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+    pub exec_inst: Option<Vec<BitmexExecInstruction>>,
     pub contingency_type: Option<BitmexContingencyType>,
     pub ord_status: BitmexOrderStatus,
     pub triggered: Option<Ustr>,
@@ -470,7 +508,8 @@ pub struct BitmexExecutionMsg {
     pub exec_type: Option<BitmexExecType>,
     pub ord_type: Option<BitmexOrderType>,
     pub time_in_force: Option<BitmexTimeInForce>,
-    pub exec_inst: Option<BitmexExecInstruction>,
+    #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+    pub exec_inst: Option<Vec<BitmexExecInstruction>>,
     pub contingency_type: Option<BitmexContingencyType>,
     pub ex_destination: Option<Ustr>,
     pub ord_status: Option<BitmexOrderStatus>,

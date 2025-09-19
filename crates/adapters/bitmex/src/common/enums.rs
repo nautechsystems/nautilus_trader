@@ -506,6 +506,8 @@ pub enum BitmexExecType {
     Bankruptcy,
     /// Trial fill (testnet only).
     TrialFill,
+    /// Stop/trigger order activated by system.
+    TriggeredOrActivatedBySystem,
 }
 
 /// Indicates whether the execution was maker or taker.
@@ -776,6 +778,38 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<BitmexSide>(r#""sell""#).unwrap(),
             BitmexSide::Sell
+        );
+    }
+
+    #[rstest]
+    fn test_bitmex_order_type_deserialization() {
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Market""#).unwrap(),
+            BitmexOrderType::Market
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Limit""#).unwrap(),
+            BitmexOrderType::Limit
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Stop""#).unwrap(),
+            BitmexOrderType::Stop
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""StopLimit""#).unwrap(),
+            BitmexOrderType::StopLimit
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""MarketIfTouched""#).unwrap(),
+            BitmexOrderType::MarketIfTouched
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""LimitIfTouched""#).unwrap(),
+            BitmexOrderType::LimitIfTouched
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Pegged""#).unwrap(),
+            BitmexOrderType::Pegged
         );
     }
 
