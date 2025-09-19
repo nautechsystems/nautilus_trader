@@ -23,7 +23,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -58,7 +58,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -67,7 +67,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -85,7 +85,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -150,7 +150,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -159,7 +159,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -177,7 +177,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -246,7 +246,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -304,7 +304,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -364,7 +364,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -416,7 +416,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -471,7 +471,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Get uv version
         shell: bash
@@ -497,11 +497,12 @@ jobs:
         # https://cli.github.com/manual/gh_release_upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: |
           set +e
           success=false
           for i in {1..5}; do
-            gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
+            gh release upload "$TAG_NAME" dist/*.whl --clobber --repo "$GITHUB_REPOSITORY"
             status=$?
             if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
           done
@@ -558,7 +559,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Common setup
@@ -620,7 +621,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -654,11 +655,13 @@ jobs:
         # https://cli.github.com/manual/gh_release_upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ASSET_PATH: ${{ env.ASSET_PATH }}
         run: |
           set +e
           success=false
           for i in {1..5}; do
-            gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
+            gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber --repo "$GITHUB_REPOSITORY"
             status=$?
             if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
           done

@@ -64,6 +64,17 @@ repos:
         types: [text]
         pass_filenames: false
 
+      - id: zizmor
+        name: zizmor (audit GitHub actions)
+        description: Audit GitHub Actions workflows
+        language: python
+        additional_dependencies: [zizmor]
+        entry: zizmor
+        files: '^\.github/workflows/.*\.ya?ml$'
+        pass_filenames: false
+        args: ["--no-online-audits", "--min-severity", "medium", ".github/workflows"]
+
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################

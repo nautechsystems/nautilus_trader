@@ -5,6 +5,8 @@ on:
 
 jobs:
   copilot-setup-steps:
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
@@ -16,7 +18,7 @@ jobs:
       COPILOT_AGENT_FIREWALL_ALLOW_LIST: "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -25,7 +27,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -43,9 +45,9 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: 3.13
+          python-version: "3.13"

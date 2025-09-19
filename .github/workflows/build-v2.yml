@@ -30,7 +30,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -59,7 +59,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -68,7 +68,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -89,7 +89,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -162,7 +162,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
 
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

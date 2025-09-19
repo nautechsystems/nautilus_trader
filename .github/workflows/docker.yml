@@ -57,7 +57,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: ${{ github.event_name != 'pull_request' }}
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Set up QEMU
@@ -93,7 +93,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_trader_nightly.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
@@ -107,7 +110,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_trader_latest.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (nightly)
         if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
@@ -123,7 +129,10 @@ jobs:
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
       - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
@@ -138,6 +147,8 @@ jobs:
           cache-to: type=gha
           build-args: |
             GIT_TAG=latest
-
       - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
