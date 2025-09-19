@@ -44,6 +44,7 @@ BitMEX provides extensive documentation for users:
 
 - [BitMEX API Explorer](https://www.bitmex.com/app/restAPI) - Interactive API documentation.
 - [BitMEX API Documentation](https://www.bitmex.com/app/apiOverview) - Complete API reference.
+- [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) - Official exchange rules and regulations.
 - [Contract Guides](https://www.bitmex.com/app/contract) - Detailed contract specifications.
 - [Spot Trading Guide](https://www.bitmex.com/app/spotGuide) - Spot trading overview.
 - [Perpetual Contracts Guide](https://www.bitmex.com/app/perpetualContractsGuide) - Perpetual swaps explained.
@@ -63,7 +64,7 @@ NautilusTrader integration guide.
 | Options           | -         | -       | *Not available*.                                |
 
 :::info
-BitMEX discontinued their options products in April 2025 to focus on their core derivatives and spot offerings.
+BitMEX has discontinued their options products to focus on their core derivatives and spot offerings.
 :::
 
 ### Spot trading
@@ -161,7 +162,7 @@ The BitMEX integration supports the following order types and execution features
 | `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |
 | `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
 | `LIMIT_IF_TOUCHED`     | ✓         | Supported (set `price` and `trigger_price`).  |
-| `TRAILING_STOP_MARKET` | -         | *Not implemented*.                            |
+| `TRAILING_STOP_MARKET` | -         | *Not implemented* (supported by BitMEX).      |
 
 ### Execution instructions
 
@@ -215,24 +216,27 @@ in `examples/live/bitmex/bitmex_exec_tester.py`.
 
 ### Time in force
 
-| Time in force  | Supported | Notes                                                     |
-|----------------|-----------|-----------------------------------------------------------|
-| `GTC`          | ✓         | Good Till Canceled (default).                             |
-| `GTD`          | -         | *Not supported by BitMEX*.                                |
-| `FOK`          | ✓         | Fill or Kill - fills entire order or cancels.             |
-| `IOC`          | ✓         | Immediate or Cancel - partial fill allowed.               |
-| `DAY`          | ✓         | Valid for the current trading day.                        |
+| Time in force  | Supported | Notes                                               |
+|----------------|-----------|-----------------------------------------------------|
+| `GTC`          | ✓         | Good Till Canceled (default).                       |
+| `GTD`          | -         | *Not supported by BitMEX*.                          |
+| `FOK`          | ✓         | Fill or Kill - fills entire order or cancels.       |
+| `IOC`          | ✓         | Immediate or Cancel - partial fill allowed.         |
+| `DAY`          | ✓         | Expires at 00:00 UTC (BitMEX trading day boundary). |
 
-:::info
-BitMEX supports Day, GoodTillCancel, ImmediateOrCancel, and FillOrKill time-in-force values.
-Day orders expire at the end of the current trading day as defined by the venue; consult the [BitMEX API documentation](https://www.bitmex.com/api/explorer/) if you rely on daily expiry.
+:::note
+`DAY` orders expire at 12:00am UTC, which marks the BitMEX trading day boundary (end of trading hours for that day).
+See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API documentation](https://www.bitmex.com/api/explorer/) for complete details.
 :::
 
 ### Advanced order features
 
 | Feature            | Supported | Notes                                      |
 |--------------------|-----------|--------------------------------------------|
+| Pegged Orders      | -         | *Not implemented* (supported by BitMEX).   |
+| Take Profit Orders | -         | *Not implemented* (supported by BitMEX).   |
 | Order Modification | ✓         | Modify price, quantity, and trigger price. |
+| Trailing Stop      | -         | *Not implemented* (supported by BitMEX).   |
 | Bracket Orders     | -         | *Not implemented*.                         |
 | Iceberg Orders     | ✓         | Use `display_qty`.                         |
 
@@ -389,7 +393,9 @@ mainnet_exec_config = BitmexExecClientConfig(
 
 - Initial margin requirements vary by contract and market conditions.
 - Maintenance margin is typically lower than initial margin.
-- Liquidation occurs when equity falls below maintenance margin.
+- Liquidation occurs when maintenance margin requirement is not satisfied.
+- BitMEX supports both isolated margin and cross margin modes.
+- Risk limits can be adjusted based on position size per the [Exchange Rules](https://www.bitmex.com/exchange-rules).
 
 ### Fees
 
