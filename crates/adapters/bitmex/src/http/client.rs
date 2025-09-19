@@ -1133,7 +1133,7 @@ impl BitmexHttpClient {
                 .ord_rej_reason
                 .map(|r| r.to_string())
                 .unwrap_or_else(|| "No reason provided".to_string());
-            return Err(anyhow::anyhow!("Order rejected: {reason}"));
+            anyhow::bail!("Order rejected: {reason}");
         }
 
         let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
@@ -1165,9 +1165,7 @@ impl BitmexHttpClient {
         } else if let Some(client_order_id) = client_order_id {
             params.cl_ord_id(vec![client_order_id.as_str().to_string()]);
         } else {
-            return Err(anyhow::anyhow!(
-                "Either client_order_id or venue_order_id must be provided"
-            ));
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -1322,9 +1320,7 @@ impl BitmexHttpClient {
         } else if let Some(client_order_id) = client_order_id {
             params.orig_cl_ord_id(client_order_id.as_str());
         } else {
-            return Err(anyhow::anyhow!(
-                "Either client_order_id or venue_order_id must be provided"
-            ));
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         }
 
         if let Some(quantity) = quantity {
@@ -1350,7 +1346,7 @@ impl BitmexHttpClient {
                 .ord_rej_reason
                 .map(|r| r.to_string())
                 .unwrap_or_else(|| "No reason provided".to_string());
-            return Err(anyhow::anyhow!("Order modification rejected: {}", reason));
+            anyhow::bail!("Order modification rejected: {reason}");
         }
 
         let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
@@ -1384,9 +1380,7 @@ impl BitmexHttpClient {
                 "orderID": venue_order_id.to_string()
             })
         } else {
-            return Err(anyhow::anyhow!(
-                "Either client_order_id or venue_order_id must be provided"
-            ));
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         };
 
         params.filter(filter_json);

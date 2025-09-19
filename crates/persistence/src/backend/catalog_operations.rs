@@ -1483,7 +1483,7 @@ impl ParquetDataCatalog {
                 use nautilus_model::data::OrderBookDepth10;
                 self.delete_data_range_generic::<OrderBookDepth10>(identifier, start, end)
             }
-            _ => Err(anyhow::anyhow!("Unsupported data type: {}", type_name)),
+            _ => anyhow::bail!("Unsupported data type: {type_name}"),
         }
     }
 

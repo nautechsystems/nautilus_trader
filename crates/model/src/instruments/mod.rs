@@ -236,7 +236,7 @@ impl FromStr for TickScheme {
         match s.trim().to_ascii_uppercase().as_str() {
             "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
             "CRYPTO_0_01" => Ok(TickScheme::Crypto),
-            _ => Err(anyhow::anyhow!("unknown tick scheme {s}")),
+            _ => anyhow::bail!("unknown tick scheme {s}"),
         }
     }
 }

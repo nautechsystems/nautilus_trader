@@ -632,10 +632,7 @@ pub fn parse_fill_report(
     // Skip non-trade executions (funding, settlements, etc.)
     // Trade executions have exec_type of Trade and must have order_id
     if !matches!(exec.exec_type, BitmexExecType::Trade) {
-        return Err(anyhow::anyhow!(
-            "Skipping non-trade execution: {:?}",
-            exec.exec_type
-        ));
+        anyhow::bail!("Skipping non-trade execution: {:?}", exec.exec_type);
     }
 
     // Additional check: skip executions without order_id (likely funding/settlement)
@@ -658,10 +655,7 @@ pub fn parse_fill_report(
     );
     // Skip executions without side (likely not trades)
     let Some(side) = exec.side else {
-        return Err(anyhow::anyhow!(
-            "Skipping execution without side: {:?}",
-            exec.exec_type
-        ));
+        anyhow::bail!("Skipping execution without side: {:?}", exec.exec_type);
     };
     let order_side: OrderSide = side.into();
     let last_qty = Quantity::from(exec.last_qty);

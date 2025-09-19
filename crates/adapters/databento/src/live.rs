@@ -427,6 +427,7 @@ impl DatabentoFeedHandler {
                     if std::time::Instant::now() >= deadline {
                         break;
                     }
+
                     // Yield to other threads first
                     std::thread::yield_now();
 
@@ -440,14 +441,14 @@ impl DatabentoFeedHandler {
                     }
                 }
                 Err(std::sync::TryLockError::Poisoned(e)) => {
-                    return Err(anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"));
+                    anyhow::bail!("symbol_venue_map lock poisoned: {e}");
                 }
             }
         }
 
-        Err(anyhow::anyhow!(
+        anyhow::bail!(
             "Failed to acquire read lock on symbol_venue_map after {MAX_WAIT_MS}ms deadline"
-        ))
+        )
     }
 }
 

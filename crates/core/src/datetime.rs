@@ -163,7 +163,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
     date_string
         .parse::<UnixNanos>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{}': {}", date_string, e))
+        .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{date_string}': {e}"))
 }
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
