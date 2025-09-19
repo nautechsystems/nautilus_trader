@@ -34,6 +34,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
@@ -158,6 +159,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return AccountType[obj]
     if obj_type == BookType:
         return BookType[obj]
+    if obj_type == TriggerType:
+        return TriggerType[obj]
     if obj_type == Environment:
         return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
