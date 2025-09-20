@@ -57,6 +57,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     order_qty: Decimal
+    order_display_qty: Decimal | None = None
     order_expire_time_delta_mins: PositiveInt | None = None
     order_params: dict[str, Any] | None = None
     client_id: ClientId | None = None
@@ -339,6 +340,12 @@ class ExecTester(Strategy):
             time_in_force = TimeInForce.GTC
             expire_time = None
 
+        if self.config.order_display_qty is not None:
+            # Zero display_qty represents a "hidden" order, otherwise "iceberg"
+            display_qty = self.instrument.make_qty(self.config.order_display_qty)
+        else:
+            display_qty = None
+
         emulation_trigger = (
             TriggerType[self.config.emulation_trigger]
             if isinstance(self.config.emulation_trigger, str)
@@ -358,6 +365,7 @@ class ExecTester(Strategy):
             expire_time=expire_time,
             post_only=self.config.use_post_only,
             quote_quantity=self.config.use_quote_quantity,
+            display_qty=display_qty,
             emulation_trigger=emulation_trigger,
         )
 
@@ -437,6 +445,13 @@ class ExecTester(Strategy):
             if limit_price is None:
                 self.log.error("STOP_LIMIT order requires limit_price")
                 return
+
+            if self.config.order_display_qty is not None:
+                # Zero display_qty represents a "hidden" order, otherwise "iceberg"
+                display_qty = self.instrument.make_qty(self.config.order_display_qty)
+            else:
+                display_qty = None
+
             order = self.order_factory.stop_limit(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
@@ -448,6 +463,7 @@ class ExecTester(Strategy):
                 expire_time=expire_time,
                 post_only=False,
                 quote_quantity=self.config.use_quote_quantity,
+                display_qty=display_qty,
                 emulation_trigger=emulation_trigger,
             )
         elif self.config.stop_order_type == OrderType.MARKET_IF_TOUCHED:
@@ -466,6 +482,13 @@ class ExecTester(Strategy):
             if limit_price is None:
                 self.log.error("LIMIT_IF_TOUCHED order requires limit_price")
                 return
+
+            if self.config.order_display_qty is not None:
+                # Zero display_qty represents a "hidden" order, otherwise "iceberg"
+                display_qty = self.instrument.make_qty(self.config.order_display_qty)
+            else:
+                display_qty = None
+
             order = self.order_factory.limit_if_touched(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
@@ -477,6 +500,7 @@ class ExecTester(Strategy):
                 expire_time=expire_time,
                 post_only=False,
                 quote_quantity=self.config.use_quote_quantity,
+                display_qty=display_qty,
                 emulation_trigger=emulation_trigger,
             )
         else:

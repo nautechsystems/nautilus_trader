@@ -95,6 +95,7 @@ config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
     use_post_only=True,
     tob_offset_ticks=0,
     modify_orders_to_maintain_tob_offset=True,

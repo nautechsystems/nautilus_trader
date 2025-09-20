@@ -2734,3 +2734,249 @@ def test_both_regular_and_stop_orders_together(
     assert tester.buy_stop_order.trigger_price > instrument.make_price(101.0)
     # Stop sell below bid
     assert tester.sell_stop_order.trigger_price < instrument.make_price(100.0)
+
+
+@pytest.mark.parametrize(
+    "order_display_qty,expected_display",
+    [
+        (Decimal("0.25"), 0.25),  # Partial display (iceberg)
+        (Decimal("0"), 0),  # Hidden order (zero display)
+        (None, None),  # No display qty specified
+    ],
+)
+def test_order_display_qty_for_limit_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+    order_display_qty,
+    expected_display,
+):
+    """
+    Test that display_qty is set correctly for limit orders.
+
+    Tests iceberg orders, hidden orders (display_qty=0), and normal orders.
+
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.0"),
+        order_display_qty=order_display_qty,
+        enable_buys=True,
+        enable_sells=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_order is not None
+    assert tester.sell_order is not None
+
+    # Check display quantities are set correctly
+    if expected_display is None:
+        assert tester.buy_order.display_qty is None
+        assert tester.sell_order.display_qty is None
+    else:
+        expected_display_qty = instrument.make_qty(expected_display)
+        assert tester.buy_order.display_qty == expected_display_qty
+        assert tester.sell_order.display_qty == expected_display_qty
+
+    # Total quantities should always be the full amount
+    expected_total_qty = instrument.make_qty(1.0)
+    assert tester.buy_order.quantity == expected_total_qty
+    assert tester.sell_order.quantity == expected_total_qty
+
+
+def test_order_display_qty_for_stop_limit_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that display_qty (iceberg) is set correctly for stop limit orders.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("2.0"),
+        order_display_qty=Decimal("0.5"),  # Display only 0.5
+        enable_stop_buys=True,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.STOP_LIMIT,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.buy_stop_order, StopLimitOrder)
+    assert isinstance(tester.sell_stop_order, StopLimitOrder)
+
+    # Check display quantities
+    expected_display_qty = instrument.make_qty(0.5)
+    assert tester.buy_stop_order.display_qty == expected_display_qty
+    assert tester.sell_stop_order.display_qty == expected_display_qty
+
+    # Total quantities should be full amount
+    expected_total_qty = instrument.make_qty(2.0)
+    assert tester.buy_stop_order.quantity == expected_total_qty
+    assert tester.sell_stop_order.quantity == expected_total_qty
+
+
+def test_order_display_qty_for_limit_if_touched_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that display_qty (iceberg) is set correctly for limit if touched orders.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.5"),
+        order_display_qty=Decimal("0.3"),  # Display only 0.3 at a time
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.LIMIT_IF_TOUCHED,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert isinstance(tester.buy_stop_order, LimitIfTouchedOrder)
+
+    # Check display quantity
+    expected_display_qty = instrument.make_qty(0.3)
+    assert tester.buy_stop_order.display_qty == expected_display_qty
+
+    # Total quantity should be full amount
+    expected_total_qty = instrument.make_qty(1.5)
+    assert tester.buy_stop_order.quantity == expected_total_qty
+
+
+def test_order_without_display_qty(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that orders work correctly when display_qty is not configured.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.0"),
+        # order_display_qty not set - should be None
+        enable_buys=True,
+        enable_sells=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_order is not None
+    assert tester.sell_order is not None
+    assert tester.buy_order.display_qty is None
+    assert tester.sell_order.display_qty is None
+    expected_qty = instrument.make_qty(1.0)
+    assert tester.buy_order.quantity == expected_qty
+    assert tester.sell_order.quantity == expected_qty
