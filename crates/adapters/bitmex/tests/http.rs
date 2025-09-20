@@ -15,11 +15,11 @@
 
 //! Integration tests for BitMEX HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
     Router,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::get,
@@ -27,10 +27,11 @@ use axum::{
 use nautilus_bitmex::{
     common::enums::{BitmexOrderType, BitmexSide},
     http::{
-        client::BitmexHttpInnerClient,
+        client::{BitmexHttpClient, BitmexHttpInnerClient},
         query::{DeleteOrderParams, GetOrderParamsBuilder, PostOrderParams},
     },
 };
+use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -61,6 +62,17 @@ async fn handle_get_instruments() -> impl IntoResponse {
     let instrument = load_test_data("http_get_instrument_xbtusd.json");
     // Return as array since that's what the endpoint returns
     Json(vec![instrument])
+}
+
+async fn handle_get_instrument(query: Query<HashMap<String, String>>) -> impl IntoResponse {
+    let instrument = load_test_data("http_get_instrument_xbtusd.json");
+    let requested_symbol = query.get("symbol");
+
+    if requested_symbol.map(|s| s == "XBTUSD").unwrap_or(false) {
+        Json(vec![instrument])
+    } else {
+        Json(Vec::<Value>::new())
+    }
 }
 
 async fn handle_get_wallet(headers: axum::http::HeaderMap) -> Response {
@@ -216,6 +228,7 @@ async fn handle_delete_order(headers: axum::http::HeaderMap, body: String) -> Re
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/instrument/active", get(handle_get_instruments))
+        .route("/instrument", get(handle_get_instrument))
         .route("/user/wallet", get(handle_get_wallet))
         .route("/position", get(handle_get_positions))
         .route("/order", get(handle_get_orders))
@@ -251,6 +264,45 @@ async fn test_get_instruments() {
 
     assert_eq!(instruments.len(), 1);
     assert_eq!(instruments[0].symbol, "XBTUSD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_instrument_single_result() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    let client = BitmexHttpInnerClient::new(Some(base_url), Some(60), None, None, None).unwrap();
+    let instrument = client.http_get_instrument("XBTUSD").await.unwrap();
+
+    assert!(instrument.is_some());
+    assert_eq!(instrument.unwrap().symbol, "XBTUSD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instrument() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    let client = BitmexHttpClient::new(
+        Some(base_url),
+        None,
+        None,
+        false,
+        Some(60),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+    let instrument = client.request_instrument(instrument_id).await.unwrap();
+
+    assert!(instrument.is_some());
+    let instrument = instrument.unwrap();
+    assert_eq!(instrument.id(), instrument_id);
 }
 
 #[rstest]

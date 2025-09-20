@@ -399,17 +399,25 @@ impl BitmexHttpInnerClient {
         self.send_request(Method::GET, path, None, false).await
     }
 
-    /// Get instrument by symbol.
+    /// Get the instrument definition for the specified symbol.
+    ///
+    /// BitMEX responds to `/instrument?symbol=...` with an array, even when
+    /// a single symbol is requested. This helper returns the first element of
+    /// that array and yields `Ok(None)` when the venue returns an empty list
+    /// (e.g. unknown symbol).
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
+    /// Returns an error if the request fails or the payload cannot be deserialized.
     pub async fn http_get_instrument(
         &self,
         symbol: &str,
-    ) -> Result<BitmexInstrument, BitmexHttpError> {
+    ) -> Result<Option<BitmexInstrument>, BitmexHttpError> {
         let path = &format!("/instrument?symbol={symbol}");
-        self.send_request(Method::GET, path, None, false).await
+        let instruments: Vec<BitmexInstrument> =
+            self.send_request(Method::GET, path, None, false).await?;
+
+        Ok(instruments.into_iter().next())
     }
 
     /// Get user wallet information.
@@ -797,11 +805,13 @@ impl BitmexHttpClient {
             .insert(instrument.raw_symbol().inner(), instrument);
     }
 
-    /// Request all available instruments and parse them into Nautilus types.
+    /// Request a single instrument and parse it into a Nautilus type.
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails or parsing fails.
+    /// Returns `Ok(Some(..))` when the venue returns a definition that parses
+    /// successfully, `Ok(None)` when the instrument is unknown or the payload
+    /// cannot be converted into a Nautilus `Instrument`.
     pub async fn request_instrument(
         &self,
         instrument_id: InstrumentId,
@@ -811,9 +821,14 @@ impl BitmexHttpClient {
             .http_get_instrument(instrument_id.symbol.as_str())
             .await?;
 
+        let instrument = match response {
+            Some(instrument) => instrument,
+            None => return Ok(None),
+        };
+
         let ts_init = self.generate_ts_init();
 
-        Ok(parse_instrument_any(&response, ts_init))
+        Ok(parse_instrument_any(&instrument, ts_init))
     }
 
     /// Request all available instruments and parse them into Nautilus types.
