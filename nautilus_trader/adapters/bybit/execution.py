@@ -624,92 +624,101 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def _generate_spot_position_reports_from_wallet(  # noqa: C901
+    async def _generate_spot_position_reports_from_wallet(
         self,
         instrument_id: InstrumentId | None = None,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
-        position_found = False
 
         try:
             (balances, ts_event) = await self._http_account.query_wallet_balance()
 
+            # Build lookup table of wallet balances by coin
+            wallet_by_coin: dict[str, Decimal] = {}
+
             for wallet in balances:
                 for coin_balance in wallet.coin:
                     wallet_balance = Decimal(coin_balance.walletBalance or "0")
+                    wallet_by_coin[coin_balance.coin] = (
+                        wallet_by_coin.get(coin_balance.coin, Decimal(0)) + wallet_balance
+                    )
 
-                    # Skip if balance is zero
+            if instrument_id:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is None:
+                    raise ValueError(
+                        f"Cannot generate SPOT position report: instrument not found for {instrument_id}",
+                    )
+
+                coin = instrument.base_currency.code
+                wallet_balance = wallet_by_coin.get(coin, Decimal(0))
+
+                report = self._build_spot_position_report_from_wallet_balance(
+                    instrument,
+                    wallet_balance,
+                    ts_event,
+                )
+                reports.append(report)
+            else:
+                # instrument_id not specified: generate reports for loaded SPOT instruments
+                # based on wallet balances
+                for loaded in self._instrument_provider.get_all().values():
+                    # Only consider SPOT instruments
+                    if not loaded.id.symbol.value.endswith("-SPOT"):
+                        continue
+
+                    coin = loaded.base_currency.code
+                    wallet_balance = wallet_by_coin.get(coin, Decimal(0))
                     if wallet_balance == 0:
                         continue
 
-                    # If specific instrument requested, check if this coin matches
-                    if instrument_id:
-                        instrument = self._cache.instrument(instrument_id)
-                        if instrument and instrument.base_currency.code == coin_balance.coin:
-                            # Determine position side based on balance sign
-                            if wallet_balance > 0:
-                                position_side = PositionSide.LONG
-                            else:
-                                position_side = PositionSide.SHORT
-
-                            # Always use absolute value for quantity calculation
-                            abs_balance = abs(wallet_balance)
-
-                            try:
-                                quantity = instrument.make_qty(
-                                    str(abs_balance),
-                                    round_down=True,
-                                )
-                            except ValueError:
-                                quantity = Quantity.zero(instrument.size_precision)
-
-                            # Check if quantity is zero after rounding to instrument precision
-                            if quantity == 0:
-                                report = PositionStatusReport.create_flat(
-                                    account_id=self.account_id,
-                                    instrument_id=instrument_id,
-                                    size_precision=instrument.size_precision,
-                                    ts_init=self._clock.timestamp_ns(),
-                                    report_id=UUID4(),
-                                )
-                            else:
-                                report = PositionStatusReport(
-                                    account_id=self.account_id,
-                                    instrument_id=instrument_id,
-                                    position_side=position_side,
-                                    quantity=quantity,
-                                    avg_px_open=None,  # No average price available from wallet balance
-                                    report_id=UUID4(),
-                                    ts_last=millis_to_nanos(ts_event),
-                                    ts_init=self._clock.timestamp_ns(),
-                                )
-
-                            reports.append(report)
-                            position_found = True
-                            self._log.debug(
-                                f"Generated SPOT position report from wallet: {report}",
-                            )
-
-            # If a specific instrument was requested but no position found,
-            # return a FLAT position report
-            if instrument_id and not position_found:
-                instrument = self._cache.instrument(instrument_id)
-                if instrument and instrument.id.symbol.value.endswith("-SPOT"):
-                    report = PositionStatusReport.create_flat(
-                        account_id=self.account_id,
-                        instrument_id=instrument_id,
-                        size_precision=instrument.size_precision,
-                        ts_init=self._clock.timestamp_ns(),
-                        report_id=UUID4(),
+                    report = self._build_spot_position_report_from_wallet_balance(
+                        loaded,
+                        wallet_balance,
+                        ts_event,
                     )
                     reports.append(report)
-                    self._log.debug(
-                        f"Generated FLAT SPOT position report (no wallet balance): {report}",
-                    )
         except BybitError as e:
             self._log.error(f"Failed to generate SPOT position report(s) from wallet: {e}")
 
+        for report in reports:
+            self._log.debug(f"Generated SPOT position report from wallet: {report}")
+
         return reports
+
+    def _build_spot_position_report_from_wallet_balance(
+        self,
+        instrument,
+        wallet_balance: Decimal,
+        ts_event: int,
+    ) -> PositionStatusReport:
+        position_side = PositionSide.LONG if wallet_balance > 0 else PositionSide.SHORT
+        abs_balance = abs(wallet_balance)
+
+        try:
+            quantity = instrument.make_qty(str(abs_balance), round_down=True)
+        except ValueError:
+            quantity = Quantity.zero(instrument.size_precision)
+
+        if quantity == 0:
+            return PositionStatusReport.create_flat(
+                account_id=self.account_id,
+                instrument_id=instrument.id,
+                size_precision=instrument.size_precision,
+                ts_init=self._clock.timestamp_ns(),
+                report_id=UUID4(),
+            )
+
+        return PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            position_side=position_side,
+            quantity=quantity,
+            avg_px_open=None,
+            report_id=UUID4(),
+            ts_last=millis_to_nanos(ts_event),
+            ts_init=self._clock.timestamp_ns(),
+        )
 
     def _get_cached_instrument_id(
         self,
