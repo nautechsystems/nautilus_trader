@@ -177,6 +177,11 @@ cdef class RequestOrderBookSnapshot(RequestData):
     pass
 
 
+cdef class RequestOrderBookDepth(RequestData):
+    cdef readonly int depth
+    """The maximum depth for the order book depths.\n\n:returns: `int`"""
+
+
 cdef class RequestQuoteTicks(RequestData):
     pass
 

@@ -29,13 +29,13 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{
         DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        RequestInstrument, RequestInstruments, RequestOrderBookDepth, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -1149,6 +1149,44 @@ fn test_execute_request_bars(
         None, // params
     );
     let cmd = DataCommand::Request(RequestCommand::Bars(req));
+    data_engine.execute(&cmd);
+
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_execute_request_order_book_depth(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let req = RequestOrderBookDepth::new(
+        audusd_sim.id,
+        None,                                 // start
+        None,                                 // end
+        None,                                 // limit
+        Some(NonZeroUsize::new(10).unwrap()), // depth
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::OrderBookDepth(req));
     data_engine.execute(&cmd);
 
     assert_eq!(recorder.borrow()[0], cmd);

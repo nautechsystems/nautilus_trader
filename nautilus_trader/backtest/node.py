@@ -329,6 +329,7 @@ class BacktestNode:
             "request_bars",
             "request_quote_ticks",
             "request_trade_ticks",
+            "request_order_book_depth",
         ]
 
         if request_function not in compatible_request_functions:
