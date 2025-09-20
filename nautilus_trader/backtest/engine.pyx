@@ -872,7 +872,7 @@ cdef class BacktestEngine:
         self._log.info(f"Added {data_name} stream generator")
 
     cpdef void _handle_data_command(self, DataCommand command):
-        if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick, OrderBookDepth10]
                or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
             return
 
@@ -2930,10 +2930,13 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:
             raise ValueError(f"invalid `TradingCommand`, was {command}")  # pragma: no cover (design-time error)
+
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
+
         self._inflight_counter[ts] += 1
         cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
+
         return key, command
 
     cpdef void process_order_book_delta(self, OrderBookDelta delta):
@@ -2957,6 +2960,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(delta.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[delta.instrument_id]
 
@@ -2983,6 +2987,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(deltas.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[deltas.instrument_id]
 
@@ -3009,6 +3014,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(depth.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {depth.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[depth.instrument_id]
 
@@ -3037,6 +3043,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(tick.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[tick.instrument_id]
 
@@ -3065,6 +3072,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(tick.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[tick.instrument_id]
 
@@ -3093,6 +3101,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(bar.bar_type.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[bar.bar_type.instrument_id]
 
@@ -3119,6 +3128,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(data.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[data.instrument_id]
 
@@ -3145,6 +3155,7 @@ cdef class SimulatedExchange:
             instrument = self.cache.instrument(close.instrument_id)
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {close.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[close.instrument_id]
 

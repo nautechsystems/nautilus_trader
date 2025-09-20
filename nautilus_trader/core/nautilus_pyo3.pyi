@@ -5781,6 +5781,14 @@ class DatabentoHistoricalClient:
         limit: int | None = None,
         timestamp_on_close: bool | None = None,
     ) -> list[Bar]: ...
+    async def get_order_book_depth10(
+        self,
+        dataset: str,
+        instrument_ids: list[InstrumentId],
+        start: int,
+        end: int | None = None,
+        depth: int | None = None,
+    ) -> list[OrderBookDepth10]: ...
     async def get_range_imbalance(
         self,
         dataset: str,

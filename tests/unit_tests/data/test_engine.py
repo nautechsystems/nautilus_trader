@@ -36,6 +36,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -3522,6 +3523,37 @@ class TestDataEngine:
         ) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
+
+    def test_request_order_book_depth_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+        depth = TestDataStubs.order_book_depth10(instrument_id=ETHUSDT_BINANCE.id)
+        self.mock_market_data_client.order_book_depths = [depth]
+
+        handler = []
+        request = RequestOrderBookDepth(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
+            depth=10,
+            client_id=None,  # Will route to the Binance venue
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [depth]
 
     def test_request_aggregated_bars_with_bars(self):
         # Arrange

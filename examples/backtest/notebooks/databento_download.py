@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -64,11 +64,11 @@ catalog_folder = "download_catalog"
 catalog = db_data_utils.load_catalog(catalog_folder)
 
 # Small amount of data for testing
-start_time_1 = "2024-05-08T10:00"
-start_time_2 = "2024-05-09T10:00"
-end_time = "2024-05-09T10:05"
-end_time_2 = "2024-05-09T10:07"
-end_time_3 = "2024-05-09T10:07:01"
+start_time_1 = "2024-05-07T10:00"
+start_time_2 = "2024-05-08T10:00"
+end_time_1 = "2024-05-08T10:01"
+end_time_2 = "2024-05-08T10:04"
+end_time_3 = "2024-05-08T10:06"
 
 # %% [markdown]
 # ## Strategy
@@ -100,7 +100,7 @@ node.download_data(
     "request_instrument",
     instrument_id=InstrumentId.from_str("ESM4.XCME"),
     start=time_object_to_dt(start_time_1),
-    end=time_object_to_dt(end_time),
+    end=time_object_to_dt(end_time_1),
 )
 
 node.download_data(
@@ -108,6 +108,14 @@ node.download_data(
     bar_type=BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL"),
     start=time_object_to_dt(start_time_2),
     end=time_object_to_dt(end_time_3),
+)
+
+# %%
+node.download_data(
+    "request_order_book_depth",
+    instrument_id=InstrumentId.from_str("ESM4.XCME"),
+    start=time_object_to_dt(start_time_2),
+    end=time_object_to_dt(end_time_1),
 )
 
 # %%

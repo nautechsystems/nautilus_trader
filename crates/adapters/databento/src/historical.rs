@@ -31,7 +31,7 @@ use databento::{
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::AtomicTime};
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
+    data::{Bar, Data, InstrumentStatus, OrderBookDepth10, QuoteTick, TradeTick},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
@@ -42,8 +42,8 @@ use tokio::sync::Mutex;
 use crate::{
     common::get_date_time_range,
     decode::{
-        decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        decode_status_msg,
+        decode_imbalance_msg, decode_instrument_def_msg, decode_mbp10_msg, decode_record,
+        decode_statistics_msg, decode_status_msg,
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
@@ -308,6 +308,82 @@ impl DatabentoHistoricalClient {
                 }
             }
             _ => anyhow::bail!("Invalid schema {dbn_schema}"),
+        }
+
+        Ok(result)
+    }
+
+    /// Fetches order book depth10 snapshots for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request or data processing fails.
+    pub async fn get_range_order_book_depth10(
+        &self,
+        params: RangeQueryParams,
+        depth: Option<usize>,
+    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
+        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        check_consistent_symbology(&symbols)?;
+
+        let first_symbol = params
+            .symbols
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No symbols provided"))?;
+        let stype_in = infer_symbology_type(first_symbol);
+        let end = params.end.unwrap_or_else(|| self.clock.get_time_ns());
+        let time_range = get_date_time_range(params.start, end)?;
+
+        // For now, only support MBP_10 schema for depth 10
+        let _depth = depth.unwrap_or(10);
+        if _depth != 10 {
+            anyhow::bail!("Only depth=10 is currently supported for order book depths");
+        }
+
+        let range_params = GetRangeParams::builder()
+            .dataset(params.dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .stype_in(stype_in)
+            .schema(dbn::Schema::Mbp10)
+            .limit(params.limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+
+        let mut client = self.inner.lock().await;
+        let mut decoder = client
+            .timeseries()
+            .get_range(&range_params)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get range: {e}"))?;
+
+        let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
+        let mut result: Vec<OrderBookDepth10> = Vec::new();
+
+        let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
+            let sym_map = self
+                .symbol_venue_map
+                .read()
+                .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+            let instrument_id = decode_nautilus_instrument_id(
+                &record,
+                &mut metadata_cache,
+                &self.publisher_venue_map,
+                &sym_map,
+            )?;
+
+            if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
+                let depth = decode_mbp10_msg(msg, instrument_id, price_precision, None)?;
+                result.push(depth);
+            }
+
+            Ok(())
+        };
+
+        while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp10Msg>().await {
+            process_record(dbn::RecordRef::from(msg))?;
         }
 
         Ok(result)

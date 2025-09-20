@@ -33,6 +33,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -219,6 +220,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
@@ -256,6 +258,7 @@ cdef class DataEngine(Component):
     cpdef void _check_bounds(self, DataResponse response)
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
+    cpdef void _handle_order_book_depths(self, list depths)
     cpdef void _handle_bars(self, list bars, Bar partial)
     cpdef dict _handle_aggregated_bars(self, DataResponse response)
     cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
