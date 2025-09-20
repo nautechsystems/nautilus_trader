@@ -304,8 +304,11 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixN
 ///
 /// Returns an error if the resulting date would be invalid or out of range.
 pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
-    // Use checked_add_months with n * 12 months
-    match datetime.checked_add_months(chrono::Months::new(n * 12)) {
+    let months = n.checked_mul(12).ok_or_else(|| {
+        anyhow::anyhow!("Failed to add {n} years to {datetime}: month count overflow")
+    })?;
+
+    match datetime.checked_add_months(chrono::Months::new(months)) {
         Some(result) => Ok(result),
         None => anyhow::bail!("Failed to add {n} years to {datetime}"),
     }
@@ -317,8 +320,11 @@ pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<U
 ///
 /// Returns an error if the resulting date would be invalid or out of range.
 pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
-    // Use checked_sub_months with n * 12 months
-    match datetime.checked_sub_months(chrono::Months::new(n * 12)) {
+    let months = n.checked_mul(12).ok_or_else(|| {
+        anyhow::anyhow!("Failed to subtract {n} years from {datetime}: month count overflow")
+    })?;
+
+    match datetime.checked_sub_months(chrono::Months::new(months)) {
         Some(result) => Ok(result),
         None => anyhow::bail!("Failed to subtract {n} years from {datetime}"),
     }
@@ -582,6 +588,27 @@ mod tests {
     ) {
         let result = add_n_months(input, months).unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_add_n_years_overflow() {
+        let datetime = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let err = add_n_years(datetime, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
+    }
+
+    #[rstest]
+    fn test_subtract_n_years_overflow() {
+        let datetime = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let err = subtract_n_years(datetime, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
+    }
+
+    #[rstest]
+    fn test_add_n_years_nanos_overflow() {
+        let nanos = UnixNanos::from(0);
+        let err = add_n_years_nanos(nanos, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
     }
 
     #[rstest]
