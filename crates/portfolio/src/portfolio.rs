@@ -271,7 +271,7 @@ impl Portfolio {
 
         msgbus::subscribe("data.quotes.*".into(), update_quote_handler, Some(10));
         if config.bar_updates {
-            msgbus::subscribe("data.bars.*".into(), update_bar_handler, Some(10));
+            msgbus::subscribe("data.bars.*EXTERNAL".into(), update_bar_handler, Some(10));
         }
         if config.use_mark_prices {
             msgbus::subscribe(
