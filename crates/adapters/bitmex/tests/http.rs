@@ -19,7 +19,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use axum::{
     Router,
-    extract::{Query, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::get,
@@ -128,10 +128,7 @@ async fn handle_get_orders(
     Json(orders).into_response()
 }
 
-async fn handle_post_order(
-    headers: axum::http::HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
+async fn handle_post_order(headers: axum::http::HeaderMap, body: String) -> Response {
     if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
         return (
             StatusCode::UNAUTHORIZED,
@@ -142,7 +139,9 @@ async fn handle_post_order(
             .into_response();
     }
 
-    // BitMEX uses query parameters for POST /order
+    // BitMEX expects form-encoded body for POST /order
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&body).unwrap_or_default();
+
     if !params.contains_key("symbol") || !params.contains_key("orderQty") {
         return (
             StatusCode::BAD_REQUEST,
@@ -169,10 +168,7 @@ async fn handle_post_order(
     .into_response()
 }
 
-async fn handle_delete_order(
-    headers: axum::http::HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
+async fn handle_delete_order(headers: axum::http::HeaderMap, body: String) -> Response {
     if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
         return (
             StatusCode::UNAUTHORIZED,
@@ -183,11 +179,23 @@ async fn handle_delete_order(
             .into_response();
     }
 
-    // BitMEX uses query parameters for DELETE /order
-    if params.contains_key("orderID") || params.contains_key("clOrdID") {
+    // BitMEX expects form-encoded body for DELETE /order
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&body).unwrap_or_default();
+
+    // Parse the JSON-encoded orderID or clOrdID arrays
+    let has_order_id = params
+        .get("orderID")
+        .and_then(|v| serde_json::from_str::<Vec<String>>(v).ok())
+        .is_some();
+    let has_cl_ord_id = params
+        .get("clOrdID")
+        .and_then(|v| serde_json::from_str::<Vec<String>>(v).ok())
+        .is_some();
+
+    if has_order_id || has_cl_ord_id {
         // Return a cancelled order
         return Json(json!([{
-            "orderID": params.get("orderID").unwrap_or(&"test-order-id".to_string()),
+            "orderID": "test-order-id",
             "ordStatus": "Canceled",
             "symbol": "XBTUSD",
             "orderQty": 100,

@@ -65,8 +65,7 @@ use super::{
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
         GetOrderParams, GetPositionParams, GetPositionParamsBuilder, GetTradeParams,
-        GetTradeParamsBuilder, PostOrderBulkParams, PostOrderParams, PostPositionLeverageParams,
-        PutOrderBulkParams, PutOrderParams,
+        GetTradeParamsBuilder, PostOrderParams, PostPositionLeverageParams, PutOrderParams,
     },
 };
 use crate::{
@@ -273,6 +272,16 @@ impl BitmexHttpInnerClient {
         headers.insert("api-key".to_string(), credential.api_key.to_string());
         headers.insert("api-signature".to_string(), signature);
 
+        // Add Content-Type header for form-encoded body
+        if body.is_some()
+            && (*method == Method::POST || *method == Method::PUT || *method == Method::DELETE)
+        {
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            );
+        }
+
         Ok(headers)
     }
 
@@ -476,11 +485,15 @@ impl BitmexHttpInnerClient {
         &self,
         params: PostOrderParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/order?{query}");
-        self.send_request(Method::POST, &path, None, true).await
+        // BitMEX spec requires form-encoded body for POST /order
+        let body = serde_urlencoded::to_string(&params)
+            .map_err(|e| {
+                BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+            })?
+            .into_bytes();
+        let path = "/order";
+        self.send_request(Method::POST, path, Some(body), true)
+            .await
     }
 
     /// Cancel user orders.
@@ -496,11 +509,15 @@ impl BitmexHttpInnerClient {
         &self,
         params: DeleteOrderParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/order?{query}");
-        self.send_request(Method::DELETE, &path, None, true).await
+        // BitMEX spec requires form-encoded body for DELETE /order
+        let body = serde_urlencoded::to_string(&params)
+            .map_err(|e| {
+                BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+            })?
+            .into_bytes();
+        let path = "/order";
+        self.send_request(Method::DELETE, path, Some(body), true)
+            .await
     }
 
     /// Amend an existing order.
@@ -513,11 +530,14 @@ impl BitmexHttpInnerClient {
     ///
     /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/order?{query}");
-        self.send_request(Method::PUT, &path, None, true).await
+        // BitMEX spec requires form-encoded body for PUT /order
+        let body = serde_urlencoded::to_string(&params)
+            .map_err(|e| {
+                BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+            })?
+            .into_bytes();
+        let path = "/order";
+        self.send_request(Method::PUT, path, Some(body), true).await
     }
 
     /// Cancel all orders.
@@ -584,47 +604,6 @@ impl BitmexHttpInnerClient {
         self.send_request(Method::GET, &path, None, true).await
     }
 
-    /// Place multiple orders in bulk.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
-    pub async fn http_place_orders_bulk(
-        &self,
-        params: PostOrderBulkParams,
-    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let body = serde_json::to_vec(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = "/order/bulk";
-        self.send_request(Method::POST, path, Some(body), true)
-            .await
-    }
-
-    /// Amend multiple orders in bulk.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, the request fails, the orders don't exist, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
-    pub async fn http_amend_orders_bulk(
-        &self,
-        params: PutOrderBulkParams,
-    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let body = serde_json::to_vec(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = "/order/bulk";
-        self.send_request(Method::PUT, path, Some(body), true).await
-    }
-
     /// Update position leverage.
     ///
     /// # Errors
@@ -638,11 +617,15 @@ impl BitmexHttpInnerClient {
         &self,
         params: PostPositionLeverageParams,
     ) -> Result<BitmexPosition, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/position/leverage?{query}");
-        self.send_request(Method::POST, &path, None, true).await
+        // BitMEX spec requires form-encoded body for POST endpoints
+        let body = serde_urlencoded::to_string(&params)
+            .map_err(|e| {
+                BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+            })?
+            .into_bytes();
+        let path = "/position/leverage";
+        self.send_request(Method::POST, path, Some(body), true)
+            .await
     }
 }
 
@@ -1202,15 +1185,8 @@ impl BitmexHttpClient {
         let mut params = super::query::DeleteOrderParamsBuilder::default();
         params.text(NAUTILUS_TRADER);
 
-        if let Some(client_order_ids) = client_order_ids {
-            params.cl_ord_id(
-                client_order_ids
-                    .iter()
-                    .map(|id| id.to_string())
-                    .collect::<Vec<_>>(),
-            );
-        }
-
+        // BitMEX API requires either client order IDs or venue order IDs, not both
+        // Prioritize venue order IDs if both are provided
         if let Some(venue_order_ids) = venue_order_ids {
             params.order_id(
                 venue_order_ids
@@ -1218,6 +1194,17 @@ impl BitmexHttpClient {
                     .map(|id| id.to_string())
                     .collect::<Vec<_>>(),
             );
+        } else if let Some(client_order_ids) = client_order_ids {
+            params.cl_ord_id(
+                client_order_ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>(),
+            );
+        } else {
+            return Err(anyhow::anyhow!(
+                "Either client_order_ids or venue_order_ids must be provided"
+            ));
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -1623,85 +1610,6 @@ impl BitmexHttpClient {
             match parse_position_report(pos, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse position report: {e}"),
-            }
-        }
-
-        Ok(reports)
-    }
-
-    /// Submit multiple orders in bulk.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Credentials are missing.
-    /// - The request fails.
-    /// - Order validation fails.
-    /// - The API returns an error.
-    pub async fn submit_orders_bulk(
-        &self,
-        orders: Vec<PostOrderParams>,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let params = PostOrderBulkParams { orders };
-
-        let response = self.inner.http_place_orders_bulk(params).await?;
-
-        let ts_init = self.generate_ts_init();
-        let mut reports = Vec::new();
-
-        for order in response {
-            // Skip orders without symbol (can happen with query responses)
-            let Some(symbol) = order.symbol else {
-                tracing::warn!("Order response missing symbol, skipping");
-                continue;
-            };
-
-            let instrument_id = parse_instrument_id(symbol);
-            let price_precision = self.get_price_precision(symbol)?;
-
-            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
-            }
-        }
-
-        Ok(reports)
-    }
-
-    /// Amend multiple orders in bulk.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Credentials are missing.
-    /// - The request fails.
-    /// - An order doesn't exist.
-    /// - An order is closed.
-    /// - The API returns an error.
-    pub async fn modify_orders_bulk(
-        &self,
-        orders: Vec<PutOrderParams>,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let params = PutOrderBulkParams { orders };
-
-        let response = self.inner.http_amend_orders_bulk(params).await?;
-
-        let ts_init = self.generate_ts_init();
-        let mut reports = Vec::new();
-
-        for order in response {
-            // Skip orders without symbol (can happen with query responses)
-            let Some(symbol) = order.symbol else {
-                tracing::warn!("Order response missing symbol, skipping");
-                continue;
-            };
-
-            let instrument_id = parse_instrument_id(symbol);
-            let price_precision = self.get_price_precision(symbol)?;
-
-            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
             }
         }
 

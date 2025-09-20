@@ -108,6 +108,8 @@ config_tester = ExecTesterConfig(
     # test_reject_post_only=True,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
     log_data=False,
     # dry_run=True,
 )

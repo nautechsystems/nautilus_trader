@@ -234,23 +234,18 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 | Feature            | Supported | Notes                                      |
 |--------------------|-----------|--------------------------------------------|
 | Pegged Orders      | -         | *Not implemented* (supported by BitMEX).   |
-| Take Profit Orders | -         | *Not implemented* (supported by BitMEX).   |
 | Order Modification | ✓         | Modify price, quantity, and trigger price. |
-| Trailing Stop      | -         | *Not implemented* (supported by BitMEX).   |
+| Trailing Stops     | -         | *Not implemented* (supported by BitMEX).   |
 | Bracket Orders     | -         | *Not implemented*.                         |
 | Iceberg Orders     | ✓         | Use `display_qty`.                         |
 
 ### Batch operations
 
-| Operation          | Supported | Notes                                      |
-|--------------------|-----------|--------------------------------------------|
-| Batch Submit       | -         | *Not implemented*.                         |
-| Batch Modify       | -         | *Not implemented*.                         |
-| Batch Cancel       | -         | *Not implemented*.                         |
-
-:::note
-Low-level HTTP bulk endpoints exist (place/amend), but are not currently exposed via the execution client.
-:::
+| Operation          | Supported | Notes                                       |
+|--------------------|-----------|---------------------------------------------|
+| Batch Submit       | -         | *Not supported by BitMEX*.                  |
+| Batch Modify       | -         | *Not supported by BitMEX*.                  |
+| Batch Cancel       | ✓         | Cancel multiple orders in a single request. |
 
 ### Position management
 

@@ -6438,14 +6438,6 @@ class BitmexHttpClient:
         price: Price | None = None,
         trigger_price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def submit_orders_bulk(
-        self,
-        orders: list[dict[str, Any]],
-    ) -> list[OrderStatusReport]: ...
-    async def modify_orders_bulk(
-        self,
-        orders: list[dict[str, Any]],
-    ) -> list[OrderStatusReport]: ...
 
 
 class BitmexWebSocketClient:

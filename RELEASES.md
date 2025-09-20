@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
 - Added BitMEX conditional orders support
+- Added BitMEX batch cancel support
 - Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035

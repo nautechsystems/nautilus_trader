@@ -534,7 +534,51 @@ class BitmexExecutionClient(LiveExecutionClient):
                 )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.warning("Batch cancel orders not yet implemented")
+        valid_cancels: list[CancelOrder] = []
+        client_order_ids: list[ClientOrderId] = []
+
+        for cancel in command.cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                self._log.error(f"{cancel.client_order_id!r} not found to cancel")
+                continue
+
+            if order.is_closed:
+                self._log.warning(
+                    f"BatchCancelOrders command for {cancel.client_order_id!r} when order already {order.status_string()} "
+                    "(will not send to exchange)",
+                )
+                continue
+
+            valid_cancels.append(cancel)
+            client_order_ids.append(cancel.client_order_id)
+
+        if not valid_cancels:
+            self._log.info("No valid orders to cancel in batch")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_ids = [
+            nautilus_pyo3.ClientOrderId.from_str(cid.value) for cid in client_order_ids
+        ]
+
+        try:
+            await self._http_client.cancel_orders(
+                instrument_id=pyo3_instrument_id,
+                client_order_ids=pyo3_client_order_ids,
+                venue_order_ids=None,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel orders: {e}")
+            for cancel in valid_cancels:
+                self.generate_order_cancel_rejected(
+                    strategy_id=cancel.strategy_id,
+                    instrument_id=cancel.instrument_id,
+                    client_order_id=cancel.client_order_id,
+                    venue_order_id=cancel.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     async def _query_order(self, command: QueryOrder) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -566,7 +610,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             report = OrderStatusReport.from_pyo3(pyo3_report)
             self._send_order_status_report(report)
             self._log.info(f"Queried order {command.client_order_id}")
-
         except Exception as e:
             self._log.error(f"Failed to query order {command.client_order_id}: {e}")
 

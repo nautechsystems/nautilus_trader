@@ -34,12 +34,18 @@ use crate::common::enums::{
     BitmexTimeInForce,
 };
 
-fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_string_vec_as_json<S>(
+    values: &Option<Vec<String>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     match values {
-        Some(vec) => serializer.serialize_str(&vec.join(",")),
+        Some(vec) => {
+            let json_array = serde_json::to_string(vec).map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&json_array)
+        }
         None => serializer.serialize_none(),
     }
 }
@@ -209,20 +215,43 @@ pub struct DeleteOrderParams {
     /// Order ID(s) (venue-assigned).
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_string_vec",
+        serialize_with = "serialize_string_vec_as_json",
         rename = "orderID"
     )]
     pub order_id: Option<Vec<String>>,
     /// Client Order ID(s). See POST /order.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_string_vec",
+        serialize_with = "serialize_string_vec_as_json",
         rename = "clOrdID"
     )]
     pub cl_ord_id: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Optional cancellation annotation. e.g. 'Spread Exceeded'.
     pub text: Option<String>,
+}
+
+impl DeleteOrderParamsBuilder {
+    /// Build the parameters with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if both order_id and cl_ord_id are provided.
+    pub fn build_validated(self) -> Result<DeleteOrderParams, String> {
+        let params = self.build().map_err(|e| format!("Failed to build: {e}"))?;
+
+        // Validate that only one of order_id or cl_ord_id is provided
+        if params.order_id.is_some() && params.cl_ord_id.is_some() {
+            return Err("Cannot provide both order_id and cl_ord_id - use only one".to_string());
+        }
+
+        // Validate that at least one is provided
+        if params.order_id.is_none() && params.cl_ord_id.is_none() {
+            return Err("Must provide either order_id or cl_ord_id".to_string());
+        }
+
+        Ok(params)
+    }
 }
 
 /// Parameters for the DELETE /order/all endpoint.
@@ -314,22 +343,6 @@ pub struct GetExecutionParams {
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<DateTime<Utc>>,
-}
-
-/// Parameters for the POST /order/bulk endpoint.
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PostOrderBulkParams {
-    /// Array of order parameters.
-    pub orders: Vec<PostOrderParams>,
-}
-
-/// Parameters for the PUT /order/bulk endpoint.
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PutOrderBulkParams {
-    /// Array of order amendment parameters.
-    pub orders: Vec<PutOrderParams>,
 }
 
 /// Parameters for the POST /position/leverage endpoint.

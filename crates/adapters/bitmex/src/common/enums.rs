@@ -394,6 +394,24 @@ impl From<BitmexContingencyType> for ContingencyType {
     }
 }
 
+impl TryFrom<ContingencyType> for BitmexContingencyType {
+    type Error = BitmexError;
+
+    fn try_from(value: ContingencyType) -> Result<Self, Self::Error> {
+        match value {
+            ContingencyType::NoContingency => Ok(Self::Unknown),
+            ContingencyType::Oco => Ok(Self::OneCancelsTheOther),
+            ContingencyType::Oto => Ok(Self::OneTriggersTheOther),
+            ContingencyType::Ouo => Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation {
+                    field: "contingency_type".to_string(),
+                    message: "OUO contingency type not supported by BitMEX".to_string(),
+                },
+            }),
+        }
+    }
+}
+
 /// Represents the available peg price types on BitMEX.
 #[derive(
     Copy,
