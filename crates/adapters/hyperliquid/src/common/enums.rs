@@ -367,6 +367,10 @@ pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
 =======
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
