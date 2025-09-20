@@ -204,7 +204,9 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
-            // SAFETY: timestamp_nanos_opt() returns >= 0 for valid dates
+            if nanos < 0 {
+                return Err("Unix timestamp cannot be negative".into());
+            }
             return Ok(Self(nanos as u64));
         }
 
@@ -548,6 +550,18 @@ mod tests {
     fn test_from_str_invalid() {
         let result = "abc".parse::<UnixNanos>();
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_str_pre_epoch_date() {
+        let err = "1969-12-31".parse::<UnixNanos>().unwrap_err();
+        assert_eq!(err.to_string(), "Unix timestamp cannot be negative");
+    }
+
+    #[rstest]
+    fn test_from_str_pre_epoch_rfc3339() {
+        let err = "1969-12-31T23:59:59Z".parse::<UnixNanos>().unwrap_err();
+        assert_eq!(err.to_string(), "Unix timestamp cannot be negative");
     }
 
     #[rstest]
