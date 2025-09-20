@@ -19,7 +19,7 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::TradeTick,
-    enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
     },
@@ -513,17 +513,18 @@ pub fn parse_order_status_report(
     let order_side: OrderSide = order
         .side
         .map_or(OrderSide::NoOrderSide, |side| side.into());
-    let order_type: OrderType = (*order
-        .ord_type
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Order missing ord_type"))?)
-    .into();
-    let time_in_force: nautilus_model::enums::TimeInForce = (*order
+
+    // BitMEX may not include ord_type in cancel responses,
+    // for robustness default to LIMIT if not provided.
+    let order_type: OrderType = order.ord_type.map(|t| t.into()).unwrap_or(OrderType::Limit);
+
+    // BitMEX may not include time_in_force in cancel responses,
+    // for robustness default to GTC if not provided.
+    let time_in_force: TimeInForce = order
         .time_in_force
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Order missing time_in_force"))?)
-    .try_into()
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .and_then(|tif| tif.try_into().ok())
+        .unwrap_or(TimeInForce::Gtc);
+
     let order_status: OrderStatus = (*order
         .ord_status
         .as_ref()
