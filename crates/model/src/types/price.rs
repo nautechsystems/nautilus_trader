@@ -398,7 +398,6 @@ impl From<&Price> for f64 {
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);
-        self.precision.hash(state);
     }
 }
 
