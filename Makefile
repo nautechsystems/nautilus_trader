@@ -127,7 +127,7 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
 	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
-	@echo "⚠️  nuking working tree (git clean -fxd)…"
+	@echo "WARNING: nuking working tree (git clean -fxd)..."
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality

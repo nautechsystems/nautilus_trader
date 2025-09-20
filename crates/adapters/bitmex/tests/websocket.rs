@@ -868,17 +868,17 @@ async fn test_true_auto_reconnect_with_verification() {
 
         // These assertions will tell us if auto-reconnect truly happened
         if final_connection_count > initial_connection_count {
-            println!("✅ Auto-reconnect SUCCEEDED - new connection established");
+            println!("Auto-reconnect SUCCEEDED - new connection established");
             assert_eq!(final_connection_count, initial_connection_count + 1);
         } else {
-            println!("❌ Auto-reconnect did NOT trigger new connection");
+            println!("Auto-reconnect did NOT trigger new connection");
         }
 
         if final_auth_calls > initial_auth_calls {
-            println!("✅ Re-authentication SUCCEEDED");
+            println!("Re-authentication SUCCEEDED");
             assert_eq!(final_auth_calls, initial_auth_calls + 1);
         } else {
-            println!("❌ Re-authentication did NOT happen");
+            println!("Re-authentication did NOT happen");
         }
 
         // Check if subscriptions were restored
@@ -888,9 +888,9 @@ async fn test_true_auto_reconnect_with_verification() {
             initial_subs.len(),
             final_subs.len()
         );
-        println!("✅ Subscriptions restored: {} topics", final_subs.len());
+        println!("Subscriptions restored: {} topics", final_subs.len());
     } else {
-        println!("❌ Client never became active again - auto-reconnect failed");
+        println!("Client never became active again - auto-reconnect failed");
         println!("Wait result: {:?}", reconnect_result);
     }
 
