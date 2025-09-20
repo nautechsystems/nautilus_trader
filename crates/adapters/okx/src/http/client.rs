@@ -46,11 +46,12 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
-    enums::{AggregationSource, BarAggregation},
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TriggerType},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::HttpClient,
@@ -65,8 +66,9 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory, OKXPosition, OKXPositionHistory,
-        OKXPositionTier, OKXTransactionDetail,
+        OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXIndexTicker,
+        OKXMarkPrice, OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse,
+        OKXPosition, OKXPositionHistory, OKXPositionTier, OKXTransactionDetail,
     },
     query::{
         GetCandlesticksParams, GetCandlesticksParamsBuilder, GetIndexTickerParams,
@@ -81,9 +83,9 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{OKX_HTTP_URL, should_retry_error_code},
+        consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
-        enums::{OKXInstrumentType, OKXPositionMode},
+        enums::{OKXInstrumentType, OKXPositionMode, OKXTradeMode},
         models::OKXInstrument,
         parse::{
             okx_instrument_type, parse_account_state, parse_candlestick, parse_fill_report,
@@ -292,19 +294,19 @@ impl OKXHttpInnerClient {
             None => return Err(OKXHttpError::MissingCredentials),
         };
 
-        let body_str = body.and_then(|b| std::str::from_utf8(b).ok()).unwrap_or("");
-
-        tracing::debug!("{method} {path}");
-
         let api_key = credential.api_key.to_string();
         let api_passphrase = credential.api_passphrase.to_string();
-        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string();
-        let signature = credential.sign(&timestamp, method.as_str(), path, body_str);
+
+        // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
+        let now = Utc::now();
+        let millis = now.timestamp_subsec_millis();
+        let timestamp = now.format("%Y-%m-%dT%H:%M:%S").to_string() + &format!(".{:03}Z", millis);
+        let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
         let mut headers = HashMap::new();
-        headers.insert("OK-ACCESS-KEY".to_string(), api_key);
+        headers.insert("OK-ACCESS-KEY".to_string(), api_key.clone());
         headers.insert("OK-ACCESS-PASSPHRASE".to_string(), api_passphrase);
-        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp);
+        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp.clone());
         headers.insert("OK-ACCESS-SIGN".to_string(), signature);
 
         Ok(headers)
@@ -1995,5 +1997,138 @@ impl OKXHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Places an algo order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
+    pub async fn place_algo_order(
+        &self,
+        request: OKXPlaceAlgoOrderRequest,
+    ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        let body =
+            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXPlaceAlgoOrderResponse> = self
+            .inner
+            .send_request(Method::POST, "/api/v5/trade/order-algo", Some(body), true)
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Cancels an algo order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
+    pub async fn cancel_algo_order(
+        &self,
+        request: OKXCancelAlgoOrderRequest,
+    ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
+        // OKX expects an array for cancel-algos endpoint
+        // Serialize once to bytes to keep signing and sending identical
+        let body =
+            serde_json::to_vec(&[request]).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXCancelAlgoOrderResponse> = self
+            .inner
+            .send_request(Method::POST, "/api/v5/trade/cancel-algos", Some(body), true)
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Places an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn place_algo_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: Option<TriggerType>,
+        limit_price: Option<Price>,
+        reduce_only: Option<bool>,
+    ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        // Map order side to OKX format
+        let side_str = match order_side {
+            OrderSide::Buy => "buy",
+            OrderSide::Sell => "sell",
+            _ => {
+                return Err(OKXHttpError::ValidationError(
+                    "Invalid order side".to_string(),
+                ));
+            }
+        };
+
+        // Map trigger type to OKX format
+        let trigger_px_type_str = if let Some(trigger) = trigger_type {
+            match trigger {
+                TriggerType::LastPrice => "last",
+                TriggerType::MarkPrice => "mark",
+                TriggerType::IndexPrice => "index",
+                _ => "last", // Default to last for unsupported types
+            }
+        } else {
+            "last" // Default
+        };
+
+        // Determine order price based on order type
+        let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
+            limit_price.map(|p| p.to_string())
+        } else {
+            // Market orders use -1 to indicate market execution
+            Some("-1".to_string())
+        };
+
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: instrument_id.symbol.as_str().to_string(),
+            td_mode: td_mode.to_string().to_lowercase(),
+            side: side_str.to_string(),
+            ord_type: "trigger".to_string(), // All conditional orders use 'trigger' type
+            sz: quantity.to_string(),
+            algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
+            trigger_px: Some(trigger_price.to_string()),
+            order_px,
+            trigger_px_type: Some(trigger_px_type_str.to_string()),
+            tgt_ccy: None,  // Let OKX determine based on instrument
+            pos_side: None, // Use default position side
+            close_position: None,
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            reduce_only,
+        };
+
+        self.place_algo_order(request).await
+    }
+
+    /// Cancels an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    pub async fn cancel_algo_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        algo_id: String,
+    ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
+        let request = OKXCancelAlgoOrderRequest {
+            inst_id: instrument_id.symbol.to_string(),
+            algo_id: Some(algo_id),
+            algo_cl_ord_id: None,
+        };
+
+        self.cancel_algo_order(request).await
     }
 }

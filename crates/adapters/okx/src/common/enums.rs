@@ -19,6 +19,8 @@ use nautilus_model::enums::{
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+use crate::common::consts::OKX_CONDITIONAL_ORDER_TYPES;
+
 /// Represents the type of book action.
 #[derive(
     Copy,
@@ -135,6 +137,7 @@ pub enum OKXOrderType {
     OptimalLimitIoc, // Market order with immediate-or-cancel order
     Mmp,             // Market Maker Protection (only applicable to Option in Portfolio Margin mode)
     MmpAndPostOnly, // Market Maker Protection and Post-only order(only applicable to Option in Portfolio Margin mode)
+    Trigger,        // Conditional/algo order (stop orders, etc.)
 }
 
 /// Represents the possible states of an order throughout its lifecycle.
@@ -154,12 +157,12 @@ pub enum OKXOrderType {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum OKXOrderStatus {
-    /// Order has been canceled by user or system.
     Canceled,
     Live,
     PartiallyFilled,
     Filled,
     MmpCanceled,
+    OrderPlaced,
 }
 
 impl From<OrderStatus> for OKXOrderStatus {
@@ -663,6 +666,7 @@ impl From<OKXOrderStatus> for OrderStatus {
             OKXOrderStatus::PartiallyFilled => Self::PartiallyFilled,
             OKXOrderStatus::Filled => Self::Filled,
             OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled => Self::Canceled,
+            OKXOrderStatus::OrderPlaced => Self::Triggered,
         }
     }
 }
@@ -677,6 +681,7 @@ impl From<OKXOrderType> for OrderType {
             | OKXOrderType::Mmp
             | OKXOrderType::MmpAndPostOnly => Self::Limit,
             OKXOrderType::Fok | OKXOrderType::Ioc => Self::MarketToLimit,
+            OKXOrderType::Trigger => Self::StopMarket,
         }
     }
 }
@@ -687,6 +692,13 @@ impl From<OrderType> for OKXOrderType {
             OrderType::Market => Self::Market,
             OrderType::Limit => Self::Limit,
             OrderType::MarketToLimit => Self::Ioc,
+            // Conditional orders will be handled separately via algo orders
+            OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched => {
+                panic!("Conditional order types must use OKXAlgoOrderType")
+            }
             _ => panic!("Invalid `OrderType` cannot be represented on OKX"),
         }
     }
@@ -724,6 +736,26 @@ pub enum OKXAlgoOrderType {
     MoveOrderStop,
     Iceberg,
     Twap,
+}
+
+/// Helper to determine if an order type requires algo order handling.
+pub fn is_conditional_order(order_type: OrderType) -> bool {
+    OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
+}
+
+/// Converts Nautilus conditional order types to OKX algo order type.
+///
+/// # Errors
+///
+/// Returns an error if the provided `order_type` is not a conditional order type.
+pub fn conditional_order_to_algo_type(order_type: OrderType) -> anyhow::Result<OKXAlgoOrderType> {
+    match order_type {
+        OrderType::StopMarket
+        | OrderType::StopLimit
+        | OrderType::MarketIfTouched
+        | OrderType::LimitIfTouched => Ok(OKXAlgoOrderType::Trigger),
+        _ => anyhow::bail!("Not a conditional order type: {order_type:?}"),
+    }
 }
 
 #[derive(

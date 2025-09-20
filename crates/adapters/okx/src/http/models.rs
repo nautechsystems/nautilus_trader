@@ -607,3 +607,216 @@ pub struct OKXPositionHistory {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ccy: Option<String>,
 }
+
+/// Represents the request body for `POST /api/v5/trade/order-algo` (place algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXPlaceAlgoOrderRequest {
+    /// Instrument ID.
+    #[serde(rename = "instId")]
+    pub inst_id: String,
+    /// Trade mode (isolated, cross, cash).
+    #[serde(rename = "tdMode")]
+    pub td_mode: String,
+    /// Order side (buy, sell).
+    pub side: String,
+    /// Algo order type (trigger).
+    #[serde(rename = "ordType")]
+    pub ord_type: String,
+    /// Order size.
+    pub sz: String,
+    /// Client-supplied algo order ID.
+    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// Trigger price.
+    #[serde(rename = "triggerPx", skip_serializing_if = "Option::is_none")]
+    pub trigger_px: Option<String>,
+    /// Order price (for limit orders).
+    #[serde(rename = "orderPx", skip_serializing_if = "Option::is_none")]
+    pub order_px: Option<String>,
+    /// Trigger type (last, mark, index).
+    #[serde(rename = "triggerPxType", skip_serializing_if = "Option::is_none")]
+    pub trigger_px_type: Option<String>,
+    /// Target currency (base_ccy or quote_ccy).
+    #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
+    pub tgt_ccy: Option<String>,
+    /// Position side (net, long, short).
+    #[serde(rename = "posSide", skip_serializing_if = "Option::is_none")]
+    pub pos_side: Option<String>,
+    /// Whether to close position.
+    #[serde(rename = "closePosition", skip_serializing_if = "Option::is_none")]
+    pub close_position: Option<bool>,
+    /// Order tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// Whether it's a reduce-only order.
+    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+}
+
+/// Represents the response from `POST /api/v5/trade/order-algo` (place algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXPlaceAlgoOrderResponse {
+    /// Algo order ID.
+    pub algo_id: String,
+    /// Client-supplied algo order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// The result of the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_code: Option<String>,
+    /// Error message if the request failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_msg: Option<String>,
+    /// Request ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<String>,
+}
+
+/// Represents the request body for `POST /api/v5/trade/cancel-algos` (cancel algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelAlgoOrderRequest {
+    /// Instrument ID.
+    #[serde(rename = "instId")]
+    pub inst_id: String,
+    /// Algo order ID.
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<String>,
+    /// Client-supplied algo order ID.
+    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+}
+
+/// Represents the response from `POST /api/v5/trade/cancel-algos` (cancel algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelAlgoOrderResponse {
+    /// Algo order ID.
+    pub algo_id: String,
+    /// The result of the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_code: Option<String>,
+    /// Error message if the request failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_msg: Option<String>,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use serde_json;
+
+    use super::*;
+
+    #[test]
+    fn test_algo_order_request_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            td_mode: "isolated".to_string(),
+            side: "buy".to_string(),
+            ord_type: "trigger".to_string(),
+            sz: "0.01".to_string(),
+            algo_cl_ord_id: Some("test123".to_string()),
+            trigger_px: Some("3000".to_string()),
+            order_px: Some("-1".to_string()),
+            trigger_px_type: Some("last".to_string()),
+            tgt_ccy: None,
+            pos_side: None,
+            close_position: None,
+            tag: None,
+            reduce_only: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        // Verify that fields are serialized with correct camelCase names
+        assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
+        assert!(json.contains("\"tdMode\":\"isolated\""));
+        assert!(json.contains("\"ordType\":\"trigger\""));
+        assert!(json.contains("\"algoClOrdId\":\"test123\""));
+        assert!(json.contains("\"triggerPx\":\"3000\""));
+        assert!(json.contains("\"orderPx\":\"-1\""));
+        assert!(json.contains("\"triggerPxType\":\"last\""));
+
+        // Verify that None fields are not included
+        assert!(!json.contains("tgtCcy"));
+        assert!(!json.contains("posSide"));
+        assert!(!json.contains("closePosition"));
+    }
+
+    #[test]
+    fn test_algo_order_request_array_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "BTC-USDT".to_string(),
+            td_mode: "cross".to_string(),
+            side: "sell".to_string(),
+            ord_type: "trigger".to_string(),
+            sz: "0.1".to_string(),
+            algo_cl_ord_id: None,
+            trigger_px: Some("50000".to_string()),
+            order_px: Some("49900".to_string()),
+            trigger_px_type: Some("mark".to_string()),
+            tgt_ccy: Some("base_ccy".to_string()),
+            pos_side: Some("net".to_string()),
+            close_position: None,
+            tag: None,
+            reduce_only: Some(true),
+        };
+
+        // OKX expects an array of requests
+        let json = serde_json::to_string(&[request]).unwrap();
+
+        // Verify array format
+        assert!(json.starts_with('['));
+        assert!(json.ends_with(']'));
+
+        // Verify correct field names
+        assert!(json.contains("\"instId\":\"BTC-USDT\""));
+        assert!(json.contains("\"tdMode\":\"cross\""));
+        assert!(json.contains("\"triggerPx\":\"50000\""));
+        assert!(json.contains("\"orderPx\":\"49900\""));
+        assert!(json.contains("\"triggerPxType\":\"mark\""));
+        assert!(json.contains("\"tgtCcy\":\"base_ccy\""));
+        assert!(json.contains("\"posSide\":\"net\""));
+        assert!(json.contains("\"reduceOnly\":true"));
+    }
+
+    #[test]
+    fn test_cancel_algo_order_request_serialization() {
+        let request = OKXCancelAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            algo_id: Some("123456".to_string()),
+            algo_cl_ord_id: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        // Verify correct field names
+        assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
+        assert!(json.contains("\"algoId\":\"123456\""));
+        assert!(!json.contains("algoClOrdId"));
+    }
+
+    #[test]
+    fn test_cancel_algo_order_with_client_id_serialization() {
+        let request = OKXCancelAlgoOrderRequest {
+            inst_id: "BTC-USDT".to_string(),
+            algo_id: None,
+            algo_cl_ord_id: Some("client123".to_string()),
+        };
+
+        // OKX expects an array of requests
+        let json = serde_json::to_string(&[request]).unwrap();
+
+        // Verify array format and field names
+        assert!(json.starts_with('['));
+        assert!(json.contains("\"instId\":\"BTC-USDT\""));
+        assert!(json.contains("\"algoClOrdId\":\"client123\""));
+        assert!(!json.contains("\"algoId\""));
+    }
+}

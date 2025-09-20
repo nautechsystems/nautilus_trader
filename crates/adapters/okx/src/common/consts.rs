@@ -28,7 +28,9 @@ pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(O
 /// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "a535cbe8d0c8BCDE";
 
-pub const OKX_HTTP_URL: &str = "https://okx.com";
+// Use the canonical host with www to avoid cross-domain redirects which may
+// strip authentication headers in some HTTP clients and middleboxes.
+pub const OKX_HTTP_URL: &str = "https://www.okx.com";
 pub const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
 pub const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com:8443/ws/v5/private";
 pub const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
@@ -53,10 +55,23 @@ pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
 /// # Notes
 ///
 /// - PostOnly is supported as a flag on limit orders.
+/// - Conditional orders (stop/trigger) are supported via algo orders.
 pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,
     OrderType::Limit,
-    OrderType::MarketToLimit, // Mapped to IOC when no price is specified
+    OrderType::MarketToLimit,   // Mapped to IOC when no price is specified
+    OrderType::StopMarket,      // Supported via algo order API
+    OrderType::StopLimit,       // Supported via algo order API
+    OrderType::MarketIfTouched, // Supported via algo order API
+    OrderType::LimitIfTouched,  // Supported via algo order API
+];
+
+/// Conditional order types that require the OKX algo order API.
+pub const OKX_CONDITIONAL_ORDER_TYPES: &[OrderType] = &[
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
 ];
 
 /// OKX error codes that should trigger retries.

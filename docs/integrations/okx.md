@@ -155,15 +155,19 @@ use_hyphens_in_client_order_ids=False
 
 ### Order types
 
-| Order Type          | Linear Perpetual Swap | Notes                |
-|---------------------|-----------------------|----------------------|
-| `MARKET`            | ✓                     |                      |
-| `LIMIT`             | ✓                     |                      |
-| `STOP_MARKET`       | ✓                     |                      |
-| `STOP_LIMIT`        | ✓                     |                      |
-| `MARKET_IF_TOUCHED` | ✓                     |                      |
-| `LIMIT_IF_TOUCHED`  | ✓                     |                      |
+| Order Type          | Linear Perpetual Swap | Notes                                |
+|---------------------|-----------------------|--------------------------------------|
+| `MARKET`            | ✓                     | Immediate execution at market price. |
+| `LIMIT`             | ✓                     | Execution at specified price or better. |
+| `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order). |
+| `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order). |
+| `MARKET_IF_TOUCHED` | ✓                     | Conditional market order (OKX algo order). |
+| `LIMIT_IF_TOUCHED`  | ✓                     | Conditional limit order (OKX algo order). |
 | `TRAILING_STOP`     | -                     | *Not yet supported*. |
+
+:::info
+**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, and `LIMIT_IF_TOUCHED` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources.
+:::
 
 ### Execution instructions
 
@@ -179,12 +183,12 @@ use_hyphens_in_client_order_ids=False
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | ✗                     | *Not supported by OKX. Use strategy-managed GTD.* |
+| `GTD`         | ✗                     | *Not supported by OKX API.* |
 
 :::info
-**GTD (Good Till Date) time in force**: OKX does not support GTD time in force through their API.
-If you need GTD functionality, you should use Nautilus's strategy-managed GTD feature instead,
-which will handle the order expiration by canceling the order at expiry.
+**GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
+
+If you need GTD functionality, you must use Nautilus's strategy-managed GTD feature, which will handle the order expiration by canceling the order at the specified expiry time.
 :::
 
 ### Batch operations
@@ -267,6 +271,49 @@ This flexibility allows you to:
 | OCO orders          | ✓                     | One-Cancels-Other orders.                  |
 | Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
 | Conditional orders  | ✓                     | Stop and limit-if-touched orders.          |
+
+#### Conditional order architecture
+
+Conditional orders (OKX algo orders) use a hybrid architecture for optimal performance and reliability:
+
+- **Submission**: Via HTTP REST API (`/api/v5/trade/order-algo`)
+- **Status updates**: Via WebSocket business endpoint (`/ws/v5/business`) on the `orders-algo` channel
+- **Cancellation**: Via HTTP REST API using algo order ID tracking
+
+This design ensures:
+
+- Immediate submission acknowledgment through HTTP.
+- Real-time status updates through WebSocket.
+- Proper order lifecycle management with algo order ID mapping.
+
+#### Supported conditional order types
+
+| Order Type          | Trigger Types          | Notes                                     |
+|---------------------|------------------------|-------------------------------------------|
+| `STOP_MARKET`       | Last, Mark, Index      | Market execution when triggered.          |
+| `STOP_LIMIT`        | Last, Mark, Index      | Limit order placement when triggered.     |
+| `MARKET_IF_TOUCHED` | Last, Mark, Index      | Market execution when price touched.      |
+| `LIMIT_IF_TOUCHED`  | Last, Mark, Index      | Limit order placement when price touched. |
+
+#### Trigger price types
+
+Conditional orders support different trigger price sources:
+
+- **Last Price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
+- **Mark Price** (`TriggerType.MARK_PRICE`): Uses the mark price (recommended for derivatives).
+- **Index Price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
+
+```python
+# Example: Stop loss using mark price trigger
+stop_order = order_factory.stop_market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_str("0.1"),
+    trigger_price=Price.from_str("45000.0"),
+    trigger_type=TriggerType.MARK_PRICE,  # Use mark price for trigger
+)
+strategy.submit_order(stop_order)
+```
 
 ## Authentication
 

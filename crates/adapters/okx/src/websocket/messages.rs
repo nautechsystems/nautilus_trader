@@ -27,8 +27,8 @@ use super::enums::{OKXWsChannel, OKXWsOperation};
 use crate::{
     common::{
         enums::{
-            OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType, OKXOrderStatus,
-            OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode,
+            OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType,
+            OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
         },
         parse::{deserialize_empty_string_as_none, deserialize_string_to_u64},
     },
@@ -461,18 +461,12 @@ pub struct OKXStatusMsg {
 }
 
 /// Order update message from WebSocket orders channel.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXOrderMsg {
     /// Accumulated filled size.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub acc_fill_sz: Option<String>,
-    /// Algorithm client order ID.
-    #[serde(default)]
-    pub algo_cl_ord_id: Option<String>,
-    /// Algorithm ID.
-    #[serde(default)]
-    pub algo_id: Option<String>,
     /// Average price.
     pub avg_px: String,
     /// Creation time, Unix timestamp in milliseconds.
@@ -516,7 +510,8 @@ pub struct OKXOrderMsg {
     pub pnl: String,
     /// Position side.
     pub pos_side: Ustr,
-    /// Price.
+    /// Price (algo orders use ordPx instead).
+    #[serde(default)]
     pub px: String,
     /// Reduce only flag.
     pub reduce_only: String,
@@ -535,6 +530,71 @@ pub struct OKXOrderMsg {
     /// Last update time, Unix timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub u_time: u64,
+}
+
+/// Represents an algo order message from WebSocket updates.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAlgoOrderMsg {
+    /// Algorithm ID.
+    pub algo_id: String,
+    /// Algorithm client order ID.
+    #[serde(default)]
+    pub algo_cl_ord_id: String,
+    /// Client order ID (empty for algo orders until triggered).
+    #[serde(default, rename = "clOrdId")]
+    pub cl_ord_id: String,
+    /// Order ID (empty until algo order is triggered).
+    #[serde(default, rename = "ordId")]
+    pub ord_id: String,
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Order type (always "trigger" for conditional orders).
+    pub ord_type: OKXOrderType,
+    /// Order state.
+    pub state: OKXOrderStatus,
+    /// Side.
+    pub side: OKXSide,
+    /// Position side.
+    pub pos_side: Ustr,
+    /// Size.
+    pub sz: String,
+    /// Trigger price.
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    /// Trigger price type (last, mark, index).
+    #[serde(rename = "triggerPxType")]
+    pub trigger_px_type: String,
+    /// Order price (-1 for market orders).
+    #[serde(rename = "ordPx")]
+    pub ord_px: String,
+    /// Trade mode.
+    pub td_mode: OKXTradeMode,
+    /// Leverage.
+    pub lever: String,
+    /// Reduce only flag.
+    pub reduce_only: String,
+    /// Actual filled price.
+    #[serde(rename = "actualPx")]
+    pub actual_px: String,
+    /// Actual filled size.
+    #[serde(rename = "actualSz")]
+    pub actual_sz: String,
+    /// Notional USD value.
+    pub notional_usd: String,
+    /// Creation time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64", rename = "cTime")]
+    pub c_time: u64,
+    /// Update time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64", rename = "uTime")]
+    pub u_time: u64,
+    /// Trigger time (empty until triggered).
+    pub trigger_time: String,
+    /// Tag.
+    #[serde(default)]
+    pub tag: String,
 }
 
 /// Parameters for WebSocket place order operation.
@@ -636,6 +696,65 @@ pub struct WsAmendOrderParams {
     /// New order size (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sz: Option<String>,
+}
+
+/// Parameters for WebSocket algo order placement.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct WsPostAlgoOrderParams {
+    /// Instrument ID, e.g. "BTC-USDT".
+    pub inst_id: Ustr,
+    /// Trading mode: cash, isolated, cross.
+    pub td_mode: OKXTradeMode,
+    /// Order side: buy or sell.
+    pub side: OKXSide,
+    /// Order type: trigger (for stop orders).
+    pub ord_type: OKXAlgoOrderType,
+    /// Order size.
+    pub sz: String,
+    /// Client order ID (optional).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Position side: long, short, net (optional).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_side: Option<OKXPositionSide>,
+    /// Trigger price for stop/conditional orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_px: Option<String>,
+    /// Trigger price type: last, index, mark.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_px_type: Option<OKXTriggerType>,
+    /// Order price (for limit orders after trigger).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_px: Option<String>,
+    /// Reduce-only flag.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// Order tag for categorization.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+/// Parameters for WebSocket cancel algo order operation.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct WsCancelAlgoOrderParams {
+    /// Instrument ID, e.g. "BTC-USDT".
+    pub inst_id: Ustr,
+    /// Algo order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<String>,
+    /// Client algo order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

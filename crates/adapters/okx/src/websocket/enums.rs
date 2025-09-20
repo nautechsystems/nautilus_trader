@@ -78,6 +78,10 @@ pub enum OKXWsOperation {
     BatchAmendOrders,
     /// Mass cancel all orders for an instrument.
     MassCancel,
+    /// Place a new algo order.
+    OrderAlgo,
+    /// Cancel algo orders.
+    CancelAlgos,
 }
 
 #[derive(
@@ -159,8 +163,8 @@ pub enum OKXWsChannel {
     Orders,
     #[serde(rename = "fills")]
     Fills,
-    // #[display(fmt = "orders-algo")]
-    // AlgoOrders,
+    #[serde(rename = "orders-algo")]
+    OrdersAlgo,
     // #[display(fmt = "algo-advance")]
     // AlgoAdvance,
     // #[display(fmt = "liquidation-warning")]

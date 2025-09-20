@@ -524,7 +524,11 @@ pub fn parse_position_status_report(
     let quantity = Quantity::new(pos_value.abs(), size_precision);
     let venue_position_id = None; // TODO: Only support netting for now
     // let venue_position_id = Some(PositionId::new(position.pos_id));
-    let avg_px_open = Some(Decimal::from_str(&position.avg_px)?);
+    let avg_px_open = if position.avg_px.is_empty() {
+        None
+    } else {
+        Some(Decimal::from_str(&position.avg_px)?)
+    };
     let ts_last = parse_millisecond_timestamp(position.u_time);
 
     Ok(PositionStatusReport::new(

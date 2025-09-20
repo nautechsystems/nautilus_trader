@@ -23,7 +23,7 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, RecordFlag, TimeInForce,
+        OrderType, RecordFlag, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -35,8 +35,8 @@ use ustr::Ustr;
 use super::{
     enums::OKXWsChannel,
     messages::{
-        OKXBookMsg, OKXCandleMsg, OKXIndexPriceMsg, OKXMarkPriceMsg, OKXOrderMsg, OKXTickerMsg,
-        OKXTradeMsg, OrderBookEntry,
+        OKXAlgoOrderMsg, OKXBookMsg, OKXCandleMsg, OKXIndexPriceMsg, OKXMarkPriceMsg, OKXOrderMsg,
+        OKXTickerMsg, OKXTradeMsg, OrderBookEntry,
     },
 };
 use crate::{
@@ -565,6 +565,115 @@ pub fn parse_order_msg_vec(
     Ok(order_reports)
 }
 
+/// Parses an OKX algo order message into a Nautilus execution report.
+pub fn parse_algo_order_msg(
+    msg: OKXAlgoOrderMsg,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<ExecutionReport> {
+    let inst = instruments
+        .get(&msg.inst_id)
+        .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
+
+    // Algo orders primarily return status reports (not fills since they haven't been triggered yet)
+    parse_algo_order_status_report(&msg, inst, account_id, ts_init).map(ExecutionReport::Order)
+}
+
+/// Parses an OKX algo order message into a Nautilus order status report.
+pub fn parse_algo_order_status_report(
+    msg: &OKXAlgoOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    // For algo orders, use algo_cl_ord_id if cl_ord_id is empty
+    let client_order_id = if msg.cl_ord_id.is_empty() {
+        parse_client_order_id(&msg.algo_cl_ord_id)
+    } else {
+        parse_client_order_id(&msg.cl_ord_id)
+    };
+
+    // For algo orders that haven't triggered, ord_id will be empty, use algo_id instead
+    let venue_order_id = if msg.ord_id.is_empty() {
+        VenueOrderId::new(msg.algo_id.as_str())
+    } else {
+        VenueOrderId::new(msg.ord_id.as_str())
+    };
+
+    let order_side: OrderSide = msg.side.into();
+
+    // Determine order type based on ord_px for conditional/stop orders
+    let order_type = if msg.ord_px == "-1" {
+        OrderType::StopMarket
+    } else {
+        OrderType::StopLimit
+    };
+
+    let status = match msg.state {
+        OKXOrderStatus::Live => OrderStatus::Accepted,
+        OKXOrderStatus::Canceled => OrderStatus::Canceled,
+        OKXOrderStatus::MmpCanceled => OrderStatus::Canceled,
+        OKXOrderStatus::Filled => OrderStatus::Filled,
+        OKXOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
+        OKXOrderStatus::OrderPlaced => OrderStatus::Triggered,
+    };
+
+    let quantity = parse_quantity(msg.sz.as_str(), instrument.size_precision())?;
+
+    // For algo orders, actual_sz represents filled quantity (if any)
+    let filled_qty = if msg.actual_sz.is_empty() || msg.actual_sz == "0" {
+        Quantity::zero(instrument.size_precision())
+    } else {
+        parse_quantity(msg.actual_sz.as_str(), instrument.size_precision())?
+    };
+
+    let trigger_px = parse_price(msg.trigger_px.as_str(), instrument.price_precision())?;
+
+    // Parse limit price if it exists (not -1)
+    let price = if msg.ord_px != "-1" {
+        Some(parse_price(
+            msg.ord_px.as_str(),
+            instrument.price_precision(),
+        )?)
+    } else {
+        None
+    };
+
+    let trigger_type = match msg.trigger_px_type.as_str() {
+        "last" => TriggerType::LastPrice,
+        "mark" => TriggerType::MarkPrice,
+        "index" => TriggerType::IndexPrice,
+        _ => TriggerType::Default,
+    };
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        order_side,
+        order_type,
+        TimeInForce::Gtc, // Algo orders are typically GTC
+        status,
+        quantity,
+        filled_qty,
+        msg.c_time.into(), // ts_accepted
+        msg.u_time.into(), // ts_last
+        ts_init,
+        None, // report_id - auto-generated
+    );
+
+    report.trigger_price = Some(trigger_px);
+    report.trigger_type = Some(trigger_type);
+
+    if let Some(limit_price) = price {
+        report.price = Some(limit_price);
+    }
+
+    Ok(report)
+}
+
 /// Parses an OKX order message into a Nautilus order status report.
 pub fn parse_order_status_report(
     msg: &OKXOrderMsg,
@@ -577,7 +686,17 @@ pub fn parse_order_status_report(
     let order_side: OrderSide = msg.side.into();
 
     let okx_order_type = msg.ord_type;
-    let order_type: OrderType = msg.ord_type.into();
+    // For Trigger orders that come through regular orders channel (after being triggered),
+    // we determine the type based on whether they have a price
+    let order_type = if okx_order_type == OKXOrderType::Trigger {
+        if msg.px.is_empty() || msg.px == "0" {
+            OrderType::StopMarket
+        } else {
+            OrderType::StopLimit
+        }
+    } else {
+        msg.ord_type.into()
+    };
     let order_status: OrderStatus = msg.state.into();
 
     let time_in_force = match okx_order_type {
@@ -610,15 +729,30 @@ pub fn parse_order_status_report(
         None, // Generate UUID4 automatically
     );
 
-    if !msg.px.is_empty() {
-        let price_precision = instrument.price_precision();
-        if let Ok(price) = parse_price(&msg.px, price_precision) {
+    let price_precision = instrument.price_precision();
+
+    if okx_order_type == OKXOrderType::Trigger {
+        // For triggered orders coming through regular orders channel,
+        // set the price if it's a stop-limit order
+        if !msg.px.is_empty()
+            && msg.px != "0"
+            && let Ok(price) = parse_price(&msg.px, price_precision)
+        {
+            report = report.with_price(price);
+        }
+    } else {
+        // For regular orders, use px field
+        if !msg.px.is_empty()
+            && let Ok(price) = parse_price(&msg.px, price_precision)
+        {
             report = report.with_price(price);
         }
     }
 
-    if !msg.avg_px.is_empty() {
-        report = report.with_avg_px(msg.avg_px.parse::<f64>()?);
+    if !msg.avg_px.is_empty()
+        && let Ok(avg_px) = msg.avg_px.parse::<f64>()
+    {
+        report = report.with_avg_px(avg_px);
     }
 
     if msg.ord_type == OKXOrderType::PostOnly {
@@ -1513,8 +1647,6 @@ mod tests {
         // First fill: 0.01 BTC out of 0.03 BTC total (1/3)
         let order_msg_1 = OKXOrderMsg {
             acc_fill_sz: Some("0.01".to_string()),
-            algo_cl_ord_id: None,
-            algo_id: None,
             avg_px: "50000.0".to_string(),
             c_time: 1746947317401,
             cancel_source: None,
@@ -1560,8 +1692,6 @@ mod tests {
         // Second fill: 0.02 BTC more, now 0.03 BTC total (completely filled)
         let order_msg_2 = OKXOrderMsg {
             acc_fill_sz: Some("0.03".to_string()),
-            algo_cl_ord_id: None,
-            algo_id: None,
             avg_px: "50000.0".to_string(),
             c_time: 1746947317401,
             cancel_source: None,
@@ -1655,5 +1785,207 @@ mod tests {
         assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
         assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
         assert_eq!(depth10.asks[2].price, Price::from("0")); // padded with empty
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_msg_stop_market() {
+        let json_data = load_test_json("ws_orders_algo.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Test first algo order (stop market sell)
+        let msg = &data[0];
+        assert_eq!(msg.algo_id, "706620792746729472");
+        assert_eq!(msg.algo_cl_ord_id, "STOP001BTCUSDT20250120");
+        assert_eq!(msg.state, OKXOrderStatus::Live);
+        assert_eq!(msg.ord_px, "-1"); // Market order indicator
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        // Create mock instrument
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(), // ts_event
+            0.into(), // ts_init
+        );
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let result =
+            parse_algo_order_msg(msg.clone(), account_id, &instruments, UnixNanos::default());
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+
+        if let ExecutionReport::Order(status_report) = report {
+            assert_eq!(status_report.order_type, OrderType::StopMarket);
+            assert_eq!(status_report.order_side, OrderSide::Sell);
+            assert_eq!(status_report.quantity, Quantity::from("0.01000000"));
+            assert_eq!(status_report.trigger_price, Some(Price::from("95000.00")));
+            assert_eq!(status_report.trigger_type, Some(TriggerType::LastPrice));
+            assert_eq!(status_report.price, None); // No limit price for market orders
+        } else {
+            panic!("Expected Order report");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_msg_stop_limit() {
+        let json_data = load_test_json("ws_orders_algo.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Test second algo order (stop limit buy)
+        let msg = &data[1];
+        assert_eq!(msg.algo_id, "706620792746729473");
+        assert_eq!(msg.state, OKXOrderStatus::Live);
+        assert_eq!(msg.ord_px, "106000"); // Limit price
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        // Create mock instrument
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(), // ts_event
+            0.into(), // ts_init
+        );
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let result =
+            parse_algo_order_msg(msg.clone(), account_id, &instruments, UnixNanos::default());
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+
+        if let ExecutionReport::Order(status_report) = report {
+            assert_eq!(status_report.order_type, OrderType::StopLimit);
+            assert_eq!(status_report.order_side, OrderSide::Buy);
+            assert_eq!(status_report.quantity, Quantity::from("0.02000000"));
+            assert_eq!(status_report.trigger_price, Some(Price::from("105000.00")));
+            assert_eq!(status_report.trigger_type, Some(TriggerType::MarkPrice));
+            assert_eq!(status_report.price, Some(Price::from("106000.00"))); // Has limit price
+        } else {
+            panic!("Expected Order report");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_trigger_order_from_regular_channel() {
+        let json_data = load_test_json("ws_orders_trigger.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Test triggered order that came through regular orders channel
+        let msg = &data[0];
+        assert_eq!(msg.ord_type, OKXOrderType::Trigger);
+        assert_eq!(msg.state, OKXOrderStatus::Filled);
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        // Create mock instrument
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(), // ts_event
+            0.into(), // ts_init
+        );
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+        let fee_cache = AHashMap::new();
+
+        let result = parse_order_msg_vec(
+            vec![msg.clone()],
+            account_id,
+            &instruments,
+            &fee_cache,
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_ok());
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+
+        if let ExecutionReport::Fill(fill_report) = &reports[0] {
+            assert_eq!(fill_report.order_side, OrderSide::Sell);
+            assert_eq!(fill_report.last_qty, Quantity::from("0.01000000"));
+            assert_eq!(fill_report.last_px, Price::from("101950.00"));
+        } else {
+            panic!("Expected Fill report for filled trigger order");
+        }
     }
 }

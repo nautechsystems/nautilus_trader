@@ -39,7 +39,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -64,13 +64,17 @@ use super::{
     messages::{
         ExecutionReport, NautilusWsMessage, OKXAuthentication, OKXAuthenticationArg,
         OKXSubscription, OKXSubscriptionArg, OKXWebSocketError, OKXWebSocketEvent, OKXWsRequest,
-        WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelOrderParams,
-        WsCancelOrderParamsBuilder, WsMassCancelParams, WsPostOrderParams,
+        WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelAlgoOrderParams,
+        WsCancelAlgoOrderParamsBuilder, WsCancelOrderParams, WsCancelOrderParamsBuilder,
+        WsMassCancelParams, WsPostAlgoOrderParams, WsPostAlgoOrderParamsBuilder, WsPostOrderParams,
         WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
 };
-use crate::common::consts::should_retry_error_code;
+use crate::common::{
+    consts::should_retry_error_code,
+    enums::{conditional_order_to_algo_type, is_conditional_order},
+};
 
 /// Determines if an OKX WebSocket error should trigger a retry.
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
@@ -100,11 +104,16 @@ use crate::{
             OKX_WS_PUBLIC_URL,
         },
         credential::Credential,
-        enums::{OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode},
+        enums::{
+            OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+        },
         parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
     },
     http::models::OKXAccount,
-    websocket::{messages::OKXOrderMsg, parse::parse_order_msg_vec},
+    websocket::{
+        messages::{OKXAlgoOrderMsg, OKXOrderMsg},
+        parse::{parse_algo_order_msg, parse_order_msg_vec},
+    },
 };
 
 type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
@@ -1547,6 +1556,34 @@ impl OKXWebSocketClient {
         self.unsubscribe(vec![arg]).await
     }
 
+    /// Subscribes to algo order updates for the given instrument type.
+    pub async fn subscribe_orders_algo(
+        &self,
+        instrument_type: OKXInstrumentType,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::OrdersAlgo,
+            inst_type: Some(instrument_type),
+            inst_family: None,
+            inst_id: None,
+        };
+        self.subscribe(vec![arg]).await
+    }
+
+    /// Unsubscribes from algo order updates for the given instrument type.
+    pub async fn unsubscribe_orders_algo(
+        &self,
+        instrument_type: OKXInstrumentType,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::OrdersAlgo,
+            inst_type: Some(instrument_type),
+            inst_family: None,
+            inst_id: None,
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
     /// Subscribes to fill updates for the given instrument type.
     pub async fn subscribe_fills(
         &self,
@@ -1787,11 +1824,12 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Submits a new order.
+    /// Submits an order, automatically routing conditional orders to the algo endpoint.
     ///
     /// # References
     ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>.
+    /// - Regular orders: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
+    /// - Algo orders: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
@@ -2311,6 +2349,216 @@ impl OKXWebSocketClient {
         }
 
         self.ws_batch_amend_orders(args).await
+    }
+
+    /// Submits an algo order (conditional/stop order).
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_algo_order(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: Option<TriggerType>,
+        limit_price: Option<Price>,
+        reduce_only: Option<bool>,
+    ) -> Result<(), OKXWsError> {
+        if !is_conditional_order(order_type) {
+            return Err(OKXWsError::ClientError(format!(
+                "Order type {order_type:?} is not a conditional order"
+            )));
+        }
+
+        let mut builder = WsPostAlgoOrderParamsBuilder::default();
+        builder.inst_id(instrument_id.symbol.inner());
+        builder.td_mode(td_mode);
+        builder.cl_ord_id(client_order_id.as_str());
+        builder.side(OKXSide::from(order_side));
+        builder.ord_type(
+            conditional_order_to_algo_type(order_type)
+                .map_err(|e| OKXWsError::ClientError(e.to_string()))?,
+        );
+        builder.sz(quantity.to_string());
+        builder.trigger_px(trigger_price.to_string());
+
+        // Map Nautilus TriggerType to OKX trigger type
+        let okx_trigger_type = if let Some(trigger) = trigger_type {
+            match trigger {
+                TriggerType::LastPrice => OKXTriggerType::Last,
+                TriggerType::MarkPrice => OKXTriggerType::Mark,
+                TriggerType::IndexPrice => OKXTriggerType::Index,
+                _ => OKXTriggerType::Last, // Default to Last for unsupported types
+            }
+        } else {
+            OKXTriggerType::Last // Default
+        };
+        builder.trigger_px_type(okx_trigger_type);
+
+        // For stop-limit orders, set the limit price
+        if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
+            && let Some(price) = limit_price
+        {
+            builder.order_px(price.to_string());
+        }
+
+        if let Some(reduce) = reduce_only {
+            builder.reduce_only(reduce);
+        }
+
+        builder.tag(OKX_NAUTILUS_BROKER_ID);
+
+        let params = builder
+            .build()
+            .map_err(|e| OKXWsError::ClientError(format!("Build algo order params error: {e}")))?;
+
+        let request_id = self.generate_unique_request_id();
+
+        self.pending_place_requests.insert(
+            request_id.clone(),
+            (client_order_id, trader_id, strategy_id, instrument_id),
+        );
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                "submit_algo_order",
+                || {
+                    let params = params.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_place_algo_order(params, Some(request_id)).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+                &self.cancellation_token,
+            )
+            .await
+    }
+
+    /// Cancels an algo order.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
+    pub async fn cancel_algo_order(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        algo_order_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let mut builder = WsCancelAlgoOrderParamsBuilder::default();
+        builder.inst_id(instrument_id.symbol.inner());
+
+        if let Some(client_order_id) = client_order_id {
+            builder.algo_cl_ord_id(client_order_id.as_str());
+        }
+
+        if let Some(algo_id) = algo_order_id {
+            builder.algo_id(algo_id);
+        }
+
+        let params = builder
+            .build()
+            .map_err(|e| OKXWsError::ClientError(format!("Build cancel algo params error: {e}")))?;
+
+        let request_id = self.generate_unique_request_id();
+
+        // Track pending cancellation if we have a client order ID
+        if let Some(client_order_id) = client_order_id {
+            self.pending_cancel_requests.insert(
+                request_id.clone(),
+                (client_order_id, trader_id, strategy_id, instrument_id, None),
+            );
+        }
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                "cancel_algo_order",
+                || {
+                    let params = params.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_cancel_algo_order(params, Some(request_id)).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+                &self.cancellation_token,
+            )
+            .await
+    }
+
+    /// Place a new algo order via WebSocket.
+    async fn ws_place_algo_order(
+        &self,
+        params: WsPostAlgoOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
+
+        let req = OKXWsRequest {
+            id: Some(request_id),
+            op: OKXWsOperation::OrderAlgo,
+            exp_time: None,
+            args: vec![params],
+        };
+
+        let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
+
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                if let Err(e) = inner
+                    .send_text(txt, Some(vec!["orders-algo".to_string()]))
+                    .await
+                {
+                    tracing::error!("Error sending algo order message: {e:?}");
+                }
+                Ok(())
+            } else {
+                Err(OKXWsError::ClientError("Not connected".to_string()))
+            }
+        }
+    }
+
+    /// Cancel an algo order via WebSocket.
+    async fn ws_cancel_algo_order(
+        &self,
+        params: WsCancelAlgoOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
+
+        let req = OKXWsRequest {
+            id: Some(request_id),
+            op: OKXWsOperation::CancelAlgos,
+            exp_time: None,
+            args: vec![params],
+        };
+
+        let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
+
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                if let Err(e) = inner
+                    .send_text(txt, Some(vec!["cancel-algos".to_string()]))
+                    .await
+                {
+                    tracing::error!("Error sending cancel algo message: {e:?}");
+                }
+                Ok(())
+            } else {
+                Err(OKXWsError::ClientError("Not connected".to_string()))
+            }
+        }
     }
 }
 
@@ -2857,6 +3105,54 @@ impl OKXWsMessageHandler {
                             }
                             Err(e) => {
                                 tracing::error!("Failed to parse order message: {e}");
+                                continue;
+                            }
+                        }
+                    }
+
+                    if !exec_reports.is_empty() {
+                        return Some(NautilusWsMessage::ExecutionReports(exec_reports));
+                    }
+                }
+
+                if arg.channel == OKXWsChannel::OrdersAlgo {
+                    tracing::debug!("Received orders-algo channel message: {data}");
+
+                    let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(data.clone()).unwrap();
+
+                    let mut exec_reports = Vec::with_capacity(data.len());
+
+                    for msg in data {
+                        match parse_algo_order_msg(
+                            msg,
+                            self.account_id,
+                            &self.instruments_cache,
+                            ts_init,
+                        ) {
+                            Ok(report) => {
+                                // Update fee cache based on the new report
+                                match &report {
+                                    ExecutionReport::Fill(fill_report) => {
+                                        let order_id = fill_report.venue_order_id.inner();
+                                        let current_fee =
+                                            self.fee_cache.get(&order_id).copied().unwrap_or_else(
+                                                || Money::new(0.0, fill_report.commission.currency),
+                                            );
+                                        let total_fee = current_fee + fill_report.commission;
+                                        self.fee_cache.insert(order_id, total_fee);
+                                    }
+                                    ExecutionReport::Order(status_report) => {
+                                        if matches!(status_report.order_status, OrderStatus::Filled,)
+                                        {
+                                            self.fee_cache
+                                                .remove(&status_report.venue_order_id.inner());
+                                        }
+                                    }
+                                }
+                                exec_reports.push(report);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to parse algo order message: {e}");
                                 continue;
                             }
                         }

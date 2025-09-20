@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
+- Added OKX conditional orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
 
 ### Breaking Changes

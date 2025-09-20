@@ -729,6 +729,38 @@ impl OKXWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_orders_algo")]
+    fn py_subscribe_orders_algo<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_orders_algo(instrument_type).await {
+                log::error!("Failed to subscribe to algo orders '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_orders_algo")]
+    fn py_unsubscribe_orders_algo<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_orders_algo(instrument_type).await {
+                log::error!("Failed to unsubscribe from algo orders '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_fills")]
     fn py_subscribe_fills<'py>(
         &self,
@@ -849,8 +881,7 @@ impl OKXWebSocketClient {
         })
     }
 
-    #[pyo3(name = "cancel_order")]
-    #[pyo3(signature = (
+    #[pyo3(name = "cancel_order", signature = (
         trader_id,
         strategy_id,
         instrument_id,

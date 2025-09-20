@@ -158,9 +158,16 @@ config_tester = ExecTesterConfig(
     # open_position_time_in_force=TimeInForce.FOK,
     tob_offset_ticks=100,
     order_qty=order_qty,
-    order_params={"td_mode": "isolatedd"},
+    order_params={"td_mode": "isolated"},
     # modify_orders_to_maintain_tob_offset=True,
     use_post_only=True,
+    # Enable stop orders for testing
+    enable_stop_buys=True,  # Enable stop buy orders
+    enable_stop_sells=True,  # Enable stop sell orders
+    # stop_order_type=OrderType.STOP_MARKET,  # Can be OrderType.STOP_MARKET or OrderType.STOP_LIMIT
+    # stop_trigger_type=TriggerType.LAST_PRICE,  # Can be LAST_PRICE, MARK_PRICE, INDEX_PRICE
+    # stop_offset_ticks=50,  # Offset from current price for stop trigger
+    # stop_limit_offset_ticks=10,  # Additional offset for STOP_LIMIT orders
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     log_data=False,
