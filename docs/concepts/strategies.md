@@ -212,7 +212,7 @@ The following example shows a typical `on_start` handler method implementation (
 Here we can see the following:
 
 - Indicators being registered to receive bar updates.
-- Historical data being requested (to hydrate the indicators)
+- Historical data being requested (to hydrate the indicators).
 - Live data being subscribed to.
 
 ```python

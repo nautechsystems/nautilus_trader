@@ -74,25 +74,25 @@ Here's how different data operations map to their handlers:
 
 | Operation                       | Category         | Handler                  | Purpose |
 |:--------------------------------|:-----------------|:-------------------------|:--------|
-| `subscribe_data()`              | Real-time&nbsp;  | `on_data()`              | Live data updates |
-| `subscribe_instrument()`        | Real-time&nbsp;  | `on_instrument()`        | Live instrument definition updates |
-| `subscribe_instruments()`       | Real-time&nbsp;  | `on_instrument()`        | Live instrument definition updates (for venue) |
-| `subscribe_order_book_deltas()` | Real-time&nbsp;  | `on_order_book_deltas()` | Live order book updates |
-| `subscribe_quote_ticks()`       | Real-time&nbsp;  | `on_quote_tick()`        | Live quote updates |
-| `subscribe_trade_ticks()`       | Real-time&nbsp;  | `on_trade_tick()`        | Live trade updates |
-| `subscribe_mark_prices()`       | Real-time&nbsp;  | `on_mark_price()`        | Live mark price updates |
-| `subscribe_index_prices()`      | Real-time&nbsp;  | `on_index_price()`       | Live index price updates |
-| `subscribe_funding_rates()`     | Real-time&nbsp;  | `on_funding_rate()`      | Live funding rate updates |
-| `subscribe_bars()`              | Real-time&nbsp;  | `on_bar()`               | Live bar updates |
-| `subscribe_instrument_status()` | Real-time&nbsp;  | `on_instrument_status()` | Live instrument status updates |
-| `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |
-| `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing |
-| `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates |
-| `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definition updates |
-| `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing |
-| `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing |
-| `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing |
-| `request_aggregated_bars()`     | Historical       | `on_historical_data()`   | Historical aggregated bars (on-the-fly) |
+| `subscribe_data()`              | Real‑time        | `on_data()`              | Live data updates. |
+| `subscribe_instrument()`        | Real‑time        | `on_instrument()`        | Live instrument definition updates. |
+| `subscribe_instruments()`       | Real‑time        | `on_instrument()`        | Live instrument definition updates (for venue). |
+| `subscribe_order_book_deltas()` | Real‑time        | `on_order_book_deltas()` | Live order book updates. |
+| `subscribe_quote_ticks()`       | Real‑time        | `on_quote_tick()`        | Live quote updates. |
+| `subscribe_trade_ticks()`       | Real‑time        | `on_trade_tick()`        | Live trade updates. |
+| `subscribe_mark_prices()`       | Real‑time        | `on_mark_price()`        | Live mark price updates. |
+| `subscribe_index_prices()`      | Real‑time        | `on_index_price()`       | Live index price updates. |
+| `subscribe_funding_rates()`     | Real‑time        | `on_funding_rate()`      | Live funding rate updates. |
+| `subscribe_bars()`              | Real‑time        | `on_bar()`               | Live bar updates. |
+| `subscribe_instrument_status()` | Real‑time        | `on_instrument_status()` | Live instrument status updates. |
+| `subscribe_instrument_close()`  | Real‑time        | `on_instrument_close()`  | Live instrument close updates. |
+| `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing. |
+| `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates. |
+| `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definition updates. |
+| `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing. |
+| `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing. |
+| `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing. |
+| `request_aggregated_bars()`     | Historical       | `on_historical_data()`   | Historical aggregated bars (on-the-fly). |
 
 ### Example
 

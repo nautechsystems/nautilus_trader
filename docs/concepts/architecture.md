@@ -30,7 +30,7 @@ The major architectural techniques and design patterns employed by NautilusTrade
 
 These techniques have been utilized to assist in achieving certain architectural quality attributes.
 
-### Quality Attributes
+### Quality attributes
 
 Architectural decisions are often a trade-off between competing priorities. The
 below is a list of some of the most important quality attributes which are considered
@@ -51,11 +51,11 @@ The NautilusTrader codebase is actually both a framework for composing trading
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/assets/architecture-overview.png?raw=true "architecture")
 
-### Core Components
+### Core components
 
 The platform is built around several key components that work together to provide a comprehensive trading system:
 
-#### NautilusKernel
+#### `NautilusKernel`
 
 The central orchestration component responsible for:
 
@@ -65,7 +65,7 @@ The central orchestration component responsible for:
 - Coordinating shared resources and lifecycle management.
 - Providing a unified entry point for system operations.
 
-#### MessageBus
+#### `MessageBus`
 
 The backbone of inter-component communication, implementing:
 
@@ -74,7 +74,7 @@ The backbone of inter-component communication, implementing:
 - **Command/Event messaging**: For triggering actions and notifying state changes.
 - **Optional state persistence**: Using Redis for durability and restart capabilities.
 
-#### Cache
+#### `Cache`
 
 High-performance in-memory storage system that:
 
@@ -83,7 +83,7 @@ High-performance in-memory storage system that:
 - Maintains consist state across the system.
 - Supports both read and write operations with optimized access patterns.
 
-#### DataEngine
+#### `DataEngine`
 
 Processes and routes market data throughout the system:
 
@@ -91,7 +91,7 @@ Processes and routes market data throughout the system:
 - Routes data to appropriate consumers based on subscriptions.
 - Manages data flow from external sources to internal components.
 
-#### ExecutionEngine
+#### `ExecutionEngine`
 
 Manages order lifecycle and execution:
 
@@ -101,7 +101,7 @@ Manages order lifecycle and execution:
 - Handles execution reports and fills from venues.
 - Handles reconciliation of external execution state.
 
-#### RiskEngine
+#### `RiskEngine`
 
 Provides comprehensive risk management:
 
@@ -110,7 +110,7 @@ Provides comprehensive risk management:
 - Real-time risk calculations.
 - Configurable risk rules and limits.
 
-### Environment Contexts
+### Environment contexts
 
 An environment context in NautilusTrader defines the type of data and trading venue you are working
 with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
@@ -121,7 +121,7 @@ Here are the available environments you can work with:
 - `Sandbox`: Real-time data with simulated venues.
 - `Live`: Real-time data with live venues (paper trading or real accounts).
 
-### Common Core
+### Common core
 
 The platform has been designed to share as much common code between backtest, sandbox and live trading systems as possible.
 This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,
@@ -130,11 +130,11 @@ providing a common core system 'kernel'.
 The *ports and adapters* architectural style enables modular components to be integrated into the
 core system, providing various hooks for user-defined or custom component implementations.
 
-### Data and Execution Flow Patterns
+### Data and execution flow patterns
 
 Understanding how data and execution flow through the system is crucial for effective use of the platform:
 
-#### Data Flow Pattern
+#### Data flow pattern
 
 1. **External Data Ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
 2. **Data Processing**: The `DataEngine` handles data processing for internal components.
@@ -142,7 +142,7 @@ Understanding how data and execution flow through the system is crucial for effe
 4. **Event Publishing**: Data events are published to the `MessageBus`.
 5. **Consumer Delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
 
-#### Execution Flow Pattern
+#### Execution flow pattern
 
 1. **Command Generation**: User strategies create trading commands.
 2. **Command Publishing**: Commands are sent through the `MessageBus`.
@@ -152,7 +152,7 @@ Understanding how data and execution flow through the system is crucial for effe
 6. **Event Flow Back**: Order events (fills, cancellations) flow back through the system.
 7. **State Updates**: Portfolio and position states are updated based on execution events.
 
-#### Component State Management
+#### Component state management
 
 All components follow a finite state machine pattern with well-defined states:
 
@@ -217,7 +217,7 @@ for each of these subpackages from the left nav menu.
 
 ## Code structure
 
-The foundation of the codebase is the `crates` directory, containing a collection of core Rust crates including a C foreign function interface (FFI) generated by `cbindgen`.
+The foundation of the codebase is the `crates` directory, containing a collection of Rust crates including a C foreign function interface (FFI) generated by `cbindgen`.
 
 The bulk of the production code resides in the `nautilus_trader` directory, which contains a collection of Python/Cython subpackages and modules.
 
