@@ -73,7 +73,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
-#[allow(dead_code)] // TODO: Will be used
+#[allow(dead_code, reason = "TODO: Will be used")]
 const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
     OrderType::StopLimit,
@@ -81,7 +81,7 @@ const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::LimitIfTouched,
 ];
 
-#[allow(dead_code)] // TODO: Will be used
+#[allow(dead_code, reason = "TODO: Will be used")]
 const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::Limit,
     OrderType::StopLimit,
@@ -89,7 +89,7 @@ const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::MarketIfTouched,
 ];
 
-#[allow(dead_code)] // TODO: Will be used
+#[allow(dead_code, reason = "TODO: Will be used")]
 const LOCAL_ACTIVE_ORDER_STATUS: &[OrderStatus] = &[
     OrderStatus::Initialized,
     OrderStatus::Emulated,

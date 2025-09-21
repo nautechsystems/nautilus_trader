@@ -1237,7 +1237,10 @@ impl BitmexFeedHandler {
 struct BitmexWsMessageHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-    #[allow(dead_code)] // May be needed for future account-specific processing
+    #[allow(
+        dead_code,
+        reason = "May be needed for future account-specific processing"
+    )]
     account_id: AccountId,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,

@@ -50,7 +50,10 @@ pub enum LiveCommand {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
+#[allow(
+    clippy::large_enum_variant,
+    reason = "TODO: Optimize this (largest variant 1096 vs 80 bytes)"
+)]
 pub enum LiveMessage {
     Data(Data),
     Instrument(InstrumentAny),

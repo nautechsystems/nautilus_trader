@@ -910,7 +910,7 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
-    #[allow(clippy::collapsible_if)] // Clearer uncollapsed
+    #[allow(clippy::collapsible_if, reason = "Clearer uncollapsed")]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Check if this is a bare channel

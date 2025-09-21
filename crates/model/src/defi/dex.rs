@@ -135,7 +135,7 @@ pub struct Dex {
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
-    #[allow(dead_code)] // TBD
+    #[allow(dead_code, reason = "TBD")]
     pairs: Vec<Pool>,
 }
 

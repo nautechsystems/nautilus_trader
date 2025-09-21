@@ -109,7 +109,7 @@ pub struct HyperliquidWebSocketInnerClient {
     _reader_task: tokio::task::JoinHandle<()>,
     post_router: Arc<PostRouter>,
     post_ids: PostIds,
-    #[allow(dead_code)] // Reserved for future direct WebSocket operations
+    #[allow(dead_code, reason = "Reserved for future direct WebSocket operations")]
     ws_sender: WsSender,
     post_batcher: PostBatcher,
 }

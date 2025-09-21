@@ -1607,7 +1607,7 @@ mod tests {
         let _ = actor.py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
     }
 
-    #[ignore] // TODO: Under development
+    #[ignore = "TODO: Under development"]
     #[rstest]
     fn test_lifecycle_methods_pass_through(
         clock: Rc<RefCell<TestClock>>,

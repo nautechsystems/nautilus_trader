@@ -1773,7 +1773,10 @@ where
 }
 
 /// Core functionality for all actors.
-#[allow(dead_code)] // TODO: Under development (pending_requests, signal_classes)
+#[allow(
+    dead_code,
+    reason = "TODO: Under development (pending_requests, signal_classes)"
+)]
 pub struct DataActorCore {
     /// The actor identifier.
     pub actor_id: ActorId,
@@ -2011,7 +2014,7 @@ impl DataActorCore {
         msgbus::send_any(endpoint, command.as_any())
     }
 
-    #[allow(dead_code)] // TODO: Under development
+    #[allow(dead_code, reason = "TODO: Under development")]
     fn send_data_req(&self, request: RequestCommand) {
         if self.config.log_commands {
             log::info!("{REQ}{SEND} {request:?}");

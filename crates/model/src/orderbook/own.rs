@@ -568,14 +568,14 @@ impl OwnBookLadder {
 
     /// Returns the number of price levels in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
@@ -659,21 +659,21 @@ impl OwnBookLadder {
 
     /// Returns the total size of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn sizes(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn exposures(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn top(&self) -> Option<&OwnBookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),

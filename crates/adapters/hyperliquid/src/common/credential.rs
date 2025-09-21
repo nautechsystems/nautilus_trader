@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore] // This test modifies environment variables - run manually if needed
+    #[ignore = "This test modifies environment variables - run manually if needed"]
     fn test_secrets_from_env() {
         // Note: This test requires setting environment variables manually
         // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef

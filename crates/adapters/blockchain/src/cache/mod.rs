@@ -271,7 +271,7 @@ impl BlockchainCache {
 
     /// Loads block timestamps from the database starting `from_block` number
     /// into the in-memory cache.
-    #[allow(dead_code)] // TODO: Under development
+    #[allow(dead_code, reason = "TODO: Under development")]
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database

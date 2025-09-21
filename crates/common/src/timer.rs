@@ -473,7 +473,7 @@ impl LiveTimer {
     /// # Panics
     ///
     /// Panics if Rust-based callback system active and no time event sender has been set.
-    #[allow(unused_variables)] // callback is used
+    #[allow(unused_variables, reason = "callback is used")]
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
