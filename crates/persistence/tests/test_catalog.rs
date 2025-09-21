@@ -32,44 +32,8 @@ use nautilus_persistence::backend::{
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
-#[cfg(target_os = "linux")]
-use procfs::{self, process::Process};
 use rstest::rstest;
 use tempfile::TempDir;
-
-/// Memory leak test
-///
-/// Uses arguments from setup to run function for given number of iterations.
-/// Checks that the difference between memory after 1 and iter + 1 runs is
-/// less than threshold.
-#[allow(dead_code)]
-#[cfg(target_os = "linux")]
-fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
-    let args = setup();
-    // measure mem after setup
-    let page_size = procfs::page_size();
-    let me = Process::myself().unwrap();
-    let setup_mem = me.stat().unwrap().rss * page_size / 1024;
-
-    {
-        run(&args);
-    }
-
-    let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-
-    for _ in 0..iter {
-        run(&args);
-    }
-
-    let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-
-    if (after.abs_diff(before) as f64 / (before as f64)) >= threshold {
-        println!("Memory leak detected after {iter} iterations");
-        println!("Memory before runs (in KB): {before}");
-        println!("Memory after runs (in KB): {after}");
-        panic!("Memory leak detected");
-    }
-}
 
 #[rstest]
 fn test_quote_tick_query() {

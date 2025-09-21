@@ -221,7 +221,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
-        # Retry logic (hard-coded for now)
+        # Retry logic (hardcoded for now)
         self._max_retries: int = 3
         self._retry_delay: float = 1.0
         self._retry_errors: set[BinanceErrorCode] = {
@@ -578,7 +578,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
-                ts_init=self._clock.timestamp_ns(),
             )
         else:
             # Convert from timestamps to milliseconds
@@ -589,7 +588,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=limit,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                ts_init=self._clock.timestamp_ns(),
             )
 
         self._handle_trade_ticks(
@@ -645,7 +643,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 start_time=start_time_ms,
                 end_time=end_time_ms,
                 limit=request.limit if request.limit > 0 else None,
-                ts_init=self._clock.timestamp_ns(),
             )
 
             if request.bar_type.is_internally_aggregated():
@@ -743,7 +740,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             interval=BinanceKlineInterval.MINUTE_1,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 
@@ -880,7 +876,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument.id,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 

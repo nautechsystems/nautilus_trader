@@ -17,29 +17,47 @@ use chrono::{DateTime, Utc};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
-    identifiers::{AccountId, InstrumentId},
+    enums::{OrderSide, OrderType, TriggerType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    types::{Price, Quantity},
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList},
+};
 
 use crate::{
-    common::enums::{OKXInstrumentType, OKXPositionMode},
+    common::enums::{OKXInstrumentType, OKXPositionMode, OKXTradeMode},
     http::client::OKXHttpClient,
 };
 
 #[pymethods]
 impl OKXHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> PyResult<Self> {
-        Self::with_credentials(api_key, api_secret, api_passphrase, base_url, timeout_secs)
-            .map_err(to_pyvalue_err)
+        Self::with_credentials(
+            api_key,
+            api_secret,
+            api_passphrase,
+            base_url,
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -74,11 +92,16 @@ impl OKXHttpClient {
         self.get_cached_symbols()
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    pub fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     /// # Errors
     ///
     /// Returns a Python exception if adding the instrument to the cache fails.
     #[pyo3(name = "add_instrument")]
-    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: PyObject) -> PyResult<()> {
+    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
@@ -97,7 +120,7 @@ impl OKXHttpClient {
                 .set_position_mode(position_mode)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
 
@@ -115,7 +138,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -142,7 +165,7 @@ impl OKXHttpClient {
                 .request_account_state(account_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| account_state.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| account_state.into_py_any_unwrap(py)))
         })
     }
 
@@ -163,7 +186,7 @@ impl OKXHttpClient {
                 .request_trades(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
@@ -187,7 +210,7 @@ impl OKXHttpClient {
                 .request_bars(bar_type, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -208,7 +231,7 @@ impl OKXHttpClient {
                 .request_mark_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| mark_price.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| mark_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -225,7 +248,7 @@ impl OKXHttpClient {
                 .request_index_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| index_price.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| index_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -258,7 +281,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -293,7 +316,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
@@ -316,10 +339,111 @@ impl OKXHttpClient {
                 .request_position_status_reports(account_id, instrument_type, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[pyo3(name = "place_algo_order")]
+    #[pyo3(signature = (
+        trader_id,
+        strategy_id,
+        instrument_id,
+        td_mode,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        trigger_price,
+        trigger_type=None,
+        limit_price=None,
+        reduce_only=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_place_algo_order<'py>(
+        &self,
+        py: Python<'py>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: Option<TriggerType>,
+        limit_price: Option<Price>,
+        reduce_only: Option<bool>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        // Accept trader_id and strategy_id for interface standardization
+        let _ = (trader_id, strategy_id);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let resp = client
+                .place_algo_order_with_domain_types(
+                    instrument_id,
+                    td_mode,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    trigger_price,
+                    trigger_type,
+                    limit_price,
+                    reduce_only,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("algo_id", resp.algo_id)?;
+                if let Some(algo_cl_ord_id) = resp.algo_cl_ord_id {
+                    dict.set_item("algo_cl_ord_id", algo_cl_ord_id)?;
+                }
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+                if let Some(req_id) = resp.req_id {
+                    dict.set_item("req_id", req_id)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[pyo3(name = "cancel_algo_order")]
+    fn py_cancel_algo_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        algo_id: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let resp = client
+                .cancel_algo_order_with_domain_types(instrument_id, algo_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("algo_id", resp.algo_id)?;
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
             })
         })
     }

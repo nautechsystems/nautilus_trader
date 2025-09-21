@@ -237,7 +237,7 @@ impl OrderFilled {
     ///
     /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderFilled))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;

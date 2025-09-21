@@ -1,21 +1,4 @@
-version: "3.5"
-
 services:
-  nautilus:
-    build:
-      context: ..
-      dockerfile: .docker/nautilus_trader.dockerfile
-    environment:
-      NAUTILUS_PATH: /opt/nautilus
-    volumes:
-      - ./nautilus_data:/opt/nautilus
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - nautilus-network
-    restart: unless-stopped
-
   postgres:
     container_name: nautilus-database
     image: postgres

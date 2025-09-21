@@ -36,7 +36,15 @@ class TestBinanceUserHttpAPI:
             base_url="https://api.binance.com/",  # Spot/Margin
         )
 
+        self.client_us = BinanceHttpClient(
+            clock=clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.us/",  # Binance.US
+        )
+
         self.api = BinanceSpotWalletHttpAPI(self.client, clock)
+        self.api_us = BinanceSpotWalletHttpAPI(self.client_us, clock)
 
     @pytest.mark.asyncio()
     async def test_trade_fee(self, mocker):
@@ -95,3 +103,32 @@ class TestBinanceUserHttpAPI:
         assert len(response) == 2
         assert isinstance(response[0], BinanceSpotTradeFee)
         assert isinstance(response[1], BinanceSpotTradeFee)
+
+    @pytest.mark.asyncio()
+    async def test_trade_fee_binance_us(self, mocker):
+        # Arrange
+        async def async_mock():
+            return pkgutil.get_data(
+                package="tests.integration_tests.adapters.binance.resources.http_responses",
+                resource="http_wallet_trading_fee.json",
+            )
+
+        mock_request = mocker.patch.object(
+            target=self.client_us,
+            attribute="send_request",
+            spec=ClientResponse,
+            return_value=async_mock(),
+        )
+
+        # Act
+        response = await self.api_us.query_spot_trade_fees(symbol="BTCUSDT")
+
+        # Assert
+        name, args, kwargs = mock_request.call_args[0]
+        assert name == "GET"
+        assert args == "/sapi/v1/asset/query/trading-fee"  # Binance.US uses different endpoint
+        assert kwargs["symbol"] == "BTCUSDT"
+        assert "signature" in kwargs
+        assert "timestamp" in kwargs
+        assert len(response) == 1
+        assert isinstance(response[0], BinanceSpotTradeFee)

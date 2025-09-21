@@ -20,8 +20,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = VolatilityMarketMakerConfig(
+    strategy_config = VolatilityMarketMakerConfig(
         instrument_id=GBPUSD_SIM.id,
         bar_type=BarType.from_str("GBP/USD.SIM-5-MINUTE-BID-INTERNAL"),
         atr_period=20,
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         emulation_trigger="NO_TRIGGER",
     )
     # Instantiate and add your strategy
-    strategy = VolatilityMarketMaker(config=config)
+    strategy = VolatilityMarketMaker(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

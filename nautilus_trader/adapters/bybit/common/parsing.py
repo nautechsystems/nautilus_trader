@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
@@ -28,19 +27,12 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import bar_aggregation_to_str
-from nautilus_trader.model.objects import FIXED_SCALAR
 
 
 if TYPE_CHECKING:
     from nautilus_trader.model.identifiers import InstrumentId
     from nautilus_trader.model.objects import Price
     from nautilus_trader.model.objects import Quantity
-
-
-def parse_str_to_raw(value: str) -> int:
-    if not value or value == "":
-        return 0
-    return int(Decimal(value) * Decimal(int(FIXED_SCALAR)))
 
 
 def parse_aggressor_side(value: str) -> AggressorSide:

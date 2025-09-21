@@ -184,6 +184,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Track processed fill IDs
         self._spread_fill_tracking: dict[ClientOrderId, set[str]] = {}
 
+        # Track average fill prices for orders
+        self._order_avg_prices: dict[ClientOrderId, Price] = {}
+
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
@@ -481,11 +484,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if not self._cache.instrument(instrument.id):
                 self._handle_data(instrument)
 
+            # Convert avg_cost to Price if available
+            avg_px_open = None
+            if position.avg_cost and position.avg_cost > 0:
+                avg_px_open = Decimal(f"{position.avg_cost:.{instrument.price_precision}f}")
+
             position_status = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument.id,
                 position_side=side,
                 quantity=Quantity.from_str(str(abs(position.quantity))),
+                avg_px_open=avg_px_open,
                 report_id=UUID4(),
                 ts_last=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
@@ -974,7 +983,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order_id=order.orderId,
             )
 
-    def _on_order_status(self, order_ref: str, order_status: str, reason: str = "") -> None:
+    def _on_order_status(
+        self,
+        order_ref: str,
+        order_status: str,
+        avg_fill_price: float = 0.0,
+        filled: Decimal = Decimal(0),
+        remaining: Decimal = Decimal(0),
+        reason: str = "",
+    ) -> None:
         if order_status in ["ApiCancelled", "Cancelled"]:
             status = OrderStatus.CANCELED
         elif order_status == "PendingCancel":
@@ -1002,6 +1019,27 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order = self._cache.order(ClientOrderId(order_ref))
 
         if nautilus_order:
+            # Update order with average fill price if provided and order is filled/partially filled
+            if avg_fill_price and avg_fill_price > 0 and status == OrderStatus.FILLED:
+                # Generate an order updated event with the average fill price
+                instrument = self._cache.instrument(nautilus_order.instrument_id)
+                if instrument:
+                    price_magnifier = self.instrument_provider.get_price_magnifier(
+                        nautilus_order.instrument_id,
+                    )
+                    converted_avg_price = ib_price_to_nautilus_price(
+                        avg_fill_price,
+                        price_magnifier,
+                    )
+                    avg_px = instrument.make_price(converted_avg_price)
+
+                    # Store the average price for later use in fill events
+                    self._order_avg_prices[nautilus_order.client_order_id] = avg_px
+
+                    self._log.debug(
+                        f"Updated order {nautilus_order.client_order_id} with avg_px={avg_px}",
+                    )
+
             self._handle_order_event(
                 status=status,
                 order=nautilus_order,
@@ -1052,6 +1090,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             price_magnifier,
         )
 
+        # Include avg_px in info if we have it stored
+        info = {}
+        if nautilus_order.client_order_id in self._order_avg_prices:
+            info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
+
         self.generate_order_filled(
             strategy_id=nautilus_order.strategy_id,
             instrument_id=nautilus_order.instrument_id,
@@ -1070,6 +1113,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=timestring_to_timestamp(execution.time).value,
+            info=info if info else None,
         )
 
         # Update position tracking to avoid duplicate processing
@@ -1179,6 +1223,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 f"execution_side={execution.side}, ratio={ratio}, combo_side={combo_order_side}",
             )
 
+            # Include avg_px in info if we have it stored
+            info = {}
+            if nautilus_order.client_order_id in self._order_avg_prices:
+                info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
+
             self.generate_order_filled(
                 strategy_id=nautilus_order.strategy_id,
                 instrument_id=nautilus_order.instrument_id,  # Keep spread ID
@@ -1194,6 +1243,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
+                info=info if info else None,
             )
         except Exception as e:
             self._log.error(f"Error generating combo fill: {e}")
@@ -1256,6 +1306,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 Currency.from_str(commission_report.currency),
             )
 
+            # Include avg_px in info if we have it stored for the parent order
+            info = {}
+            if nautilus_order.client_order_id in self._order_avg_prices:
+                info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
+
             self.generate_order_filled(
                 strategy_id=nautilus_order.strategy_id,
                 instrument_id=leg_instrument_id,
@@ -1271,6 +1326,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
+                info=info if info else None,
             )
 
             # Update position tracking to avoid duplicate processing
@@ -1370,12 +1426,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Determine position side
             side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT
 
+            # Convert avg_cost to Price if available
+            avg_px_open = None
+            if ib_position.avg_cost and ib_position.avg_cost > 0:
+                avg_px_open = Decimal(f"{ib_position.avg_cost:.{instrument.price_precision}f}")
+
             # Create position status report
             position_report = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument.id,
                 position_side=side,
                 quantity=instrument.make_qty(new_quantity),
+                avg_px_open=avg_px_open,
                 report_id=UUID4(),
                 ts_last=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
@@ -1392,4 +1454,4 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Update tracking
             self._known_positions[contract_id] = new_quantity
         except Exception as e:
-            self._log.exception(f"Error handling position update: {e}")
+            self._log.error(f"Error handling position update: {e}")

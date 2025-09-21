@@ -276,7 +276,7 @@ impl OrderBookDepth10 {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Depth10` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::from(*self))
     }
 

@@ -750,6 +750,7 @@ fn test_pool() -> Pool {
         "Swap(address,address,int256,int256,uint160,uint128,int24)",
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
+        "Collect(address,address,int24,int24,uint128,uint128)",
     );
 
     let token0 = Token::new(

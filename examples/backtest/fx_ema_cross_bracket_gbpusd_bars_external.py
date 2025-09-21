@@ -19,8 +19,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     engine.add_data(ask_bars)
 
     # Configure your strategy
-    config = EMACrossBracketConfig(
+    strategy_config = EMACrossBracketConfig(
         instrument_id=GBPUSD_SIM.id,
         bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         fast_ema_period=10,
@@ -115,7 +115,7 @@ if __name__ == "__main__":
         trade_size=Decimal(1_000),
     )
     # Instantiate and add your strategy
-    strategy = EMACrossBracket(config=config)
+    strategy = EMACrossBracket(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

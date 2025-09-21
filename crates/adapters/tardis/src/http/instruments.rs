@@ -329,7 +329,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_infinite_available_to() {
         // Create instrument with infinite availability (no end date)
         let info = create_test_instrument(100, None);
@@ -369,7 +369,7 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[rstest]
     fn test_available_offset_effects() {
         // Create instrument with fixed availability 100-200
         let info = create_test_instrument(100, Some(200));
@@ -409,7 +409,7 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[rstest]
     fn test_with_real_dates() {
         // Using realistic Unix timestamps (milliseconds since epoch)
         // April 24, 2023 00:00:00 UTC = 1682294400000
@@ -454,7 +454,7 @@ mod tests {
         assert!(!is_available(&info, None, None, None, Some(end_date)));
     }
 
-    #[test]
+    #[rstest]
     fn test_complex_scenarios() {
         // Create instrument with fixed availability 100-200
         let info = create_test_instrument(100, Some(200));
@@ -512,7 +512,7 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[rstest]
     fn test_edge_cases() {
         // Test with empty "changes" array
         let mut info = create_test_instrument(100, Some(200));

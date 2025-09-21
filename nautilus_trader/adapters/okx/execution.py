@@ -45,6 +45,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -52,6 +53,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
+from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -129,6 +131,10 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
+        self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
 
         # Set account ID
         account_id = AccountId(f"{name or OKX_VENUE.value}-master")
@@ -141,6 +147,9 @@ class OKXExecutionClient(LiveExecutionClient):
         self._http_client = client
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
+        # Track algo order IDs for cancellation
+        self._algo_order_ids: dict[ClientOrderId, str] = {}
+
         # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
             url=config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(config.is_demo),
@@ -148,7 +157,12 @@ class OKXExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Set trade mode
+        self._ws_business_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
+            url=nautilus_pyo3.get_okx_ws_url_business(config.is_demo),
+            account_id=self.pyo3_account_id,
+        )
+        self._ws_business_client_futures: set[asyncio.Future] = set()
+
         if account_type == AccountType.CASH:
             self._trade_mode = OKXTradeMode.CASH
         else:
@@ -164,13 +178,10 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._cache_instruments()
         await self._update_account_state()
 
-        future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments=self.okx_instrument_provider.instruments_pyo3(),
-                callback=self._handle_msg,
-            ),
+        await self._ws_client.connect(
+            instruments=self.okx_instrument_provider.instruments_pyo3(),
+            callback=self._handle_msg,
         )
-        self._ws_client_futures.add(future)
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
@@ -178,9 +189,21 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"Private websocket API key {self._ws_client.api_key}", LogColor.BLUE)
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
-        # Subscribe to orders and account updates
+        await self._ws_business_client.connect(
+            instruments=self.okx_instrument_provider.instruments_pyo3(),
+            callback=self._handle_msg,
+        )
+
+        # Wait for connection to be established
+        await self._ws_business_client.wait_until_active(timeout_secs=10.0)
+        self._log.info(
+            f"Connected to business websocket {self._ws_business_client.url}",
+            LogColor.BLUE,
+        )
+
         for instrument_type in self._instrument_provider._instrument_types:
             await self._ws_client.subscribe_orders(instrument_type)
+            await self._ws_business_client.subscribe_orders_algo(instrument_type)
 
             # Only subscribe to fills channel if VIP5+ (configurable)
             if self._config.use_fills_channel:
@@ -195,29 +218,39 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_account()
 
     async def _disconnect(self) -> None:
+        self._http_client.cancel_all_requests()
+
         # Shutdown websocket
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
 
             await self._ws_client.close()
 
+        # Shutdown business websocket
+        if not self._ws_business_client.is_closed():
+            self._log.info("Disconnecting business websocket")
+
+            await self._ws_business_client.close()
+
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
         # Cancel any pending futures
-        for future in self._ws_client_futures:
+        all_futures = self._ws_client_futures | self._ws_business_client_futures
+        for future in all_futures:
             if not future.done():
                 future.cancel()
 
-        if self._ws_client_futures:
+        if all_futures:
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    asyncio.gather(*all_futures, return_exceptions=True),
                     timeout=2.0,
                 )
             except TimeoutError:
                 self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
+        self._ws_business_client_futures.clear()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -235,7 +268,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
             self.generate_account_state(
                 balances=account_state.balances,
-                margins=[],  # TBD
+                margins=account_state.margins,
                 reported=True,
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -348,7 +381,6 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReport", e)
 
@@ -438,12 +470,30 @@ class OKXExecutionClient(LiveExecutionClient):
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
                 )
-                pyo3_reports.extend(response)
+
+                if not response:
+                    instrument = self._cache.instrument(command.instrument_id)
+                    if instrument is None:
+                        raise RuntimeError(
+                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found",
+                        )
+
+                    report = PositionStatusReport.create_flat(
+                        account_id=self.account_id,
+                        instrument_id=command.instrument_id,
+                        size_precision=instrument.size_precision,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    reports.append(report)
+                else:
+                    pyo3_reports.extend(response)
             else:
-                response = await self._http_client.request_position_status_reports(
-                    account_id=self.pyo3_account_id,
-                )
-                pyo3_reports.extend(response)
+                for instrument_type in self._config.instrument_types:
+                    response = await self._http_client.request_position_status_reports(
+                        account_id=self.pyo3_account_id,
+                        instrument_type=instrument_type,
+                    )
+                    pyo3_reports.extend(response)
 
             for pyo3_report in pyo3_reports:
                 report = PositionStatusReport.from_pyo3(pyo3_report)
@@ -461,101 +511,8 @@ class OKXExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _query_account(self, _command: QueryAccount) -> None:
-        # Specific account ID (sub account) not yet supported
+        # TODO: Specific account ID (sub account) not yet supported
         await self._update_account_state()
-
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        order: Order | None = self._cache.order(command.client_order_id)
-        if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
-            return
-
-        if order.is_closed:
-            self._log.warning(
-                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
-            )
-            return
-
-        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
-        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-        pyo3_venue_order_id = (
-            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
-            if command.venue_order_id
-            else None
-        )
-
-        await self._ws_client.cancel_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            client_order_id=pyo3_client_order_id,
-            venue_order_id=pyo3_venue_order_id,
-            position_side=None,  # Will be determined by the Rust client
-        )
-
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        # For simplicity, cancel orders one by one
-        orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
-        for order in orders_open:
-            if order.is_closed:
-                continue
-
-            cancel_command = CancelOrder(
-                trader_id=command.trader_id,
-                strategy_id=command.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                command_id=command.id,
-                ts_init=command.ts_init,
-            )
-            await self._cancel_order(cancel_command)
-
-    async def _modify_order(self, command: ModifyOrder) -> None:
-        order: Order | None = self._cache.order(command.client_order_id)
-        if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
-            return
-
-        if order.is_closed:
-            self._log.warning(
-                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
-            )
-            return
-
-        # Generate a new client order ID for the amended order
-        new_client_order_id = self._cache.client_order_id_generator.generate()
-
-        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
-        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-        pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
-        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
-        pyo3_quantity = (
-            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
-        )
-        pyo3_venue_order_id = (
-            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
-            if command.venue_order_id
-            else None
-        )
-
-        await self._ws_client.modify_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            client_order_id=pyo3_client_order_id,
-            new_client_order_id=pyo3_new_client_order_id,
-            price=pyo3_price,
-            quantity=pyo3_quantity,
-            venue_order_id=pyo3_venue_order_id,
-            position_side=None,  # Will be determined by the Rust client
-        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -571,6 +528,22 @@ class OKXExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        # Check if this is a conditional order that needs to go via REST API
+        is_conditional = order.order_type in (
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+        )
+
+        if is_conditional:
+            await self._submit_algo_order_http(command)
+        else:
+            await self._submit_order_websocket(command)
+
+    async def _submit_order_websocket(self, command: SubmitOrder) -> None:
+        order = command.order
 
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
@@ -590,22 +563,259 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        await self._ws_client.submit_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            td_mode=self._trade_mode,
-            client_order_id=pyo3_client_order_id,
-            order_side=pyo3_order_side,
-            order_type=pyo3_order_type,
-            quantity=pyo3_quantity,
-            price=pyo3_price,
-            trigger_price=pyo3_trigger_price,
-            time_in_force=pyo3_time_in_force,
-            post_only=order.is_post_only,
-            reduce_only=order.is_reduce_only,
-            quote_quantity=order.is_quote_quantity,
+        td_mode = self._trade_mode
+
+        if command.params:
+            td_mode_str = command.params.get("td_mode")
+            if td_mode_str:
+                try:
+                    td_mode = OKXTradeMode(td_mode_str)
+                except ValueError:
+                    self._log.warning(
+                        f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
+                        f"falling back to '{str(self._trade_mode).lower()}'",
+                    )
+                    td_mode = self._trade_mode
+
+        try:
+            await self._ws_client.submit_order(
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                td_mode=td_mode,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+                time_in_force=pyo3_time_in_force,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
+                quote_quantity=order.is_quote_quantity,
+            )
+        except Exception as e:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _submit_algo_order_http(self, command: SubmitOrder) -> None:
+        order = command.order
+
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
+
+        pyo3_limit_price = (
+            nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
         )
+
+        pyo3_trigger_type = (
+            trigger_type_to_pyo3(order.trigger_type) if hasattr(order, "trigger_type") else None
+        )
+
+        td_mode = self._trade_mode
+        if command.params and "td_mode" in command.params:
+            td_mode_str = command.params["td_mode"]
+            try:
+                td_mode = OKXTradeMode(td_mode_str)
+            except ValueError:
+                self._log.warning(f"Invalid trade mode '{td_mode_str}', using default")
+
+        try:
+            response = await self._http_client.place_algo_order(
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                td_mode=td_mode,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                trigger_price=pyo3_trigger_price,
+                trigger_type=pyo3_trigger_type,
+                limit_price=pyo3_limit_price,
+                reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            )
+
+            if response.get("s_code") and response["s_code"] != "0":
+                raise ValueError(f"OKX API error: {response.get('s_msg', 'Unknown error')}")
+
+            algo_id = response.get("algo_id")
+            if algo_id:
+                self._algo_order_ids[order.client_order_id] = algo_id
+        except Exception as e:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id is not None
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        pyo3_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+
+        try:
+            await self._ws_client.modify_order(
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                price=pyo3_price,
+                quantity=pyo3_quantity,
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+        except Exception as e:
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        try:
+            algo_id = self._algo_order_ids.get(command.client_order_id)
+            if algo_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
+                await self._http_client.cancel_algo_order(
+                    instrument_id=pyo3_instrument_id,
+                    algo_id=algo_id,
+                )
+
+                del self._algo_order_ids[command.client_order_id]
+            else:
+                pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+                pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
+                pyo3_client_order_id = (
+                    nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+                    if command.client_order_id is not None
+                    else None
+                )
+                pyo3_venue_order_id = (
+                    nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+                    if command.venue_order_id
+                    else None
+                )
+
+                await self._ws_client.cancel_order(
+                    trader_id=pyo3_trader_id,
+                    strategy_id=pyo3_strategy_id,
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    venue_order_id=pyo3_venue_order_id,
+                )
+        except Exception as e:
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if self._config.use_mm_mass_cancel:
+            await self._cancel_all_orders_mass_cancel(command)
+        else:
+            await self._cancel_all_orders_individually(command)
+
+    async def _cancel_all_orders_mass_cancel(self, command: CancelAllOrders) -> None:
+        # Use OKX's mass-cancel WebSocket endpoint for market makers
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        try:
+            await self._ws_client.mass_cancel_orders(
+                instrument_id=pyo3_instrument_id,
+            )
+        except Exception as e:
+            # If mass cancel fails, generate cancel rejected events for all open orders
+            orders_open = self._cache.orders_open(instrument_id=command.instrument_id)
+            for order in orders_open:
+                if not order.is_closed:
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=str(e),
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+
+    async def _cancel_all_orders_individually(self, command: CancelAllOrders) -> None:
+        orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
+        for order in orders_open:
+            if order.is_closed:
+                continue
+
+            cancel_command = CancelOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                command_id=command.id,
+                ts_init=command.ts_init,
+            )
+            await self._cancel_order(cancel_command)
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -618,9 +828,7 @@ class OKXExecutionClient(LiveExecutionClient):
             return
 
         try:
-            self._log.debug(f"Received websocket message: {type(msg)}")
-
-            if isinstance(msg, dict) and msg.get("type") == "AccountState":
+            if isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderRejected):
                 self._handle_order_rejected_pyo3(msg)
@@ -634,24 +842,17 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._handle_fill_report_pyo3(msg)
             else:
                 self._log.debug(f"Received unhandled message type: {type(msg)}")
-
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _handle_account_state(self, msg: dict) -> None:
-        try:
-            account_state = AccountState.from_dict(msg)
-            self._log.debug(f"Received account update: {account_state}")
-
-            # Generate account state update event
-            self.generate_account_state(
-                balances=account_state.balances,
-                margins=account_state.margins,
-                reported=account_state.is_reported,
-                ts_event=account_state.ts_event,
-            )
-        except Exception as e:
-            self._log.error(f"Failed to process account state update: {e}")
+    def _handle_account_state(self, pyo3_account_state: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
+        )
 
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
@@ -671,8 +872,19 @@ class OKXExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
-    def _handle_order_status_report_pyo3(self, msg: nautilus_pyo3.OrderStatusReport) -> None:
-        report = OrderStatusReport.from_pyo3(msg)
+    def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
+        self,
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> None:
+        # Discard order status reports until account is properly initialized
+        # Reconciliation will handle getting the current state of open orders
+        if not self.is_connected or not self.account_id or not self._cache.account(self.account_id):
+            self._log.debug(
+                f"Discarding order status report during connection sequence: {pyo3_report.client_order_id!r}",
+            )
+            return
+
+        report = OrderStatusReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
             self._send_order_status_report(report)
@@ -685,6 +897,12 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        # For algo orders (stop orders), store the algo_id mapping
+        # The venue_order_id is actually the algo_id for algo orders
+        if order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT):
+            if report.venue_order_id and report.client_order_id:
+                self._algo_order_ids[report.client_order_id] = str(report.venue_order_id)
+
         if report.order_status == OrderStatus.REJECTED:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -694,13 +912,25 @@ class OKXExecutionClient(LiveExecutionClient):
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
-            self.generate_order_accepted(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
+            if is_order_updated(order, report):
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity,
+                    price=report.price,
+                    trigger_price=report.trigger_price,
+                    ts_event=report.ts_last,
+                )
+            else:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
         elif report.order_status == OrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=order.strategy_id,
@@ -741,11 +971,8 @@ class OKXExecutionClient(LiveExecutionClient):
             ts_event=report.ts_last,
         )
 
-    def _handle_fill_report_pyo3(self, msg: nautilus_pyo3.FillReport) -> None:
-        """
-        Handle PyO3 FillReport (both fills channel and order status derived).
-        """
-        report = FillReport.from_pyo3(msg)
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
+        report = FillReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
             self._send_fill_report(report)
@@ -781,3 +1008,17 @@ class OKXExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
+
+
+def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
+    if order.has_price and report.price and order.price != report.price:
+        return True
+
+    if (
+        order.has_trigger_price
+        and report.trigger_price
+        and order.trigger_price != report.trigger_price
+    ):
+        return True
+
+    return order.quantity != report.quantity

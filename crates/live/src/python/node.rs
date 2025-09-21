@@ -46,7 +46,7 @@ impl LiveNode {
         trader_id: TraderId,
         environment: Environment,
     ) -> PyResult<LiveNodeBuilderPy> {
-        match LiveNode::builder(name, trader_id, environment) {
+        match Self::builder(name, trader_id, environment) {
             Ok(builder) => Ok(LiveNodeBuilderPy {
                 inner: Rc::new(RefCell::new(Some(builder))),
             }),
@@ -71,14 +71,14 @@ impl LiveNode {
     /// Returns the node's instance ID.
     #[getter]
     #[pyo3(name = "instance_id")]
-    fn py_instance_id(&self) -> UUID4 {
+    const fn py_instance_id(&self) -> UUID4 {
         self.instance_id()
     }
 
     /// Returns whether the node is running.
     #[getter]
     #[pyo3(name = "is_running")]
-    fn py_is_running(&self) -> bool {
+    const fn py_is_running(&self) -> bool {
         self.is_running()
     }
 
@@ -111,7 +111,7 @@ impl LiveNode {
             signal_module.call_method1("signal", (2, signal_module.getattr("SIG_DFL")?))?; // Save original SIGINT handler (signal 2)
 
         // Set up a custom signal handler that uses our handle
-        let handle_for_signal = handle.clone();
+        let handle_for_signal = handle;
         let signal_callback = pyo3::types::PyCFunction::new_closure(
             py,
             None,
@@ -175,7 +175,7 @@ impl LiveNode {
         log::info!("Importing actor from module: {module_name} class: {class_name}");
 
         // Import the Python class to verify it exists and get it for method dispatch
-        let _python_class = Python::with_gil(|py| -> PyResult<PyObject> {
+        let _python_class = Python::attach(|py| -> PyResult<Py<PyAny>> {
             let actor_module = py.import(module_name)?;
             let actor_class = actor_module.getattr(class_name)?;
             Ok(actor_class.unbind())
@@ -189,7 +189,7 @@ impl LiveNode {
         log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
 
         // Create the Python actor and register the internal PyDataActor
-        let python_actor = Python::with_gil(|py| -> anyhow::Result<PyObject> {
+        let python_actor = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
             // Import the Python class
             let actor_module = py
                 .import(module_name)
@@ -244,9 +244,8 @@ impl LiveNode {
                             if let Err(e) = instance.call_method0("__post_init__") {
                                 log::error!("Failed to call __post_init__ on config instance: {e}");
                                 anyhow::bail!("__post_init__ failed: {e}");
-                            } else {
-                                log::debug!("Successfully called __post_init__ on config instance");
                             }
+                            log::debug!("Successfully called __post_init__ on config instance");
 
                             instance
                         },
@@ -272,9 +271,8 @@ impl LiveNode {
                                     if let Err(e) = instance.call_method0("__post_init__") {
                                         log::error!("Failed to call __post_init__ on config instance: {e}");
                                         anyhow::bail!("__post_init__ failed: {e}");
-                                    } else {
-                                        log::debug!("Called __post_init__ on config instance");
                                     }
+                                    log::debug!("Called __post_init__ on config instance");
 
                                     instance
                                 },
@@ -381,7 +379,7 @@ impl LiveNode {
         .map_err(to_pyruntime_err)?;
 
         // Add the actor to the trader's lifecycle management without consuming it
-        let actor_id = Python::with_gil(
+        let actor_id = Python::attach(
             |py| -> anyhow::Result<nautilus_model::identifiers::ActorId> {
                 let py_actor = python_actor.bind(py);
                 let py_data_actor_ref = py_actor
@@ -488,13 +486,13 @@ impl LiveNodeBuilderPy {
     fn py_add_data_client(
         &self,
         name: Option<String>,
-        factory: PyObject,
-        config: PyObject,
+        factory: Py<PyAny>,
+        config: Py<PyAny>,
     ) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
-            Python::with_gil(|py| -> PyResult<Self> {
-                // Use the global registry to extract PyObjects to trait objects
+            Python::attach(|py| -> PyResult<Self> {
+                // Use the global registry to extract Py<PyAny>s to trait objects
                 let registry = get_global_pyo3_registry();
 
                 let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;

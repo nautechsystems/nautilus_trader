@@ -10,4 +10,4 @@ This example demonstrates how to use NautilusTrader's **Cache** system for stori
 - Tracking **orders** and **positions** in the system.
 
 This helps you understand how to use Cache effectively in your trading strategies
-for data management and state tracking. 🚀
+for data management and state tracking.

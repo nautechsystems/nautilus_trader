@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
-use pyo3::{PyObject, PyResult, Python};
+use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,
@@ -45,7 +45,7 @@ pub mod updated;
 /// # Errors
 ///
 /// Returns a `PyErr` if conversion to a Python object fails.
-pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<PyObject> {
+pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<Py<PyAny>> {
     match order_event {
         OrderEventAny::Initialized(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::Denied(event) => Ok(event.into_py_any_unwrap(py)),
@@ -71,7 +71,7 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
 /// # Errors
 ///
 /// Returns a `PyErr` if extraction fails or the event type is unsupported.
-pub fn pyobject_to_order_event(py: Python, order_event: PyObject) -> PyResult<OrderEventAny> {
+pub fn pyobject_to_order_event(py: Python, order_event: Py<PyAny>) -> PyResult<OrderEventAny> {
     let class = order_event.getattr(py, "__class__")?;
     match class.getattr(py, "__name__")?.extract::<&str>(py)? {
         stringify!(OrderAccepted) => Ok(OrderEventAny::Accepted(
@@ -123,7 +123,7 @@ pub fn pyobject_to_order_event(py: Python, order_event: PyObject) -> PyResult<Or
             order_event.extract::<OrderUpdated>(py)?,
         )),
         _ => Err(to_pyvalue_err(
-            "Error in conversion from `PyObject` to `OrderEventAny`",
+            "Error in conversion from `Py<PyAny>` to `OrderEventAny`",
         )),
     }
 }

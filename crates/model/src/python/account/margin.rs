@@ -76,7 +76,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "leverages")]
-    fn py_leverages(&self, py: Python) -> PyResult<PyObject> {
+    fn py_leverages(&self, py: Python) -> PyResult<Py<PyAny>> {
         let leverages = PyDict::new(py);
         for (key, &value) in &self.leverages {
             leverages
@@ -103,7 +103,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "initial_margins")]
-    fn py_initial_margins(&self, py: Python) -> PyResult<PyObject> {
+    fn py_initial_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
         let initial_margins = PyDict::new(py);
         for (key, &value) in &self.initial_margins() {
             initial_margins
@@ -114,7 +114,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "maintenance_margins")]
-    fn py_maintenance_margins(&self, py: Python) -> PyResult<PyObject> {
+    fn py_maintenance_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
         let maintenance_margins = PyDict::new(py);
         for (key, &value) in &self.maintenance_margins() {
             maintenance_margins
@@ -164,7 +164,7 @@ impl MarginAccount {
     /// or if the instrument type is unsupported.
     pub fn py_calculate_initial_margin(
         &mut self,
-        instrument: PyObject,
+        instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,
         use_quote_for_inverse: Option<bool>,
@@ -204,7 +204,7 @@ impl MarginAccount {
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(
         &mut self,
-        instrument: PyObject,
+        instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,
         use_quote_for_inverse: Option<bool>,
@@ -235,10 +235,10 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
-        let events_list: PyResult<Vec<PyObject>> =
+        let events_list: PyResult<Vec<Py<PyAny>>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();
         dict.set_item("events", events_list.unwrap())?;
         Ok(dict.into())

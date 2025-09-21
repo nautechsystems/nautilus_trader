@@ -1905,6 +1905,30 @@ typedef struct Money_t {
 extern const uint8_t HIGH_PRECISION_MODE;
 
 /**
+ * The maximum raw money integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from MONEY_MAX * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because MONEY_MAX and FIXED_SCALAR
+ * are chosen such that their product fits within MoneyRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
+ */
+extern const MoneyRaw MONEY_RAW_MAX;
+
+/**
+ * The minimum raw money integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from MONEY_MIN * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because MONEY_MIN and FIXED_SCALAR
+ * are chosen such that their product fits within MoneyRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
+ */
+extern const MoneyRaw MONEY_RAW_MIN;
+
+/**
  * The maximum raw price integer value.
  *
  * # Safety
@@ -3194,3 +3218,5 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
+
+struct Quantity_t quantity_saturating_sub(struct Quantity_t a, struct Quantity_t b);

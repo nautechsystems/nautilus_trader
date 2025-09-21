@@ -690,6 +690,50 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.INITIALIZED
 
+    def test_duplicate_order_accepted_event_logs_debug_not_warning(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Order is now in ACCEPTED state
+        assert order.status == OrderStatus.ACCEPTED
+        initial_event_count = order.event_count
+
+        # Process duplicate OrderAccepted event
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED  # Status unchanged
+        assert order.event_count == initial_event_count  # Event not applied
+
     def test_order_filled_event_when_order_not_found_in_cache_logs(self) -> None:
         # Arrange
         self.exec_engine.start()

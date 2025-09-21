@@ -83,6 +83,7 @@ class InteractiveBrokersClient(
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
+        fetch_all_open_orders: bool = False,
     ) -> None:
         super().__init__(
             clock=clock,
@@ -97,6 +98,7 @@ class InteractiveBrokersClient(
         self._host = host
         self._port = port
         self._client_id = client_id
+        self._fetch_all_open_orders = fetch_all_open_orders
 
         # TWS API
         self._eclient: EClient = EClient(

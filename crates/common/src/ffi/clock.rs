@@ -91,7 +91,7 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
         None
     } else {
         let callback =
-            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
         None
     } else {
         let callback =
-            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
         None
     } else {
         let callback =
-            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -434,7 +434,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
         None
     } else {
         let callback =
-            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
+            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 

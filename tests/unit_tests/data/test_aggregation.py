@@ -27,6 +27,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.aggregation import BarBuilder
+from nautilus_trader.data.aggregation import RenkoBarAggregator
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
@@ -198,7 +199,7 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_event)
+        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_init)
 
         # Assert
         assert builder.initialized
@@ -241,7 +242,7 @@ class TestBarBuilder:
             ts_event=1_000,
             ts_init=1_000,
         )
-        builder.update_bar(bar1, bar1.volume, bar1.ts_event)
+        builder.update_bar(bar1, bar1.volume, bar1.ts_init)
 
         bar2 = Bar(
             bar_type=bar_type,
@@ -255,7 +256,7 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.update_bar(bar2, bar2.volume, bar2.ts_event)
+        builder.update_bar(bar2, bar2.volume, bar2.ts_init)
 
         # Assert
         assert builder.initialized
@@ -1710,6 +1711,410 @@ class TestTestValueBarAggregator:
         assert last_bar.volume == Quantity.from_str("30")
 
 
+class TestRenkoBarAggregator:
+    def test_handle_quote_tick_when_price_below_brick_size_updates(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        tick1 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+
+        # Assert
+        assert len(handler) == 0  # No bar created yet
+
+    def test_handle_quote_tick_when_price_exceeds_brick_size_creates_bar(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        tick1 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00000"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        tick2 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00010"),  # 10 pip move up
+            ask_price=Price.from_str("1.00010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+
+        # Assert
+        assert len(handler) == 1
+        bar = handler[0]
+        assert bar.open == Price.from_str("1.00000")
+        assert bar.high == Price.from_str("1.00010")
+        assert bar.low == Price.from_str("1.00000")
+        assert bar.close == Price.from_str("1.00010")
+        assert bar.volume == Quantity.from_int(2)
+
+    def test_handle_quote_tick_multiple_bricks_in_one_update(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        tick1 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00000"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        tick2 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00025"),  # 25 pip move up (2.5 bricks)
+            ask_price=Price.from_str("1.00025"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+
+        # Assert
+        assert len(handler) == 2  # Should create 2 bars
+
+        # First bar: 1.00000 -> 1.00010
+        bar1 = handler[0]
+        assert bar1.open == Price.from_str("1.00000")
+        assert bar1.high == Price.from_str("1.00010")
+        assert bar1.low == Price.from_str("1.00000")
+        assert bar1.close == Price.from_str("1.00010")
+
+        # Second bar: 1.00010 -> 1.00020
+        bar2 = handler[1]
+        assert bar2.open == Price.from_str("1.00010")
+        assert bar2.high == Price.from_str("1.00020")
+        assert bar2.low == Price.from_str("1.00010")
+        assert bar2.close == Price.from_str("1.00020")
+
+    def test_handle_quote_tick_downward_movement(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        tick1 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00020"),
+            ask_price=Price.from_str("1.00020"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        tick2 = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1.00010"),  # 10 pip move down
+            ask_price=Price.from_str("1.00010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+
+        # Assert
+        assert len(handler) == 1
+        bar = handler[0]
+        assert bar.open == Price.from_str("1.00020")
+        assert bar.high == Price.from_str("1.00020")
+        assert bar.low == Price.from_str("1.00010")
+        assert bar.close == Price.from_str("1.00010")
+        assert bar.volume == Quantity.from_int(2)
+
+    def test_get_brick_size(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        # Act & Assert
+        assert aggregator.brick_size == Decimal("0.00010")  # 10 pips for AUDUSD
+
+    def test_handle_bar_when_price_below_brick_size_updates(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        bar1 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00005"),
+            low=Price.from_str("0.99995"),
+            close=Price.from_str("1.00005"),  # 5 pip move up (less than 10 pip brick)
+            volume=Quantity.from_int(100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        bar2 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00008"),
+            low=Price.from_str("1.00002"),
+            close=Price.from_str("1.00003"),  # 2 pip move down (total 3 pip from start)
+            volume=Quantity.from_int(50),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+
+        # Assert
+        assert len(handler) == 0  # No Renko bars should be created yet
+
+    def test_handle_bar_when_price_exceeds_brick_size_creates_bar(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        bar1 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00005"),
+            low=Price.from_str("0.99995"),
+            close=Price.from_str("1.00000"),
+            volume=Quantity.from_int(100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        bar2 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00015"),
+            low=Price.from_str("0.99995"),
+            close=Price.from_str("1.00010"),  # 10 pip move up (exactly 1 brick)
+            volume=Quantity.from_int(50),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+
+        # Assert
+        assert len(handler) == 1
+        bar = handler[0]
+        assert bar.open == Price.from_str("1.00000")
+        assert bar.high == Price.from_str("1.00010")
+        assert bar.low == Price.from_str("1.00000")
+        assert bar.close == Price.from_str("1.00010")
+        assert bar.volume == Quantity.from_int(150)  # 100 + 50
+
+    def test_handle_bar_multiple_bricks_in_one_update(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        bar1 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00005"),
+            low=Price.from_str("0.99995"),
+            close=Price.from_str("1.00000"),
+            volume=Quantity.from_int(100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        bar2 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00025"),
+            low=Price.from_str("0.99995"),
+            close=Price.from_str("1.00025"),  # 25 pip move up (2.5 bricks)
+            volume=Quantity.from_int(200),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+
+        # Assert
+        assert len(handler) == 2  # Should create 2 bars
+
+        # First bar: 1.00000 -> 1.00010
+        bar1 = handler[0]
+        assert bar1.open == Price.from_str("1.00000")
+        assert bar1.high == Price.from_str("1.00010")
+        assert bar1.low == Price.from_str("1.00000")
+        assert bar1.close == Price.from_str("1.00010")
+        assert bar1.volume == Quantity.from_int(300)  # 100 + 200
+
+        # Second bar: 1.00010 -> 1.00020
+        bar2 = handler[1]
+        assert bar2.open == Price.from_str("1.00010")
+        assert bar2.high == Price.from_str("1.00020")
+        assert bar2.low == Price.from_str("1.00010")
+        assert bar2.close == Price.from_str("1.00020")
+        assert bar2.volume == Quantity.from_int(300)  # 100 + 200
+
+    def test_handle_bar_downward_movement(self):
+        # Arrange
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(10, BarAggregation.RENKO, PriceType.MID)  # 10 pip brick size
+        bar_type = BarType(instrument.id, bar_spec)
+        aggregator = RenkoBarAggregator(
+            instrument,
+            bar_type,
+            handler.append,
+        )
+
+        bar1 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00020"),
+            high=Price.from_str("1.00025"),
+            low=Price.from_str("1.00015"),
+            close=Price.from_str("1.00020"),
+            volume=Quantity.from_int(100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        bar2 = Bar(
+            bar_type=BarType(
+                instrument.id,
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            ),
+            open=Price.from_str("1.00020"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00005"),
+            close=Price.from_str("1.00010"),  # 10 pip move down
+            volume=Quantity.from_int(75),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+
+        # Assert
+        assert len(handler) == 1
+        bar = handler[0]
+        assert bar.open == Price.from_str("1.00020")
+        assert bar.high == Price.from_str("1.00020")
+        assert bar.low == Price.from_str("1.00010")
+        assert bar.close == Price.from_str("1.00010")
+        assert bar.volume == Quantity.from_int(175)  # 100 + 75
+
+
 class TestTimeBarAggregator:
     def test_instantiate_given_invalid_bar_spec_raises_value_error(self):
         # Arrange
@@ -2055,6 +2460,160 @@ class TestTimeBarAggregator:
         assert len(events) == 0
         assert initial_next_close == 180_000_000_001
         assert aggregator.next_close_ns == 180_000_000_001  # TODO: This didn't increment?
+
+    def test_skip_first_non_full_bar_when_starting_on_bar_boundary(self):
+        """
+        Test that when skip_first_non_full_bar=True and we start exactly on a bar
+        boundary, the first bar should NOT be skipped (reproduces issue #2605).
+        """
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
+
+        # Start exactly at a 2-second boundary (2024-12-01 00:00:00)
+        start_time_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
+        clock.set_time(start_time_ns)
+
+        # Create aggregator with skip_first_non_full_bar=True
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+
+        # Create trade ticks at 0.5 second intervals
+        tick1 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=start_time_ns + 500_000_000,  # 0.5 seconds after start
+            ts_init=start_time_ns + 500_000_000,
+        )
+
+        tick2 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("2"),
+            ts_event=start_time_ns + 1_000_000_000,  # 1 second after start
+            ts_init=start_time_ns + 1_000_000_000,
+        )
+
+        tick3 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00003"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("3"),
+            ts_event=start_time_ns + 1_500_000_000,  # 1.5 seconds after start
+            ts_init=start_time_ns + 1_500_000_000,
+        )
+
+        # Act - process ticks and advance time to trigger first bar
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
+
+        aggregator.handle_trade_tick(tick3)
+        clock.set_time(tick3.ts_event)
+
+        # Advance to exactly 2 seconds to trigger the first bar
+        events = clock.advance_time(start_time_ns + 2_000_000_000)
+        if events:
+            events[0].handle()
+
+        # Assert - we should have received the first bar since we had data for the full period
+        assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
+        assert handler[0].ts_event == start_time_ns + 2_000_000_000
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].close == Price.from_str("1.00003")
+        assert handler[0].volume == Quantity.from_int(300000)
+
+    def test_skip_first_non_full_bar_when_starting_near_bar_boundary(self):
+        """
+        When skip_first_non_full_bar=True and we start within the tolerance of a bar
+        boundary (e.g., +100µs), the first bar should NOT be skipped.
+        """
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
+
+        # Base boundary at 2024-12-01 00:00:00; start +100µs after boundary
+        base_boundary_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
+        clock.set_time(base_boundary_ns + 100_000)  # +100µs (within 1ms tolerance)
+
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+
+        # Create trade ticks at 0.5s, 1.0s, 1.5s from the base boundary
+        tick1 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=base_boundary_ns + 500_000_000,
+            ts_init=base_boundary_ns + 500_000_000,
+        )
+
+        tick2 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("2"),
+            ts_event=base_boundary_ns + 1_000_000_000,
+            ts_init=base_boundary_ns + 1_000_000_000,
+        )
+
+        tick3 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00003"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("3"),
+            ts_event=base_boundary_ns + 1_500_000_000,
+            ts_init=base_boundary_ns + 1_500_000_000,
+        )
+
+        # Act - process ticks and advance to the close boundary
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
+
+        aggregator.handle_trade_tick(tick3)
+        clock.set_time(tick3.ts_event)
+
+        events = clock.advance_time(base_boundary_ns + 2_000_000_000)
+        if events:
+            events[0].handle()
+
+        # Assert - first bar should be emitted
+        assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
+        assert handler[0].ts_event == base_boundary_ns + 2_000_000_000
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].close == Price.from_str("1.00003")
+        assert handler[0].volume == Quantity.from_int(300000)
 
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars_and_time_origin(
         self,

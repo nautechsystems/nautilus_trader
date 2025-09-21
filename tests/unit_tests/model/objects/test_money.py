@@ -224,6 +224,135 @@ class TestMoney:
         assert result1 == result2
         assert result1 == expected
 
+    @pytest.mark.parametrize(
+        ("value", "expected_amount", "expected_currency"),
+        [
+            # Scientific notation tests
+            ["1e6 USD", "1000000.00", USD],
+            ["1E6 USD", "1000000.00", USD],
+            ["2.5e4 USD", "25000.00", USD],
+            ["3.5E-2 USD", "0.04", USD],
+            ["1.23456e-1 AUD", "0.12", AUD],
+            ["7.89E1 USDT", "78.90000000", USDT],
+            # Underscore handling
+            ["1_000 USD", "1000.00", USD],
+            ["1_000.25 USD", "1000.25", USD],
+            ["9_876_543.21 USD", "9876543.21", USD],
+            ["0.000_123 USDT", "0.00012300", USDT],
+            # Combined underscores and scientific notation
+            ["1_000e2 USD", "100000.00", USD],
+            ["2_345.6e-3 USDT", "2.34560000", USDT],
+            # Negative values
+            ["-1e6 USD", "-1000000.00", USD],
+            ["-2.5E-2 USD", "-0.02", USD],
+            ["-1_000.50 USD", "-1000.50", USD],
+            # Zero representations
+            ["0e0 USD", "0.00", USD],
+            ["0.0e5 USD", "0.00", USD],
+            ["0E-3 USDT", "0.00000000", USDT],
+            # Edge cases with precision
+            ["0.125 USD", "0.12", USD],
+            ["0.135 USD", "0.14", USD],
+            ["0.145 USD", "0.14", USD],
+            ["0.155 USD", "0.16", USD],
+            ["0.165 USD", "0.16", USD],
+            # Small numbers with high precision currency
+            ["1e-6 USDT", "0.00000100", USDT],
+            ["1.234567e-3 USDT", "0.00123457", USDT],
+        ],
+    )
+    def test_from_str_comprehensive(self, value, expected_amount, expected_currency):
+        # Arrange, Act
+        money = Money.from_str(value)
+
+        # Assert
+        assert str(money) == f"{expected_amount} {expected_currency.code}"
+        assert money.currency == expected_currency
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            "not_a_number USD",
+            "1.2.3 USD",
+            "++1 USD",
+            "--1 USD",
+            "1e USD",
+            "e10 USD",
+            "1e1e1 USD",
+            "",
+            "USD",  # No amount
+            "100",  # No currency
+            "nan USD",
+            "inf USD",
+            "-inf USD",
+            "1e1000 USD",  # Overflow
+            "1.23",  # Missing currency
+            "1.23 ",  # Missing currency
+            " USD",  # Missing amount
+        ],
+    )
+    def test_from_str_invalid_input_raises_value_error(self, invalid_input):
+        # Arrange, Act, Assert
+        with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
+            Money.from_str(invalid_input)
+
+    def test_from_str_precision_handling(self):
+        # Test that precision is correctly handled for different currencies
+
+        # USD has 2 decimal places
+        money_usd = Money.from_str("100.123 USD")
+        assert str(money_usd) == "100.12 USD"  # Rounded to 2 decimal places
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_str("100.1234567 USDT")
+        assert str(money_usdt) == "100.12345670 USDT"  # USDT has 8 decimal places
+
+        # Scientific notation with precision
+        money_sci = Money.from_str("1.23456789e2 USD")
+        assert str(money_sci) == "123.46 USD"  # Rounded to 2 decimal places
+
+        # Underscores don't affect precision
+        money_under = Money.from_str("1_000.123456 USDT")
+        assert str(money_under) == "1000.12345600 USDT"
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected"),
+        [
+            ("1.115 USD", "1.12 USD"),  # Round up
+            ("1.125 USD", "1.12 USD"),  # Round to even (down)
+            ("1.135 USD", "1.14 USD"),  # Round up
+            ("1.145 USD", "1.14 USD"),  # Round to even (down)
+            ("1.155 USD", "1.16 USD"),  # Round up
+            ("1.165 USD", "1.16 USD"),  # Round to even (down)
+            ("1.175 USD", "1.18 USD"),  # Round up
+            ("1.185 USD", "1.18 USD"),  # Round to even (down)
+            ("1.195 USD", "1.20 USD"),  # Round up
+        ],
+    )
+    def test_from_str_rounding_behavior(self, input_val, expected):
+        # Test banker's rounding (ROUND_HALF_EVEN) is applied correctly
+        # Arrange, Act
+        money = Money.from_str(input_val)
+
+        # Assert
+        assert str(money) == expected
+
+    def test_from_str_boundary_values(self):
+        # Test values near the boundaries of the Money type
+
+        # Test reasonable large values
+        money_large = Money.from_str("1000000000 USD")
+        assert str(money_large) == "1000000000.00 USD"
+
+        # Test negative values
+        money_neg = Money.from_str("-1000000 USD")
+        assert str(money_neg) == "-1000000.00 USD"
+
+        # Zero (should work)
+        money_zero = Money.from_str("0 USD")
+        assert money_zero.as_double() == 0
+        assert str(money_zero) == "0.00 USD"
+
 
 class TestAccountBalance:
     def test_equality(self):

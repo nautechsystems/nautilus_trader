@@ -144,6 +144,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     ) -> PositionStatusReport:
         net_size = Decimal(self.positionAmt)
         position_side = enum_parser.parse_futures_position_side(net_size)
+        avg_px_open = Decimal(self.entryPrice) if self.entryPrice else None
 
         return PositionStatusReport(
             account_id=account_id,
@@ -153,6 +154,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
             report_id=report_id,
             ts_last=ts_init,
             ts_init=ts_init,
+            avg_px_open=avg_px_open,
         )
 
 

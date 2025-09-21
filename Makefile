@@ -127,7 +127,7 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
 	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
-	@echo "⚠️  nuking working tree (git clean -fxd)…"
+	@echo "WARNING: nuking working tree (git clean -fxd)..."
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality
@@ -239,6 +239,12 @@ else
 	$(info $(M) Running Rust tests (showing summary and failures only)...)
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
+
+.PHONY: cargo-test-hypersync
+cargo-test-hypersync: RUST_BACKTRACE=1
+cargo-test-hypersync: check-nextest-installed
+cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
 
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1

@@ -78,11 +78,11 @@ impl FillModel {
         self.event_success(self.prob_slippage)
     }
 
-    /// Returns a simulated OrderBook for fill simulation.
+    /// Returns a simulated `OrderBook` for fill simulation.
     ///
     /// This method allows custom fill models to provide their own liquidity
-    /// simulation by returning a custom OrderBook that represents the expected
-    /// market liquidity. The matching engine will use this simulated OrderBook
+    /// simulation by returning a custom `OrderBook` that represents the expected
+    /// market liquidity. The matching engine will use this simulated `OrderBook`
     /// to determine fills.
     ///
     /// The default implementation returns None, which means the matching engine

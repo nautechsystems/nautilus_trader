@@ -201,6 +201,7 @@ class NautilusKernel:
                         instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
+                        component_levels=logging.log_component_levels,
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
@@ -212,6 +213,7 @@ class NautilusKernel:
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                     )
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -238,6 +240,7 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                         max_file_size=logging.log_file_max_size or 0,
                         max_backup_count=logging.log_file_max_backup_count,
                     )
@@ -303,7 +306,7 @@ class NautilusKernel:
                 instance_id=self._instance_id,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
                 config=config.cache,
@@ -324,7 +327,7 @@ class NautilusKernel:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                timestamps_as_str=True,  # Hard-coded for now
+                timestamps_as_str=True,  # Hardcoded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
 
@@ -478,9 +481,6 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if self._load_state:
-            self._trader.load()
-
         # Add controller
         self._controller: Controller | None = None
 
@@ -526,6 +526,9 @@ class NautilusKernel:
         for strategy_config in config.strategies:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
+
+        if self._load_state:
+            self._trader.load()
 
         # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:

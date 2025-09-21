@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionSide
@@ -62,6 +64,8 @@ class BybitPositionStruct(msgspec.Struct):
     ) -> PositionStatusReport:
         position_side = self.side.parse_to_position_side()
         size = Quantity.from_str(self.size)
+        avg_px_open = Decimal(self.avgPrice) if self.avgPrice else None
+
         return PositionStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -70,6 +74,7 @@ class BybitPositionStruct(msgspec.Struct):
             report_id=report_id,
             ts_init=ts_init,
             ts_last=ts_init,
+            avg_px_open=avg_px_open,
         )
 
 

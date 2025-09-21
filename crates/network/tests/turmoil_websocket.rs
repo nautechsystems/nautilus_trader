@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::net::TcpConnector;
+use rstest::rstest;
 use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
 use turmoil::{Builder, net};
 
@@ -126,7 +127,7 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[test]
+#[rstest]
 fn test_turmoil_websocket_with_dependency_injection() {
     let mut sim = Builder::new().build();
 
@@ -167,7 +168,7 @@ fn test_turmoil_websocket_with_dependency_injection() {
     sim.run().unwrap();
 }
 
-#[test]
+#[rstest]
 fn test_turmoil_websocket_network_partition() {
     let mut sim = Builder::new().build();
 

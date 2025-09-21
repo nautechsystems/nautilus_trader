@@ -26,11 +26,11 @@ from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair import get_cached_betfair_client
 from nautilus_trader.adapters.betfair import get_cached_betfair_instrument_provider
+from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 
 

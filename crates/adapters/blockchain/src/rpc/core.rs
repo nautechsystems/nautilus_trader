@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
-use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
+use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -52,7 +52,7 @@ pub struct CoreBlockchainRpcClient {
     /// The active WebSocket client connection.
     wss_client: Option<Arc<WebSocketClient>>,
     /// Channel receiver for consuming WebSocket messages.
-    wss_consumer_rx: Option<tokio::sync::mpsc::Receiver<Message>>,
+    wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
 }
 
 impl CoreBlockchainRpcClient {
@@ -75,17 +75,16 @@ impl CoreBlockchainRpcClient {
     ///
     /// Returns an error if the WebSocket connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (handler, rx) = channel_message_handler();
         let user_agent = (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
         // Most of the blockchain rpc nodes require a heartbeat to keep the connection alive
         let heartbeat_interval = 30;
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
-            handler: Consumer::Rust(tx),
+            message_handler: Some(handler),
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None,
@@ -95,14 +94,9 @@ impl CoreBlockchainRpcClient {
         };
         let client = WebSocketClient::connect(
             config,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            vec![],
-            None,
+            None,   // post_reconnection
+            vec![], // keyed_quotas
+            None,   // default_quota
         )
         .await?;
 

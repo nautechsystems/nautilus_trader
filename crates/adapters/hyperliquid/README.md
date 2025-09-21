@@ -6,6 +6,11 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+[NautilusTrader](http://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
+
+The `nautilus-hyperliquid` crate provides client bindings (HTTP & WebSocket), data
+models and helper utilities that wrap the official **Hyperliquid API**.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

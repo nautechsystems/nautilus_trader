@@ -260,7 +260,7 @@ impl OrderBookDelta {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Delta` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::Delta(*self))
     }
 
@@ -297,9 +297,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_delta_py_new_with_zero_size_returns_error() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let instrument_id = InstrumentId::from("AAPL.XNAS");
             let action = BookAction::Add;
             let zero_size = Quantity::from(0);
@@ -328,10 +327,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(stub_delta: OrderBookDelta) {
-        pyo3::prepare_freethreaded_python();
         let delta = stub_delta;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = delta.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.XNAS', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}";
             assert_eq!(dict_string, expected_string);
@@ -340,10 +339,10 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(stub_delta: OrderBookDelta) {
-        pyo3::prepare_freethreaded_python();
         let delta = stub_delta;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = delta.py_to_dict(py).unwrap();
             let parsed = OrderBookDelta::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, delta);
@@ -352,10 +351,10 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject(stub_delta: OrderBookDelta) {
-        pyo3::prepare_freethreaded_python();
         let delta = stub_delta;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let delta_pyobject = delta.into_py_any_unwrap(py);
             let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_delta, delta);

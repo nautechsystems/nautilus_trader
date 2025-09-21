@@ -161,9 +161,9 @@ async def main():
 
     # Validate bars_limit_zero (should have received bars, not 0)
     if bars_limit_zero:
-        logger.info(f"✅ limit=0 works correctly: received {len(bars_limit_zero)} bars")
+        logger.info(f"limit=0 works correctly: received {len(bars_limit_zero)} bars")
     else:
-        logger.error("❌ limit=0 failed: received 0 bars (should have received many)")
+        logger.error("limit=0 failed: received 0 bars (should have received many)")
 
     # Validate bars_old (start-only mode, should be >= start_time_old)
     if bars_old:
@@ -172,7 +172,7 @@ async def main():
         logger.info(f"bars_old[0]  = {bars_old[0]} (time: {first_ts})")
         logger.info(f"bars_old[-1] = {bars_old[-1]} (time: {last_ts})")
         assert first_ts >= start_time_old, f"First bar {first_ts} should be >= {start_time_old}"
-        logger.info(f"✅ bars_old time range valid: {first_ts} to {last_ts}")
+        logger.info(f"bars_old time range valid: {first_ts} to {last_ts}")
 
     # Validate bars_recent (start-only mode, should be >= start_time_recent)
     if bars_recent:
@@ -183,7 +183,7 @@ async def main():
         assert (
             first_ts >= start_time_recent
         ), f"First bar {first_ts} should be >= {start_time_recent}"
-        logger.info(f"✅ bars_recent time range valid: {first_ts} to {last_ts}")
+        logger.info(f"bars_recent time range valid: {first_ts} to {last_ts}")
 
     # Validate bars_narrow (should have bars within the 1-hour range)
     if bars_narrow:
@@ -201,10 +201,10 @@ async def main():
 
         assert (
             len(bars_narrow) >= min_expected
-        ), f"Expected at least {min_expected} bars for 1-hour range, got {len(bars_narrow)}"
+        ), f"Expected at least {min_expected} bars for 1-hour range, was {len(bars_narrow)}"
         assert (
             len(bars_narrow) <= max_expected
-        ), f"Expected at most {max_expected} bars for 1-hour range, got {len(bars_narrow)}"
+        ), f"Expected at most {max_expected} bars for 1-hour range, was {len(bars_narrow)}"
 
         # Check time bounds with small tolerance
         time_tolerance = pd.Timedelta(minutes=10)  # Allow 10 min tolerance due to API adjustments
@@ -215,9 +215,9 @@ async def main():
             last_ts <= narrow_end + time_tolerance
         ), f"Last bar {last_ts} should be <= {narrow_end + time_tolerance}"
 
-        logger.info(f"✅ bars_narrow: {len(bars_narrow)} bars in range {first_ts} to {last_ts}")
+        logger.info(f"bars_narrow: {len(bars_narrow)} bars in range {first_ts} to {last_ts}")
     else:
-        logger.error(f"❌ No bars returned for narrow range {narrow_start} to {narrow_end}")
+        logger.error(f"No bars returned for narrow range {narrow_start} to {narrow_end}")
 
     # Validate bars_range (should be within range_start and range_end)
     if bars_range:
@@ -227,9 +227,9 @@ async def main():
         logger.info(f"bars_range[-1] = {bars_range[-1]} (time: {last_ts})")
         assert first_ts >= range_start, f"First bar {first_ts} should be >= {range_start}"
         assert last_ts <= range_end, f"Last bar {last_ts} should be <= {range_end}"
-        logger.info(f"✅ bars_range time range valid: {first_ts} to {last_ts}")
+        logger.info(f"bars_range time range valid: {first_ts} to {last_ts}")
     else:
-        logger.warning(f"❌ No bars returned for range {range_start} to {range_end}")
+        logger.warning(f"No bars returned for range {range_start} to {range_end}")
 
     # Validate bars_no_start (latest mode, no specific time constraints)
     if bars_no_start:
@@ -237,18 +237,18 @@ async def main():
         last_ts = ns_to_timestamp(bars_no_start[-1].ts_event)
         logger.info(f"bars_no_start[0]  = {bars_no_start[0]} (time: {first_ts})")
         logger.info(f"bars_no_start[-1] = {bars_no_start[-1]} (time: {last_ts})")
-        logger.info(f"✅ bars_no_start (latest mode): {first_ts} to {last_ts}")
+        logger.info(f"bars_no_start (latest mode): {first_ts} to {last_ts}")
 
     # Summary
     logger.info("\n" + "=" * 60)
     logger.info("TEST SUMMARY:")
-    logger.info(f"  Old start (16 days ago):     {len(bars_old)} bars ✅")
-    logger.info(f"  Limit=0 test:                 {len(bars_limit_zero)} bars ✅")
-    logger.info(f"  Recent start (4 hours ago):   {len(bars_recent)} bars ✅")
-    logger.info(f"  Range mode (1 hour window):   {len(bars_range)} bars ✅")
-    logger.info(f"  Narrow range (1 hour):        {len(bars_narrow)} bars ✅")
-    logger.info(f"  ETH-USDT-SWAP (1 hour):       {len(bars_eth)} bars ✅")
-    logger.info(f"  No start (latest mode):       {len(bars_no_start)} bars ✅")
+    logger.info(f"  Old start (16 days ago):     {len(bars_old)} bars")
+    logger.info(f"  Limit=0 test:                 {len(bars_limit_zero)} bars")
+    logger.info(f"  Recent start (4 hours ago):   {len(bars_recent)} bars")
+    logger.info(f"  Range mode (1 hour window):   {len(bars_range)} bars")
+    logger.info(f"  Narrow range (1 hour):        {len(bars_narrow)} bars")
+    logger.info(f"  ETH-USDT-SWAP (1 hour):       {len(bars_eth)} bars")
+    logger.info(f"  No start (latest mode):       {len(bars_no_start)} bars")
     logger.info("=" * 60 + "\n")
     logger.info("All bar request tests passed")
 

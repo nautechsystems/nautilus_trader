@@ -241,7 +241,7 @@ class BybitDataClient(LiveMarketDataClient):
         symbol = request.metadata["symbol"]
         if not isinstance(symbol, Symbol):
             raise ValueError(
-                f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
+                f"Parameter symbol in request metadata object is not of type Symbol, was {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
         self.create_task(
@@ -595,7 +595,6 @@ class BybitDataClient(LiveMarketDataClient):
         trades = await self._http_market.request_bybit_trades(
             instrument_id=request.instrument_id,
             limit=limit,
-            ts_init=self._clock.timestamp_ns(),
         )
 
         # Filter trades to only include those within the requested time range
@@ -643,7 +642,6 @@ class BybitDataClient(LiveMarketDataClient):
             start=start_time_ms,
             end=end_time_ms,
             limit=request.limit if request.limit else None,
-            ts_init=self._clock.timestamp_ns(),
             timestamp_on_close=self._bars_timestamp_on_close,
         )
         # For historical data requests, all bars are complete (no partial bars)

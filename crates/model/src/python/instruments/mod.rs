@@ -16,7 +16,7 @@
 //! Instrument definitions the trading domain model.
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
+use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
 use crate::instruments::{
     BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
@@ -41,7 +41,7 @@ pub mod option_spread;
 /// # Errors
 ///
 /// Returns a `PyErr` if conversion to a Python object fails.
-pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
+pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<Py<PyAny>> {
     match instrument {
         InstrumentAny::Betting(inst) => inst.into_py_any(py),
         InstrumentAny::BinaryOption(inst) => inst.into_py_any(py),
@@ -62,7 +62,7 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
 /// # Errors
 ///
 /// Returns a `PyErr` if extraction fails or the instrument type is unsupported.
-pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<InstrumentAny> {
+pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_str")?.extract::<&str>(py)? {
         stringify!(BettingInstrument) => Ok(InstrumentAny::Betting(
             instrument.extract::<BettingInstrument>(py)?,
@@ -96,7 +96,7 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<
             instrument.extract::<OptionSpread>(py)?,
         )),
         _ => Err(to_pyvalue_err(
-            "Error in conversion from `PyObject` to `InstrumentAny`",
+            "Error in conversion from `Py<PyAny>` to `InstrumentAny`",
         )),
     }
 }

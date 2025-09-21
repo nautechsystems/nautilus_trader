@@ -20,7 +20,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
@@ -33,8 +32,8 @@ class BitmexInstrumentProvider(InstrumentProvider):
     ----------
     client : nautilus_pyo3.BitmexHttpClient
         The BitMEX HTTP client.
-    symbol_status : BitmexSymbolStatus, optional
-        The symbol status to filter instruments.
+    active_only : bool, default True
+        Whether to only load active instruments.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -43,27 +42,27 @@ class BitmexInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         client: nautilus_pyo3.BitmexHttpClient,
-        symbol_status: BitmexSymbolStatus | None = None,
+        active_only: bool = True,
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
         self._client = client
-        self._symbol_status = symbol_status
+        self._active_only = active_only
         self._log_warnings = config.log_warnings if config else True
 
         self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
 
     @property
-    def symbol_status(self) -> BitmexSymbolStatus | None:
+    def active_only(self) -> bool:
         """
-        Return the BitMEX symbol status filter for the provider.
+        Return whether the provider is configured to load only active instruments.
 
         Returns
         -------
-        BitmexSymbolStatus | None
+        bool
 
         """
-        return self._symbol_status
+        return self._active_only
 
     def instruments_pyo3(self) -> list[Any]:
         """
@@ -81,7 +80,7 @@ class BitmexInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         pyo3_instruments = await self._client.request_instruments(
-            self._symbol_status or BitmexSymbolStatus.OPEN,
+            self._active_only,
         )
 
         self._instruments_pyo3 = pyo3_instruments
@@ -105,7 +104,7 @@ class BitmexInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, BITMEX_VENUE, "instrument_id.venue", "BITMEX")
 
         pyo3_instruments = await self._client.request_instruments(
-            self._symbol_status or BitmexSymbolStatus.OPEN,
+            self._active_only,
         )
 
         self._instruments_pyo3 = pyo3_instruments

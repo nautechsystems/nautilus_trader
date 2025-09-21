@@ -59,3 +59,9 @@ pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
 pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
     a.sub_assign(b);
 }
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn quantity_saturating_sub(a: Quantity, b: Quantity) -> Quantity {
+    a.saturating_sub(b)
+}

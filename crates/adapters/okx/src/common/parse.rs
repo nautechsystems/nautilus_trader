@@ -40,10 +40,10 @@ use nautilus_model::{
         OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionContract},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
@@ -53,7 +53,9 @@ use super::enums::OKXContractType;
 use crate::{
     common::{
         consts::OKX_VENUE,
-        enums::{OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
+        enums::{
+            OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+        },
         models::OKXInstrument,
     },
     http::models::{
@@ -412,26 +414,9 @@ pub fn parse_order_status_report(
         .map(|v| Quantity::new(v, size_precision))
         .unwrap_or_default();
     let order_side: OrderSide = order.side.into();
-    let okx_status: OKXOrderStatus = match order.state.as_str() {
-        "live" => OKXOrderStatus::Live,
-        "partially_filled" => OKXOrderStatus::PartiallyFilled,
-        "filled" => OKXOrderStatus::Filled,
-        "canceled" => OKXOrderStatus::Canceled,
-        "mmp_canceled" => OKXOrderStatus::MmpCanceled,
-        _ => OKXOrderStatus::Live, // Default fallback
-    };
+    let okx_status: OKXOrderStatus = order.state;
     let order_status: OrderStatus = okx_status.into();
-    let okx_ord_type: OKXOrderType = match order.ord_type.as_str() {
-        "market" => OKXOrderType::Market,
-        "limit" => OKXOrderType::Limit,
-        "post_only" => OKXOrderType::PostOnly,
-        "fok" => OKXOrderType::Fok,
-        "ioc" => OKXOrderType::Ioc,
-        "optimal_limit_ioc" => OKXOrderType::OptimalLimitIoc,
-        "mmp" => OKXOrderType::Mmp,
-        "mmp_and_post_only" => OKXOrderType::MmpAndPostOnly,
-        _ => OKXOrderType::Limit, // Default fallback
-    };
+    let okx_ord_type: OKXOrderType = order.ord_type;
     let order_type: OrderType = okx_ord_type.into();
     // Note: OKX uses ordType for type and liquidity instructions; time-in-force not explicitly represented here
     let time_in_force = TimeInForce::Gtc;
@@ -474,7 +459,7 @@ pub fn parse_order_status_report(
     {
         report = report.with_avg_px(avg);
     }
-    if order.ord_type == "post_only" {
+    if order.ord_type == OKXOrderType::PostOnly {
         report = report.with_post_only(true);
     }
     if order.reduce_only == "true" {
@@ -484,6 +469,10 @@ pub fn parse_order_status_report(
 }
 
 /// Parses an OKX position into a Nautilus [`PositionStatusReport`].
+///
+/// # Panics
+///
+/// Panics if position quantity is invalid and cannot be parsed.
 #[allow(clippy::too_many_lines)]
 pub fn parse_position_status_report(
     position: OKXPosition,
@@ -491,28 +480,51 @@ pub fn parse_position_status_report(
     instrument_id: InstrumentId,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> PositionStatusReport {
-    let position_side: PositionSide = position.pos_side.into();
-    let quantity = position
-        .pos
-        .parse::<f64>()
-        .ok()
-        .map(|v| Quantity::new(v, size_precision))
-        .unwrap_or_default();
+) -> anyhow::Result<PositionStatusReport> {
+    let pos_value = position.pos.parse::<f64>().unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse position quantity '{}' for instrument {}: {:?}",
+            position.pos, instrument_id, e
+        )
+    });
+
+    // For Net position mode, determine side based on position sign
+    let position_side = match position.pos_side {
+        OKXPositionSide::Net => {
+            if pos_value > 0.0 {
+                PositionSide::Long
+            } else if pos_value < 0.0 {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            }
+        }
+        _ => position.pos_side.into(),
+    }
+    .as_specified();
+
+    // Convert to absolute quantity (positions are always positive in Nautilus)
+    let quantity = Quantity::new(pos_value.abs(), size_precision);
     let venue_position_id = None; // TODO: Only support netting for now
     // let venue_position_id = Some(PositionId::new(position.pos_id));
+    let avg_px_open = if position.avg_px.is_empty() {
+        None
+    } else {
+        Some(Decimal::from_str(&position.avg_px)?)
+    };
     let ts_last = parse_millisecond_timestamp(position.u_time);
 
-    PositionStatusReport::new(
+    Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
         quantity,
-        venue_position_id,
         ts_last,
         ts_init,
-        None,
-    )
+        None, // Will generate a UUID4
+        venue_position_id,
+        avg_px_open,
+    ))
 }
 
 /// Parses an OKX transaction detail into a Nautilus `FillReport`.
@@ -1176,7 +1188,49 @@ pub fn parse_account_state(
         let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);
     }
-    let margins = vec![]; // TBD
+
+    let mut margins = Vec::new();
+
+    // OKX provides account-level margin requirements (not per instrument)
+    if !okx_account.imr.is_empty() && !okx_account.mmr.is_empty() {
+        match (
+            okx_account.imr.parse::<f64>(),
+            okx_account.mmr.parse::<f64>(),
+        ) {
+            (Ok(imr_value), Ok(mmr_value)) => {
+                if imr_value > 0.0 || mmr_value > 0.0 {
+                    let margin_currency = Currency::USD();
+                    let margin_instrument_id =
+                        InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("OKX"));
+
+                    let initial_margin = Money::new(imr_value, margin_currency);
+                    let maintenance_margin = Money::new(mmr_value, margin_currency);
+
+                    let margin_balance = MarginBalance::new(
+                        initial_margin,
+                        maintenance_margin,
+                        margin_instrument_id,
+                    );
+
+                    margins.push(margin_balance);
+                }
+            }
+            (Err(e1), _) => {
+                tracing::warn!(
+                    "Failed to parse initial margin requirement '{}': {}",
+                    okx_account.imr,
+                    e1
+                );
+            }
+            (_, Err(e2)) => {
+                tracing::warn!(
+                    "Failed to parse maintenance margin requirement '{}': {}",
+                    okx_account.mmr,
+                    e2
+                );
+            }
+        }
+    }
 
     let account_type = AccountType::Margin;
     let is_reported = true;
@@ -1347,7 +1401,7 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 0); // TBD in implementation
+        assert_eq!(account_state.margins.len(), 0); // No margins in this test data (spot account)
         assert!(account_state.is_reported);
 
         // Check the USDT balance details
@@ -1361,6 +1415,184 @@ mod tests {
             Money::new(94.42612990333333, Currency::USDT())
         );
         assert_eq!(usdt_balance.locked, Money::new(0.0, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_account_state_with_margins() {
+        // Create test data with margin requirements
+        let account_json = r#"{
+            "adjEq": "10000.0",
+            "borrowFroz": "0",
+            "details": [{
+                "accAvgPx": "",
+                "availBal": "8000.0",
+                "availEq": "8000.0",
+                "borrowFroz": "0",
+                "cashBal": "10000.0",
+                "ccy": "USDT",
+                "clSpotInUseAmt": "0",
+                "coinUsdPrice": "1.0",
+                "colBorrAutoConversion": "0",
+                "collateralEnabled": false,
+                "collateralRestrict": false,
+                "crossLiab": "0",
+                "disEq": "10000.0",
+                "eq": "10000.0",
+                "eqUsd": "10000.0",
+                "fixedBal": "0",
+                "frozenBal": "2000.0",
+                "imr": "0",
+                "interest": "0",
+                "isoEq": "0",
+                "isoLiab": "0",
+                "isoUpl": "0",
+                "liab": "0",
+                "maxLoan": "0",
+                "mgnRatio": "0",
+                "maxSpotInUseAmt": "0",
+                "mmr": "0",
+                "notionalLever": "0",
+                "openAvgPx": "",
+                "ordFrozen": "2000.0",
+                "rewardBal": "0",
+                "smtSyncEq": "0",
+                "spotBal": "0",
+                "spotCopyTradingEq": "0",
+                "spotInUseAmt": "0",
+                "spotIsoBal": "0",
+                "spotUpl": "0",
+                "spotUplRatio": "0",
+                "stgyEq": "0",
+                "totalPnl": "0",
+                "totalPnlRatio": "0",
+                "twap": "0",
+                "uTime": "1704067200000",
+                "upl": "0",
+                "uplLiab": "0"
+            }],
+            "imr": "500.25",
+            "isoEq": "0",
+            "mgnRatio": "20.5",
+            "mmr": "250.75",
+            "notionalUsd": "5000.0",
+            "notionalUsdForBorrow": "0",
+            "notionalUsdForFutures": "0",
+            "notionalUsdForOption": "0",
+            "notionalUsdForSwap": "5000.0",
+            "ordFroz": "2000.0",
+            "totalEq": "10000.0",
+            "uTime": "1704067200000",
+            "upl": "0"
+        }"#;
+
+        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
+        let account_id = AccountId::new("OKX-001");
+        let account_state =
+            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+
+        // Verify account details
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert_eq!(account_state.balances.len(), 1);
+
+        // Verify margin information was parsed
+        assert_eq!(account_state.margins.len(), 1);
+        let margin = &account_state.margins[0];
+
+        // Check margin values
+        assert_eq!(margin.initial, Money::new(500.25, Currency::USD()));
+        assert_eq!(margin.maintenance, Money::new(250.75, Currency::USD()));
+        assert_eq!(margin.currency, Currency::USD());
+        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
+        assert_eq!(margin.instrument_id.venue.as_str(), "OKX");
+
+        // Check the USDT balance details
+        let usdt_balance = &account_state.balances[0];
+        assert_eq!(usdt_balance.total, Money::new(10000.0, Currency::USDT()));
+        assert_eq!(usdt_balance.free, Money::new(8000.0, Currency::USDT()));
+        assert_eq!(usdt_balance.locked, Money::new(2000.0, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_account_state_empty_margins() {
+        // Create test data with empty margin strings (common for spot accounts)
+        let account_json = r#"{
+            "adjEq": "",
+            "borrowFroz": "",
+            "details": [{
+                "accAvgPx": "",
+                "availBal": "1000.0",
+                "availEq": "1000.0",
+                "borrowFroz": "0",
+                "cashBal": "1000.0",
+                "ccy": "BTC",
+                "clSpotInUseAmt": "0",
+                "coinUsdPrice": "50000.0",
+                "colBorrAutoConversion": "0",
+                "collateralEnabled": false,
+                "collateralRestrict": false,
+                "crossLiab": "0",
+                "disEq": "50000.0",
+                "eq": "1000.0",
+                "eqUsd": "50000.0",
+                "fixedBal": "0",
+                "frozenBal": "0",
+                "imr": "0",
+                "interest": "0",
+                "isoEq": "0",
+                "isoLiab": "0",
+                "isoUpl": "0",
+                "liab": "0",
+                "maxLoan": "0",
+                "mgnRatio": "0",
+                "maxSpotInUseAmt": "0",
+                "mmr": "0",
+                "notionalLever": "0",
+                "openAvgPx": "",
+                "ordFrozen": "0",
+                "rewardBal": "0",
+                "smtSyncEq": "0",
+                "spotBal": "0",
+                "spotCopyTradingEq": "0",
+                "spotInUseAmt": "0",
+                "spotIsoBal": "0",
+                "spotUpl": "0",
+                "spotUplRatio": "0",
+                "stgyEq": "0",
+                "totalPnl": "0",
+                "totalPnlRatio": "0",
+                "twap": "0",
+                "uTime": "1704067200000",
+                "upl": "0",
+                "uplLiab": "0"
+            }],
+            "imr": "",
+            "isoEq": "0",
+            "mgnRatio": "",
+            "mmr": "",
+            "notionalUsd": "",
+            "notionalUsdForBorrow": "",
+            "notionalUsdForFutures": "",
+            "notionalUsdForOption": "",
+            "notionalUsdForSwap": "",
+            "ordFroz": "",
+            "totalEq": "50000.0",
+            "uTime": "1704067200000",
+            "upl": "0"
+        }"#;
+
+        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
+        let account_id = AccountId::new("OKX-SPOT");
+        let account_state =
+            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+
+        // Verify no margins are created when fields are empty
+        assert_eq!(account_state.margins.len(), 0);
+        assert_eq!(account_state.balances.len(), 1);
+
+        // Check the BTC balance
+        let btc_balance = &account_state.balances[0];
+        assert_eq!(btc_balance.total, Money::new(1000.0, Currency::BTC()));
     }
 
     #[rstest]
@@ -1411,7 +1643,8 @@ mod tests {
             instrument_id,
             8,
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(position_report.account_id, account_id);
         assert_eq!(position_report.instrument_id, instrument_id);
@@ -1672,7 +1905,7 @@ mod tests {
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_identity_preserved_through_parse() {
         use std::str::FromStr;
 

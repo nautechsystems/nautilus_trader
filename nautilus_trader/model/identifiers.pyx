@@ -479,7 +479,7 @@ cdef class InstrumentId(Identifier):
                 raise ValueError("ratio cannot be zero")
 
             if instrument_id.venue != first_venue:
-                raise ValueError(f"All venues must match. Expected {first_venue}, got {instrument_id.venue}")
+                raise ValueError(f"All venues must match. Expected {first_venue}, was {instrument_id.venue}")
 
         # Sort instrument ratios alphabetically by symbol
         sorted_ratios = sorted(instrument_ratios, key=lambda x: x[0].symbol.value)

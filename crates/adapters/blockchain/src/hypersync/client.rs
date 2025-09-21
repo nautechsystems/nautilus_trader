@@ -16,7 +16,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use ahash::AHashMap;
-use alloy::primitives::{Address, keccak256};
+use alloy::primitives::Address;
 use futures_util::Stream;
 use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
@@ -99,15 +99,15 @@ impl HyperSyncClient {
         burn_event_encoded_signature: String,
     ) {
         let topics = vec![
-            swap_event_encoded_signature.clone(),
-            mint_event_encoded_signature.clone(),
-            burn_event_encoded_signature.clone(),
+            swap_event_encoded_signature.as_str(),
+            &mint_event_encoded_signature.as_str(),
+            &burn_event_encoded_signature.as_str(),
         ];
         let query = Self::construct_contract_events_query(
             block,
             Some(block + 1),
             contract_addresses,
-            vec![topics],
+            topics,
         );
         let tx = if let Some(tx) = &self.tx {
             tx.clone()
@@ -209,24 +209,14 @@ impl HyperSyncClient {
         &self,
         from_block: u64,
         to_block: Option<u64>,
-        contract_address: &str,
-        event_signature: &str,
-        additional_topics: Vec<String>,
+        contract_address: &Address,
+        topics: Vec<&str>,
     ) -> impl Stream<Item = Log> + use<> {
-        let event_hash = keccak256(event_signature.as_bytes());
-        let topic0 = format!("0x{encoded_hash}", encoded_hash = hex::encode(event_hash));
-
-        let mut topics_array = Vec::new();
-        topics_array.push(vec![topic0]);
-        for additional_topic in additional_topics {
-            topics_array.push(vec![additional_topic]);
-        }
-
         let query = Self::construct_contract_events_query(
             from_block,
             to_block,
-            vec![contract_address.parse().unwrap()],
-            topics_array,
+            vec![contract_address.clone()],
+            topics,
         );
 
         let mut rx = self
@@ -375,12 +365,12 @@ impl HyperSyncClient {
         from_block: u64,
         to_block: Option<u64>,
         contract_addresses: Vec<Address>,
-        topics: Vec<Vec<String>>,
+        topics: Vec<&str>,
     ) -> Query {
         let mut query_value = serde_json::json!({
             "from_block": from_block,
             "logs": [{
-                "topics": topics,
+                "topics": [topics],
                 "address": contract_addresses
             }],
             "field_selection": {

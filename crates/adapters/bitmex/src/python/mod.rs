@@ -31,6 +31,7 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BITMEX_HTTP_URL", crate::common::consts::BITMEX_HTTP_URL)?;
     m.add("BITMEX_WS_URL", crate::common::consts::BITMEX_WS_URL)?;
     m.add_class::<crate::common::enums::BitmexSymbolStatus>()?;
+    m.add_class::<crate::common::enums::BitmexPositionSide>()?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
 

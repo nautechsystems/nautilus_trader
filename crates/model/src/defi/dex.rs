@@ -15,11 +15,12 @@
 
 use std::{borrow::Cow, fmt::Display, str::FromStr, sync::Arc};
 
+use alloy_primitives::{Address, keccak256};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    defi::{amm::Pool, chain::Chain},
+    defi::{amm::Pool, chain::Chain, validation::validate_address},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair},
     types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
@@ -116,17 +117,21 @@ pub struct Dex {
     /// The variant of the DEX protocol.
     pub name: DexType,
     /// The blockchain address of the DEX factory contract.
-    pub factory: Cow<'static, str>,
+    pub factory: Address,
     /// The block number at which the DEX factory contract was deployed.
     pub factory_creation_block: u64,
     /// The event signature or identifier used to detect pool creation events.
     pub pool_created_event: Cow<'static, str>,
+    // Optional Initialize event signature emitted when pool is initialized.
+    pub initialize_event: Option<Cow<'static, str>>,
     /// The event signature or identifier used to detect swap events.
     pub swap_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect mint events.
     pub mint_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect burn events.
     pub burn_created_event: Cow<'static, str>,
+    /// The event signature or identifier used to detect collect fee events.
+    pub collect_created_event: Cow<'static, str>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
@@ -139,28 +144,61 @@ pub type SharedDex = Arc<Dex>;
 
 impl Dex {
     /// Creates a new [`Dex`] instance with the specified properties.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided factory address is invalid.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
         name: DexType,
-        factory: impl Into<Cow<'static, str>>,
+        factory: &str,
         factory_creation_block: u64,
         amm_type: AmmType,
-        pool_created_event: impl Into<Cow<'static, str>>,
-        swap_created_event: impl Into<Cow<'static, str>>,
-        mint_created_event: impl Into<Cow<'static, str>>,
-        burn_created_event: impl Into<Cow<'static, str>>,
+        pool_created_event: &str,
+        swap_event: &str,
+        mint_event: &str,
+        burn_event: &str,
+        collect_event: &str,
     ) -> Self {
+        let pool_created_event_hash = keccak256(pool_created_event.as_bytes());
+        let encoded_pool_created_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(pool_created_event_hash)
+        );
+        let swap_event_hash = keccak256(swap_event.as_bytes());
+        let encoded_swap_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(swap_event_hash)
+        );
+        let mint_event_hash = keccak256(mint_event.as_bytes());
+        let encoded_mint_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(mint_event_hash)
+        );
+        let burn_event_hash = keccak256(burn_event.as_bytes());
+        let encoded_burn_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(burn_event_hash)
+        );
+        let collect_event_hash = keccak256(collect_event.as_bytes());
+        let encoded_collect_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(collect_event_hash)
+        );
+        let factory_address = validate_address(factory).unwrap();
         Self {
             chain,
             name,
-            factory: factory.into(),
+            factory: factory_address,
             factory_creation_block,
-            pool_created_event: pool_created_event.into(),
-            swap_created_event: swap_created_event.into(),
-            mint_created_event: mint_created_event.into(),
-            burn_created_event: burn_created_event.into(),
+            pool_created_event: encoded_pool_created_event.into(),
+            initialize_event: None,
+            swap_created_event: encoded_swap_event.into(),
+            mint_created_event: encoded_mint_event.into(),
+            burn_created_event: encoded_burn_event.into(),
+            collect_created_event: encoded_collect_event.into(),
             amm_type,
             pairs: vec![],
         }
@@ -169,6 +207,15 @@ impl Dex {
     /// Returns a unique identifier for this DEX, combining chain and protocol name.
     pub fn id(&self) -> String {
         format!("{}:{}", self.chain.name, self.name)
+    }
+
+    pub fn set_initialize_event(&mut self, event: &str) {
+        let initialize_event_hash = keccak256(event.as_bytes());
+        let encoded_initialized_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(initialize_event_hash)
+        );
+        self.initialize_event = Some(encoded_initialized_event.into());
     }
 }
 

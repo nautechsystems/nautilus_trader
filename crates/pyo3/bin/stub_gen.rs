@@ -16,8 +16,6 @@
 use pyo3_stub_gen::Result;
 
 fn main() -> Result<()> {
-    pyo3::prepare_freethreaded_python();
-
     println!("Starting Python type stub generation...");
 
     let stub_info = nautilus_pyo3::stub_info()?;

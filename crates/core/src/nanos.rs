@@ -204,7 +204,9 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
-            // SAFETY: timestamp_nanos_opt() returns >= 0 for valid dates
+            if nanos < 0 {
+                return Err("Unix timestamp cannot be negative".into());
+            }
             return Ok(Self(nanos as u64));
         }
 
@@ -548,6 +550,18 @@ mod tests {
     fn test_from_str_invalid() {
         let result = "abc".parse::<UnixNanos>();
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_str_pre_epoch_date() {
+        let err = "1969-12-31".parse::<UnixNanos>().unwrap_err();
+        assert_eq!(err.to_string(), "Unix timestamp cannot be negative");
+    }
+
+    #[rstest]
+    fn test_from_str_pre_epoch_rfc3339() {
+        let err = "1969-12-31T23:59:59Z".parse::<UnixNanos>().unwrap_err();
+        assert_eq!(err.to_string(), "Unix timestamp cannot be negative");
     }
 
     #[rstest]
@@ -901,7 +915,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_construction_roundtrip(value in 0u64..=i64::MAX as u64) {
             let nanos = UnixNanos::from(value);
             prop_assert_eq!(nanos.as_u64(), value);
@@ -913,7 +927,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_addition_commutative(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -926,7 +940,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_addition_associative(
             nanos1 in unix_nanos_strategy(),
             nanos2 in unix_nanos_strategy(),
@@ -947,7 +961,7 @@ mod tests {
                 }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_subtraction_inverse(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -958,7 +972,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_zero_identity(nanos in unix_nanos_strategy()) {
             // Zero should be additive identity
             let zero = UnixNanos::default();
@@ -967,7 +981,7 @@ mod tests {
             prop_assert!(zero.is_zero(), "Zero should be recognized as zero");
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_ordering_consistency(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -989,7 +1003,7 @@ mod tests {
             prop_assert_eq!(le, nanos2 >= nanos1, "<= should be symmetric with >=");
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_string_roundtrip(nanos in unix_nanos_strategy()) {
             // String serialization should round-trip correctly
             let string_repr = nanos.to_string();
@@ -1000,7 +1014,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_datetime_conversion(nanos in unix_nanos_strategy()) {
             // DateTime conversion should be consistent (only test values within i64 range)
             if i64::try_from(nanos.as_u64()).is_ok() {
@@ -1016,7 +1030,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_duration_since(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -1038,7 +1052,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_checked_arithmetic(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -1059,7 +1073,7 @@ mod tests {
                 }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_saturating_arithmetic(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {

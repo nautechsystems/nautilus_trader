@@ -16,3 +16,14 @@
 The `analysis` subpackage groups components relating to trading performance statistics
 and analysis.
 """
+
+from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis.reporter import ReportProvider
+from nautilus_trader.analysis.statistic import PortfolioStatistic
+
+
+__all__ = [
+    "PortfolioAnalyzer",
+    "PortfolioStatistic",
+    "ReportProvider",
+]

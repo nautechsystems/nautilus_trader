@@ -21,7 +21,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -39,12 +38,13 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
+# symbol = "SOLUSDT"  # Solana spot
 # symbol = ".BXBT"  # Bitcoin index
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="DEBUG", use_pyo3=True),
+    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
     ),
@@ -55,7 +55,6 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            symbol_status=BitmexSymbolStatus.OPEN,  # Filter for open instruments
             testnet=False,  # If client uses the testnet API
         ),
     },
@@ -69,14 +68,14 @@ config_node = TradingNodeConfig(
 config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
     subscribe_instrument=True,
-    subscribe_quotes=True,
-    subscribe_trades=True,
+    # subscribe_quotes=True,
+    # subscribe_trades=True,
     # subscribe_mark_prices=True,
     # subscribe_index_prices=True,
     # subscribe_funding_rates=True,
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    # subscribe_book_at_interval=True,
+    subscribe_book_at_interval=True,
     book_type=BookType.L2_MBP,
     book_depth=25,
     book_interval_ms=100,

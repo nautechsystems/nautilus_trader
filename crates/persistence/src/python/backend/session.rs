@@ -117,11 +117,11 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         match slf.next() {
             Some(acc) if !acc.is_empty() => {
                 let cvec = slf.set_chunk(acc);
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
                         Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
                         Err(e) => Err(to_pyruntime_err(e)),

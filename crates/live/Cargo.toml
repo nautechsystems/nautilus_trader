@@ -70,6 +70,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

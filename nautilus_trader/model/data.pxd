@@ -104,6 +104,7 @@ cpdef enum BarAggregation:
     WEEK = 15
     MONTH = 16
     YEAR = 17
+    RENKO = 18
 
 
 cpdef enum BarIntervalType:

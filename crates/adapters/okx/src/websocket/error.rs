@@ -17,7 +17,7 @@ use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 
 /// A typed error enumeration for the OKX WebSocket client.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum OKXWsError {
     #[error("Parsing error: {0}")]
     ParsingError(String),
@@ -34,5 +34,11 @@ pub enum OKXWsError {
     // WebSocketClientError(WebSocketClientError),  // TODO: Implement Debug
     /// WebSocket transport error.
     #[error("Tungstenite error: {0}")]
-    TungsteniteError(tungstenite::Error),
+    TungsteniteError(String),
+}
+
+impl From<tungstenite::Error> for OKXWsError {
+    fn from(error: tungstenite::Error) -> Self {
+        Self::TungsteniteError(error.to_string())
+    }
 }

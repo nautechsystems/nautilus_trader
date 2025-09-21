@@ -55,7 +55,8 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef dict[InstrumentId, Money] _unrealized_pnls
     cdef dict[InstrumentId, Money] _realized_pnls
-    cdef dict[InstrumentId, Money] _snapshot_realized_pnls
+    cdef dict[PositionId, Money] _snapshot_sum_per_position
+    cdef dict[PositionId, Money] _snapshot_last_per_position
     cdef dict[PositionId, int] _snapshot_processed_counts
     cdef dict[InstrumentId, Decimal] _net_positions
     cdef dict[PositionId, object] _bet_positions

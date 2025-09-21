@@ -236,7 +236,7 @@ impl FromStr for TickScheme {
         match s.trim().to_ascii_uppercase().as_str() {
             "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
             "CRYPTO_0_01" => Ok(TickScheme::Crypto),
-            _ => Err(anyhow::anyhow!("unknown tick scheme {s}")),
+            _ => anyhow::bail!("unknown tick scheme {s}"),
         }
     }
 }
@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn make_price_qty_fuzz(input in 0.0001f64..1e8) {
             let instrument = currency_pair_btcusdt();
             let price = instrument.make_price(input);

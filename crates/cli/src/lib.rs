@@ -55,7 +55,7 @@ mod database;
 pub mod opt;
 
 #[cfg(feature = "hypersync")]
-use crate::blockchain::sync::run_blockchain_command;
+use crate::blockchain::run_blockchain_command;
 use crate::{
     database::postgres::run_database_command,
     opt::{Commands, NautilusCli},

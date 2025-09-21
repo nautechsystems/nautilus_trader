@@ -80,9 +80,6 @@ rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = { workspace = true }
-
 [[bench]]
 name = "persistence"
 path = "benches/persistence.rs"

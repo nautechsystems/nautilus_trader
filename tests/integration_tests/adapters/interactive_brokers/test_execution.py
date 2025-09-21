@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from functools import partial
 
 import pytest
@@ -565,7 +566,112 @@ async def test_on_exec_details(
     assert cache.order(client_order_id).avg_px == Price(50, 0)
     assert cache.order(client_order_id).status == OrderStatus.FILLED
 
-    @pytest.mark.asyncio()
-    async def test_on_account_update(mocker, exec_client):
-        # TODO:
-        pass
+
+@pytest.mark.asyncio()
+async def test_on_order_status_with_avg_px(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client.connect()
+    await asyncio.sleep(0)
+    mocker.patch.object(
+        exec_client._client._eclient,
+        "placeOrder",
+        side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
+    )
+    order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+    command = TestCommandStubs.submit_order_command(order=order)
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    # Act - Simulate order status update with average fill price
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Filled",
+        avg_fill_price=125.50,
+        filled=Decimal(100),
+        remaining=Decimal(0),
+    )
+
+    # Assert - Check that avg_px is stored correctly
+    assert client_order_id in exec_client._order_avg_prices
+    stored_avg_px = exec_client._order_avg_prices[client_order_id]
+    # Price magnifier for AAPL is 1.0, so 125.50 should be stored as Price(125.50)
+    assert stored_avg_px == Price.from_str("125.50")
+
+
+@pytest.mark.asyncio()
+async def test_on_exec_details_uses_stored_avg_px(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client.connect()
+    await asyncio.sleep(0)
+    mocker.patch.object(
+        exec_client._client._eclient,
+        "placeOrder",
+        side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
+    )
+    order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+    command = TestCommandStubs.submit_order_command(order=order)
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    # First update order status with avg_fill_price
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Filled",
+        avg_fill_price=99.75,
+        filled=Decimal(100),
+        remaining=Decimal(0),
+    )
+
+    # Act - Process execution details
+    exec_client._client.execDetails(
+        req_id=-1,
+        contract=instrument_id_to_ib_contract(instrument.id),
+        execution=IBTestExecStubs.execution(client_order_id=client_order_id),
+    )
+    exec_client._client.commissionReport(
+        commission_report=IBTestExecStubs.commission(),
+    )
+
+    # Assert - avg_px should be the one from order_status, not from execution
+    assert cache.order(client_order_id).avg_px == Price.from_str("99.75")
+    assert cache.order(client_order_id).status == OrderStatus.FILLED
+
+
+@pytest.mark.asyncio()
+async def test_on_account_update(mocker, exec_client):
+    # TODO:
+    pass

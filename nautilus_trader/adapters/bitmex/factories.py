@@ -26,7 +26,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -37,6 +36,10 @@ def get_bitmex_http_client(
     api_secret: str | None = None,
     base_url: str | None = None,
     testnet: bool = False,
+    timeout_secs: int | None = None,
+    max_retries: int | None = None,
+    retry_delay_ms: int | None = None,
+    retry_delay_max_ms: int | None = None,
 ) -> nautilus_pyo3.BitmexHttpClient:
     """
     Cache and return a BitMEX HTTP client with the given key and secret.
@@ -54,6 +57,14 @@ def get_bitmex_http_client(
         The base URL for the BitMEX API.
     testnet : bool, default False
         If the client should connect to the testnet.
+    timeout_secs : int, optional
+        The timeout in seconds for HTTP requests.
+    max_retries : int, optional
+        The maximum number of retry attempts for failed requests.
+    retry_delay_ms : int, optional
+        The initial delay in milliseconds between retry attempts.
+    retry_delay_max_ms : int, optional
+        The maximum delay in milliseconds between retry attempts.
 
     Returns
     -------
@@ -65,13 +76,17 @@ def get_bitmex_http_client(
         api_secret=api_secret,
         base_url=base_url,
         testnet=testnet,
+        timeout_secs=timeout_secs,
+        max_retries=max_retries,
+        retry_delay_ms=retry_delay_ms,
+        retry_delay_max_ms=retry_delay_max_ms,
     )
 
 
 @lru_cache(maxsize=1)
 def get_bitmex_instrument_provider(
     client: nautilus_pyo3.BitmexHttpClient,
-    symbol_status: BitmexSymbolStatus | None,
+    active_only: bool,
     config: InstrumentProviderConfig,
 ) -> BitmexInstrumentProvider:
     """
@@ -81,8 +96,8 @@ def get_bitmex_instrument_provider(
     ----------
     client : nautilus_pyo3.BitmexHttpClient
         The BitMEX HTTP client.
-    symbol_status : BitmexSymbolStatus | None
-        The symbol status to filter instruments.
+    active_only : bool
+        Whether to only load active instruments.
     config : InstrumentProviderConfig
         The instrument provider configuration.
 
@@ -93,7 +108,7 @@ def get_bitmex_instrument_provider(
     """
     return BitmexInstrumentProvider(
         client=client,
-        symbol_status=symbol_status,
+        active_only=active_only,
         config=config,
     )
 
@@ -140,11 +155,15 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
 
         provider = get_bitmex_instrument_provider(
             client=client,
-            symbol_status=config.symbol_status,
+            active_only=True,  # Always use active instruments for live clients
             config=config.instrument_provider,
         )
 
@@ -202,11 +221,15 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
 
         provider = get_bitmex_instrument_provider(
             client=client,
-            symbol_status=config.symbol_status,
+            active_only=True,  # Always use active instruments for live clients
             config=config.instrument_provider,
         )
 

@@ -208,7 +208,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|e| anyhow::anyhow!(format!("Failed to insert item {} into instrument table: {:?}", instrument.id().to_string(), e)))
+            .map_err(|e| anyhow::anyhow!("Failed to insert item {} into instrument table: {:?}", instrument.id(), e))
     }
 
     /// Loads a single `InstrumentAny` entry by `instrument_id` via the provided `pool`.

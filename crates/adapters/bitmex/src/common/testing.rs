@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Load a test JSON file from the test_data directory.
+/// Load a test JSON file from the `test_data` directory.
 ///
 /// # Panics
 ///

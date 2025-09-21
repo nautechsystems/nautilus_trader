@@ -57,6 +57,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -72,6 +73,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -1276,7 +1278,7 @@ cdef class ExecutionEngine(Component):
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.warning(
                     "Incorrect position ID assigned to fill: "
-                    f"cached={position_id!r}, assigned={fill.position_id!r}. "
+                    f"cached={position_id!r}, assigned={fill.position_id!r}; "
                     "re-assigning from cache",
                 )
             # Assign position ID to fill
@@ -1301,7 +1303,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
             raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+                f"Order for {fill.client_order_id!r} not found to determine position ID",
             )
 
         # Check execution algorithm position ID
@@ -1358,7 +1360,12 @@ cdef class ExecutionEngine(Component):
         try:
             order.apply(event)
         except InvalidStateTrigger as e:
-            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            log_msg = f"InvalidStateTrigger: {e}, did not apply {event}"
+
+            if order.status_c() == OrderStatus.ACCEPTED and isinstance(event, OrderAccepted):
+                self._log.debug(log_msg)
+            else:
+                self._log.warning(log_msg)
             return
         except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
@@ -1424,9 +1431,6 @@ cdef class ExecutionEngine(Component):
             # but without position linkage (since no position is created for spreads)
 
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
-        """
-        Handle position creation or update for a fill.
-        """
         cdef Position position = self._cache.position(fill.position_id)
 
         if position is None or position.is_closed_c():

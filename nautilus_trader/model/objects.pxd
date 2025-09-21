@@ -45,6 +45,7 @@ cdef class Quantity:
 
     cdef Quantity add(self, Quantity other)
     cdef Quantity sub(self, Quantity other)
+    cdef Quantity saturating_sub(self, Quantity other)
     cdef void add_assign(self, Quantity other)
     cdef void sub_assign(self, Quantity other)
 

@@ -74,8 +74,14 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
 pub struct LiveExecEngineConfig {
     /// If reconciliation is active at start-up.
     pub reconciliation: bool,
+    /// The delay (seconds) before starting reconciliation at startup.
+    pub reconciliation_startup_delay_secs: Option<f64>,
     /// The maximum lookback minutes to reconcile state for.
     pub reconciliation_lookback_mins: Option<u32>,
+    /// Specific instrument IDs to reconcile (if None, reconciles all).
+    pub reconciliation_instrument_ids: Option<Vec<String>>,
+    /// Client order IDs to filter from reconciliation.
+    pub filtered_client_order_ids: Option<Vec<String>>,
     /// If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     pub filter_unclaimed_external_orders: bool,
     /// If position status reports are filtered from reconciliation.
@@ -92,6 +98,10 @@ pub struct LiveExecEngineConfig {
     pub own_books_audit_interval_secs: Option<f64>,
     /// The interval (seconds) between checks for open orders at the venue.
     pub open_check_interval_secs: Option<f64>,
+    /// The lookback minutes for open order checks.
+    pub open_check_lookback_mins: Option<u32>,
+    /// The number of retries for missing open orders.
+    pub open_check_missing_retries: Option<u32>,
     /// If the `check_open_orders` requests only currently open orders from the venue.
     pub open_check_open_only: bool,
     /// The interval (minutes) between purging closed orders from the in-memory cache.
@@ -114,7 +124,10 @@ impl Default for LiveExecEngineConfig {
     fn default() -> Self {
         Self {
             reconciliation: true,
+            reconciliation_startup_delay_secs: Some(10.0),
             reconciliation_lookback_mins: None,
+            reconciliation_instrument_ids: None,
+            filtered_client_order_ids: None,
             filter_unclaimed_external_orders: false,
             filter_position_reports: false,
             generate_missing_orders: true,
@@ -123,6 +136,8 @@ impl Default for LiveExecEngineConfig {
             inflight_check_retries: 5,
             own_books_audit_interval_secs: None,
             open_check_interval_secs: None,
+            open_check_lookback_mins: None,
+            open_check_missing_retries: None,
             open_check_open_only: true,
             purge_closed_orders_interval_mins: None,
             purge_closed_orders_buffer_mins: None,
@@ -387,13 +402,18 @@ mod tests {
         let config = LiveExecEngineConfig::default();
 
         assert!(config.reconciliation);
+        assert_eq!(config.reconciliation_startup_delay_secs, Some(10.0));
         assert_eq!(config.reconciliation_lookback_mins, None);
+        assert_eq!(config.reconciliation_instrument_ids, None);
+        assert_eq!(config.filtered_client_order_ids, None);
         assert!(!config.filter_unclaimed_external_orders);
         assert!(!config.filter_position_reports);
         assert!(config.generate_missing_orders);
         assert_eq!(config.inflight_check_interval_ms, 2_000);
         assert_eq!(config.inflight_check_threshold_ms, 5_000);
         assert_eq!(config.inflight_check_retries, 5);
+        assert_eq!(config.open_check_lookback_mins, None);
+        assert_eq!(config.open_check_missing_retries, None);
         assert!(config.open_check_open_only);
         assert_eq!(config.qsize, 100_000);
     }

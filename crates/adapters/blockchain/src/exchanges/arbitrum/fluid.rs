@@ -44,6 +44,7 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     ));
     dex.set_pool_created_event_parsing(parse_fluid_dex_pool_created_event);
     dex

@@ -97,6 +97,7 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
+    log_components_only: u8,
     max_file_size: u64,
     max_backup_count: u32,
 ) -> LogGuard_API {
@@ -110,6 +111,7 @@ pub unsafe extern "C" fn logging_init(
         level_stdout,
         level_file,
         component_levels,
+        u8_as_bool(log_components_only),
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
     );

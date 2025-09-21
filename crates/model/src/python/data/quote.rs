@@ -146,7 +146,7 @@ impl QuoteTick {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
             self.bid_price.raw,
@@ -163,7 +163,7 @@ impl QuoteTick {
             .into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -351,7 +351,7 @@ impl QuoteTick {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Quote` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::Quote(*self))
     }
 
@@ -410,8 +410,6 @@ mod tests {
         #[case] bid_size: Quantity,
         #[case] ask_size: Quantity,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let ts_event = 0;
         let ts_init = 1;
@@ -431,10 +429,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = quote.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
@@ -443,10 +441,10 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = quote.py_to_dict(py).unwrap();
             let parsed = QuoteTick::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, quote);
@@ -455,10 +453,10 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let tick_pyobject = quote.into_py_any_unwrap(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, quote);

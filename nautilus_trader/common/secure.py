@@ -43,7 +43,7 @@ class SecureString:
 
     def __init__(self, value: str, name: str = "credential") -> None:
         if not isinstance(value, str):
-            raise TypeError(f"Value must be a string, got {type(value).__name__}")
+            raise TypeError(f"Value must be a string, was {type(value).__name__}")
 
         self._name = name
         self._value = value

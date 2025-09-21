@@ -132,7 +132,7 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut initialized_books = HashSet::new();
-        let timeout = Duration::from_secs(5); // Hard-coded timeout for now
+        let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let result = tokio::time::timeout(
             timeout,
@@ -427,6 +427,7 @@ impl DatabentoFeedHandler {
                     if std::time::Instant::now() >= deadline {
                         break;
                     }
+
                     // Yield to other threads first
                     std::thread::yield_now();
 
@@ -440,14 +441,14 @@ impl DatabentoFeedHandler {
                     }
                 }
                 Err(std::sync::TryLockError::Poisoned(e)) => {
-                    return Err(anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"));
+                    anyhow::bail!("symbol_venue_map lock poisoned: {e}");
                 }
             }
         }
 
-        Err(anyhow::anyhow!(
+        anyhow::bail!(
             "Failed to acquire read lock on symbol_venue_map after {MAX_WAIT_MS}ms deadline"
-        ))
+        )
     }
 }
 
@@ -525,14 +526,13 @@ fn update_instrument_id_map(
     let symbol = Symbol::from_str_unchecked(raw_symbol);
 
     let publisher_id = header.publisher_id;
-    let venue = match symbol_venue_map.get(&symbol) {
-        Some(venue) => *venue,
-        None => {
-            let venue = publisher_venue_map.get(&publisher_id).ok_or_else(|| {
-                anyhow::anyhow!("No venue found for `publisher_id` {publisher_id}")
-            })?;
-            *venue
-        }
+    let venue = if let Some(venue) = symbol_venue_map.get(&symbol) {
+        *venue
+    } else {
+        let venue = publisher_venue_map
+            .get(&publisher_id)
+            .ok_or_else(|| anyhow::anyhow!("No venue found for `publisher_id` {publisher_id}"))?;
+        *venue
     };
     let instrument_id = InstrumentId::new(symbol, venue);
 
@@ -602,7 +602,7 @@ fn handle_imbalance_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -624,7 +624,7 @@ fn handle_statistics_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -648,7 +648,7 @@ fn handle_record(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     // For MBP-1 and quote-based schemas, always include trades since they're integral to the data
     // For MBO, only include trades after the book is initialized to maintain consistency

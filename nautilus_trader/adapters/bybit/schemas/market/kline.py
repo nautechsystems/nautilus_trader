@@ -39,8 +39,8 @@ class BybitKline(msgspec.Struct, array_like=True):
     def parse_to_bar(
         self,
         bar_type: BarType,
-        ts_init: int,
         timestamp_on_close: bool,
+        ts_init: int | None = None,
     ) -> Bar:
         ts_event = millis_to_nanos(int(self.startTime))
 
@@ -56,7 +56,7 @@ class BybitKline(msgspec.Struct, array_like=True):
             close=Price.from_str(self.closePrice),
             volume=Quantity.from_str(self.volume),
             ts_event=ts_event,
-            ts_init=ts_init,
+            ts_init=(ts_init or ts_event),
         )
 
 

@@ -34,6 +34,7 @@ pub static AERODROME_V1: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });

@@ -211,6 +211,15 @@ pub fn get_defi_liquidity_topic(instrument_id: InstrumentId) -> MStr<Topic> {
         .get_defi_pool_liquidity_topic(instrument_id)
 }
 
+#[cfg(feature = "defi")]
+#[must_use]
+pub fn get_defi_collect_topic(instrument_id: InstrumentId) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_defi_pool_liquidity_topic(instrument_id)
+}
+
 /// Represents a switchboard of built-in messaging endpoint names.
 #[derive(Clone, Debug)]
 pub struct MessagingSwitchboard {
@@ -240,6 +249,8 @@ pub struct MessagingSwitchboard {
     defi_pool_swap_topics: AHashMap<InstrumentId, MStr<Topic>>,
     #[cfg(feature = "defi")]
     defi_pool_liquidity_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    #[cfg(feature = "defi")]
+    defi_pool_collect_topics: AHashMap<InstrumentId, MStr<Topic>>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -272,6 +283,8 @@ impl Default for MessagingSwitchboard {
             defi_pool_swap_topics: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi_pool_liquidity_topics: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            defi_pool_collect_topics: AHashMap::new(),
         }
     }
 }
@@ -548,6 +561,15 @@ impl MessagingSwitchboard {
             .defi_pool_liquidity_topics
             .entry(instrument_id)
             .or_insert_with(|| format!("data.defi.pool_liquidity.{instrument_id}").into())
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn get_defi_pool_collect_topics(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        *self
+            .defi_pool_collect_topics
+            .entry(instrument_id)
+            .or_insert_with(|| format!("data.defi.pool_collect.{instrument_id}").into())
     }
 }
 

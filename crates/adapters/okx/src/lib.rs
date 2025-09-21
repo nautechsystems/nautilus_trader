@@ -15,7 +15,7 @@
 
 //! [NautilusTrader](http://nautilustrader.io) adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 //!
-//! The `nautilus-okx` crate provides strongly-typed client bindings (HTTP & WebSocket), data
+//! The `nautilus-okx` crate provides client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **OKX v5 API**.
 //!
 //! The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
@@ -56,3 +56,13 @@ pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports for convenient access to primary types
+pub use crate::{
+    common::{
+        enums::{OKXInstrumentType, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide},
+        models::OKXInstrument,
+    },
+    http::{client::OKXHttpClient, error::OKXHttpError},
+    websocket::{client::OKXWebSocketClient, error::OKXWsError},
+};

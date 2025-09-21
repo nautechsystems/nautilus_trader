@@ -91,7 +91,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=0.0,  # No stop delay needed for data testing
+    timeout_post_stop=1.0,
 )
 
 # Instantiate the node with a configuration
@@ -108,6 +108,7 @@ config_tester = DataTesterConfig(
     subscribe_trades=True,
     subscribe_funding_rates=True,
     # subscribe_bars=True,
+    book_interval_ms=10,
 )
 tester = DataTester(config=config_tester)
 

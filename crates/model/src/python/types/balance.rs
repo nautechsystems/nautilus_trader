@@ -82,7 +82,7 @@ impl AccountBalance {
     ///
     /// Returns a `PyErr` if serialization fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountBalance))?;
         dict.set_item(
@@ -173,7 +173,7 @@ impl MarginBalance {
     ///
     /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(MarginBalance))?;
         dict.set_item(

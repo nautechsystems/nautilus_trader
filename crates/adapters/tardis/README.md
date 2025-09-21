@@ -6,6 +6,11 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+[NautilusTrader](http://nautilustrader.io) adapter for [Tardis](https://tardis.dev).
+
+The `nautilus-tardis` crate provides integration with the Tardis API for accessing
+normalized historical and real-time market data across multiple exchanges.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

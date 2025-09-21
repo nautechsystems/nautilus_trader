@@ -301,4 +301,4 @@ def test_spread_instrument_parsing_integration():
     assert isinstance(instrument, OptionSpread)
     assert instrument.id == spread_id
 
-    print("✅ Spread instrument parsing working correctly")
+    print("Spread instrument parsing working correctly")

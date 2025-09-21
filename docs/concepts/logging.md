@@ -39,18 +39,18 @@ See the `LoggingConfig` [API Reference](../api_reference/config.md#class-logging
 
 Logging can be configured in the following ways:
 
-- Minimum `LogLevel` for stdout/stderr
-- Minimum `LogLevel` for log files
-- Maximum size before rotating a log file
-- Maximum number of backup log files to maintain when rotating
-- Automatic log file naming with date or timestamp components, or custom log file name
-- Directory for writing log files
-- Plain text or JSON log file formatting
-- Filtering of individual components by log level
-- ANSI colors in log lines
-- Bypass logging entirely
-- Print Rust config to stdout at initialization
-- Optionally initialize logging via the PyO3 bridge (`use_pyo3`) to capture log events emitted by Rust components
+- Minimum `LogLevel` for stdout/stderr.
+- Minimum `LogLevel` for log files.
+- Maximum size before rotating a log file.
+- Maximum number of backup log files to maintain when rotating.
+- Automatic log file naming with date or timestamp components, or custom log file name.
+- Directory for writing log files.
+- Plain text or JSON log file formatting.
+- Filtering of individual components by log level.
+- ANSI colors in log lines.
+- Bypass logging entirely.
+- Print Rust config to stdout at initialization.
+- Optionally initialize logging via the PyO3 bridge (`use_pyo3`) to capture log events emitted by Rust components.
 - Truncate existing log file on startup if it already exists (`clear_log_file`)
 
 ### Standard output logging
@@ -139,6 +139,33 @@ config_node = TradingNodeConfig(
 
 For backtesting, the `BacktestEngineConfig` class can be used instead of `TradingNodeConfig`, as the same options are available.
 
+### Components-only logging
+
+When focusing on a subset of noisy systems, enable `log_components_only` to log messages only from components explicitly listed in `log_component_levels`. All other components are suppressed regardless of the global `log_level` or file level.
+
+Example (Python configuration):
+
+```python
+logging = LoggingConfig(
+    log_level="INFO",
+    log_component_levels={
+        "RiskEngine": "DEBUG",
+        "Portfolio": "INFO",
+    },
+    log_components_only=True,
+)
+```
+
+If configuring via the environment using the Rust spec string, include `log_components_only` alongside component filters, for example:
+
+```bash
+export NAUTILUS_LOG="stdout=Info;log_components_only;RiskEngine=Debug;Portfolio=Info"
+```
+
+:::warning
+If `log_components_only=True` (or `log_components_only` is present in the spec string) and `log_component_levels` is empty, no log messages will be emitted to stdout/stderr or files. Add at least one component filter or disable components-only logging.
+:::
+
 ### Log Colors
 
 ANSI color codes are utilized to enhance the readability of logs when viewed in a terminal.
@@ -150,7 +177,7 @@ To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be 
 Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages, ensuring
 compatibility across different environments where color rendering is not supported.
 
-## Using a Logger directly
+## Using a logger directly
 
 It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
 
@@ -173,7 +200,7 @@ See the `init_logging` [API Reference](../api_reference/common) for further deta
 Only one logging subsystem can be initialized per process with an `init_logging` call. Multiple `LogGuard` instances (up to 255) can exist concurrently, and the logging thread will remain active until all guards are dropped.
 :::
 
-## LogGuard: Managing log lifecycle
+## LogGuard: managing log lifecycle
 
 The `LogGuard` ensures that the logging subsystem remains active and operational throughout the lifecycle of a process.
 It prevents premature shutdown of the logging subsystem when running multiple engines in the same process.

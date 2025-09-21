@@ -134,8 +134,8 @@ ignore = [
     "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "S101",  # Use of assert detected (OK in test suite)
-    "S105",  # Use of hard-coded password (spurious)
-    "S106",  # Use of hard-coded password (spurious)
+    "S105",  # Use of hardcoded password (spurious)
+    "S106",  # Use of hardcoded password (spurious)
     "S113",  # Probable use of requests call without timeout **fix**
     "S603",  # `subprocess` call: check for execution of untrusted input **fix**
 ]

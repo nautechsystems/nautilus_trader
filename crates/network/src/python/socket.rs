@@ -15,13 +15,13 @@
 
 use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::to_pyruntime_err;
-use pyo3::prelude::*;
+use nautilus_core::python::{clone_py_object, to_pyruntime_err};
+use pyo3::{Py, prelude::*};
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use crate::{
     mode::ConnectionMode,
-    socket::{SocketClient, SocketConfig, WriterCommand},
+    socket::{SocketClient, SocketConfig, TcpMessageHandler, WriterCommand},
 };
 
 #[pymethods]
@@ -29,11 +29,11 @@ impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, certs_dir=None))]
-    const fn py_new(
+    fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
-        handler: PyObject,
+        handler: Py<PyAny>,
         heartbeat: Option<(u64, Vec<u8>)>,
         reconnect_timeout_ms: Option<u64>,
         reconnect_delay_initial_ms: Option<u64>,
@@ -43,11 +43,22 @@ impl SocketConfig {
         certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
+
+        // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
+        let message_handler: TcpMessageHandler = std::sync::Arc::new(move |data: &[u8]| {
+            Python::attach(|py| {
+                if let Err(e) = handler_clone.call1(py, (data,)) {
+                    tracing::error!("Error calling Python message handler: {e}");
+                }
+            });
+        });
+
         Self {
             url,
             mode,
             suffix,
-            py_handler: Some(handler),
+            message_handler: Some(message_handler),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -71,18 +82,51 @@ impl SocketClient {
     #[pyo3(signature = (config, post_connection=None, post_reconnection=None, post_disconnection=None))]
     fn py_connect(
         config: SocketConfig,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        post_connection: Option<Py<PyAny>>,
+        post_reconnection: Option<Py<PyAny>>,
+        post_disconnection: Option<Py<PyAny>>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
+        // Convert Python callbacks to function pointers
+        let post_connection_fn = post_connection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_connection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_reconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_disconnection_fn = post_disconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_disconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
-                None, // Rust handler
-                post_connection,
-                post_reconnection,
-                post_disconnection,
+                post_connection_fn,
+                post_reconnection_fn,
+                post_disconnection_fn,
             )
             .await
             .map_err(to_pyruntime_err)

@@ -18,6 +18,7 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
 
 use crate::{
     enums::PositionSide,
@@ -29,7 +30,7 @@ use crate::{
 #[pymethods]
 impl PositionStatusReport {
     #[new]
-    #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, venue_position_id=None, report_id=None))]
+    #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         account_id: AccountId,
@@ -38,18 +39,20 @@ impl PositionStatusReport {
         quantity: Quantity,
         ts_last: u64,
         ts_init: u64,
-        venue_position_id: Option<PositionId>,
         report_id: Option<UUID4>,
+        venue_position_id: Option<PositionId>,
+        avg_px_open: Option<Decimal>,
     ) -> PyResult<Self> {
         Ok(Self::new(
             account_id,
             instrument_id,
-            position_side,
+            position_side.as_specified(),
             quantity,
-            venue_position_id,
             ts_last.into(),
             ts_init.into(),
             report_id,
+            venue_position_id,
+            avg_px_open,
         ))
     }
 
@@ -95,14 +98,20 @@ impl PositionStatusReport {
 
     #[getter]
     #[pyo3(name = "position_side")]
-    const fn py_position_side(&self) -> PositionSide {
-        self.position_side
+    fn py_position_side(&self) -> PositionSide {
+        self.position_side.as_position_side()
     }
 
     #[getter]
     #[pyo3(name = "quantity")]
     const fn py_quantity(&self) -> Quantity {
         self.quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "avg_px_open")]
+    const fn py_avg_px_open(&self) -> Option<Decimal> {
+        self.avg_px_open
     }
 
     #[getter]
@@ -125,7 +134,7 @@ impl PositionStatusReport {
 
     #[getter]
     #[pyo3(name = "is_flat")]
-    const fn py_is_flat(&self) -> bool {
+    fn py_is_flat(&self) -> bool {
         self.is_flat()
     }
 
@@ -158,7 +167,7 @@ impl PositionStatusReport {
     ///
     /// Returns a Python exception if conversion to dict fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(PositionStatusReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;

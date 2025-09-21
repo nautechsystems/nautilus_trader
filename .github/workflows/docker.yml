@@ -17,9 +17,29 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            # Docker Hub (pull base images)
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            # GitHub Container Registry (push images)
+            ghcr.io:443
+            # Debian package mirrors (inside docker build)
+            deb.debian.org:443
+            security.debian.org:443
+            # Rust toolchain install
+            sh.rustup.rs:443
+            static.rust-lang.org:443
+            # PyPI for Python packages during image build
+            pypi.org:443
+            files.pythonhosted.org:443
+            # Cargo crates downloads
+            crates.io:443
+            static.crates.io:443
 
       - name: Free disk space (Ubuntu)
         # https://github.com/jlumbroso/free-disk-space
@@ -35,8 +55,9 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Set up QEMU
@@ -49,7 +70,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -72,7 +93,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_trader_nightly.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
@@ -86,7 +110,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_trader_latest.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (nightly)
         if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
@@ -102,7 +129,10 @@ jobs:
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
       - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
@@ -117,6 +147,8 @@ jobs:
           cache-to: type=gha
           build-args: |
             GIT_TAG=latest
-
       - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
+        run: |
+          printf '%s\n' "$DIGEST"

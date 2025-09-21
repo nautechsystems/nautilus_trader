@@ -320,7 +320,7 @@ mod tests {
             hma.update_raw(price);
             assert!(
                 (hma.value() - price).abs() < f64::EPSILON,
-                "HMA(1) should equal last price {price}, got {}",
+                "HMA(1) should equal last price {price}, was {}",
                 hma.value()
             );
             assert!(hma.initialized(), "HMA(1) must initialise immediately");
@@ -337,7 +337,7 @@ mod tests {
             hma.update_raw(constant);
             assert!(
                 (hma.value() - constant).abs() < 1e-12,
-                "Expected {constant}, got {}",
+                "Expected {constant}, was {}",
                 hma.value()
             );
         }

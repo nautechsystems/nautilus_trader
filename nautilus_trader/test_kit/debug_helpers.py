@@ -21,11 +21,11 @@ import debugpy  # noqa: T100
 from nautilus_trader import PACKAGE_ROOT
 
 
-def setup_debugging(vs_code_path=PACKAGE_ROOT.parent, enable_python_debugging=True):
+def setup_debugging(vs_code_path=PACKAGE_ROOT.parent, enable_python_debugging=True, port=5678):
     # By default the directory containing the .vscode folder is assumed to be
     # one folder above the root nautilus_trader folder
     if enable_python_debugging:
-        debugpy.listen(5678)  # noqa: T100
+        debugpy.listen(port)  # noqa: T100
 
     # Get current process info
     pid = os.getpid()
@@ -52,7 +52,7 @@ def setup_debugging(vs_code_path=PACKAGE_ROOT.parent, enable_python_debugging=Tr
                 "request": "attach",
                 "connect": {
                     "host": "localhost",
-                    "port": 5678,
+                    "port": port,
                 },
                 "pathMappings": [
                     {

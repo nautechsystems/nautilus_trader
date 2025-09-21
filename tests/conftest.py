@@ -16,6 +16,7 @@
 import gc
 import os
 import tracemalloc
+from pathlib import Path
 
 import psutil
 import pytest
@@ -149,6 +150,48 @@ def memory_tracker(request):
     finally:
         # Stop tracemalloc
         tracemalloc.stop()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def verify_test_parquet_integrity() -> None:
+    # Only enforce in CI by default; allow opt-in locally via VERIFY_TEST_PARQUET=true
+    if os.getenv("CI") != "true" and not _env_flag("VERIFY_TEST_PARQUET", default=False):
+        return
+    """
+    Fail fast if any parquet under tests/test_data is invalid or an LFS pointer.
+    """
+    base = Path(__file__).parent / "test_data"
+    if not base.exists():
+        return
+
+    bad: list[tuple[Path, str]] = []
+
+    for path in base.rglob("*.parquet"):
+        try:
+            with path.open("rb") as fh:
+                head = fh.read(256)
+                if head.startswith(b"version https://git-lfs.github.com/spec/"):
+                    bad.append((path, "git-lfs-pointer"))
+                    continue
+                fh.seek(0, os.SEEK_END)
+                size = fh.tell()
+                if size < 4:
+                    bad.append((path, "too-small"))
+                    continue
+                fh.seek(-4, os.SEEK_END)
+                tail = fh.read(4)
+                if tail != b"PAR1":
+                    bad.append((path, "bad-magic"))
+        except Exception as e:
+            bad.append((path, f"error: {e}"))
+
+    if bad:
+        details = "\n".join(f"- {p} -> {reason}" for p, reason in bad[:10])
+        raise AssertionError(
+            "Invalid parquet files under tests/test_data."
+            ' Ensure Git LFS files are fetched in CI (checkout lfs: true and git lfs pull --include="tests/test_data/**").\n'
+            + details,
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -37,7 +37,7 @@ use crate::{
 #[pymethods]
 impl Position {
     #[new]
-    fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
+    fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         Ok(Self::new(&instrument_any, fill))
     }
@@ -344,7 +344,7 @@ impl Position {
     ///
     /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(Position))?;
         let events_dict: PyResult<Vec<_>> = self.events.iter().map(|e| e.py_to_dict(py)).collect();

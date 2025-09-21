@@ -99,3 +99,63 @@ you need to modify the run configuration of the test so it looks like `test --pa
 The reason for this is documented [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851) (the test is expanded into a module with several functions named `case_n`).
 
 In VS Code, it is possible to directly select which test case to debug.
+
+## Python + Rust mixed Debugging Guide
+
+This approach allows to debug both Python and Rust code simultaneously from a Jupyter notebook inside VS Code.
+
+### Setup
+
+Install VS Code extensions: Rust Analyzer, CodeLLDB, Python, Jupyter
+
+### Step 0: Compile nautilus_trader with debug symbols
+
+   ```bash
+   cd nautilus_trader && make build-debug-pyo3
+   ```
+
+### Step 1: Setup Debugging Configuration
+
+```python
+from nautilus_trader.test_kit.debug_helpers import setup_debugging
+
+setup_debugging()
+```
+
+This creates the necessary VS Code debugging configurations and
+starts a debugpy server the Python debugger can connect to.
+
+Note: by default the .vscode folder containing the debugging configurations
+is assumed to be one folder above the `nautilus_trader` root directory.
+You can adjust this if needed.
+
+### Step 2: Set Breakpoints
+
+- **Python breakpoints:** Set in VS Code in the Python source files.
+- **Rust breakpoints:** Set in VS Code in the Rust source files.
+
+### Step 3: Start Mixed Debugging
+
+1. In VS Code: Select **"Debug Jupyter + Rust (Mixed)"** configuration.
+2. Start debugging (F5) or press the right arrow green button.
+3. Both Python and Rust debuggers will attach to your Jupyter session.
+
+### Step 4: Execute Code
+
+Run your Jupyter notebook cells that call rust functions. The debugger will stop at breakpoints in both Python and Rust code.
+
+### Available Configurations
+
+`setup_debugging()` creates these VS Code configurations:
+
+- **`Debug Jupyter + Rust (Mixed)`** - Mixed debugging for Jupyter notebooks.
+- **`Jupyter Mixed Debugging (Python)`** - Python-only debugging for notebooks.
+- **`Rust Debugger (for jupyter debugging)`** - Rust-only debugging for notebooks.
+
+### Example
+
+Open and run the example notebook: `debug_mixed_jupyter.ipynb`
+
+### Reference
+
+- [PyO3 debugging](https://pyo3.rs/v0.25.1/debugging.html?highlight=deb#debugging-from-jupyter-notebooks)

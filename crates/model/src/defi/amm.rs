@@ -106,6 +106,17 @@ impl Pool {
         }
     }
 
+    /// Returns a formatted string representation of the pool for display purposes.
+    pub fn to_full_spec_string(&self) -> String {
+        format!(
+            "{}/{}-{}.{}",
+            self.token0.symbol,
+            self.token1.symbol,
+            self.fee.unwrap_or(0),
+            self.instrument_id.venue
+        )
+    }
+
     pub fn create_instrument_id(chain: Blockchain, dex: &Dex, address: &Address) -> InstrumentId {
         let symbol = Symbol::new(address.to_string());
         let venue = Venue::new(format!("{}:{}", chain, dex.name));
@@ -159,6 +170,7 @@ mod tests {
             "Swap(address,address,int256,int256,uint160,uint128,int24)",
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
         );
 
         let token0 = Token::new(
@@ -229,6 +241,7 @@ mod tests {
             "Swap(address,address,int256,int256,uint160,uint128,int24)",
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
         );
 
         let token0 = Token::new(

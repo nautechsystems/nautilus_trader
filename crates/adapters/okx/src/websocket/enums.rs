@@ -31,7 +31,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum WsErrorType {
+pub enum OKXWsErrorType {
     /// General error.
     Error,
     /// Error during subscription.
@@ -60,7 +60,7 @@ pub enum WsErrorType {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OKXWsOperation {
-    /// Subscribe to one or more topics.
+    /// Subscribes to one or more topics.
     Subscribe,
     /// Unsubscribe from one or more topics.
     Unsubscribe,
@@ -78,6 +78,10 @@ pub enum OKXWsOperation {
     BatchAmendOrders,
     /// Mass cancel all orders for an instrument.
     MassCancel,
+    /// Place a new algo order.
+    OrderAlgo,
+    /// Cancel algo orders.
+    CancelAlgos,
 }
 
 #[derive(
@@ -159,8 +163,8 @@ pub enum OKXWsChannel {
     Orders,
     #[serde(rename = "fills")]
     Fills,
-    // #[display(fmt = "orders-algo")]
-    // AlgoOrders,
+    #[serde(rename = "orders-algo")]
+    OrdersAlgo,
     // #[display(fmt = "algo-advance")]
     // AlgoAdvance,
     // #[display(fmt = "liquidation-warning")]

@@ -19,8 +19,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossConfig(
+    strategy_config = EMACrossConfig(
         instrument_id=AUDUSD_SIM.id,
         bar_type=BarType.from_str("AUD/USD.SIM-100-TICK-MID-INTERNAL"),
         trade_size=Decimal(1_000_000),
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         close_positions_on_stop=True,
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACross(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

@@ -70,7 +70,7 @@ impl CoinbaseIntxHttpClient {
     ///
     /// Returns a Python exception if adding the instrument to the cache fails.
     #[pyo3(name = "add_instrument")]
-    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: PyObject) -> PyResult<()> {
+    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
@@ -85,7 +85,7 @@ impl CoinbaseIntxHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client.list_portfolios().await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_list = PyList::empty(py);
 
                 for portfolio in response {
@@ -112,7 +112,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Ok(Python::with_gil(|py| account_state.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| account_state.into_py_any_unwrap(py)))
         })
     }
 
@@ -123,7 +123,7 @@ impl CoinbaseIntxHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -151,7 +151,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Ok(Python::with_gil(|py| {
+            Ok(Python::attach(|py| {
                 instrument_any_to_pyobject(py, instrument)
                     .expect("Failed parsing instrument")
                     .into_py_any_unwrap(py)
@@ -174,7 +174,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| Ok(report.into_py_any_unwrap(py)))
+            Python::attach(|py| Ok(report.into_py_any_unwrap(py)))
         })
     }
 
@@ -194,7 +194,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -219,7 +219,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -242,7 +242,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| Ok(report.into_py_any_unwrap(py)))
+            Python::attach(|py| Ok(report.into_py_any_unwrap(py)))
         })
     }
 
@@ -260,7 +260,7 @@ impl CoinbaseIntxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))

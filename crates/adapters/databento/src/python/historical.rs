@@ -79,7 +79,7 @@ impl DatabentoHistoricalClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = inner.get_dataset_range(&dataset).await;
             match response {
-                Ok(res) => Python::with_gil(|py| {
+                Ok(res) => Python::attach(|py| {
                     let dict = PyDict::new(py);
                     dict.set_item("start", res.start)?;
                     dict.set_item("end", res.end)?;
@@ -124,11 +124,11 @@ impl DatabentoHistoricalClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                let objs: Vec<PyObject> = instruments
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let objs: Vec<Py<PyAny>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
-                    .collect::<PyResult<Vec<PyObject>>>()?;
+                    .collect::<PyResult<Vec<Py<PyAny>>>>()?;
 
                 let list = PyList::new(py, &objs).expect("Invalid `ExactSizeIterator`");
                 Ok(list.into_py_any_unwrap(py))
@@ -169,7 +169,7 @@ impl DatabentoHistoricalClient {
                 .get_range_quotes(params, schema)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| quotes.into_py_any(py))
+            Python::attach(|py| quotes.into_py_any(py))
         })
     }
 
@@ -205,7 +205,7 @@ impl DatabentoHistoricalClient {
                 .get_range_trades(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| trades.into_py_any(py))
+            Python::attach(|py| trades.into_py_any(py))
         })
     }
 
@@ -243,7 +243,42 @@ impl DatabentoHistoricalClient {
                 .get_range_bars(params, aggregation, timestamp_on_close)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| bars.into_py_any(py))
+            Python::attach(|py| bars.into_py_any(py))
+        })
+    }
+
+    #[pyo3(name = "get_order_book_depth10")]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, depth=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_order_book_depth10<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        instrument_ids: Vec<InstrumentId>,
+        start: u64,
+        end: Option<u64>,
+        depth: Option<usize>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
+
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit: None,
+            price_precision: None,
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let depths = inner
+                .get_range_order_book_depth10(params, depth)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| depths.into_py_any(py))
         })
     }
 
@@ -279,7 +314,7 @@ impl DatabentoHistoricalClient {
                 .get_range_imbalance(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| imbalances.into_py_any(py))
+            Python::attach(|py| imbalances.into_py_any(py))
         })
     }
 
@@ -315,7 +350,7 @@ impl DatabentoHistoricalClient {
                 .get_range_statistics(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| statistics.into_py_any(py))
+            Python::attach(|py| statistics.into_py_any(py))
         })
     }
 
@@ -350,7 +385,7 @@ impl DatabentoHistoricalClient {
                 .get_range_status(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| statuses.into_py_any(py))
+            Python::attach(|py| statuses.into_py_any(py))
         })
     }
 }

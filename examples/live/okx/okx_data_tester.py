@@ -95,10 +95,10 @@ config_tester = DataTesterConfig(
     bar_types=[BarType.from_str(f"{symbol}.OKX-1-MINUTE-LAST-EXTERNAL")],
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
-    # subscribe_quotes=True,
-    # subscribe_trades=True,
-    # subscribe_mark_prices=True,
+    # subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
+    subscribe_quotes=True,
+    subscribe_trades=True,
+    subscribe_mark_prices=True,
     # subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
     # subscribe_funding_rates=True,
     # subscribe_bars=True,

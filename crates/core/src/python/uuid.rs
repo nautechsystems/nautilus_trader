@@ -22,7 +22,7 @@ use std::{
 };
 
 use pyo3::{
-    IntoPyObjectExt,
+    IntoPyObjectExt, Py,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyTuple},
@@ -44,7 +44,7 @@ impl UUID4 {
 
     /// Sets the state of the `UUID4` instance during unpickling.
     #[allow(clippy::needless_pass_by_value)]
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         let bytes: &Bound<'_, PyBytes> = state.downcast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
 
@@ -59,12 +59,12 @@ impl UUID4 {
     }
 
     /// Gets the state of the `UUID4` instance for pickling.
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         PyBytes::new(py, &self.value).into_py_any(py)
     }
 
     /// Reduces the `UUID4` instance for pickling.
-    fn __reduce__(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)

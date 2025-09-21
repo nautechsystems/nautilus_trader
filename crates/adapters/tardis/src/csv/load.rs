@@ -1057,4 +1057,259 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(deltas[0].order.price, Price::from("6421.5"));
         assert_eq!(deltas[1].order.size, Quantity::from("10000"));
     }
+
+    #[rstest]
+    fn test_load_depth10_from_snapshot5_comprehensive() {
+        let filepath = ensure_data_exists_tardis_binance_snapshot5();
+        let depths = load_depth10_from_snapshot5(&filepath, None, None, None, Some(100)).unwrap();
+
+        assert_eq!(depths.len(), 100);
+
+        let first = &depths[0];
+        assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
+        assert_eq!(first.bids.len(), 10);
+        assert_eq!(first.asks.len(), 10);
+
+        // Check all bid levels (first 5 from data, rest empty)
+        assert_eq!(first.bids[0].price, Price::from("11657.07"));
+        assert_eq!(first.bids[0].size, Quantity::from("10.896"));
+        assert_eq!(first.bids[0].side, OrderSide::Buy);
+
+        assert_eq!(first.bids[1].price, Price::from("11656.97"));
+        assert_eq!(first.bids[1].size, Quantity::from("0.2"));
+        assert_eq!(first.bids[1].side, OrderSide::Buy);
+
+        assert_eq!(first.bids[2].price, Price::from("11655.78"));
+        assert_eq!(first.bids[2].size, Quantity::from("0.2"));
+        assert_eq!(first.bids[2].side, OrderSide::Buy);
+
+        assert_eq!(first.bids[3].price, Price::from("11655.77"));
+        assert_eq!(first.bids[3].size, Quantity::from("0.98"));
+        assert_eq!(first.bids[3].side, OrderSide::Buy);
+
+        assert_eq!(first.bids[4].price, Price::from("11655.68"));
+        assert_eq!(first.bids[4].size, Quantity::from("0.111"));
+        assert_eq!(first.bids[4].side, OrderSide::Buy);
+
+        // Empty levels
+        for i in 5..10 {
+            assert_eq!(first.bids[i].price.raw, 0);
+            assert_eq!(first.bids[i].size.raw, 0);
+            assert_eq!(first.bids[i].side, OrderSide::NoOrderSide);
+        }
+
+        // Check all ask levels (first 5 from data, rest empty)
+        assert_eq!(first.asks[0].price, Price::from("11657.08"));
+        assert_eq!(first.asks[0].size, Quantity::from("1.714"));
+        assert_eq!(first.asks[0].side, OrderSide::Sell);
+
+        assert_eq!(first.asks[1].price, Price::from("11657.54"));
+        assert_eq!(first.asks[1].size, Quantity::from("5.4"));
+        assert_eq!(first.asks[1].side, OrderSide::Sell);
+
+        assert_eq!(first.asks[2].price, Price::from("11657.56"));
+        assert_eq!(first.asks[2].size, Quantity::from("0.238"));
+        assert_eq!(first.asks[2].side, OrderSide::Sell);
+
+        assert_eq!(first.asks[3].price, Price::from("11657.61"));
+        assert_eq!(first.asks[3].size, Quantity::from("0.077"));
+        assert_eq!(first.asks[3].side, OrderSide::Sell);
+
+        assert_eq!(first.asks[4].price, Price::from("11657.92"));
+        assert_eq!(first.asks[4].size, Quantity::from("0.918"));
+        assert_eq!(first.asks[4].side, OrderSide::Sell);
+
+        // Empty levels
+        for i in 5..10 {
+            assert_eq!(first.asks[i].price.raw, 0);
+            assert_eq!(first.asks[i].size.raw, 0);
+            assert_eq!(first.asks[i].side, OrderSide::NoOrderSide);
+        }
+
+        // Logical checks: bid prices should decrease
+        for i in 1..5 {
+            assert!(
+                first.bids[i].price < first.bids[i - 1].price,
+                "Bid price at level {} should be less than level {}",
+                i,
+                i - 1
+            );
+        }
+
+        // Logical checks: ask prices should increase
+        for i in 1..5 {
+            assert!(
+                first.asks[i].price > first.asks[i - 1].price,
+                "Ask price at level {} should be greater than level {}",
+                i,
+                i - 1
+            );
+        }
+
+        // Logical check: spread should be positive
+        assert!(
+            first.asks[0].price > first.bids[0].price,
+            "Best ask should be greater than best bid"
+        );
+
+        // Check counts
+        for i in 0..5 {
+            assert_eq!(first.bid_counts[i], 1);
+            assert_eq!(first.ask_counts[i], 1);
+        }
+        for i in 5..10 {
+            assert_eq!(first.bid_counts[i], 0);
+            assert_eq!(first.ask_counts[i], 0);
+        }
+
+        // Check metadata
+        assert_eq!(first.flags, 128); // F_SNAPSHOT flag
+        assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
+        assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
+        assert_eq!(first.sequence, 0);
+    }
+
+    #[rstest]
+    fn test_load_depth10_from_snapshot25_comprehensive() {
+        let filepath = ensure_data_exists_tardis_binance_snapshot25();
+        let depths = load_depth10_from_snapshot25(&filepath, None, None, None, Some(100)).unwrap();
+
+        assert_eq!(depths.len(), 100);
+
+        let first = &depths[0];
+        assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
+        assert_eq!(first.bids.len(), 10);
+        assert_eq!(first.asks.len(), 10);
+
+        // Check all 10 bid levels from snapshot25
+        let expected_bids = vec![
+            ("11657.07", "10.896"),
+            ("11656.97", "0.2"),
+            ("11655.78", "0.2"),
+            ("11655.77", "0.98"),
+            ("11655.68", "0.111"),
+            ("11655.66", "0.077"),
+            ("11655.57", "0.34"),
+            ("11655.48", "0.4"),
+            ("11655.26", "1.185"),
+            ("11654.86", "0.195"),
+        ];
+
+        for (i, (price, size)) in expected_bids.iter().enumerate() {
+            assert_eq!(first.bids[i].price, Price::from(*price));
+            assert_eq!(first.bids[i].size, Quantity::from(*size));
+            assert_eq!(first.bids[i].side, OrderSide::Buy);
+        }
+
+        // Check all 10 ask levels from snapshot25
+        let expected_asks = vec![
+            ("11657.08", "1.714"),
+            ("11657.54", "5.4"),
+            ("11657.56", "0.238"),
+            ("11657.61", "0.077"),
+            ("11657.92", "0.918"),
+            ("11658.09", "1.015"),
+            ("11658.12", "0.665"),
+            ("11658.19", "0.583"),
+            ("11658.28", "0.255"),
+            ("11658.29", "0.656"),
+        ];
+
+        for (i, (price, size)) in expected_asks.iter().enumerate() {
+            assert_eq!(first.asks[i].price, Price::from(*price));
+            assert_eq!(first.asks[i].size, Quantity::from(*size));
+            assert_eq!(first.asks[i].side, OrderSide::Sell);
+        }
+
+        // Logical checks: bid prices should strictly decrease
+        for i in 1..10 {
+            assert!(
+                first.bids[i].price < first.bids[i - 1].price,
+                "Bid price at level {} ({}) should be less than level {} ({})",
+                i,
+                first.bids[i].price,
+                i - 1,
+                first.bids[i - 1].price
+            );
+        }
+
+        // Logical checks: ask prices should strictly increase
+        for i in 1..10 {
+            assert!(
+                first.asks[i].price > first.asks[i - 1].price,
+                "Ask price at level {} ({}) should be greater than level {} ({})",
+                i,
+                first.asks[i].price,
+                i - 1,
+                first.asks[i - 1].price
+            );
+        }
+
+        // Logical check: spread should be positive
+        assert!(
+            first.asks[0].price > first.bids[0].price,
+            "Best ask ({}) should be greater than best bid ({})",
+            first.asks[0].price,
+            first.bids[0].price
+        );
+
+        // Check counts (all should be 1 for snapshot data)
+        for i in 0..10 {
+            assert_eq!(first.bid_counts[i], 1);
+            assert_eq!(first.ask_counts[i], 1);
+        }
+
+        // Check metadata
+        assert_eq!(first.flags, 128); // F_SNAPSHOT flag
+        assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
+        assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
+        assert_eq!(first.sequence, 0);
+    }
+
+    #[rstest]
+    fn test_snapshot_csv_field_order_interleaved() {
+        // This test verifies that the CSV structs correctly handle the interleaved
+        // asks/bids field ordering from Tardis CSV files
+
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,\
+asks[0].price,asks[0].amount,bids[0].price,bids[0].amount,\
+asks[1].price,asks[1].amount,bids[1].price,bids[1].amount,\
+asks[2].price,asks[2].amount,bids[2].price,bids[2].amount,\
+asks[3].price,asks[3].amount,bids[3].price,bids[3].amount,\
+asks[4].price,asks[4].amount,bids[4].price,bids[4].amount
+binance-futures,BTCUSDT,1000000,2000000,\
+100.5,1.0,100.4,2.0,\
+100.6,1.1,100.3,2.1,\
+100.7,1.2,100.2,2.2,\
+100.8,1.3,100.1,2.3,\
+100.9,1.4,100.0,2.4";
+
+        let temp_file = std::env::temp_dir().join("test_interleaved_snapshot5.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let depths = load_depth10_from_snapshot5(&temp_file, None, None, None, Some(1)).unwrap();
+        assert_eq!(depths.len(), 1);
+
+        let depth = &depths[0];
+
+        // Verify bids are correctly parsed (should be decreasing)
+        assert_eq!(depth.bids[0].price, Price::from("100.4"));
+        assert_eq!(depth.bids[1].price, Price::from("100.3"));
+        assert_eq!(depth.bids[2].price, Price::from("100.2"));
+        assert_eq!(depth.bids[3].price, Price::from("100.1"));
+        assert_eq!(depth.bids[4].price, Price::from("100.0"));
+
+        // Verify asks are correctly parsed (should be increasing)
+        assert_eq!(depth.asks[0].price, Price::from("100.5"));
+        assert_eq!(depth.asks[1].price, Price::from("100.6"));
+        assert_eq!(depth.asks[2].price, Price::from("100.7"));
+        assert_eq!(depth.asks[3].price, Price::from("100.8"));
+        assert_eq!(depth.asks[4].price, Price::from("100.9"));
+
+        // Verify sizes
+        assert_eq!(depth.bids[0].size, Quantity::from("2.0"));
+        assert_eq!(depth.asks[0].size, Quantity::from("1.0"));
+
+        std::fs::remove_file(temp_file).unwrap();
+    }
 }

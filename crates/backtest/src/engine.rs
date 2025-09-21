@@ -32,7 +32,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
-    data::{Data, HasTsInit},
+    data::Data,
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -211,8 +211,7 @@ impl BacktestEngine {
             exchange.borrow_mut().set_fill_model(fill_model);
         } else {
             log::warn!(
-                "BacktestEngine::change_fill_model called for unknown venue {}. Ignoring.",
-                venue
+                "BacktestEngine::change_fill_model called for unknown venue {venue}. Ignoring."
             );
         }
     }
@@ -282,7 +281,7 @@ impl BacktestEngine {
         // If requested, sort by ts_init so internal stream is monotonic.
         let mut to_add = data;
         if sort {
-            to_add.sort_by_key(|d| d.ts_init());
+            to_add.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
         }
 
         // Instrument & book tracking using Data helpers
@@ -301,14 +300,14 @@ impl BacktestEngine {
         }
 
         // Extend master data vector and ensure internal iterator (index) remains valid.
-        for item in to_add.into_iter() {
+        for item in to_add {
             self.data.push_back(item);
         }
 
         if sort {
             // VecDeque cannot be sorted directly; convert to Vec for sorting, then back.
             let mut vec: Vec<Data> = self.data.drain(..).collect();
-            vec.sort_by_key(|d| d.ts_init());
+            vec.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
             self.data = vec.into();
         }
 
@@ -395,7 +394,7 @@ impl BacktestEngine {
     ) {
         let mut last_ts_init: Option<UnixNanos> = None;
 
-        for handler in handlers.into_iter() {
+        for handler in handlers {
             let ts_event_init = handler.event.ts_event; // event time
 
             if Self::should_skip_time_event(ts_event_init, ts_now, only_now, as_of_now) {

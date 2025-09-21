@@ -988,7 +988,7 @@ class TestConsolidateDataByPeriod:
         initial_file_count = len(initial_intervals)
 
         # Note: With realistic timestamps, we might get 1 file initially, which is fine
-        assert initial_file_count >= 1, f"Should have at least 1 file, got {initial_file_count}"
+        assert initial_file_count >= 1, f"Should have at least 1 file, was {initial_file_count}"
 
         # Act - consolidate by 1-day periods
         self.catalog.consolidate_data_by_period(
@@ -1662,10 +1662,10 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
 
     # Verify initial state - should have 3 files and 10 quotes
     initial_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
-    assert len(initial_intervals) == 3, f"Expected 3 files, got {len(initial_intervals)}"
+    assert len(initial_intervals) == 3, f"Expected 3 files, was {len(initial_intervals)}"
 
     initial_quotes = catalog.quote_ticks()
-    assert len(initial_quotes) == 10, f"Expected 10 quotes, got {len(initial_quotes)}"
+    assert len(initial_quotes) == 10, f"Expected 10 quotes, was {len(initial_quotes)}"
 
     # Act - delete range [4_000_000_000, 10_000_000_000] which should:
     # - Split file 1 to keep [1_000_000_000, 2_000_000_000, 3_000_000_000]
@@ -1685,21 +1685,21 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     expected_remaining = [1_000_000_000, 2_000_000_000, 3_000_000_000]
     assert (
         remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, got {remaining_timestamps}"
+    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
 
     # Verify file structure - should have 1 file remaining
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
-    assert len(final_intervals) == 1, f"Expected 1 file, got {len(final_intervals)}"
+    assert len(final_intervals) == 1, f"Expected 1 file, was {len(final_intervals)}"
 
     # Verify the remaining file covers the correct range (should end just before deletion start)
     expected_start = 1_000_000_000
     expected_end = 4_000_000_000 - 1  # Just before deletion range starts (one nanosecond before)
     assert (
         final_intervals[0][0] == expected_start
-    ), f"Expected start {expected_start}, got {final_intervals[0][0]}"
+    ), f"Expected start {expected_start}, was {final_intervals[0][0]}"
     assert (
         final_intervals[0][1] == expected_end
-    ), f"Expected end {expected_end}, got {final_intervals[0][1]}"
+    ), f"Expected end {expected_end}, was {final_intervals[0][1]}"
 
     # Verify we can query the remaining data correctly
     queried_quotes = catalog.query(
@@ -1713,7 +1713,7 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
 
     assert (
         queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, got {queried_timestamps}"
+    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
 
 
 def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog) -> None:
@@ -1757,10 +1757,10 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
 
     # Verify initial state
     initial_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
-    assert len(initial_intervals) == 3, f"Expected 3 files, got {len(initial_intervals)}"
+    assert len(initial_intervals) == 3, f"Expected 3 files, was {len(initial_intervals)}"
 
     initial_quotes = catalog.quote_ticks()
-    assert len(initial_quotes) == 10, f"Expected 10 quotes, got {len(initial_quotes)}"
+    assert len(initial_quotes) == 10, f"Expected 10 quotes, was {len(initial_quotes)}"
 
     # Act - delete range [1_000_000_000, 7_000_000_000] which should:
     # - Delete file 1 completely
@@ -1781,11 +1781,11 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
     expected_remaining = [8_000_000_000, 9_000_000_000, 10_000_000_000]
     assert (
         remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, got {remaining_timestamps}"
+    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
 
     # Verify file structure - should have 2 files remaining (split file 2 + intact file 3)
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
-    assert len(final_intervals) == 2, f"Expected 2 files, got {len(final_intervals)}"
+    assert len(final_intervals) == 2, f"Expected 2 files, was {len(final_intervals)}"
 
     # Verify we can query the remaining data correctly
     queried_quotes = catalog.query(
@@ -1799,7 +1799,7 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
 
     assert (
         queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, got {queried_timestamps}"
+    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
 
 
 def test_delete_catalog_range_partial_overlap(catalog: ParquetDataCatalog) -> None:

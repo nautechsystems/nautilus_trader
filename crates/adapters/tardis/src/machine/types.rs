@@ -62,7 +62,7 @@ impl TardisInstrumentMiniInfo {
     }
 
     #[must_use]
-    pub fn as_tardis_instrument_key(&self) -> TardisInstrumentKey {
+    pub const fn as_tardis_instrument_key(&self) -> TardisInstrumentKey {
         TardisInstrumentKey::new(self.raw_symbol, self.exchange)
     }
 }

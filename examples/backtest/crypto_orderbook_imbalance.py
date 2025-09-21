@@ -22,8 +22,8 @@ import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import BTC
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     engine.add_data(deltas)
 
     # Configure your strategy
-    config = OrderBookImbalanceConfig(
+    strategy_config = OrderBookImbalanceConfig(
         instrument_id=BTCUSDT_BINANCE.id,
         max_trade_size=Decimal("1.000"),
         min_seconds_between_triggers=1.0,
@@ -94,7 +94,7 @@ if __name__ == "__main__":
     )
 
     # Instantiate and add your strategy
-    strategy = OrderBookImbalance(config=config)
+    strategy = OrderBookImbalance(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

@@ -240,7 +240,7 @@ mod tests {
             assert_eq!(
                 sma.count(),
                 expected,
-                "period={period}, step={i}, expected={expected}, got={}",
+                "period={period}, step={i}, expected={expected}, was={}",
                 sma.count()
             );
         }
@@ -288,7 +288,7 @@ mod tests {
             sma.update_raw(p);
             assert!(
                 (sma.value() - expect_avg[i]).abs() < 1e-9,
-                "step {i}: expected {}, got {}",
+                "step {i}: expected {}, was {}",
                 expect_avg[i],
                 sma.value()
             );
@@ -354,7 +354,7 @@ mod tests {
             let ref_mean: f64 = window.iter().sum::<f64>() / window.len() as f64;
             assert!(
                 (sma.value() - ref_mean).abs() < 1e-12,
-                "step={step}, expected={ref_mean}, got={}",
+                "step={step}, expected={ref_mean}, was={}",
                 sma.value()
             );
         }

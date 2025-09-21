@@ -350,13 +350,16 @@ CREATE TABLE IF NOT EXISTS "pool" (
     token1_address TEXT NOT NULL,
     fee INTEGER,
     tick_spacing INTEGER,
+    initial_tick INTEGER,
+    initial_sqrt_price_x96 TEXT,
+    last_full_sync_block_number BIGINT,
     PRIMARY KEY (chain_id, address),
     FOREIGN KEY (token0_chain, token0_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (token1_chain, token1_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (chain_id, dex_name) REFERENCES dex(chain_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS "pool_swap" (
+CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     id BIGSERIAL PRIMARY KEY,
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     pool_address TEXT NOT NULL,
@@ -369,11 +372,11 @@ CREATE TABLE IF NOT EXISTS "pool_swap" (
     size TEXT NOT NULL,
     price TEXT NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
-    FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number), // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );
 
-CREATE TABLE IF NOT EXISTS "pool_liquidity" (
+CREATE TABLE IF NOT EXISTS "pool_liquidity_event" (
     id BIGSERIAL PRIMARY KEY,
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     pool_address TEXT NOT NULL,
@@ -390,6 +393,24 @@ CREATE TABLE IF NOT EXISTS "pool_liquidity" (
     tick_lower INTEGER NOT NULL,
     tick_upper INTEGER NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
-    FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
+    UNIQUE(chain_id, transaction_hash, log_index)
+);
+
+CREATE TABLE IF NOT EXISTS "pool_collect_event" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    transaction_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    owner TEXT NOT NULL,
+    fee0 TEXT NOT NULL,
+    fee1 TEXT NOT NULL,
+    tick_lower INTEGER NOT NULL,
+    tick_upper INTEGER NOT NULL,
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );

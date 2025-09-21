@@ -6,6 +6,11 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+[NautilusTrader](http://nautilustrader.io) adapter for [Coinbase International](https://www.coinbase.com/en/international-exchange) exchange.
+
+The `nautilus-coinbase-intx` crate provides integration with the Coinbase International API for
+institutional trading on their derivatives exchange.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

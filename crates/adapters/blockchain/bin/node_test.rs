@@ -68,6 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![DexType::UniswapV3],
         http_rpc_url,
         None, // RPC requests per second
+        None, // Multicall calls per RPC request
         Some(wss_rpc_url),
         true, // Use HyperSync for live data
         // Some(from_block), // from_block

@@ -20,11 +20,11 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::extended::DexExtended;
+use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
 
 /// Uniswap V3 DEX on Arbitrum.
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    let mut dex = DexExtended::new(Dex::new(
+    let mut dex = Dex::new(
         chains::ARBITRUM.clone(),
         DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
@@ -34,13 +34,18 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Swap(address,address,int256,int256,uint160,uint128,int24)",
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
-    ));
-    dex.set_pool_created_event_parsing(
-        crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
+        "Collect(address,address,int24,int24,uint128,uint128)",
     );
-    dex.set_swap_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_swap_event);
-    dex.set_mint_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_mint_event);
-    dex.set_burn_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_burn_event);
-    dex.set_convert_trade_data(crate::exchanges::ethereum::uniswap_v3::convert_to_trade_data);
-    dex
+    dex.set_initialize_event("Initialize(uint160,int24)");
+    let mut dex_extended = DexExtended::new(dex);
+
+    dex_extended.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
+    dex_extended.set_initialize_event_parsing(uniswap_v3::initialize::parse_initialize_event);
+    dex_extended.set_swap_event_parsing(uniswap_v3::swap::parse_swap_event);
+    dex_extended.set_mint_event_parsing(uniswap_v3::mint::parse_mint_event);
+    dex_extended.set_burn_event_parsing(uniswap_v3::burn::parse_burn_event);
+    dex_extended.set_collect_event_parsing(uniswap_v3::collect::parse_collect_event);
+    dex_extended.set_convert_trade_data(uniswap_v3::trade_data::convert_to_trade_data);
+
+    dex_extended
 });

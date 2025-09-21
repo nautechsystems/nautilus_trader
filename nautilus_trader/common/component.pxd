@@ -166,6 +166,7 @@ cpdef LogGuard init_logging(
     str file_name=*,
     str file_format=*,
     dict component_levels=*,
+    bint log_components_only=*,
     bint colors=*,
     bint bypass=*,
     bint print_config=*,

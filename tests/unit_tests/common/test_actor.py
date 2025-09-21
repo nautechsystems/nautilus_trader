@@ -1641,7 +1641,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_order_book_depth10(self) -> None:
+    def test_subscribe_order_book_depth(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1657,7 +1657,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_order_book_depth10(self) -> None:
+    def test_unsubscribe_order_book_depth(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -2040,7 +2040,7 @@ class TestActor:
         assert request_id is not None, f"Request ID should not be None{method_info}"
         assert (
             self.data_engine.request_count == 1
-        ), f"Expected 1 request in data engine{method_info}, got {self.data_engine.request_count}"
+        ), f"Expected 1 request in data engine{method_info}, was {self.data_engine.request_count}"
         assert (
             not actor.has_pending_requests()
         ), f"Actor should not have pending requests{method_info}"
@@ -2248,6 +2248,29 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, "request_bars")
 
+    def test_request_order_book_depth_sends_request_to_data_engine(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_order_book_depth(
+            AUDUSD_SIM.id,
+            depth=10,
+            start=start_time,
+            end=end_time,
+        )
+
+        # Assert
+        self.assert_successful_request(actor, request_id, "request_order_book_depth")
+
     def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
         handler: list[Bar] = []
@@ -2370,6 +2393,7 @@ class TestActor:
         ),
         ("request_quote_ticks", {"instrument_id": AUDUSD_SIM.id}),
         ("request_trade_ticks", {"instrument_id": AUDUSD_SIM.id}),
+        ("request_order_book_depth", {"instrument_id": AUDUSD_SIM.id, "depth": 10}),
         ("request_bars", {"bar_type": TestDataStubs.bartype_audusd_1min_bid()}),
         ("request_aggregated_bars", {"bar_types": [_create_composite_bar_type()]}),
     ]

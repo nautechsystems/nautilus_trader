@@ -6,6 +6,13 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+[NautilusTrader](http://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
+
+The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket), data
+models and helper utilities that wrap the official **BitMEX API**.
+
+The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

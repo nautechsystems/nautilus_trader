@@ -73,6 +73,8 @@ class TestExecStubs:
         strategy_id: StrategyId | None = None,
         client_order_id: ClientOrderId | None = None,
         expire_time=None,
+        post_only=False,
+        reduce_only=False,
         tags=None,
     ) -> LimitOrder:
         instrument = instrument or _AUDUSD_SIM
@@ -88,8 +90,8 @@ class TestExecStubs:
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             init_id=TestIdStubs.uuid(),
             ts_init=0,
-            post_only=False,
-            reduce_only=False,
+            post_only=post_only,
+            reduce_only=reduce_only,
             display_qty=None,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,

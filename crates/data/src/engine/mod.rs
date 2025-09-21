@@ -90,8 +90,8 @@ use ustr::Ustr;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
-        VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
+        ValueBarAggregator, VolumeBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -683,6 +683,7 @@ impl DataEngine {
                 RequestCommand::Instrument(req) => client.request_instrument(req),
                 RequestCommand::Instruments(req) => client.request_instruments(req),
                 RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+                RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
@@ -759,6 +760,10 @@ impl DataEngine {
             DefiData::PoolLiquidityUpdate(update) => {
                 let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
                 msgbus::publish(topic, &update as &dyn Any);
+            }
+            DefiData::PoolFeeCollect(collect) => {
+                let topic = switchboard::get_defi_collect_topic(collect.instrument_id);
+                msgbus::publish(topic, &collect as &dyn Any);
             }
         }
     }
@@ -1355,6 +1360,14 @@ impl DataEngine {
                     bar_type,
                     price_precision,
                     size_precision,
+                    handler,
+                    false,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    instrument.price_increment(),
                     handler,
                     false,
                 )) as Box<dyn BarAggregator>,

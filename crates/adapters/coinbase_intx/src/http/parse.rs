@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     enums::{
@@ -428,18 +430,20 @@ pub fn parse_position_status_report(
         .net_size
         .parse::<f64>()
         .map_err(|e| anyhow::anyhow!("Invalid value for `net_size`: {e}"))?;
-    let position_side = parse_position_side(Some(net_size));
+    let position_side = parse_position_side(Some(net_size)).as_specified();
     let quantity = Quantity::new(net_size.abs(), size_precision);
+    let avg_px_open = Some(Decimal::from_str(&coinbase_position.entry_vwap)?);
 
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
         quantity,
-        None, // Position ID not applicable on Coinbase Intx
         ts_init,
         ts_init,
         None, // Will generate a UUID4
+        None, // Position ID not applicable on Coinbase Intx
+        avg_px_open,
     ))
 }
 

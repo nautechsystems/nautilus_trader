@@ -224,7 +224,7 @@ pub fn py_stream_tardis_deltas(
 
 #[pyclass(unsendable)]
 pub struct TardisBatchedDeltasStreamIterator {
-    stream: Box<dyn Iterator<Item = anyhow::Result<Vec<PyObject>>>>,
+    stream: Box<dyn Iterator<Item = anyhow::Result<Vec<Py<PyAny>>>>>,
 }
 
 impl Debug for TardisBatchedDeltasStreamIterator {
@@ -239,7 +239,7 @@ impl TardisBatchedDeltasStreamIterator {
         slf
     }
 
-    fn __next__(&mut self) -> PyResult<Option<Vec<PyObject>>> {
+    fn __next__(&mut self) -> PyResult<Option<Vec<Py<PyAny>>>> {
         match self.stream.next() {
             Some(Ok(batch)) => Ok(Some(batch)),
             Some(Err(e)) => Err(to_pyvalue_err(e)),

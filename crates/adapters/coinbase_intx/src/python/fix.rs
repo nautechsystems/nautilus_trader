@@ -84,7 +84,7 @@ impl CoinbaseIntxFixClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        handler: PyObject,
+        handler: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
 

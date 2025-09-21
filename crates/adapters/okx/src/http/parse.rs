@@ -20,7 +20,10 @@ mod tests {
 
     use crate::{
         common::{
-            enums::{OKXExecType, OKXInstrumentType, OKXMarginMode, OKXPositionSide, OKXSide},
+            enums::{
+                OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXPositionSide,
+                OKXSide,
+            },
             testing::load_test_json,
         },
         http::{
@@ -227,7 +230,7 @@ mod tests {
         assert_eq!(order.ord_id, "2497956918703120384");
         assert_eq!(order.fill_sz, "0.03");
         assert_eq!(order.acc_fill_sz, "0.03");
-        assert_eq!(order.state, "filled");
+        assert_eq!(order.state, OKXOrderStatus::Filled);
         // fill_fee was omitted in response
         assert!(order.fill_fee.is_none());
     }

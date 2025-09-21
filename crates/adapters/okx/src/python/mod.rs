@@ -33,6 +33,7 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXMarginMode>()?;
     m.add_class::<crate::common::enums::OKXTradeMode>()?;
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
+    m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::urls::OKXEndpointType>()?;
     m.add_function(wrap_pyfunction!(urls::get_okx_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;

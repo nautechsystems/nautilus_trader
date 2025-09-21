@@ -210,11 +210,11 @@ impl BookLadder {
 
     /// Deletes an order from the ladder.
     pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: UnixNanos) {
-        self.remove(order.order_id, sequence, ts_event);
+        self.remove_order(order.order_id, sequence, ts_event);
     }
 
     /// Removes an order by its ID from the ladder.
-    pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
+    pub fn remove_order(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         if let Some(price) = self.cache.get(&order_id).copied()
             && let Some(level) = self.levels.get_mut(&price)
         {
@@ -248,6 +248,26 @@ impl BookLadder {
             self.levels.values().map(|level| level.len()).sum::<usize>(),
             "Cache size should equal total orders across all levels"
         );
+    }
+
+    /// Removes an entire price level from the ladder and returns it.
+    pub fn remove_level(&mut self, price: BookPrice) -> Option<BookLevel> {
+        if let Some(level) = self.levels.remove(&price) {
+            // Remove all orders in this level from the cache
+            for order_id in level.orders.keys() {
+                self.cache.remove(order_id);
+            }
+
+            debug_assert_eq!(
+                self.cache.len(),
+                self.levels.values().map(|level| level.len()).sum::<usize>(),
+                "Cache size should equal total orders across all levels"
+            );
+
+            Some(level)
+        } else {
+            None
+        }
     }
 
     /// Returns the total size of all orders in the ladder.

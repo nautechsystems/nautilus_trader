@@ -24,13 +24,17 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ### Product support
 
-| Product Type      | Supported | Notes                                          |
-|-------------------|-----------|------------------------------------------------|
-| Spot              | ✓         | Use for index prices.                          |
-| Perpetual Swaps   | ✓         | Linear and inverse contracts.                  |
-| Futures           | ✓         | Specific expiration dates.                     |
-| Margin            | -         | *Not yet supported*.                           |
-| Options           | -         | *Not yet supported*.                           |
+| Product Type      | Data Feed | Trading | Notes                                          |
+|-------------------|-----------|---------|------------------------------------------------|
+| Spot              | ✓         | ✓       | Use for index prices.                          |
+| Perpetual Swaps   | ✓         | ✓       | Linear and inverse contracts.                  |
+| Futures           | ✓         | ✓       | Specific expiration dates.                     |
+| Margin            | -         | -       | *Not yet supported*.                           |
+| Options           | ✓         | -       | *Data feed supported, trading coming soon*.    |
+
+:::info
+**Options support**: While you can subscribe to options market data and receive price updates, order execution for options is not yet implemented. You can use the symbology format shown above to subscribe to options data feeds.
+:::
 
 The OKX adapter includes multiple components, which can be used separately or together depending on your use case.
 
@@ -49,25 +53,121 @@ and won’t need to work directly with these lower-level components.
 
 ## Symbology
 
-OKX uses native symbols such as `BTC-USDT-SWAP` for linear perpetual swap contracts.
-Instruments are identified using the OKX native format.
+OKX uses specific symbol conventions for different instrument types. All instrument IDs should include the `.OKX` suffix when referencing them (e.g., `BTC-USDT.OKX` for spot Bitcoin).
+
+### Symbol format by instrument type
+
+#### SPOT
+Format: `{BaseCurrency}-{QuoteCurrency}`
+
+Examples:
+
+- `BTC-USDT` - Bitcoin against USDT (Tether)
+- `BTC-USDC` - Bitcoin against USDC
+- `ETH-USDT` - Ethereum against USDT
+- `SOL-USDT` - Solana against USDT
+
+To subscribe to spot Bitcoin USD in your strategy:
+
+```python
+InstrumentId.from_str("BTC-USDT.OKX")  # For USDT-quoted spot
+InstrumentId.from_str("BTC-USDC.OKX")  # For USDC-quoted spot
+```
+
+#### SWAP (Perpetual Futures)
+
+Format: `{BaseCurrency}-{QuoteCurrency}-SWAP`
+
+Examples:
+
+- `BTC-USDT-SWAP` - Bitcoin perpetual swap (linear, USDT-margined)
+- `BTC-USD-SWAP` - Bitcoin perpetual swap (inverse, coin-margined)
+- `ETH-USDT-SWAP` - Ethereum perpetual swap (linear)
+- `ETH-USD-SWAP` - Ethereum perpetual swap (inverse)
+
+Linear vs Inverse contracts:
+
+- **Linear** (USDT-margined): Uses stablecoins like USDT as margin.
+- **Inverse** (coin-margined): Uses the base cryptocurrency as margin.
+
+#### FUTURES (Dated Futures)
+
+Format: `{BaseCurrency}-{QuoteCurrency}-{YYMMDD}`
+
+Examples:
+
+- `BTC-USD-251226` - Bitcoin futures expiring December 26, 2025
+- `ETH-USD-251226` - Ethereum futures expiring December 26, 2025
+- `BTC-USD-250328` - Bitcoin futures expiring March 28, 2025
+
+Note: Futures are typically inverse contracts (coin-margined).
+
+#### OPTIONS
+
+Format: `{BaseCurrency}-{QuoteCurrency}-{YYMMDD}-{Strike}-{Type}`
+
+Examples:
+
+- `BTC-USD-250328-100000-C` - Bitcoin call option, $100,000 strike, expiring March 28, 2025
+- `BTC-USD-250328-100000-P` - Bitcoin put option, $100,000 strike, expiring March 28, 2025
+- `ETH-USD-250328-4000-C` - Ethereum call option, $4,000 strike, expiring March 28, 2025
+
+Where:
+
+- `C` = Call option
+- `P` = Put option
+
+### Common questions
+
+**Q: How do I subscribe to spot Bitcoin USD?**
+A: Use `BTC-USDT.OKX` for USDT-margined spot or `BTC-USDC.OKX` for USDC-margined spot.
+
+**Q: What's the difference between BTC-USDT-SWAP and BTC-USD-SWAP?**
+A: `BTC-USDT-SWAP` is a linear perpetual (USDT-margined), while `BTC-USD-SWAP` is an inverse perpetual (BTC-margined).
+
+**Q: How do I know which contract type to use?**
+A: Check the `contract_types` parameter in the configuration:
+
+- For linear contracts: `OKXContractType.LINEAR`.
+- For inverse contracts: `OKXContractType.INVERSE`.
 
 ## Order capability
 
 Below are the order types, execution instructions, and time-in-force options supported
 for linear perpetual swap products on OKX.
 
+### Client order ID requirements
+
+:::warning
+OKX has specific requirements for client order IDs:
+
+- **No hyphens allowed**: OKX does not accept hyphens (`-`) in client order IDs.
+- Maximum length: 32 characters.
+- Allowed characters: alphanumeric characters and underscores only.
+
+When configuring your strategy, ensure you set:
+
+```python
+use_hyphens_in_client_order_ids=False
+```
+
+:::
+
 ### Order types
 
-| Order Type          | Linear Perpetual Swap | Notes                |
-|---------------------|-----------------------|----------------------|
-| `MARKET`            | ✓                     |                      |
-| `LIMIT`             | ✓                     |                      |
-| `STOP_MARKET`       | ✓                     |                      |
-| `STOP_LIMIT`        | ✓                     |                      |
-| `MARKET_IF_TOUCHED` | ✓                     |                      |
-| `LIMIT_IF_TOUCHED`  | ✓                     |                      |
+| Order Type          | Linear Perpetual Swap | Notes                                |
+|---------------------|-----------------------|--------------------------------------|
+| `MARKET`            | ✓                     | Immediate execution at market price. |
+| `LIMIT`             | ✓                     | Execution at specified price or better. |
+| `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order). |
+| `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order). |
+| `MARKET_IF_TOUCHED` | ✓                     | Conditional market order (OKX algo order). |
+| `LIMIT_IF_TOUCHED`  | ✓                     | Conditional limit order (OKX algo order). |
 | `TRAILING_STOP`     | -                     | *Not yet supported*. |
+
+:::info
+**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, and `LIMIT_IF_TOUCHED` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources.
+:::
 
 ### Execution instructions
 
@@ -83,12 +183,12 @@ for linear perpetual swap products on OKX.
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | ✗                     | *Not supported by OKX. Use strategy-managed GTD.* |
+| `GTD`         | ✗                     | *Not supported by OKX API.* |
 
 :::info
-**GTD (Good Till Date) time in force**: OKX does not support GTD time in force through their API.
-If you need GTD functionality, you should use Nautilus's strategy-managed GTD feature instead,
-which will handle the order expiration by canceling the order at expiry.
+**GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
+
+If you need GTD functionality, you must use Nautilus's strategy-managed GTD feature, which will handle the order expiration by canceling the order at the specified expiry time.
 :::
 
 ### Batch operations
@@ -101,12 +201,58 @@ which will handle the order expiration by canceling the order at expiry.
 
 ### Position management
 
-| Feature           | Linear Perpetual Swap | Notes                                        |
-|-------------------|-----------------------|----------------------------------------------|
-| Query positions   | ✓                     | Real-time position updates.                  |
-| Position mode     | ✓                     | Net vs Long/Short mode.                      |
-| Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.  |
-| Margin mode       | ✓                     | Cross vs Isolated margin.                    |
+| Feature           | Linear Perpetual Swap | Notes                                                |
+|-------------------|-----------------------|------------------------------------------------------|
+| Query positions   | ✓                     | Real-time position updates.                          |
+| Position mode     | ✓                     | Net vs Long/Short mode.                              |
+| Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
+| Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
+
+### Margin modes
+
+OKX's unified account system allows trading with different margin modes on a per-order basis. The adapter supports specifying the trade mode (`td_mode`) when submitting orders.
+
+:::note
+**Important**: Account modes must be initially configured via the OKX Web/App interface. The API cannot set the account mode for the first time.
+:::
+
+For more details on OKX's account modes and margin system, see the [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+
+#### Available margin modes
+
+- **`cash`**: Spot trading without margin (default for spot trading).
+- **`isolated`**: Isolated margin mode where risk is confined to specific positions.
+- **`cross`**: Cross margin mode where all positions share the same margin pool.
+- **`spot_isolated`**: Isolated margin for spot trading.
+
+#### Setting margin mode per order
+
+You can specify the margin mode for individual orders using the `params` parameter:
+
+```python
+# Submit an order with isolated margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "isolated"}
+)
+
+# Submit an order with cross margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "cross"}
+)
+```
+
+If no `td_mode` is specified in params, the adapter will use the default mode configured for your account type:
+
+- Cash accounts default to `cash` mode.
+- Margin accounts default to `isolated` mode.
+
+This flexibility allows you to:
+
+- Run multiple strategies with different risk profiles simultaneously.
+- Isolate high-risk trades while using cross margin for capital-efficient positions.
+- Mix spot and margin trades within the same account.
 
 ### Order querying
 
@@ -119,12 +265,55 @@ which will handle the order expiration by canceling the order at expiry.
 
 ### Contingent orders
 
-| Feature              | Linear Perpetual Swap | Notes                                     |
-|--------------------|-----------------------|---------------------------------------------|
+| Feature             | Linear Perpetual Swap | Notes                                     |
+|---------------------|-----------------------|---------------------------------------------|
 | Order lists         | -                     | *Not supported*.                           |
 | OCO orders          | ✓                     | One-Cancels-Other orders.                  |
 | Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
 | Conditional orders  | ✓                     | Stop and limit-if-touched orders.          |
+
+#### Conditional order architecture
+
+Conditional orders (OKX algo orders) use a hybrid architecture for optimal performance and reliability:
+
+- **Submission**: Via HTTP REST API (`/api/v5/trade/order-algo`)
+- **Status updates**: Via WebSocket business endpoint (`/ws/v5/business`) on the `orders-algo` channel
+- **Cancellation**: Via HTTP REST API using algo order ID tracking
+
+This design ensures:
+
+- Immediate submission acknowledgment through HTTP.
+- Real-time status updates through WebSocket.
+- Proper order lifecycle management with algo order ID mapping.
+
+#### Supported conditional order types
+
+| Order Type          | Trigger Types          | Notes                                     |
+|---------------------|------------------------|-------------------------------------------|
+| `STOP_MARKET`       | Last, Mark, Index      | Market execution when triggered.          |
+| `STOP_LIMIT`        | Last, Mark, Index      | Limit order placement when triggered.     |
+| `MARKET_IF_TOUCHED` | Last, Mark, Index      | Market execution when price touched.      |
+| `LIMIT_IF_TOUCHED`  | Last, Mark, Index      | Limit order placement when price touched. |
+
+#### Trigger price types
+
+Conditional orders support different trigger price sources:
+
+- **Last Price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
+- **Mark Price** (`TriggerType.MARK_PRICE`): Uses the mark price (recommended for derivatives).
+- **Index Price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
+
+```python
+# Example: Stop loss using mark price trigger
+stop_order = order_factory.stop_market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_str("0.1"),
+    trigger_price=Price.from_str("45000.0"),
+    trigger_type=TriggerType.MARK_PRICE,  # Use mark price for trigger
+)
+strategy.submit_order(stop_order)
+```
 
 ## Authentication
 
@@ -150,11 +339,13 @@ The OKX adapter implements automatic rate limiting for both HTTP and WebSocket c
 
 ### HTTP rate limiting
 
-The HTTP client implements a conservative rate limit of **250 requests per second**. This limit is based on OKX's documented rate limits:
+The HTTP client implements a global default rate limit of **250 requests per second**. This is a conservative default that works across most endpoints. However, note that individual OKX endpoints have their own server-side limits:
 
 - Sub-account order limit: 1000 requests per 2 seconds.
-- Account balance: 10 requests per 2 seconds.
+- Account balance: 10 requests per 2 seconds (more restrictive).
 - Account instruments: 20 requests per 2 seconds.
+
+The global limiter helps prevent hitting the overall rate limit, but endpoints with lower server-side limits may still rate-limit if accessed too frequently.
 
 ### WebSocket rate limiting
 
@@ -184,19 +375,21 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig, OKXExecClientConfig
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory, OKXLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig, LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import OKXContractType
+from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,
     data_clients={
         OKX: OKXDataClientConfig(
-            api_key=None,           # from OKX_API_KEY env var
-            api_secret=None,        # from OKX_API_SECRET env var
-            api_passphrase=None,    # from OKX_API_PASSPHRASE env var
+            api_key=None,           # Will use OKX_API_KEY env var
+            api_secret=None,        # Will use OKX_API_SECRET env var
+            api_passphrase=None,    # Will use OKX_API_PASSPHRASE env var
             base_url_http=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=("SWAP",),
-            contract_types=None,
+            instrument_types=(OKXInstrumentType.SWAP,),
+            contract_types=(OKXContractType.LINEAR),
             is_demo=False,
         ),
     },
@@ -208,8 +401,8 @@ config = TradingNodeConfig(
             base_url_http=None,
             base_url_ws=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=("SWAP",),
-            contract_types=None,
+            instrument_types=(OKXInstrumentType.SWAP,),
+            contract_types=(OKXContractType.LINEAR),
             is_demo=False,
         ),
     },

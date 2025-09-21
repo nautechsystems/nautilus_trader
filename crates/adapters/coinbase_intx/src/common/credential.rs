@@ -67,6 +67,7 @@ impl Credential {
     /// # Panics
     ///
     /// Panics if signature generation fails due to key or cryptographic errors.
+    #[must_use]
     pub fn sign(&self, timestamp: &str, method: &str, endpoint: &str, body: &str) -> String {
         // Extract the path without query parameters
         let request_path = match endpoint.find('?') {
@@ -129,7 +130,7 @@ mod tests {
             API_SECRET.to_string(),
             API_PASSPHRASE.to_string(),
         );
-        let dbg_out = format!("{:?}", credential);
+        let dbg_out = format!("{credential:?}");
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
         assert!(!dbg_out.contains("dGVz")); // base64 fragment
         let secret_bytes_dbg = format!("{:?}", BASE64_STANDARD.decode(API_SECRET).unwrap());

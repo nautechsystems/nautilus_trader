@@ -53,7 +53,9 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 base64 = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
@@ -72,11 +74,15 @@ serde_urlencoded = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
@@ -99,3 +105,7 @@ path = "bin/ws-data.rs"
 [[bin]]
 name = "hyperliquid-ws-exec"
 path = "bin/ws-exec.rs"
+
+[[bin]]
+name = "hyperliquid-ws-post"
+path = "bin/ws-post.rs"

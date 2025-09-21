@@ -281,7 +281,7 @@ mod tests {
             let got = sma.value();
             assert!(
                 (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, got {got}"
+                "tick {ix}: expected {exp}, was {got}"
             );
         }
     }
@@ -304,7 +304,7 @@ mod tests {
             let got = sma.value();
             assert!(
                 (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, got {got}"
+                "tick {ix}: expected {exp}, was {got}"
             );
         }
     }

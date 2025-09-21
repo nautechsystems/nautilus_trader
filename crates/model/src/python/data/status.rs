@@ -256,9 +256,8 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(stub_instrument_status: InstrumentStatus) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = stub_instrument_status.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'InstrumentStatus', 'instrument_id': 'MSFT.XNAS', 'action': 'TRADING', 'ts_event': 1, 'ts_init': 2, 'reason': None, 'trading_event': None, 'is_trading': None, 'is_quoting': None, 'is_short_sell_restricted': None}";
             assert_eq!(dict_string, expected_string);
@@ -267,9 +266,8 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(stub_instrument_status: InstrumentStatus) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = stub_instrument_status.py_to_dict(py).unwrap();
             let parsed = InstrumentStatus::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, stub_instrument_status);
@@ -278,9 +276,8 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject(stub_instrument_status: InstrumentStatus) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let status_pyobject = stub_instrument_status.into_py_any_unwrap(py);
             let parsed_status = InstrumentStatus::from_pyobject(status_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_status, stub_instrument_status);

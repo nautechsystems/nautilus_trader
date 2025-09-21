@@ -1784,9 +1784,745 @@ fn test_book_group_with_status_filter() {
     assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(60))); // 100 - 40 = 60 (only ACCEPTED is filtered)
 }
 
+#[rstest]
+#[case(None)]
+#[case(Some(OrderSide::NoOrderSide))]
+#[case(Some(OrderSide::Buy))]
+#[case(Some(OrderSide::Sell))]
+fn test_book_clear_stale_levels_not_crossed(#[case] side: Option<OrderSide>) {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Add normal, non-crossed levels
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("99.00"),
+        Quantity::from("10.0"),
+        1,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("98.00"),
+        Quantity::from("20.0"),
+        2,
+    );
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from("10.0"),
+        3,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("102.00"),
+        Quantity::from("20.0"),
+        4,
+    );
+
+    book.add(bid1, 0, 1, 100.into());
+    book.add(bid2, 0, 2, 200.into());
+    book.add(ask1, 0, 3, 300.into());
+    book.add(ask2, 0, 4, 400.into());
+
+    let initial_update_count = book.update_count;
+    let removed = book.clear_stale_levels(side);
+
+    assert!(removed.is_none());
+    assert_eq!(book.update_count, initial_update_count); // no increment when nothing removed
+    assert_eq!(book.best_bid_price(), Some(Price::from("99.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("101.00")));
+    assert_eq!(book.bids(None).count(), 2);
+    assert_eq!(book.asks(None).count(), 2);
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(OrderSide::NoOrderSide))]
+fn test_book_clear_stale_levels_simple_crossed(#[case] side: Option<OrderSide>) {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Create a crossed book: best bid > best ask
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("105.00"),
+        Quantity::from("10.0"),
+        1,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from("20.0"),
+        2,
+    );
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("95.00"),
+        Quantity::from("10.0"),
+        3,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("110.00"),
+        Quantity::from("20.0"),
+        4,
+    );
+
+    book.add(bid1, 0, 1, 100.into());
+    book.add(bid2, 0, 2, 200.into());
+    book.add(ask1, 0, 3, 300.into());
+    book.add(ask2, 0, 4, 400.into());
+
+    let initial_update_count = book.update_count;
+    let removed = book.clear_stale_levels(side);
+
+    // Should remove:
+    // - Bids with price >= 95 (original best ask): 105, 100
+    // - Asks with price <= 105 (original best bid): 95
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 3); // 2 bid levels + 1 ask level
+    assert_eq!(book.update_count, initial_update_count + 1); // Should increment once
+    assert_eq!(book.best_bid_price(), None); // Both bids removed
+    assert_eq!(book.best_ask_price(), Some(Price::from("110.00"))); // ask1 removed
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 1);
+
+    // Idempotence: second call should return None and not change counters
+    let removed2 = book.clear_stale_levels(side);
+    assert!(removed2.is_none());
+    assert_eq!(book.update_count, initial_update_count + 1);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_multiple_overlapping() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Create deeply crossed book with multiple overlapping levels
+    // Bids: 110, 108, 105, 90
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("110.00"),
+        Quantity::from("10.0"),
+        1,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("108.00"),
+        Quantity::from("20.0"),
+        2,
+    );
+    let bid3 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("105.00"),
+        Quantity::from("30.0"),
+        3,
+    );
+    let bid4 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("90.00"),
+        Quantity::from("40.0"),
+        4,
+    );
+
+    // Asks: 95, 100, 103, 115
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("95.00"),
+        Quantity::from("10.0"),
+        5,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Quantity::from("20.0"),
+        6,
+    );
+    let ask3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("103.00"),
+        Quantity::from("30.0"),
+        7,
+    );
+    let ask4 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("115.00"),
+        Quantity::from("40.0"),
+        8,
+    );
+
+    book.add(bid1, 0, 1, 100.into());
+    book.add(bid2, 0, 2, 200.into());
+    book.add(bid3, 0, 3, 300.into());
+    book.add(bid4, 0, 4, 400.into());
+    book.add(ask1, 0, 5, 500.into());
+    book.add(ask2, 0, 6, 600.into());
+    book.add(ask3, 0, 7, 700.into());
+    book.add(ask4, 0, 8, 800.into());
+
+    let removed = book.clear_stale_levels(None);
+
+    // Should remove:
+    // - Bids with price >= 95 (original best ask): 110, 108, 105
+    // - Asks with price <= 110 (original best bid): 95, 100, 103
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 6); // 3 bid levels + 3 ask levels
+    assert_eq!(book.best_bid_price(), Some(Price::from("90.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("115.00")));
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 1);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_with_multiple_orders_per_level() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Add orders at crossed price levels - in L2_MBP, later orders replace earlier ones at same price
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("105.00"),
+        Quantity::from("30.0"),
+        1,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("90.00"),
+        Quantity::from("20.0"),
+        2,
+    );
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("95.00"),
+        Quantity::from("25.0"),
+        3,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("110.00"),
+        Quantity::from("20.0"),
+        4,
+    );
+
+    book.add(bid1, 0, 1, 100.into());
+    book.add(bid2, 0, 2, 200.into());
+    book.add(ask1, 0, 3, 300.into());
+    book.add(ask2, 0, 4, 400.into());
+
+    assert_eq!(book.best_bid_size(), Some(Quantity::from("30.0")));
+
+    let removed = book.clear_stale_levels(None);
+
+    // Should remove 1 bid level at 105 + 1 ask level at 95
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 2); // Count of price levels
+    assert_eq!(book.best_bid_price(), Some(Price::from("90.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("110.00")));
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 1);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_side_sell_clears_asks_only() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Bids: 105, 100; Asks: 95, 110 (crossed)
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("105.00"),
+            Quantity::from("10.0"),
+            1,
+        ),
+        0,
+        1,
+        100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("20.0"),
+            2,
+        ),
+        0,
+        2,
+        200.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("95.00"),
+            Quantity::from("10.0"),
+            3,
+        ),
+        0,
+        3,
+        300.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("110.00"),
+            Quantity::from("20.0"),
+            4,
+        ),
+        0,
+        4,
+        400.into(),
+    );
+
+    let initial_update_count = book.update_count;
+
+    let removed = book.clear_stale_levels(Some(OrderSide::Sell));
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 1); // removed ask at 95
+
+    assert_eq!(book.update_count, initial_update_count + 1);
+    assert_eq!(book.best_bid_price(), Some(Price::from("105.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("110.00")));
+    assert_eq!(book.bids(None).count(), 2);
+    assert_eq!(book.asks(None).count(), 1);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_side_buy_clears_bids_only() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Bids: 110, 90; Asks: 100, 115 (crossed)
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("110.00"),
+            Quantity::from("10.0"),
+            1,
+        ),
+        0,
+        1,
+        100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("90.00"),
+            Quantity::from("20.0"),
+            2,
+        ),
+        0,
+        2,
+        200.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("10.0"),
+            3,
+        ),
+        0,
+        3,
+        300.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("115.00"),
+            Quantity::from("20.0"),
+            4,
+        ),
+        0,
+        4,
+        400.into(),
+    );
+
+    let initial_update_count = book.update_count;
+
+    let removed = book.clear_stale_levels(Some(OrderSide::Buy));
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 1); // removed bid at 110
+
+    assert_eq!(book.update_count, initial_update_count + 1);
+    assert_eq!(book.best_bid_price(), Some(Price::from("90.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("100.00")));
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 2);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_multiple_crossed_each_side() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Bids: 110, 105, 102, 99, 95, 90
+    // Asks: 100, 103, 106, 109, 112, 115
+
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("110.00"),
+            Quantity::from("10.0"),
+            1,
+        ),
+        0,
+        1,
+        100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("105.00"),
+            Quantity::from("20.0"),
+            2,
+        ),
+        0,
+        2,
+        200.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("102.00"),
+            Quantity::from("30.0"),
+            3,
+        ),
+        0,
+        3,
+        300.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("99.00"),
+            Quantity::from("40.0"),
+            4,
+        ),
+        0,
+        4,
+        400.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("95.00"),
+            Quantity::from("50.0"),
+            5,
+        ),
+        0,
+        5,
+        500.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("90.00"),
+            Quantity::from("60.0"),
+            6,
+        ),
+        0,
+        6,
+        600.into(),
+    );
+
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("15.0"),
+            7,
+        ),
+        0,
+        7,
+        700.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("103.00"),
+            Quantity::from("25.0"),
+            8,
+        ),
+        0,
+        8,
+        800.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("106.00"),
+            Quantity::from("35.0"),
+            9,
+        ),
+        0,
+        9,
+        900.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("109.00"),
+            Quantity::from("45.0"),
+            10,
+        ),
+        0,
+        10,
+        1000.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("112.00"),
+            Quantity::from("55.0"),
+            11,
+        ),
+        0,
+        11,
+        1100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("115.00"),
+            Quantity::from("65.0"),
+            12,
+        ),
+        0,
+        12,
+        1200.into(),
+    );
+
+    assert_eq!(book.best_bid_price(), Some(Price::from("110.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("100.00")));
+
+    let removed = book.clear_stale_levels(None);
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+
+    // 3 bids >= 100 (best ask): 110, 105, 102
+    // 4 asks <= 110 (best bid): 100, 103, 106, 109
+    assert_eq!(removed_levels.len(), 7);
+
+    // Verify order: bids first, then asks
+    assert_eq!(removed_levels[0].price.value, Price::from("110.00"));
+    assert_eq!(
+        removed_levels[0].size_decimal(),
+        rust_decimal::Decimal::from(10)
+    );
+    assert_eq!(removed_levels[1].price.value, Price::from("105.00"));
+    assert_eq!(removed_levels[2].price.value, Price::from("102.00"));
+
+    assert_eq!(removed_levels[3].price.value, Price::from("100.00"));
+    assert_eq!(
+        removed_levels[3].size_decimal(),
+        rust_decimal::Decimal::from(15)
+    );
+    assert_eq!(removed_levels[4].price.value, Price::from("103.00"));
+    assert_eq!(removed_levels[5].price.value, Price::from("106.00"));
+    assert_eq!(removed_levels[6].price.value, Price::from("109.00"));
+
+    assert_eq!(book.best_bid_price(), Some(Price::from("99.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("112.00")));
+    assert_eq!(book.bids(None).count(), 3);
+    assert_eq!(book.asks(None).count(), 2);
+
+    // Test idempotence: calling clear_stale_levels again should return None
+    // and not change the update count since the book is no longer crossed
+    let update_count_before = book.update_count;
+    let removed_again = book.clear_stale_levels(None);
+    assert!(removed_again.is_none());
+    assert_eq!(book.update_count, update_count_before);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_multiple_crossed_side_specific() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Bids: 110, 105, 102, 99, 95, 90
+    // Asks: 100, 103, 106, 109, 112, 115
+
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("110.00"),
+            Quantity::from("10.0"),
+            1,
+        ),
+        0,
+        1,
+        100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("105.00"),
+            Quantity::from("20.0"),
+            2,
+        ),
+        0,
+        2,
+        200.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("102.00"),
+            Quantity::from("30.0"),
+            3,
+        ),
+        0,
+        3,
+        300.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("99.00"),
+            Quantity::from("40.0"),
+            4,
+        ),
+        0,
+        4,
+        400.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("95.00"),
+            Quantity::from("50.0"),
+            5,
+        ),
+        0,
+        5,
+        500.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("90.00"),
+            Quantity::from("60.0"),
+            6,
+        ),
+        0,
+        6,
+        600.into(),
+    );
+
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("15.0"),
+            7,
+        ),
+        0,
+        7,
+        700.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("103.00"),
+            Quantity::from("25.0"),
+            8,
+        ),
+        0,
+        8,
+        800.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("106.00"),
+            Quantity::from("35.0"),
+            9,
+        ),
+        0,
+        9,
+        900.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("109.00"),
+            Quantity::from("45.0"),
+            10,
+        ),
+        0,
+        10,
+        1000.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("112.00"),
+            Quantity::from("55.0"),
+            11,
+        ),
+        0,
+        11,
+        1100.into(),
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("115.00"),
+            Quantity::from("65.0"),
+            12,
+        ),
+        0,
+        12,
+        1200.into(),
+    );
+
+    // Test clearing only bids
+    let removed = book.clear_stale_levels(Some(OrderSide::Buy));
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+
+    // Should remove only 3 bid levels
+    assert_eq!(removed_levels.len(), 3);
+    assert_eq!(removed_levels[0].price.value, Price::from("110.00"));
+    assert_eq!(removed_levels[1].price.value, Price::from("105.00"));
+    assert_eq!(removed_levels[2].price.value, Price::from("102.00"));
+
+    // Asks remain untouched, bids cleaned
+    assert_eq!(book.best_bid_price(), Some(Price::from("99.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("100.00")));
+    assert_eq!(book.bids(None).count(), 3);
+    assert_eq!(book.asks(None).count(), 6);
+}
+
+#[rstest]
+fn test_book_clear_stale_levels_l1_mbp() {
+    // Test that L1_MBP books are skipped
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    // Add some L1 data (note: in real L1_MBP, we'd use update_quote_tick)
+    // But for this test, we just want to verify clear_stale_levels behavior
+
+    let initial_update_count = book.update_count;
+
+    // Even if we somehow had a crossed L1 book, it should return None
+    let removed = book.clear_stale_levels(None);
+
+    assert!(removed.is_none());
+    // Verify update_count is unchanged (mirroring non-crossed test style)
+    assert_eq!(book.update_count, initial_update_count);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // OwnOrderBook
 ////////////////////////////////////////////////////////////////////////////////
+
 #[fixture]
 fn own_order() -> OwnBookOrder {
     let trader_id = TraderId::from("TRADER-001");

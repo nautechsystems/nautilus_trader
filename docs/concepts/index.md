@@ -43,6 +43,12 @@ well as the flow of execution messages (commands and events).
 The **Orders** guide provides more details about the available order types for the platform, along with
 the execution instructions supported for each. Advanced order types and emulated orders are also covered.
 
+## [Positions](positions.md)
+
+The **Positions** guide explains how positions work in NautilusTrader, including their lifecycle,
+aggregation from order fills, profit and loss calculations, and the important concept of position
+snapshotting for netting OMS configurations.
+
 ## [Cache](cache.md)
 
 The `Cache` is a central in-memory data store for managing all trading-related data.
@@ -59,6 +65,12 @@ The **Message Bus** guide covers capabilities and best practices of the `Message
 The `Portfolio` serves as the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
 Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
+
+## [Reports](reports.md)
+
+The **Reports** guide covers the reporting capabilities in NautilusTrader, including execution reports,
+portfolio analysis reports, PnL accounting considerations, and how reports are used for backtest
+post-run analysis.
 
 ## [Logging](logging.md)
 

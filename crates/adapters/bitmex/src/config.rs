@@ -12,3 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Configuration types for the BitMEX adapter.
+//!
+//! This module is reserved for future configuration structures for the BitMEX adapter,
+//! including settings for WebSocket connections, HTTP client parameters, and adapter behavior.

@@ -25,8 +25,10 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -42,17 +44,24 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
+instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 order_qty = Decimal("100")  # Contract size in USD
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(
+        log_level="INFO",
+        use_pyo3=True,
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        snapshot_orders=True,
-        snapshot_positions=True,
-        snapshot_positions_interval_secs=5.0,
+        reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
+        open_check_interval_secs=5.0,
+        open_check_open_only=False,
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval_secs=5.0,
     ),
     data_clients={
         BITMEX: BitmexDataClientConfig(
@@ -61,7 +70,6 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            symbol_status=BitmexSymbolStatus.OPEN,  # Filter for open instruments
             testnet=False,  # If client uses the testnet API
         ),
     },
@@ -72,19 +80,39 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            symbol_status=BitmexSymbolStatus.OPEN,  # Filter for open instruments
             testnet=False,  # If client uses the testnet API
         ),
     },
     timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_disconnection=10.0,
+    timeout_post_stop=5.0,
+    timeout_shutdown=2.0,
 )
 
 # Configure the execution tester strategy
 config_tester = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.BITMEX"),
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
+    use_post_only=True,
+    tob_offset_ticks=0,
+    modify_orders_to_maintain_tob_offset=True,
+    open_position_on_start_qty=order_qty,
+    open_position_time_in_force=TimeInForce.IOC,
+    close_positions_time_in_force=TimeInForce.IOC,
+    # enable_stop_buys=True,
+    enable_stop_sells=True,
+    stop_order_type=OrderType.STOP_MARKET,
+    stop_trigger_type=TriggerType.MARK_PRICE,
+    # test_reject_post_only=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
+    log_data=False,
+    # dry_run=True,
 )
 tester = ExecTester(config=config_tester)
 

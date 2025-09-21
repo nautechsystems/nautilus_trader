@@ -144,8 +144,8 @@ cdef class Actor(Component):
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, bint update_catalog=*, dict[str, object] params=*)
-    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*, bint update_catalog=*, dict[str, object] params=*)
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, bint update_catalog=*, dict[str, object] params=*)
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
@@ -164,6 +164,7 @@ cdef class Actor(Component):
         ClientId client_id=*,
         bint managed=*,
         bint pyo3_conversion=*,
+        bint update_catalog=*,
         dict[str, object] params=*,
     )
     cpdef void subscribe_order_book_at_interval(
@@ -241,6 +242,18 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
         dict[str, object] params=*,
+    )
+    cpdef UUID4 request_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end=*,
+        int limit=*,
+        int depth=*,
+        ClientId client_id=*,
+        callback=*,
+        bint update_catalog=*,
+        dict params=*,
     )
     cpdef UUID4 request_quote_ticks(
         self,

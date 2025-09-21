@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.indicators.base import Indicator
+from nautilus_trader.indicators import Indicator
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
