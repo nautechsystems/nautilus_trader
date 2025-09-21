@@ -709,16 +709,16 @@ cdef class RenkoBarAggregator(BarAggregator):
         self.brick_size = instrument.price_increment.as_decimal() * Decimal(bar_type.spec.step)
         self._last_close = None
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         # Initialize last_close if this is the first update
         if self._last_close is None:
             self._last_close = price
             # For the first update, just store the price and add to builder
-            self._builder.update(price, size, ts_event)
+            self._builder.update(price, size, ts_init)
             return
 
         # Always update the builder with the current tick
-        self._builder.update(price, size, ts_event)
+        self._builder.update(price, size, ts_init)
 
         last_close = self._last_close
         price_diff_decimal = price.as_decimal() - last_close.as_decimal()
@@ -755,7 +755,7 @@ cdef class RenkoBarAggregator(BarAggregator):
                 self._builder.volume = total_volume
 
                 # Build and send the bar
-                self._build_and_send(ts_event, ts_event)
+                self._build_and_send(ts_init, ts_init)
 
                 # Update current_close for the next brick
                 current_close = brick_close

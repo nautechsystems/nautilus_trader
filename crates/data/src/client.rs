@@ -27,14 +27,15 @@ use std::{
 use ahash::AHashSet;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-    SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-    SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-    UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+    RequestOrderBookDepth, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+    SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
+    SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+    SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+    SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+    UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates,
+    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
+    UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
@@ -555,6 +556,16 @@ pub trait DataClient: Any + Sync + Send {
     ///
     /// Returns an error if the bars request fails.
     fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+        log_not_implemented(&request);
+        Ok(())
+    }
+
+    /// Requests historical order book depth data for a specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order book depths request fails.
+    fn request_order_book_depth(&self, request: &RequestOrderBookDepth) -> anyhow::Result<()> {
         log_not_implemented(&request);
         Ok(())
     }
@@ -1344,6 +1355,15 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the bars request.
     pub fn request_bars(&self, req: &RequestBars) -> anyhow::Result<()> {
         self.client.request_bars(req)
+    }
+
+    /// Sends an order book depths request for a given instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the order book depths request.
+    pub fn request_order_book_depth(&self, req: &RequestOrderBookDepth) -> anyhow::Result<()> {
+        self.client.request_order_book_depth(req)
     }
 }
 
