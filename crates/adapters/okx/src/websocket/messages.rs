@@ -84,7 +84,6 @@ pub struct OKXWsRequest<T> {
     /// Request effective deadline. Unix timestamp format in milliseconds.
     /// This is when the request itself expires, not related to order expiration.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "expTime")]
     pub exp_time: Option<String>,
     /// Arguments payload for the operation.
     pub args: Vec<T>,
@@ -509,7 +508,7 @@ pub struct OKXOrderMsg {
     /// Profit and loss.
     pub pnl: String,
     /// Position side.
-    pub pos_side: Ustr,
+    pub pos_side: OKXPositionSide,
     /// Price (algo orders use ordPx instead).
     #[serde(default)]
     pub px: String,
@@ -542,10 +541,8 @@ pub struct OKXAlgoOrderMsg {
     #[serde(default)]
     pub algo_cl_ord_id: String,
     /// Client order ID (empty for algo orders until triggered).
-    #[serde(default, rename = "clOrdId")]
     pub cl_ord_id: String,
     /// Order ID (empty until algo order is triggered).
-    #[serde(default, rename = "ordId")]
     pub ord_id: String,
     /// Instrument ID.
     pub inst_id: Ustr,
@@ -558,17 +555,14 @@ pub struct OKXAlgoOrderMsg {
     /// Side.
     pub side: OKXSide,
     /// Position side.
-    pub pos_side: Ustr,
+    pub pos_side: OKXPositionSide,
     /// Size.
     pub sz: String,
     /// Trigger price.
-    #[serde(rename = "triggerPx")]
     pub trigger_px: String,
     /// Trigger price type (last, mark, index).
-    #[serde(rename = "triggerPxType")]
-    pub trigger_px_type: String,
+    pub trigger_px_type: OKXTriggerType,
     /// Order price (-1 for market orders).
-    #[serde(rename = "ordPx")]
     pub ord_px: String,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
@@ -577,18 +571,16 @@ pub struct OKXAlgoOrderMsg {
     /// Reduce only flag.
     pub reduce_only: String,
     /// Actual filled price.
-    #[serde(rename = "actualPx")]
     pub actual_px: String,
     /// Actual filled size.
-    #[serde(rename = "actualSz")]
     pub actual_sz: String,
     /// Notional USD value.
     pub notional_usd: String,
     /// Creation time, Unix timestamp in milliseconds.
-    #[serde(deserialize_with = "deserialize_string_to_u64", rename = "cTime")]
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub c_time: u64,
     /// Update time, Unix timestamp in milliseconds.
-    #[serde(deserialize_with = "deserialize_string_to_u64", rename = "uTime")]
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub u_time: u64,
     /// Trigger time (empty until triggered).
     pub trigger_time: String,

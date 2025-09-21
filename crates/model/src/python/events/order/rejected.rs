@@ -160,6 +160,7 @@ impl OrderRejected {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        dict.set_item("due_post_only", self.due_post_only)?;
         Ok(dict.into())
     }
 }

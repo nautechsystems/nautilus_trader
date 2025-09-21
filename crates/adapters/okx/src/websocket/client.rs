@@ -21,6 +21,7 @@
 //! and parses incoming messages into structured Nautilus domain objects.
 
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     num::NonZeroU32,
     sync::{
@@ -35,7 +36,8 @@ use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+    UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::BarType,
@@ -71,43 +73,22 @@ use super::{
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
 };
-use crate::common::{
-    consts::should_retry_error_code,
-    enums::{conditional_order_to_algo_type, is_conditional_order},
-};
-
-/// Determines if an OKX WebSocket error should trigger a retry.
-fn should_retry_okx_error(error: &OKXWsError) -> bool {
-    match error {
-        OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-        OKXWsError::TungsteniteError(_) => true, // Network errors are retryable
-        OKXWsError::ClientError(msg) => {
-            // Retry on timeout and connection errors (case-insensitive)
-            let msg_lower = msg.to_lowercase();
-            msg_lower.contains("timeout")
-                || msg_lower.contains("timed out")
-                || msg_lower.contains("connection")
-                || msg_lower.contains("network")
-        }
-        OKXWsError::JsonError(_) | OKXWsError::ParsingError(_) => false, // Don't retry parsing errors
-    }
-}
-
-/// Creates a timeout error for OKX operations.
-fn create_okx_timeout_error(msg: String) -> OKXWsError {
-    OKXWsError::ClientError(msg)
-}
 use crate::{
     common::{
         consts::{
-            OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_WS_PUBLIC_URL,
+            OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
+            OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
+            OKX_WS_PUBLIC_URL, should_retry_error_code,
         },
         credential::Credential,
         enums::{
-            OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type, is_conditional_order,
         },
-        parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
+        parse::{
+            bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
+            parse_client_order_id, parse_millisecond_timestamp,
+        },
     },
     http::models::OKXAccount,
     websocket::{
@@ -150,6 +131,28 @@ pub static OKX_WS_QUOTA: LazyLock<Quota> =
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
+/// Determines if an OKX WebSocket error should trigger a retry.
+fn should_retry_okx_error(error: &OKXWsError) -> bool {
+    match error {
+        OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
+        OKXWsError::TungsteniteError(_) => true, // Network errors are retryable
+        OKXWsError::ClientError(msg) => {
+            // Retry on timeout and connection errors (case-insensitive)
+            let msg_lower = msg.to_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("network")
+        }
+        OKXWsError::JsonError(_) | OKXWsError::ParsingError(_) => false, // Don't retry parsing errors
+    }
+}
+
+/// Creates a timeout error for OKX operations.
+fn create_okx_timeout_error(msg: String) -> OKXWsError {
+    OKXWsError::ClientError(msg)
+}
+
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
 #[cfg_attr(
@@ -176,6 +179,7 @@ pub struct OKXWebSocketClient {
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
+    active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
     cancellation_token: CancellationToken,
@@ -250,6 +254,7 @@ impl OKXWebSocketClient {
             pending_cancel_requests: Arc::new(DashMap::new()),
             pending_amend_requests: Arc::new(DashMap::new()),
             pending_mass_cancel_requests: Arc::new(DashMap::new()),
+            active_client_orders: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
             cancellation_token: CancellationToken::new(),
@@ -404,6 +409,7 @@ impl OKXWebSocketClient {
         let pending_cancel_requests = self.pending_cancel_requests.clone();
         let pending_amend_requests = self.pending_amend_requests.clone();
         let pending_mass_cancel_requests = self.pending_mass_cancel_requests.clone();
+        let active_client_orders = self.active_client_orders.clone();
         let auth_state = self.auth_state.clone();
 
         let instruments_cache = self.instruments_cache.clone();
@@ -425,6 +431,7 @@ impl OKXWebSocketClient {
                 pending_cancel_requests,
                 pending_amend_requests,
                 pending_mass_cancel_requests,
+                active_client_orders,
                 auth_state,
             );
 
@@ -1966,6 +1973,9 @@ impl OKXWebSocketClient {
             (client_order_id, trader_id, strategy_id, instrument_id),
         );
 
+        self.active_client_orders
+            .insert(client_order_id, (trader_id, strategy_id, instrument_id));
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 "submit_order",
@@ -2723,14 +2733,95 @@ struct OKXWsMessageHandler {
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
+    active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     auth_state: Arc<tokio::sync::watch::Sender<bool>>,
+    pending_messages: VecDeque<NautilusWsMessage>,
 }
 
 impl OKXWsMessageHandler {
+    fn try_handle_post_only_auto_cancel(
+        &mut self,
+        msg: &OKXOrderMsg,
+        ts_init: UnixNanos,
+        exec_reports: &mut Vec<ExecutionReport>,
+    ) -> bool {
+        if !Self::is_post_only_auto_cancel(msg) {
+            return false;
+        }
+
+        let Some(client_order_id) = parse_client_order_id(&msg.cl_ord_id) else {
+            return false;
+        };
+
+        let Some((_, (trader_id, strategy_id, instrument_id))) =
+            self.active_client_orders.remove(&client_order_id)
+        else {
+            return false;
+        };
+
+        if !exec_reports.is_empty() {
+            let reports = std::mem::take(exec_reports);
+            self.pending_messages
+                .push_back(NautilusWsMessage::ExecutionReports(reports));
+        }
+
+        let reason = msg
+            .cancel_source_reason
+            .as_ref()
+            .filter(|reason| !reason.is_empty())
+            .map(|reason| Ustr::from(reason.as_str()))
+            .unwrap_or_else(|| Ustr::from(OKX_POST_ONLY_CANCEL_REASON));
+
+        let ts_event = parse_millisecond_timestamp(msg.u_time);
+        let rejected = OrderRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            self.account_id,
+            reason,
+            UUID4::new(),
+            ts_event,
+            ts_init,
+            false,
+            true,
+        );
+
+        self.pending_messages
+            .push_back(NautilusWsMessage::OrderRejected(rejected));
+
+        true
+    }
+
+    fn is_post_only_auto_cancel(msg: &OKXOrderMsg) -> bool {
+        if msg.state != OKXOrderStatus::Canceled {
+            return false;
+        }
+
+        let cancel_source_matches = matches!(
+            msg.cancel_source.as_deref(),
+            Some(source) if source == OKX_POST_ONLY_CANCEL_SOURCE
+        );
+
+        let reason_matches = matches!(
+            msg.cancel_source_reason.as_deref(),
+            Some(reason) if reason.contains("POST_ONLY")
+        );
+
+        if !(cancel_source_matches || reason_matches) {
+            return false;
+        }
+
+        msg.acc_fill_sz
+            .as_ref()
+            .map(|filled| filled == "0" || filled.is_empty())
+            .unwrap_or(true)
+    }
+
     /// Creates a new [`OKXFeedHandler`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -2743,6 +2834,7 @@ impl OKXWsMessageHandler {
         pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
         pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
         pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
+        active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         auth_state: Arc<tokio::sync::watch::Sender<bool>>,
     ) -> Self {
         Self {
@@ -2753,11 +2845,13 @@ impl OKXWsMessageHandler {
             pending_cancel_requests,
             pending_amend_requests,
             pending_mass_cancel_requests,
+            active_client_orders,
             instruments_cache,
             last_account_state: None,
             fee_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
             auth_state,
+            pending_messages: VecDeque::new(),
         }
     }
 
@@ -2778,6 +2872,10 @@ impl OKXWsMessageHandler {
     }
 
     async fn next(&mut self) -> Option<NautilusWsMessage> {
+        if let Some(message) = self.pending_messages.pop_front() {
+            return Some(message);
+        }
+
         let clock = get_atomic_clock_realtime();
 
         while let Some(event) = self.handler.next().await {
@@ -2903,6 +3001,8 @@ impl OKXWsMessageHandler {
                                 )) = self.pending_place_requests.remove(id)
                                 {
                                     let ts_event = clock.get_time_ns();
+                                    let due_post_only =
+                                        is_post_only_rejection(code.as_str(), &data);
                                     let rejected = OrderRejected::new(
                                         trader_id,
                                         strategy_id,
@@ -2914,7 +3014,7 @@ impl OKXWsMessageHandler {
                                         ts_event,
                                         ts_init,
                                         false, // Not from reconciliation
-                                        false, // Not due to post-only (TODO: parse error_msg)
+                                        due_post_only,
                                     );
 
                                     return Some(NautilusWsMessage::OrderRejected(rejected));
@@ -3067,6 +3167,10 @@ impl OKXWsMessageHandler {
                     let mut exec_reports = Vec::with_capacity(data.len());
 
                     for msg in data {
+                        if self.try_handle_post_only_auto_cancel(&msg, ts_init, &mut exec_reports) {
+                            continue;
+                        }
+
                         match parse_order_msg_vec(
                             vec![msg],
                             self.account_id,
@@ -3098,6 +3202,18 @@ impl OKXWsMessageHandler {
                                                 self.fee_cache
                                                     .remove(&status_report.venue_order_id.inner());
                                             }
+
+                                            if matches!(
+                                                status_report.order_status,
+                                                OrderStatus::Canceled
+                                                    | OrderStatus::Expired
+                                                    | OrderStatus::Filled
+                                                    | OrderStatus::Rejected,
+                                            ) && let Some(client_order_id) =
+                                                status_report.client_order_id
+                                            {
+                                                self.active_client_orders.remove(&client_order_id);
+                                            }
                                         }
                                     }
                                 }
@@ -3111,8 +3227,16 @@ impl OKXWsMessageHandler {
                     }
 
                     if !exec_reports.is_empty() {
-                        return Some(NautilusWsMessage::ExecutionReports(exec_reports));
+                        let reports = std::mem::take(&mut exec_reports);
+                        self.pending_messages
+                            .push_back(NautilusWsMessage::ExecutionReports(reports));
                     }
+
+                    if let Some(message) = self.pending_messages.pop_front() {
+                        return Some(message);
+                    }
+
+                    continue;
                 }
 
                 if arg.channel == OKXWsChannel::OrdersAlgo {
@@ -3233,6 +3357,28 @@ impl OKXWsMessageHandler {
     }
 }
 
+pub fn is_post_only_rejection(code: &str, data: &[Value]) -> bool {
+    if code == OKX_POST_ONLY_ERROR_CODE {
+        return true;
+    }
+
+    for entry in data {
+        if let Some(s_code) = entry.get("sCode").and_then(|value| value.as_str())
+            && s_code == OKX_POST_ONLY_ERROR_CODE
+        {
+            return true;
+        }
+
+        if let Some(inner_code) = entry.get("code").and_then(|value| value.as_str())
+            && inner_code == OKX_POST_ONLY_ERROR_CODE
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -3243,6 +3389,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::enums::OKXExecType;
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
@@ -3625,5 +3772,91 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!client.is_active());
+    }
+
+    fn sample_canceled_order_msg() -> OKXOrderMsg {
+        OKXOrderMsg {
+            acc_fill_sz: Some("0".to_string()),
+            avg_px: "0".to_string(),
+            c_time: 0,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: ustr::Ustr::from("normal"),
+            ccy: ustr::Ustr::from("USDT"),
+            cl_ord_id: "order-1".to_string(),
+            fee: None,
+            fee_ccy: ustr::Ustr::from("USDT"),
+            fill_px: "0".to_string(),
+            fill_sz: "0".to_string(),
+            fill_time: 0,
+            inst_id: ustr::Ustr::from("ETH-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            lever: "1".to_string(),
+            ord_id: ustr::Ustr::from("123456"),
+            ord_type: OKXOrderType::Limit,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Net,
+            px: "0".to_string(),
+            reduce_only: "false".to_string(),
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Canceled,
+            exec_type: OKXExecType::None,
+            sz: "1".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            trade_id: String::new(),
+            u_time: 0,
+        }
+    }
+
+    #[rstest]
+    fn test_is_post_only_auto_cancel_detects_cancel_source() {
+        let mut msg = sample_canceled_order_msg();
+        msg.cancel_source = Some(super::OKX_POST_ONLY_CANCEL_SOURCE.to_string());
+
+        assert!(OKXWsMessageHandler::is_post_only_auto_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_post_only_auto_cancel_detects_reason() {
+        let mut msg = sample_canceled_order_msg();
+        msg.cancel_source_reason = Some("POST_ONLY would take liquidity".to_string());
+
+        assert!(OKXWsMessageHandler::is_post_only_auto_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_post_only_auto_cancel_false_without_markers() {
+        let msg = sample_canceled_order_msg();
+
+        assert!(!OKXWsMessageHandler::is_post_only_auto_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_post_only_auto_cancel_false_for_order_type_only() {
+        let mut msg = sample_canceled_order_msg();
+        msg.ord_type = OKXOrderType::PostOnly;
+
+        assert!(!OKXWsMessageHandler::is_post_only_auto_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_post_only_rejection_detects_by_code() {
+        assert!(super::is_post_only_rejection("51019", &[]));
+    }
+
+    #[rstest]
+    fn test_is_post_only_rejection_detects_by_inner_code() {
+        let data = vec![serde_json::json!({
+            "sCode": "51019"
+        })];
+        assert!(super::is_post_only_rejection("50000", &data));
+    }
+
+    #[rstest]
+    fn test_is_post_only_rejection_false_for_unrelated_error() {
+        let data = vec![serde_json::json!({
+            "sMsg": "Insufficient balance"
+        })];
+        assert!(!super::is_post_only_rejection("50000", &data));
     }
 }

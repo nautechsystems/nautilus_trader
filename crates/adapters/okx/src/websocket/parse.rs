@@ -41,7 +41,8 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType},
+        consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
+        enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType, OKXTriggerType},
         models::OKXInstrument,
         parse::{
             okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_funding_rate_msg,
@@ -640,11 +641,11 @@ pub fn parse_algo_order_status_report(
         None
     };
 
-    let trigger_type = match msg.trigger_px_type.as_str() {
-        "last" => TriggerType::LastPrice,
-        "mark" => TriggerType::MarkPrice,
-        "index" => TriggerType::IndexPrice,
-        _ => TriggerType::Default,
+    let trigger_type = match msg.trigger_px_type {
+        OKXTriggerType::Last => TriggerType::LastPrice,
+        OKXTriggerType::Mark => TriggerType::MarkPrice,
+        OKXTriggerType::Index => TriggerType::IndexPrice,
+        OKXTriggerType::None => TriggerType::Default,
     };
 
     let mut report = OrderStatusReport::new(
@@ -755,7 +756,16 @@ pub fn parse_order_status_report(
         report = report.with_avg_px(avg_px);
     }
 
-    if msg.ord_type == OKXOrderType::PostOnly {
+    if matches!(
+        msg.ord_type,
+        OKXOrderType::PostOnly | OKXOrderType::MmpAndPostOnly
+    ) || matches!(
+        msg.cancel_source.as_deref(),
+        Some(source) if source == OKX_POST_ONLY_CANCEL_SOURCE
+    ) || matches!(
+        msg.cancel_source_reason.as_deref(),
+        Some(reason) if reason.contains("POST_ONLY")
+    ) {
         report = report.with_post_only(true);
     }
 
@@ -763,10 +773,23 @@ pub fn parse_order_status_report(
         report = report.with_reduce_only(true);
     }
 
-    if let Some(reason) = &msg.cancel_source_reason
-        && !reason.is_empty()
+    if let Some(reason) = msg
+        .cancel_source_reason
+        .as_ref()
+        .filter(|reason| !reason.is_empty())
     {
         report = report.with_cancel_reason(reason.clone());
+    } else if let Some(source) = msg
+        .cancel_source
+        .as_ref()
+        .filter(|source| !source.is_empty())
+    {
+        let reason = if source == OKX_POST_ONLY_CANCEL_SOURCE {
+            OKX_POST_ONLY_CANCEL_REASON.to_string()
+        } else {
+            format!("cancel_source={source}")
+        };
+        report = report.with_cancel_reason(reason);
     }
 
     Ok(report)
@@ -950,6 +973,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        OKXPositionSide,
         common::{enums::OKXTradeMode, parse::parse_account_state, testing::load_test_json},
         http::models::OKXAccount,
         websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
@@ -1665,7 +1689,7 @@ mod tests {
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
-            pos_side: Ustr::from("long"),
+            pos_side: OKXPositionSide::Long,
             px: "".to_string(),
             reduce_only: "false".to_string(),
             side: crate::common::enums::OKXSide::Buy,
@@ -1710,7 +1734,7 @@ mod tests {
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
-            pos_side: Ustr::from("long"),
+            pos_side: OKXPositionSide::Long,
             px: "".to_string(),
             reduce_only: "false".to_string(),
             side: crate::common::enums::OKXSide::Buy,

@@ -106,3 +106,12 @@ pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::n
 pub fn should_retry_error_code(error_code: &str) -> bool {
     OKX_RETRY_ERROR_CODES.contains(error_code)
 }
+
+/// OKX error code returned when a post-only order would immediately take liquidity.
+pub const OKX_POST_ONLY_ERROR_CODE: &str = "51019";
+
+/// OKX cancel source code used when a post-only order is auto-cancelled for taking liquidity.
+pub const OKX_POST_ONLY_CANCEL_SOURCE: &str = "31";
+
+/// Human-readable reason used when a post-only order is auto-cancelled for taking liquidity.
+pub const OKX_POST_ONLY_CANCEL_REASON: &str = "POST_ONLY would take liquidity";
