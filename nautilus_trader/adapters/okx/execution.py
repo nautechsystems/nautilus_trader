@@ -828,9 +828,7 @@ class OKXExecutionClient(LiveExecutionClient):
             return
 
         try:
-            self._log.debug(f"Received websocket message: {type(msg)}")
-
-            if isinstance(msg, dict) and msg.get("type") == "AccountState":
+            if isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderRejected):
                 self._handle_order_rejected_pyo3(msg)
@@ -844,23 +842,17 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._handle_fill_report_pyo3(msg)
             else:
                 self._log.debug(f"Received unhandled message type: {type(msg)}")
-
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _handle_account_state(self, msg: dict) -> None:
-        try:
-            account_state = AccountState.from_dict(msg)
-            self._log.debug(f"Received account update: {account_state}")
-
-            self.generate_account_state(
-                balances=account_state.balances,
-                margins=account_state.margins,
-                reported=account_state.is_reported,
-                ts_event=account_state.ts_event,
-            )
-        except Exception as e:
-            self._log.error(f"Failed to process account state update: {e}")
+    def _handle_account_state(self, pyo3_account_state: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
+        )
 
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())

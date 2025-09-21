@@ -43,7 +43,8 @@ use serde::{self, Deserialize, Serialize};
 
 use crate::{
     common::enums::{
-        OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXPositionSide, OKXTradeMode,
+        OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+        OKXTradeMode,
     },
     http::error::BuildError,
 };
@@ -315,7 +316,7 @@ pub struct GetOrderHistoryParams {
     pub inst_id: Option<String>,
     /// Order type: limit, market, post_only, fok, ioc (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ord_type: Option<String>,
+    pub ord_type: Option<OKXOrderType>,
     /// Order state: live, filled, canceled (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,

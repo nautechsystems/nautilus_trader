@@ -611,14 +611,7 @@ pub fn parse_algo_order_status_report(
         OrderType::StopLimit
     };
 
-    let status = match msg.state {
-        OKXOrderStatus::Live => OrderStatus::Accepted,
-        OKXOrderStatus::Canceled => OrderStatus::Canceled,
-        OKXOrderStatus::MmpCanceled => OrderStatus::Canceled,
-        OKXOrderStatus::Filled => OrderStatus::Filled,
-        OKXOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
-        OKXOrderStatus::OrderPlaced => OrderStatus::Triggered,
-    };
+    let status: OrderStatus = msg.state.into();
 
     let quantity = parse_quantity(msg.sz.as_str(), instrument.size_precision())?;
 

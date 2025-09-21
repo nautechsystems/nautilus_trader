@@ -15,6 +15,7 @@
 
 use nautilus_model::enums::{
     AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
+    TriggerType,
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -552,6 +553,17 @@ pub enum OKXTriggerType {
     Last,
     Index,
     Mark,
+}
+
+impl From<TriggerType> for OKXTriggerType {
+    fn from(value: TriggerType) -> Self {
+        match value {
+            TriggerType::LastPrice => Self::Last,
+            TriggerType::MarkPrice => Self::Mark,
+            TriggerType::IndexPrice => Self::Index,
+            _ => Self::Last,
+        }
+    }
 }
 
 /// Represents OKX VIP level tiers for trading fee structure and API limits.

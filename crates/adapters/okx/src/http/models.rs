@@ -62,7 +62,10 @@ pub struct OKXCandlestick(
 );
 
 use crate::common::{
-    enums::{OKXExecType, OKXInstrumentType, OKXMarginMode, OKXPositionSide, OKXSide},
+    enums::{
+        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderStatus,
+        OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+    },
     parse::deserialize_string_to_u64,
 };
 
@@ -372,13 +375,12 @@ pub struct OKXPlaceOrderResponse {
     pub side: Option<OKXSide>,
     /// Order type (optional).
     #[serde(default)]
-    pub ord_type: Option<String>,
+    pub ord_type: Option<OKXOrderType>,
     /// Order size (optional).
     #[serde(default)]
     pub sz: Option<String>,
     /// Order state (optional).
-    #[serde(default)]
-    pub state: Option<String>,
+    pub state: Option<OKXOrderStatus>,
     /// Price (optional).
     #[serde(default)]
     pub px: Option<String>,
@@ -446,7 +448,7 @@ pub struct OKXOrderHistory {
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Order type.
-    pub ord_type: String,
+    pub ord_type: OKXOrderType,
     /// Order size.
     pub sz: String,
     /// Price (optional).
@@ -456,13 +458,13 @@ pub struct OKXOrderHistory {
     /// Position side.
     pub pos_side: OKXPositionSide,
     /// Trade mode.
-    pub td_mode: String,
+    pub td_mode: OKXTradeMode,
     /// Reduce-only flag.
     pub reduce_only: String,
     /// Target currency (optional).
     pub tgt_ccy: String,
     /// Order state.
-    pub state: String,
+    pub state: OKXOrderStatus,
     /// Average price (optional).
     pub avg_px: String,
     /// Execution fee.
@@ -617,12 +619,12 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub inst_id: String,
     /// Trade mode (isolated, cross, cash).
     #[serde(rename = "tdMode")]
-    pub td_mode: String,
+    pub td_mode: OKXTradeMode,
     /// Order side (buy, sell).
-    pub side: String,
+    pub side: OKXSide,
     /// Algo order type (trigger).
     #[serde(rename = "ordType")]
-    pub ord_type: String,
+    pub ord_type: OKXAlgoOrderType,
     /// Order size.
     pub sz: String,
     /// Client-supplied algo order ID.
@@ -636,13 +638,13 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub order_px: Option<String>,
     /// Trigger type (last, mark, index).
     #[serde(rename = "triggerPxType", skip_serializing_if = "Option::is_none")]
-    pub trigger_px_type: Option<String>,
+    pub trigger_px_type: Option<OKXTriggerType>,
     /// Target currency (base_ccy or quote_ccy).
     #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<String>,
     /// Position side (net, long, short).
     #[serde(rename = "posSide", skip_serializing_if = "Option::is_none")]
-    pub pos_side: Option<String>,
+    pub pos_side: Option<OKXPositionSide>,
     /// Whether to close position.
     #[serde(rename = "closePosition", skip_serializing_if = "Option::is_none")]
     pub close_position: Option<bool>,
@@ -717,14 +719,14 @@ mod tests {
     fn test_algo_order_request_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "ETH-USDT-SWAP".to_string(),
-            td_mode: "isolated".to_string(),
-            side: "buy".to_string(),
-            ord_type: "trigger".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            side: OKXSide::Buy,
+            ord_type: OKXAlgoOrderType::Trigger,
             sz: "0.01".to_string(),
             algo_cl_ord_id: Some("test123".to_string()),
             trigger_px: Some("3000".to_string()),
             order_px: Some("-1".to_string()),
-            trigger_px_type: Some("last".to_string()),
+            trigger_px_type: Some(OKXTriggerType::Last),
             tgt_ccy: None,
             pos_side: None,
             close_position: None,
@@ -753,16 +755,16 @@ mod tests {
     fn test_algo_order_request_array_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "BTC-USDT".to_string(),
-            td_mode: "cross".to_string(),
-            side: "sell".to_string(),
-            ord_type: "trigger".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            side: OKXSide::Sell,
+            ord_type: OKXAlgoOrderType::Trigger,
             sz: "0.1".to_string(),
             algo_cl_ord_id: None,
             trigger_px: Some("50000".to_string()),
             order_px: Some("49900".to_string()),
-            trigger_px_type: Some("mark".to_string()),
+            trigger_px_type: Some(OKXTriggerType::Mark),
             tgt_ccy: Some("base_ccy".to_string()),
-            pos_side: Some("net".to_string()),
+            pos_side: Some(OKXPositionSide::Net),
             close_position: None,
             tag: None,
             reduce_only: Some(true),

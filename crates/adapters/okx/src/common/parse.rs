@@ -414,26 +414,9 @@ pub fn parse_order_status_report(
         .map(|v| Quantity::new(v, size_precision))
         .unwrap_or_default();
     let order_side: OrderSide = order.side.into();
-    let okx_status: OKXOrderStatus = match order.state.as_str() {
-        "live" => OKXOrderStatus::Live,
-        "partially_filled" => OKXOrderStatus::PartiallyFilled,
-        "filled" => OKXOrderStatus::Filled,
-        "canceled" => OKXOrderStatus::Canceled,
-        "mmp_canceled" => OKXOrderStatus::MmpCanceled,
-        _ => OKXOrderStatus::Live, // Default fallback
-    };
+    let okx_status: OKXOrderStatus = order.state;
     let order_status: OrderStatus = okx_status.into();
-    let okx_ord_type: OKXOrderType = match order.ord_type.as_str() {
-        "market" => OKXOrderType::Market,
-        "limit" => OKXOrderType::Limit,
-        "post_only" => OKXOrderType::PostOnly,
-        "fok" => OKXOrderType::Fok,
-        "ioc" => OKXOrderType::Ioc,
-        "optimal_limit_ioc" => OKXOrderType::OptimalLimitIoc,
-        "mmp" => OKXOrderType::Mmp,
-        "mmp_and_post_only" => OKXOrderType::MmpAndPostOnly,
-        _ => OKXOrderType::Limit, // Default fallback
-    };
+    let okx_ord_type: OKXOrderType = order.ord_type;
     let order_type: OrderType = okx_ord_type.into();
     // Note: OKX uses ordType for type and liquidity instructions; time-in-force not explicitly represented here
     let time_in_force = TimeInForce::Gtc;
@@ -476,7 +459,7 @@ pub fn parse_order_status_report(
     {
         report = report.with_avg_px(avg);
     }
-    if order.ord_type == "post_only" {
+    if order.ord_type == OKXOrderType::PostOnly {
         report = report.with_post_only(true);
     }
     if order.reduce_only == "true" {

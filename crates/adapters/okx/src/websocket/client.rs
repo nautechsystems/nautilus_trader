@@ -82,8 +82,8 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type, is_conditional_order,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXTradeMode,
+            OKXTriggerType, conditional_order_to_algo_type, is_conditional_order,
         },
         parse::{
             bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
@@ -1927,7 +1927,7 @@ impl OKXWebSocketClient {
         }
         // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
 
-        builder.side(OKXSide::from(order_side));
+        builder.side(order_side);
 
         if let Some(pos_side) = position_side {
             builder.pos_side(pos_side);
@@ -2206,7 +2206,7 @@ impl OKXWebSocketClient {
             builder.inst_id(inst_id.symbol.inner());
             builder.td_mode(td_mode);
             builder.cl_ord_id(cl_ord_id.as_str());
-            builder.side(OKXSide::from(ord_side));
+            builder.side(ord_side);
 
             if let Some(ps) = pos_side {
                 builder.pos_side(OKXPositionSide::from(ps));
@@ -2389,10 +2389,16 @@ impl OKXWebSocketClient {
         }
 
         let mut builder = WsPostAlgoOrderParamsBuilder::default();
+        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
+            return Err(OKXWsError::ClientError(
+                "Invalid order side for OKX".to_string(),
+            ));
+        }
+
         builder.inst_id(instrument_id.symbol.inner());
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
-        builder.side(OKXSide::from(order_side));
+        builder.side(order_side);
         builder.ord_type(
             conditional_order_to_algo_type(order_type)
                 .map_err(|e| OKXWsError::ClientError(e.to_string()))?,
@@ -2401,16 +2407,7 @@ impl OKXWebSocketClient {
         builder.trigger_px(trigger_price.to_string());
 
         // Map Nautilus TriggerType to OKX trigger type
-        let okx_trigger_type = if let Some(trigger) = trigger_type {
-            match trigger {
-                TriggerType::LastPrice => OKXTriggerType::Last,
-                TriggerType::MarkPrice => OKXTriggerType::Mark,
-                TriggerType::IndexPrice => OKXTriggerType::Index,
-                _ => OKXTriggerType::Last, // Default to Last for unsupported types
-            }
-        } else {
-            OKXTriggerType::Last // Default
-        };
+        let okx_trigger_type = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
         builder.trigger_px_type(okx_trigger_type);
 
         // For stop-limit orders, set the limit price
@@ -3389,7 +3386,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::OKXExecType;
+    use crate::common::enums::{OKXExecType, OKXSide};
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {

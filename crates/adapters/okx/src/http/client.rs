@@ -85,7 +85,10 @@ use crate::{
     common::{
         consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
-        enums::{OKXInstrumentType, OKXPositionMode, OKXTradeMode},
+        enums::{
+            OKXAlgoOrderType, OKXInstrumentType, OKXPositionMode, OKXSide, OKXTradeMode,
+            OKXTriggerType,
+        },
         models::OKXInstrument,
         parse::{
             okx_instrument_type, parse_account_state, parse_candlestick, parse_fill_report,
@@ -2063,28 +2066,15 @@ impl OKXHttpClient {
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
     ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
-        // Map order side to OKX format
-        let side_str = match order_side {
-            OrderSide::Buy => "buy",
-            OrderSide::Sell => "sell",
-            _ => {
-                return Err(OKXHttpError::ValidationError(
-                    "Invalid order side".to_string(),
-                ));
-            }
-        };
+        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
+            return Err(OKXHttpError::ValidationError(
+                "Invalid order side".to_string(),
+            ));
+        }
+        let okx_side: OKXSide = order_side.into();
 
         // Map trigger type to OKX format
-        let trigger_px_type_str = if let Some(trigger) = trigger_type {
-            match trigger {
-                TriggerType::LastPrice => "last",
-                TriggerType::MarkPrice => "mark",
-                TriggerType::IndexPrice => "index",
-                _ => "last", // Default to last for unsupported types
-            }
-        } else {
-            "last" // Default
-        };
+        let trigger_px_type_enum = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
 
         // Determine order price based on order type
         let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
@@ -2096,14 +2086,14 @@ impl OKXHttpClient {
 
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
-            td_mode: td_mode.to_string().to_lowercase(),
-            side: side_str.to_string(),
-            ord_type: "trigger".to_string(), // All conditional orders use 'trigger' type
+            td_mode,
+            side: okx_side,
+            ord_type: OKXAlgoOrderType::Trigger, // All conditional orders use 'trigger' type
             sz: quantity.to_string(),
             algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
             trigger_px: Some(trigger_price.to_string()),
             order_px,
-            trigger_px_type: Some(trigger_px_type_str.to_string()),
+            trigger_px_type: Some(trigger_px_type_enum),
             tgt_ccy: None,  // Let OKX determine based on instrument
             pos_side: None, // Use default position side
             close_position: None,
