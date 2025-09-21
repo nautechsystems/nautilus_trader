@@ -18,5 +18,21 @@ pub mod credential;
 pub mod enums;
 pub mod models;
 pub mod parse;
+pub mod risk;
 pub mod types;
-pub use models::{ConversionError, HyperliquidDataConverter};
+
+pub use enums::{HyperliquidOrderStatus, hyperliquid_status_to_order_status};
+pub use models::{
+    ConversionError, HyperliquidAccountEvent, HyperliquidAccountState, HyperliquidBalance,
+    HyperliquidDataConverter, HyperliquidInstrumentCache, HyperliquidInstrumentInfo,
+    HyperliquidPositionData, HyperliquidTradeKey, LatencyModel, parse_position_status_report,
+};
+pub use parse::{
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, ensure_min_notional,
+    normalize_order, normalize_price, normalize_quantity, round_down_to_step, round_down_to_tick,
+    serialize_decimal_as_str, serialize_optional_decimal_as_str,
+};
+pub use risk::{
+    RiskLimits, RiskViolation, calculate_leverage, validate_limit_order, validate_one_way_mode,
+    validate_reduce_only,
+};

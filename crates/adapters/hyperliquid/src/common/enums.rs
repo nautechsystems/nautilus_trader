@@ -13,13 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::enums::{AggressorSide, OrderSide};
+use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Represents the order side (Buy or Sell).
-///
-/// Hyperliquid uses "B" for Buy and "A" for Sell in API responses.
 #[derive(
     Copy,
     Clone,
@@ -48,7 +46,7 @@ impl From<OrderSide> for HyperliquidSide {
         match value {
             OrderSide::Buy => Self::Buy,
             OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide`: {value:?}"),
+            _ => panic!("Invalid `OrderSide`"),
         }
     }
 }
@@ -301,6 +299,67 @@ impl HyperliquidRejectCode {
     }
 }
 
+/// Represents Hyperliquid order status from API responses
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum HyperliquidOrderStatus {
+    /// Order has been accepted and is open
+    Open,
+    /// Order has been accepted and is open (alternative representation)
+    Accepted,
+    /// Order has been partially filled
+    PartiallyFilled,
+    /// Order has been completely filled
+    Filled,
+    /// Order has been canceled
+    Canceled,
+    /// Order has been canceled (alternative spelling)
+    Cancelled,
+    /// Order was rejected by the exchange
+    Rejected,
+    /// Order has expired
+    Expired,
+}
+
+impl From<HyperliquidOrderStatus> for OrderStatus {
+    fn from(status: HyperliquidOrderStatus) -> Self {
+        match status {
+            HyperliquidOrderStatus::Open | HyperliquidOrderStatus::Accepted => Self::Accepted,
+            HyperliquidOrderStatus::PartiallyFilled => Self::PartiallyFilled,
+            HyperliquidOrderStatus::Filled => Self::Filled,
+            HyperliquidOrderStatus::Canceled | HyperliquidOrderStatus::Cancelled => Self::Canceled,
+            HyperliquidOrderStatus::Rejected => Self::Rejected,
+            HyperliquidOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
+pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
+    match status {
+        "open" | "accepted" => OrderStatus::Accepted,
+        "partially_filled" => OrderStatus::PartiallyFilled,
+        "filled" => OrderStatus::Filled,
+        "canceled" | "cancelled" => OrderStatus::Canceled,
+        "rejected" => OrderStatus::Rejected,
+        "expired" => OrderStatus::Expired,
+        _ => OrderStatus::Rejected,
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -467,5 +526,83 @@ mod tests {
 
         let parsed: HyperliquidReduceOnly = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, reduce_only);
+    }
+
+    #[rstest]
+    fn test_order_status_conversion() {
+        // Test HyperliquidOrderStatus to OrderState conversion
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Open),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Accepted),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::PartiallyFilled),
+            OrderStatus::PartiallyFilled
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Filled),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Canceled),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Cancelled),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Rejected),
+            OrderStatus::Rejected
+        );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::Expired),
+            OrderStatus::Expired
+        );
+    }
+
+    #[rstest]
+    fn test_order_status_string_mapping() {
+        // Test direct string to OrderState conversion
+        assert_eq!(
+            hyperliquid_status_to_order_status("open"),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("accepted"),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("partially_filled"),
+            OrderStatus::PartiallyFilled
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("filled"),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("canceled"),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("cancelled"),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("rejected"),
+            OrderStatus::Rejected
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("expired"),
+            OrderStatus::Expired
+        );
+        assert_eq!(
+            hyperliquid_status_to_order_status("unknown_status"),
+            OrderStatus::Rejected
+        );
     }
 }
