@@ -153,7 +153,7 @@ pub struct Secrets {
 
 impl fmt::Debug for Secrets {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Secrets")
+        f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
             .field("vault_address", &self.vault_address)
             .field("is_testnet", &self.is_testnet)

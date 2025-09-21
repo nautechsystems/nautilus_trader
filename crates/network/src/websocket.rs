@@ -121,7 +121,7 @@ pub struct WebSocketConfig {
 
 impl Debug for WebSocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WebSocketConfig")
+        f.debug_struct(stringify!(WebSocketConfig))
             .field("url", &self.url)
             .field("headers", &self.headers)
             .field(

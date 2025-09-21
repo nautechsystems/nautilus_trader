@@ -102,7 +102,7 @@ pub struct SocketConfig {
 
 impl Debug for SocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SocketConfig")
+        f.debug_struct(stringify!(SocketConfig))
             .field("url", &self.url)
             .field("mode", &self.mode)
             .field("suffix", &self.suffix)

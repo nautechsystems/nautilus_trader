@@ -32,7 +32,7 @@ pub struct Credential {
 
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Credential")
+        f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
             .field("api_secret", &"<redacted>")
             .finish()

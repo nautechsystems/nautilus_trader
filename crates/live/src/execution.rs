@@ -62,7 +62,7 @@ pub struct LiveExecutionEngine {
 
 impl Debug for LiveExecutionEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LiveExecutionEngine")
+        f.debug_struct(stringify!(LiveExecutionEngine))
             .field("config", &self.config)
             .field("is_running", &self.is_running)
             .field("shutdown_initiated", &self.shutdown_initiated)

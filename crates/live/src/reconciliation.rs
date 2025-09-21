@@ -103,7 +103,7 @@ pub struct ReconciliationManager {
 
 impl Debug for ReconciliationManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReconciliationManager")
+        f.debug_struct(stringify!(ReconciliationManager))
             .field("config", &self.config)
             .field("inflight_checks", &self.inflight_checks)
             .field("external_order_claims", &self.external_order_claims)
