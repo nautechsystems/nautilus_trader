@@ -24,6 +24,7 @@ None
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
 - Implemented Hyperliquid L2 order book with tick-based pricing (#2967), thanks @nicolad
+- Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded Rust (MSRV) to 1.90.0
