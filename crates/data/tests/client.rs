@@ -26,12 +26,12 @@ use nautilus_common::{
             DataCommand,
             // Request commands
             RequestBars,
+            RequestBookDepth,
             RequestBookSnapshot,
             RequestCommand,
             RequestCustomData,
             RequestInstrument,
             RequestInstruments,
-            RequestOrderBookDepth,
             RequestQuotes,
             RequestTrades,
             // Subscription commands
@@ -1747,7 +1747,7 @@ fn test_request_order_book_depth(
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
-    let req = RequestOrderBookDepth::new(
+    let req = RequestBookDepth::new(
         inst_id,
         None,
         None,
@@ -1758,14 +1758,11 @@ fn test_request_order_book_depth(
         UnixNanos::default(),
         None,
     );
-    adapter.request_order_book_depth(&req).unwrap();
+    adapter.request_book_depth(&req).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
-    assert_eq!(
-        rec[0],
-        DataCommand::Request(RequestCommand::OrderBookDepth(req))
-    );
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::BookDepth(req)));
 }
 
 // ------------------------------------------------------------------------------------------------

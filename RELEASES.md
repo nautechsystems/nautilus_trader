@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
 - Added Renko bar aggregator (#2941), thanks @faysou
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK

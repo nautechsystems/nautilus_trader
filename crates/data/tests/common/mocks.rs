@@ -32,8 +32,8 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     messages::data::{
-        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestInstrument, RequestInstruments, RequestOrderBookDepth, RequestQuotes, RequestTrades,
+        DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
+        RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
         SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
@@ -578,10 +578,10 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn request_order_book_depth(&self, request: &RequestOrderBookDepth) -> anyhow::Result<()> {
+    fn request_book_depth(&self, request: &RequestBookDepth) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::OrderBookDepth(
+                .push(DataCommand::Request(RequestCommand::BookDepth(
                     request.clone(),
                 )));
         }

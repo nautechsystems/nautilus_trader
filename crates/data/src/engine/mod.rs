@@ -683,7 +683,7 @@ impl DataEngine {
                 RequestCommand::Instrument(req) => client.request_instrument(req),
                 RequestCommand::Instruments(req) => client.request_instruments(req),
                 RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
-                RequestCommand::OrderBookDepth(req) => client.request_order_book_depth(req),
+                RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::Bars(req) => client.request_bars(req),

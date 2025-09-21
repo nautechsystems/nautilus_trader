@@ -243,7 +243,7 @@ impl RequestTrades {
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestOrderBookDepth {
+pub struct RequestBookDepth {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
@@ -255,8 +255,8 @@ pub struct RequestOrderBookDepth {
     pub params: Option<IndexMap<String, String>>,
 }
 
-impl RequestOrderBookDepth {
-    /// Creates a new [`RequestOrderBookDepth`] instance.
+impl RequestBookDepth {
+    /// Creates a new [`RequestBookDepth`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

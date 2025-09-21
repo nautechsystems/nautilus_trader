@@ -28,8 +28,8 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestInstrument, RequestInstruments, RequestOrderBookDepth, RequestQuotes, RequestTrades,
+        DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
+        RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
         SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
@@ -1175,7 +1175,7 @@ fn test_execute_request_order_book_depth(
         &mut data_engine,
     );
 
-    let req = RequestOrderBookDepth::new(
+    let req = RequestBookDepth::new(
         audusd_sim.id,
         None,                                 // start
         None,                                 // end
@@ -1186,7 +1186,7 @@ fn test_execute_request_order_book_depth(
         UnixNanos::default(),
         None, // params
     );
-    let cmd = DataCommand::Request(RequestCommand::OrderBookDepth(req));
+    let cmd = DataCommand::Request(RequestCommand::BookDepth(req));
     data_engine.execute(&cmd);
 
     assert_eq!(recorder.borrow()[0], cmd);

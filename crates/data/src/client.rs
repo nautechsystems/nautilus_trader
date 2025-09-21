@@ -26,8 +26,8 @@ use std::{
 
 use ahash::AHashSet;
 use nautilus_common::messages::data::{
-    RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-    RequestOrderBookDepth, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestInstrument,
+    RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
     SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
     SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
     SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
@@ -565,7 +565,7 @@ pub trait DataClient: Any + Sync + Send {
     /// # Errors
     ///
     /// Returns an error if the order book depths request fails.
-    fn request_order_book_depth(&self, request: &RequestOrderBookDepth) -> anyhow::Result<()> {
+    fn request_book_depth(&self, request: &RequestBookDepth) -> anyhow::Result<()> {
         log_not_implemented(&request);
         Ok(())
     }
@@ -1362,8 +1362,8 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the client fails to process the order book depths request.
-    pub fn request_order_book_depth(&self, req: &RequestOrderBookDepth) -> anyhow::Result<()> {
-        self.client.request_order_book_depth(req)
+    pub fn request_book_depth(&self, req: &RequestBookDepth) -> anyhow::Result<()> {
+        self.client.request_book_depth(req)
     }
 }
 
