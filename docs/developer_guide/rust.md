@@ -55,6 +55,13 @@ anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
 
 This makes messages more readable and self-documenting, especially when there are multiple variables.
 
+### Logging
+
+- Fully qualify logging macros so the backend is explicit:
+  - Use `log::…` (`log::info!`, `log::warn!`, etc.) inside synchronous core crates.
+  - Use `tracing::…` (`tracing::debug!`, `tracing::info!`, etc.) for async runtimes, adapters, and peripheral components.
+- Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
+
 #### PyO3 naming conventions
 
 When exposing Rust functions to Python **via PyO3**:
