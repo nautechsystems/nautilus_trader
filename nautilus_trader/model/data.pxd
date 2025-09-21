@@ -107,6 +107,10 @@ cpdef enum BarAggregation:
     RENKO = 18
 
 
+cpdef str supported_bar_aggregations_str()
+cpdef str bar_aggregation_not_implemented_message(BarAggregation aggregation)
+
+
 cpdef enum BarIntervalType:
     LEFT_OPEN=0
     RIGHT_OPEN=1

@@ -117,6 +117,7 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport bar_aggregation_not_implemented_message
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -2525,10 +2526,8 @@ cdef class DataEngine(Component):
                 handler=self.process,
             )
         else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"Cannot start aggregator: "  # pragma: no cover (design-time error)
-                f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
-                f"not supported in open-source"  # pragma: no cover (design-time error)
+            raise NotImplementedError(  # pragma: no cover (design-time error)
+                bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
             )
 
         return aggregator

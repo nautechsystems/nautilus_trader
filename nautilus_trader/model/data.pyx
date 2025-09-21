@@ -166,6 +166,42 @@ from nautilus_trader.model.objects cimport price_new
 from nautilus_trader.model.objects cimport quantity_new
 
 
+_SUPPORTED_BAR_AGGREGATIONS = (
+    BarAggregation.MILLISECOND,
+    BarAggregation.SECOND,
+    BarAggregation.MINUTE,
+    BarAggregation.HOUR,
+    BarAggregation.DAY,
+    BarAggregation.WEEK,
+    BarAggregation.MONTH,
+    BarAggregation.YEAR,
+    BarAggregation.TICK,
+    BarAggregation.VOLUME,
+    BarAggregation.VALUE,
+    BarAggregation.RENKO,
+)
+
+
+cpdef str supported_bar_aggregations_str():
+    cdef list[str] names = []
+
+    # Using an imperative for loop here as closures not supported in cpdef
+    cdef BarAggregation aggregation
+    for aggregation in _SUPPORTED_BAR_AGGREGATIONS:
+        names.append(bar_aggregation_to_str(aggregation))
+
+    return ", ".join(names)
+
+
+cpdef str bar_aggregation_not_implemented_message(BarAggregation aggregation):
+    agg_str = bar_aggregation_to_str(aggregation)
+    supported = supported_bar_aggregations_str()
+    return (
+        f"BarAggregation.{agg_str} is not currently implemented. "
+        f"Supported aggregations are: {supported}."
+    )
+
+
 cdef inline BookOrder order_from_mem_c(BookOrder_t mem):
     cdef BookOrder order = BookOrder.__new__(BookOrder)
     order._mem = mem
@@ -907,74 +943,74 @@ cdef class BarSpecification:
         return BarSpecification.check_information_aggregated_c(aggregation)
 
     cpdef bint is_time_aggregated(self):
-        """
-        Return a value indicating whether the aggregation method is time-driven.
+            """
+            Return a value indicating whether the aggregation method is time-driven.
 
-        Time-based aggregation creates bars at fixed time intervals based on calendar
-        or clock time, providing consistent temporal sampling of market data. Each bar
-        covers a specific time period regardless of trading activity level.
+            Time-based aggregation creates bars at fixed time intervals based on calendar
+            or clock time, providing consistent temporal sampling of market data. Each bar
+            covers a specific time period regardless of trading activity level.
 
-        Time-based aggregation types supported:
-        - ``MILLISECOND``: Fixed millisecond intervals (high-frequency sampling)
-        - ``SECOND``: Fixed second intervals (short-term patterns)
-        - ``MINUTE``: Fixed minute intervals (most common for retail trading)
-        - ``HOUR``: Fixed hour intervals (intraday analysis)
-        - ``DAY``: Fixed daily intervals (daily charts, longer-term analysis)
-        - ``WEEK``: Fixed weekly intervals (weekly patterns, medium-term trends)
-        - ``MONTH``: Fixed monthly intervals (long-term analysis, seasonal patterns)
-        - ``YEAR``: Fixed yearly intervals (annual trends, long-term investment)
+            Time-based aggregation types supported:
+            - ``MILLISECOND``: Fixed millisecond intervals (high-frequency sampling)
+            - ``SECOND``: Fixed second intervals (short-term patterns)
+            - ``MINUTE``: Fixed minute intervals (most common for retail trading)
+            - ``HOUR``: Fixed hour intervals (intraday analysis)
+            - ``DAY``: Fixed daily intervals (daily charts, longer-term analysis)
+            - ``WEEK``: Fixed weekly intervals (weekly patterns, medium-term trends)
+            - ``MONTH``: Fixed monthly intervals (long-term analysis, seasonal patterns)
+            - ``YEAR``: Fixed yearly intervals (annual trends, long-term investment)
 
-        Time-based bars are ideal for:
-        - Regular time-series analysis and charting
-        - Consistent temporal sampling across different market conditions
-        - Traditional technical analysis and pattern recognition
-        - Comparing market behavior across fixed time periods
+            Time-based bars are ideal for:
+            - Regular time-series analysis and charting
+            - Consistent temporal sampling across different market conditions
+            - Traditional technical analysis and pattern recognition
+            - Comparing market behavior across fixed time periods
 
-        This differs from threshold aggregation (volume/tick-based) which creates
-        bars when activity levels are reached, and information aggregation which
-        creates bars based on market microstructure patterns.
+            This differs from threshold aggregation (volume/tick-based) which creates
+            bars when activity levels are reached, and information aggregation which
+            creates bars based on market microstructure patterns.
 
-        Returns
-        -------
-        bool
-            True if the aggregation method is time-based, else False.
+            Returns
+            -------
+            bool
+                True if the aggregation method is time-based, else False.
 
-        See Also
-        --------
-        is_threshold_aggregated : Check for threshold-based aggregation
-        is_information_aggregated : Check for information-based aggregation
+            See Also
+            --------
+            is_threshold_aggregated : Check for threshold-based aggregation
+            is_information_aggregated : Check for information-based aggregation
 
-        Examples
-        --------
-        Create a 5-minute bar specification using last price:
+            Examples
+            --------
+            Create a 5-minute bar specification using last price:
 
-        >>> spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
-        >>> str(spec)
-        '5-MINUTE-LAST'
+            >>> spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
+            >>> str(spec)
+            '5-MINUTE-LAST'
 
-        Create a tick bar specification:
+            Create a tick bar specification:
 
-        >>> spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        >>> str(spec)
-        '1000-TICK-MID'
+            >>> spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+            >>> str(spec)
+            '1000-TICK-MID'
 
-        Parse from string:
+            Parse from string:
 
-        >>> spec = BarSpecification.from_str("15-MINUTE-BID")
-        >>> spec.step
-        15
-        >>> spec.aggregation
-        BarAggregation.MINUTE
+            >>> spec = BarSpecification.from_str("15-MINUTE-BID")
+            >>> spec.step
+            15
+            >>> spec.aggregation
+            BarAggregation.MINUTE
 
-        Check aggregation type:
+            Check aggregation type:
 
-        >>> spec = BarSpecification(1, BarAggregation.HOUR, PriceType.LAST)
-        >>> spec.is_time_aggregated()
-        True
-        >>> spec.is_threshold_aggregated()
-        False
-        """
-        return BarSpecification.check_time_aggregated_c(self.aggregation)
+            >>> spec = BarSpecification(1, BarAggregation.HOUR, PriceType.LAST)
+            >>> spec.is_time_aggregated()
+            True
+            >>> spec.is_threshold_aggregated()
+            False
+            """
+            return BarSpecification.check_time_aggregated_c(self.aggregation)
 
     cpdef bint is_threshold_aggregated(self):
         """

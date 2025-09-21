@@ -1372,7 +1372,7 @@ impl DataEngine {
                     false,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
-                    "Cannot create aggregator: {} aggregation not currently supported",
+                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
                     bar_type.spec().aggregation
                 ),
             }

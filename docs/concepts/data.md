@@ -100,6 +100,16 @@ The platform implements various aggregation methods:
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 | `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
 
+:::note
+The following bar aggregations are not currently implemented:
+
+- `VOLUME_IMBALANCE`
+- `VOLUME_RUNS`
+- `VALUE_IMBALANCE`
+- `VALUE_RUNS`
+
+:::
+
 ### Types of aggregation
 
 NautilusTrader implements three distinct data aggregation methods:

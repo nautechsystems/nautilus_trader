@@ -45,6 +45,7 @@ None
 
 ### Documentation Updates
 - Improved dark and light themes for readability
+- Improved clarity of implemented bar aggregations
 - Fixed some broken links
 
 ### Deprecations
