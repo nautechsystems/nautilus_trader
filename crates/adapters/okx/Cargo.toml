@@ -23,6 +23,7 @@ default = []
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-data/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
   "pyo3/extension-module",
@@ -30,6 +31,7 @@ extension-module = [
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-data/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "pyo3",
@@ -43,12 +45,14 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
+nautilus-data = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
