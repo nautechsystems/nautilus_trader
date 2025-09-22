@@ -143,9 +143,6 @@ pub fn normalize_order(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 // Risk Management and Validation
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -345,10 +342,6 @@ pub fn calculate_leverage(position_notional: Decimal, account_balance: Decimal) 
     position_notional.abs() / account_balance
 }
 
->>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
-////////////////////////////////////////////////////////////////////////////////
-=======
->>>>>>> d6947d960 (Change requests applied)
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -560,9 +553,6 @@ mod tests {
             dec!(100.00)
         );
     }
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 
     #[rstest]
     fn test_default_risk_limits() {
@@ -865,7 +855,4 @@ mod tests {
             Err(RiskViolation::ExcessiveLeverage { .. })
         ));
     }
->>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
-=======
->>>>>>> d6947d960 (Change requests applied)
 }
