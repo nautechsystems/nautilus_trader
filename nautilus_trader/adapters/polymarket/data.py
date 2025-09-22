@@ -30,6 +30,7 @@ from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_ins
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
@@ -564,6 +565,84 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketTickSizeChange,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
+        old_book = self._local_books.pop(instrument.id, None)
+        if old_book is not None:
+            self._last_quotes.pop(instrument.id, None)
+
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
         self._log.warning(f"Instrument tick size changed: {instrument}")
         self._handle_data(instrument)
+
+        if old_book is not None:
+            self._reset_local_book_after_tick_size_change(
+                instrument=instrument,
+                change=ws_message,
+                old_book=old_book,
+                ts_init=now_ns,
+            )
+
+    def _reset_local_book_after_tick_size_change(
+        self,
+        instrument: BinaryOption,
+        change: PolymarketTickSizeChange,
+        old_book: OrderBook,
+        ts_init: int,
+    ) -> None:
+        snapshot = self._build_snapshot_from_book(
+            instrument=instrument,
+            change=change,
+            book=old_book,
+        )
+
+        deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=ts_init)
+
+        new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
+        new_book.apply_deltas(deltas)
+        self._local_books[instrument.id] = new_book
+
+        if self._config.compute_effective_deltas:
+            effective = compute_effective_deltas(old_book, new_book, instrument)
+            if effective:
+                self._handle_data(effective)
+        else:
+            self._handle_data(deltas)
+
+        if instrument.id in self.subscribed_quote_ticks():
+            quote = snapshot.parse_to_quote(
+                instrument=instrument,
+                ts_init=ts_init,
+                drop_quotes_missing_side=self._config.drop_quotes_missing_side,
+            )
+            if quote is not None:
+                self._last_quotes[instrument.id] = quote
+                self._handle_data(quote)
+
+    def _build_snapshot_from_book(
+        self,
+        instrument: BinaryOption,
+        change: PolymarketTickSizeChange,
+        book: OrderBook,
+    ) -> PolymarketBookSnapshot:
+        bids_levels = [
+            PolymarketBookLevel(
+                price=str(instrument.make_price(float(level.price))),
+                size=str(instrument.make_qty(level.size())),
+            )
+            for level in reversed(book.bids())
+        ]
+
+        asks_levels = [
+            PolymarketBookLevel(
+                price=str(instrument.make_price(float(level.price))),
+                size=str(instrument.make_qty(level.size())),
+            )
+            for level in reversed(book.asks())
+        ]
+
+        return PolymarketBookSnapshot(
+            market=change.market,
+            asset_id=change.asset_id,
+            bids=bids_levels,
+            asks=asks_levels,
+            timestamp=change.timestamp,
+        )

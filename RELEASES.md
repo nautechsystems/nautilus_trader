@@ -41,6 +41,7 @@ None
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
+- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed safe encoded symbols (#2964), thanks @ms32035
