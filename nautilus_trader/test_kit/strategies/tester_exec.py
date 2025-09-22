@@ -68,20 +68,23 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     book_depth: PositiveInt | None = None
     book_interval_ms: PositiveInt = 1000
     book_levels_to_print: PositiveInt = 10
+    open_position_on_start_qty: Decimal | None = None
+    open_position_time_in_force: TimeInForce = TimeInForce.GTC
     enable_buys: bool = True
     enable_sells: bool = True
     enable_stop_buys: bool = False
     enable_stop_sells: bool = False
+    tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
     stop_order_type: OrderType = OrderType.STOP_MARKET
     stop_offset_ticks: PositiveInt = 100
     stop_limit_offset_ticks: PositiveInt | None = None
     stop_trigger_type: TriggerType | str | None = None
-    open_position_on_start_qty: Decimal | None = None
-    open_position_time_in_force: TimeInForce = TimeInForce.GTC
-    tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
+    enable_brackets: bool = False
+    bracket_entry_order_type: OrderType = OrderType.LIMIT
+    bracket_offset_ticks: PositiveInt = 500
     modify_orders_to_maintain_tob_offset: bool = False
-    cancel_replace_orders_to_maintain_tob_offset: bool = False
     modify_stop_orders_to_maintain_offset: bool = False
+    cancel_replace_orders_to_maintain_tob_offset: bool = False
     cancel_replace_stop_orders_to_maintain_offset: bool = False
     use_post_only: bool = True
     use_quote_quantity: bool = False
@@ -242,6 +245,11 @@ class ExecTester(Strategy):
     ) -> None:
         price = instrument.make_price(best_bid - self.price_offset)
 
+        if self.config.enable_brackets:
+            if not self.buy_order or not self.is_order_active(self.buy_order):
+                self.submit_bracket_order(OrderSide.BUY, price)
+            return
+
         if not self.buy_order or not self.is_order_active(self.buy_order):
             if self.config.use_post_only and self.config.test_reject_post_only:
                 price = instrument.make_price(best_ask + self.price_offset)
@@ -267,6 +275,11 @@ class ExecTester(Strategy):
         best_ask: Price,
     ) -> None:
         price = instrument.make_price(best_ask + self.price_offset)
+
+        if self.config.enable_brackets:
+            if not self.sell_order or not self.is_order_active(self.sell_order):
+                self.submit_bracket_order(OrderSide.SELL, price)
+            return
 
         if not self.sell_order or not self.is_order_active(self.sell_order):
             if self.config.use_post_only and self.config.test_reject_post_only:
@@ -331,6 +344,10 @@ class ExecTester(Strategy):
             self.log.warning("SELL orders not enabled, skipping")
             return
 
+        if self.config.enable_brackets:
+            self.submit_bracket_order(order_side, price)
+            return
+
         if self.config.order_expire_time_delta_mins is not None:
             time_in_force = TimeInForce.GTD
             expire_time = self.clock.utc_now() + pd.Timedelta(
@@ -376,6 +393,103 @@ class ExecTester(Strategy):
 
         self.submit_order(
             order,
+            client_id=self.client_id,
+            params=self.config.order_params,
+        )
+
+    def submit_bracket_order(
+        self,
+        order_side: OrderSide,
+        price: Price,
+    ) -> None:
+        if not self.instrument:
+            self.log.error("No instrument loaded")
+            return
+
+        if self.config.dry_run:
+            self.log.warning(f"Dry run, skipping create {order_side} bracket order")
+            return
+
+        if order_side == OrderSide.BUY and not self.config.enable_buys:
+            self.log.warning("BUY orders not enabled, skipping")
+            return
+        elif order_side == OrderSide.SELL and not self.config.enable_sells:
+            self.log.warning("SELL orders not enabled, skipping")
+            return
+
+        if self.config.bracket_entry_order_type != OrderType.LIMIT:
+            self.log.error("Only LIMIT entry bracket orders are currently supported")
+            return
+
+        if self.config.order_expire_time_delta_mins is not None:
+            time_in_force = TimeInForce.GTD
+            expire_time = self.clock.utc_now() + pd.Timedelta(
+                minutes=self.config.order_expire_time_delta_mins,
+            )
+        else:
+            time_in_force = TimeInForce.GTC
+            expire_time = None
+
+        emulation_trigger = (
+            TriggerType[self.config.emulation_trigger]
+            if isinstance(self.config.emulation_trigger, str)
+            else (
+                self.config.emulation_trigger
+                if self.config.emulation_trigger
+                else TriggerType.NO_TRIGGER
+            )
+        )
+
+        trigger_type = (
+            TriggerType[self.config.stop_trigger_type]
+            if isinstance(self.config.stop_trigger_type, str)
+            else (
+                self.config.stop_trigger_type
+                if self.config.stop_trigger_type
+                else TriggerType.DEFAULT
+            )
+        )
+
+        target_offset = self.instrument.price_increment * self.config.bracket_offset_ticks
+        stop_offset = self.instrument.price_increment * self.config.bracket_offset_ticks
+        entry_value = Decimal(str(price))
+
+        if order_side == OrderSide.BUY:
+            tp_price = self.instrument.make_price(entry_value + target_offset)
+            sl_trigger_price = self.instrument.make_price(entry_value - stop_offset)
+        else:
+            tp_price = self.instrument.make_price(entry_value - target_offset)
+            sl_trigger_price = self.instrument.make_price(entry_value + stop_offset)
+
+        order_list = self.order_factory.bracket(
+            instrument_id=self.config.instrument_id,
+            order_side=order_side,
+            quantity=self.instrument.make_qty(self.config.order_qty),
+            quote_quantity=self.config.use_quote_quantity,
+            emulation_trigger=emulation_trigger,
+            entry_order_type=self.config.bracket_entry_order_type,
+            entry_price=price,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            entry_post_only=self.config.use_post_only,
+            tp_price=tp_price,
+            tp_time_in_force=time_in_force,
+            tp_post_only=self.config.use_post_only,
+            sl_trigger_price=sl_trigger_price,
+            sl_trigger_type=trigger_type,
+            sl_time_in_force=time_in_force,
+        )
+
+        entry_order = order_list.first
+        if order_side == OrderSide.BUY:
+            self.buy_order = entry_order
+            self.buy_stop_order = None
+        else:
+            self.sell_order = entry_order
+            self.sell_stop_order = None
+
+        self.submit_order_list(
+            order_list,
             client_id=self.client_id,
             params=self.config.order_params,
         )
