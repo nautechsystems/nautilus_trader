@@ -45,7 +45,8 @@ use nautilus_model::{
 /// account state generation, order event creation, and message routing.
 /// Execution clients can inherit this base functionality and extend it
 /// with venue-specific implementations.
-pub struct BaseExecutionClient {
+#[derive(Clone)]
+pub struct ExecutionClientCore {
     pub trader_id: TraderId,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -58,16 +59,16 @@ pub struct BaseExecutionClient {
     cache: Rc<RefCell<Cache>>,
 }
 
-impl Debug for BaseExecutionClient {
+impl Debug for ExecutionClientCore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BaseExecutionClient))
+        f.debug_struct(stringify!(ExecutionClientCore))
             .field("client_id", &self.client_id)
             .finish()
     }
 }
 
-impl BaseExecutionClient {
-    /// Creates a new [`BaseExecutionClient`] instance.
+impl ExecutionClientCore {
+    /// Creates a new [`ExecutionClientCore`] instance.
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         trader_id: TraderId,

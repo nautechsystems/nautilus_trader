@@ -4755,6 +4755,7 @@ name = "nautilus-execution"
 version = "0.51.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "criterion",
  "log",
@@ -4983,6 +4984,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
+ "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
  "nautilus-testkit",

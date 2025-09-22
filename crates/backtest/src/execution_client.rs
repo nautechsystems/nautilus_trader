@@ -30,7 +30,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{SharedCell, UnixNanos, WeakCell};
-use nautilus_execution::client::{ExecutionClient, base::BaseExecutionClient};
+use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
@@ -48,7 +48,7 @@ use crate::exchange::SimulatedExchange;
 /// through simulated exchanges. It processes trading commands and coordinates
 /// with the simulation infrastructure to provide realistic execution behavior.
 pub struct BacktestExecutionClient {
-    base: BaseExecutionClient,
+    core: ExecutionClientCore,
     exchange: WeakCell<SimulatedExchange>,
     clock: Rc<RefCell<dyn Clock>>,
     is_connected: bool,
@@ -59,7 +59,7 @@ pub struct BacktestExecutionClient {
 impl Debug for BacktestExecutionClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BacktestExecutionClient))
-            .field("client_id", &self.base.client_id)
+            .field("client_id", &self.core.client_id)
             .field("routing", &self.routing)
             .finish()
     }
@@ -80,7 +80,7 @@ impl BacktestExecutionClient {
         let frozen_account = frozen_account.unwrap_or(false);
         let exchange_shared: SharedCell<SimulatedExchange> = SharedCell::from(exchange.clone());
         let exchange_id = exchange_shared.borrow().id;
-        let base_client = BaseExecutionClient::new(
+        let core_client = ExecutionClientCore::new(
             trader_id,
             ClientId::from(exchange_id.as_str()),
             Venue::from(exchange_id.as_str()),
@@ -99,7 +99,7 @@ impl BacktestExecutionClient {
         Self {
             exchange: exchange_shared.downgrade(),
             clock,
-            base: base_client,
+            core: core_client,
             is_connected: false,
             routing,
             frozen_account,
@@ -113,23 +113,23 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn client_id(&self) -> ClientId {
-        self.base.client_id
+        self.core.client_id
     }
 
     fn account_id(&self) -> AccountId {
-        self.base.account_id
+        self.core.account_id
     }
 
     fn venue(&self) -> Venue {
-        self.base.venue
+        self.core.venue
     }
 
     fn oms_type(&self) -> OmsType {
-        self.base.oms_type
+        self.core.oms_type
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.base.get_account()
+        self.core.get_account()
     }
 
     fn generate_account_state(
@@ -139,7 +139,7 @@ impl ExecutionClient for BacktestExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.base
+        self.core
             .generate_account_state(balances, margins, reported, ts_event)
     }
 
@@ -156,7 +156,7 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        self.base.generate_order_submitted(
+        self.core.generate_order_submitted(
             cmd.strategy_id,
             cmd.instrument_id,
             cmd.client_order_id,
@@ -175,7 +175,7 @@ impl ExecutionClient for BacktestExecutionClient {
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         for order in &cmd.order_list.orders {
-            self.base.generate_order_submitted(
+            self.core.generate_order_submitted(
                 cmd.strategy_id,
                 order.instrument_id(),
                 order.client_order_id(),

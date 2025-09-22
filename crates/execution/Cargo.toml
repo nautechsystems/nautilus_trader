@@ -47,6 +47,7 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }

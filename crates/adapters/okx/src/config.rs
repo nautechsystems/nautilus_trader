@@ -17,7 +17,10 @@
 
 use crate::common::{
     enums::{OKXContractType, OKXInstrumentType, OKXVipLevel},
-    urls::{get_http_base_url, get_ws_base_url_business, get_ws_base_url_public},
+    urls::{
+        get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
+        get_ws_base_url_public,
+    },
 };
 
 /// Configuration for the OKX data client.
@@ -107,5 +110,98 @@ impl OKXDataClientConfig {
     #[must_use]
     pub fn requires_business_ws(&self) -> bool {
         self.has_api_credentials()
+    }
+}
+
+/// Configuration for the OKX execution client.
+#[derive(Clone, Debug)]
+pub struct OKXExecClientConfig {
+    /// Optional API key for authenticated endpoints.
+    pub api_key: Option<String>,
+    /// Optional API secret for authenticated endpoints.
+    pub api_secret: Option<String>,
+    /// Optional API passphrase for authenticated endpoints.
+    pub api_passphrase: Option<String>,
+    /// Instrument types the execution client should support.
+    pub instrument_types: Vec<OKXInstrumentType>,
+    /// Contract type filter applied to operations.
+    pub contract_types: Option<Vec<OKXContractType>>,
+    /// Optional override for the HTTP base URL.
+    pub base_url_http: Option<String>,
+    /// Optional override for the private WebSocket URL.
+    pub base_url_ws_private: Option<String>,
+    /// Optional override for the business WebSocket URL.
+    pub base_url_ws_business: Option<String>,
+    /// When true the client will use OKX demo endpoints.
+    pub is_demo: bool,
+    /// Optional HTTP timeout in seconds.
+    pub http_timeout_secs: Option<u64>,
+    /// Enables consumption of the fills WebSocket channel when true.
+    pub use_fills_channel: bool,
+    /// Enables mass-cancel support when true.
+    pub use_mm_mass_cancel: bool,
+    /// Optional maximum retry attempts for requests.
+    pub max_retries: Option<u32>,
+    /// Optional initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Optional maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
+}
+
+impl Default for OKXExecClientConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            api_secret: None,
+            api_passphrase: None,
+            instrument_types: vec![OKXInstrumentType::Spot],
+            contract_types: None,
+            base_url_http: None,
+            base_url_ws_private: None,
+            base_url_ws_business: None,
+            is_demo: false,
+            http_timeout_secs: Some(60),
+            use_fills_channel: false,
+            use_mm_mass_cancel: false,
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(1_000),
+            retry_delay_max_ms: Some(10_000),
+        }
+    }
+}
+
+impl OKXExecClientConfig {
+    /// Creates a new configuration with default settings.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` when all API credential fields are populated.
+    #[must_use]
+    pub fn has_api_credentials(&self) -> bool {
+        self.api_key.is_some() && self.api_secret.is_some() && self.api_passphrase.is_some()
+    }
+
+    /// Returns the HTTP base URL, falling back to the default when unset.
+    #[must_use]
+    pub fn http_base_url(&self) -> String {
+        self.base_url_http.clone().unwrap_or_else(get_http_base_url)
+    }
+
+    /// Returns the private WebSocket URL, respecting the demo flag and overrides.
+    #[must_use]
+    pub fn ws_private_url(&self) -> String {
+        self.base_url_ws_private
+            .clone()
+            .unwrap_or_else(|| get_ws_base_url_private(self.is_demo))
+    }
+
+    /// Returns the business WebSocket URL, respecting the demo flag and overrides.
+    #[must_use]
+    pub fn ws_business_url(&self) -> String {
+        self.base_url_ws_business
+            .clone()
+            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo))
     }
 }
