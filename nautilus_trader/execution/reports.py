@@ -188,6 +188,8 @@ class OrderStatusReport(ExecutionReport):
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         order_list_id: OrderListId | None = None,
         venue_position_id: PositionId | None = None,  # (None if not assigned by venue)
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
         contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
         expire_time: datetime | None = None,
         price: Price | None = None,
@@ -225,6 +227,8 @@ class OrderStatusReport(ExecutionReport):
         self.order_list_id = order_list_id
         self.venue_order_id = venue_order_id
         self.venue_position_id = venue_position_id
+        self.linked_order_ids = linked_order_ids
+        self.parent_order_id = parent_order_id
         self.order_side = order_side
         self.order_type = order_type
         self.contingency_type = contingency_type
@@ -282,6 +286,7 @@ class OrderStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
+        linked_ids = [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -290,6 +295,8 @@ class OrderStatusReport(ExecutionReport):
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"linked_order_ids={linked_ids}, "
+            f"parent_order_id={self.parent_order_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
@@ -344,6 +351,10 @@ class OrderStatusReport(ExecutionReport):
             "client_order_id": self.client_order_id.value if self.client_order_id else None,
             "order_list_id": self.order_list_id.value if self.order_list_id else None,
             "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+            "linked_order_ids": (
+                [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
+            ),
+            "parent_order_id": self.parent_order_id.value if self.parent_order_id else None,
             "contingency_type": self.contingency_type.value,
             "expire_time": self.expire_time.isoformat() if self.expire_time else None,
             "price": str(self.price) if self.price else None,
@@ -396,6 +407,12 @@ class OrderStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
+            linked_order_ids=(
+                [ClientOrderId(value) for value in values.get("linked_order_ids") or []] or None
+            ),
+            parent_order_id=(
+                ClientOrderId(values["parent_order_id"]) if values.get("parent_order_id") else None
+            ),
             contingency_type=ContingencyType(values["contingency_type"]),
             expire_time=(
                 datetime.fromisoformat(values["expire_time"]) if values["expire_time"] else None
@@ -445,6 +462,16 @@ class OrderStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(pyo3_report.venue_position_id.value)
                 if pyo3_report.venue_position_id
+                else None
+            ),
+            linked_order_ids=(
+                [ClientOrderId(str(oid.value)) for oid in pyo3_report.linked_order_ids]
+                if pyo3_report.linked_order_ids
+                else None
+            ),
+            parent_order_id=(
+                ClientOrderId(str(pyo3_report.parent_order_id.value))
+                if pyo3_report.parent_order_id
                 else None
             ),
             contingency_type=contingency_type_from_pyo3(pyo3_report.contingency_type),

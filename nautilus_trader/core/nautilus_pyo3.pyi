@@ -1298,6 +1298,7 @@ class BookType(Enum):
     L3_MBO = "L3_MBO"
 
 class ContingencyType(Enum):
+    NO_CONTINGENCY = "NO_CONTINGENCY"
     OCO = "OCO"
     OTO = "OTO"
     OUO = "OUO"
@@ -3798,6 +3799,8 @@ class OrderStatusReport:
         client_order_id: ClientOrderId | None = None,
         order_list_id: OrderListId | None = None,
         venue_position_id: PositionId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
         contingency_type: ContingencyType | None = None,
         expire_time: int | None = None,
         price: Price | None = None,
@@ -3849,6 +3852,10 @@ class OrderStatusReport:
     def order_list_id(self) -> OrderListId | None: ...
     @property
     def venue_position_id(self) -> PositionId | None: ...
+    @property
+    def linked_order_ids(self) -> list[ClientOrderId] | None: ...
+    @property
+    def parent_order_id(self) -> ClientOrderId | None: ...
     @property
     def contingency_type(self) -> ContingencyType: ...
     @property
@@ -6441,6 +6448,8 @@ class BitmexHttpClient:
         display_qty: Quantity | None = None,
         post_only: bool = False,
         reduce_only: bool = False,
+        order_list_id: OrderListId | None = None,
+        contingency_type: ContingencyType | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,

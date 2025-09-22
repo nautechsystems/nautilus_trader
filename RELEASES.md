@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added Renko bar aggregator (#2941), thanks @faysou
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
+- Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
 - Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`

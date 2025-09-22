@@ -388,6 +388,19 @@ cpdef trigger_type_to_pyo3(TriggerType value):
     raise ValueError(f"Unsupported `TriggerType`, was '{trigger_type_to_str(value)}'")
 
 
+cpdef contingency_type_to_pyo3(ContingencyType value):
+    if value == ContingencyType.NO_CONTINGENCY:
+        return nautilus_pyo3.ContingencyType.NO_CONTINGENCY
+    if value == ContingencyType.OCO:
+        return nautilus_pyo3.ContingencyType.OCO
+    if value == ContingencyType.OTO:
+        return nautilus_pyo3.ContingencyType.OTO
+    if value == ContingencyType.OUO:
+        return nautilus_pyo3.ContingencyType.OUO
+
+    raise ValueError(f"Unsupported `ContingencyType`, was '{contingency_type_to_str(value)}'")
+
+
 cpdef OrderSide order_side_from_pyo3(value: nautilus_pyo3.OrderSide):
     if value == nautilus_pyo3.OrderSide.BUY:
         return OrderSide.BUY
