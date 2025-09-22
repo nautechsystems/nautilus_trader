@@ -40,8 +40,10 @@ use nautilus_common::{
     },
     runner::get_data_event_sender,
 };
-use nautilus_core::UnixNanos;
-use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+use nautilus_core::{
+    UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::Data,
