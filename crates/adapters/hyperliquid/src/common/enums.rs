@@ -359,10 +359,13 @@ pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
         _ => OrderStatus::Rejected,
     }
 }
+<<<<<<< HEAD
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+=======
+>>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
 
 #[cfg(test)]
 mod tests {
