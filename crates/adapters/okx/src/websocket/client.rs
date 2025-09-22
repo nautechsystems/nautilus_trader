@@ -3354,6 +3354,7 @@ impl OKXWsMessageHandler {
     }
 }
 
+/// Returns `true` when an OKX error payload represents a post-only rejection.
 pub fn is_post_only_rejection(code: &str, data: &[Value]) -> bool {
     if code == OKX_POST_ONLY_ERROR_CODE {
         return true;

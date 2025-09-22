@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core constants shared across the OKX adapter components.
+
 use std::sync::LazyLock;
 
 use ahash::AHashSet;

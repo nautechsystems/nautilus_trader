@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! OKX API credential storage and request signing helpers.
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;

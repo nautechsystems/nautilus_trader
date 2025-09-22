@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Error types produced by the OKX WebSocket client implementation.
+
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 

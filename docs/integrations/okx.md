@@ -11,12 +11,7 @@ execution on OKX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-**It does not require any external OKX client library dependencies**.
-
-:::info
-There is **no** need for additional installation steps for `okx`.
-The core components of the adapter are compiled as a static library and automatically linked during the build process.
-:::
+It does not require external OKX client libraries—the core components are compiled as a static library and linked automatically during the build.
 
 ## Examples
 
@@ -368,6 +363,44 @@ For complete and up-to-date rate limit information, refer to the [OKX API docume
 
 ## Configuration
 
+### Configuration options
+
+The OKX data client provides the following configuration options:
+
+#### Data client
+
+| Option                               | Default                         | Description |
+|--------------------------------------|---------------------------------|-------------|
+| `instrument_types`                   | `(OKXInstrumentType.SPOT,)`     | Controls which OKX instrument families are loaded (spot, swap, futures, options). |
+| `contract_types`                     | `None`                          | Restricts loading to specific contract styles when combined with `instrument_types`. |
+| `base_url_http`                      | `None`                          | Override for the OKX REST endpoint; defaults to the production URL resolved at runtime. |
+| `base_url_ws`                        | `None`                          | Override for the market data WebSocket endpoint. |
+| `api_key` / `api_secret` / `api_passphrase` | `None`                  | When omitted, pulled from the `OKX_API_KEY`, `OKX_API_SECRET`, and `OKX_PASSPHRASE` environment variables. |
+| `is_demo`                            | `False`                         | Connects to the OKX demo environment when `True`. |
+| `http_timeout_secs`                  | `60`                            | Request timeout (seconds) for REST market data calls. |
+| `update_instruments_interval_mins`   | `60`                            | Interval, in minutes, between background instrument refreshes. |
+| `vip_level`                          | `None`                          | Enables higher-depth order book channels when set to the matching OKX VIP tier. |
+
+The OKX execution client provides the following configuration options:
+
+#### Execution client
+
+| Option                     | Default     | Description |
+|----------------------------|-------------|-------------|
+| `instrument_types`         | `(OKXInstrumentType.SPOT,)` | Instrument families that should be tradable for this client. |
+| `contract_types`           | `None`      | Restricts tradable contracts (linear, inverse, options) when paired with `instrument_types`. |
+| `base_url_http`            | `None`      | Override for the OKX trading REST endpoint. |
+| `base_url_ws`              | `None`      | Override for the private WebSocket endpoint. |
+| `api_key` / `api_secret` / `api_passphrase` | `None` | Fall back to `OKX_API_KEY`, `OKX_API_SECRET`, and `OKX_PASSPHRASE` environment variables when unset. |
+| `margin_mode`              | `None`      | Forces the OKX account margin mode (cross or isolated) when specified. |
+| `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
+| `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
+| `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower-latency fill reports. |
+| `use_mm_mass_cancel`       | `False`     | Uses the market-maker bulk cancel endpoint when available; otherwise falls back to per-order cancels. |
+| `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
+| `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |
+
 Below is an example configuration for a live trading node using OKX data and execution clients:
 
 ```python
@@ -389,7 +422,7 @@ config = TradingNodeConfig(
             base_url_http=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR),
+            contract_types=(OKXContractType.LINEAR,),
             is_demo=False,
         ),
     },
@@ -402,7 +435,7 @@ config = TradingNodeConfig(
             base_url_ws=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR),
+            contract_types=(OKXContractType.LINEAR,),
             is_demo=False,
         ),
     },
@@ -413,7 +446,7 @@ node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
 node.build()
 ```
 
-## Error handling
+## Common issues
 
 Common issues when using the OKX adapter:
 
@@ -424,6 +457,7 @@ Common issues when using the OKX adapter:
 
 For detailed error information, check the NautilusTrader logs.
 
-## References
-
-See the OKX [API documentation](https://www.okx.com/docs-v5/) and the NautilusTrader [API reference](../api_reference/adapters/okx.md) for more details.
+:::info
+For additional features or to contribute to the OKX adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

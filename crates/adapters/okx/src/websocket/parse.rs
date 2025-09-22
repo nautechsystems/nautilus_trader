@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions translating raw OKX WebSocket frames into Nautilus data types.
+
 use ahash::AHashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{

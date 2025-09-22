@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data transfer objects for deserializing OKX HTTP API payloads.
+
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

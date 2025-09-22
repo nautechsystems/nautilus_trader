@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data structures modelling OKX WebSocket request and response payloads.
+
 use derive_builder::Builder;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},

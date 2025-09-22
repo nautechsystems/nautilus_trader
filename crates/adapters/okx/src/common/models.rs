@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data models representing OKX API payloads consumed by the adapter.
+
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

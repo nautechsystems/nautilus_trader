@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Enumerations mapping OKX concepts onto idiomatic Nautilus variants.
+
 use nautilus_model::enums::{
     AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
     TriggerType,
@@ -564,6 +566,17 @@ impl From<TriggerType> for OKXTriggerType {
             _ => Self::Last,
         }
     }
+}
+
+/// Represents an OKX order book channel.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum OKXBookChannel {
+    /// Standard depth-first book channel (`books`).
+    Book,
+    /// Low-latency 400-depth channel (`books-l2-tbt`).
+    BookL2Tbt,
+    /// Low-latency 50-depth channel (`books50-l2-tbt`).
+    Books50L2Tbt,
 }
 
 /// Represents OKX VIP level tiers for trading fee structure and API limits.

@@ -59,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{
         consts::OKX_VENUE,
-        enums::{OKXContractType, OKXInstrumentType},
+        enums::{OKXBookChannel, OKXContractType, OKXInstrumentType},
     },
     config::OKXDataClientConfig,
     http::client::OKXHttpClient,
@@ -78,6 +78,7 @@ pub struct OKXDataClient {
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    book_channels: Arc<RwLock<AHashMap<InstrumentId, OKXBookChannel>>>,
     clock: &'static AtomicTime,
 }
 
@@ -139,6 +140,7 @@ impl OKXDataClient {
             tasks: Vec::new(),
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
+            book_channels: Arc::new(RwLock::new(AHashMap::new())),
             clock,
         })
     }
@@ -402,6 +404,10 @@ impl DataClient for OKXDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
+        self.book_channels
+            .write()
+            .expect("book channel cache lock poisoned")
+            .clear();
         Ok(())
     }
 
@@ -495,6 +501,10 @@ impl DataClient for OKXDataClient {
 
         self.cancellation_token = CancellationToken::new();
         self.is_connected.store(false, Ordering::Relaxed);
+        self.book_channels
+            .write()
+            .expect("book channel cache lock poisoned")
+            .clear();
         tracing::info!("OKX data client disconnected");
         Ok(())
     }
@@ -518,35 +528,48 @@ impl DataClient for OKXDataClient {
         }
 
         let vip = self.vip_level().unwrap_or(0);
+        let channel = match depth {
+            50 => {
+                if vip < 4 {
+                    anyhow::bail!(
+                        "VIP level {vip} insufficient for 50 depth subscription (requires VIP4)"
+                    );
+                }
+                OKXBookChannel::Books50L2Tbt
+            }
+            0 | 400 => {
+                if vip >= 5 {
+                    OKXBookChannel::BookL2Tbt
+                } else {
+                    OKXBookChannel::Book
+                }
+            }
+            _ => unreachable!(),
+        };
+
         let instrument_id = cmd.instrument_id;
         let ws = self.public_ws()?.clone();
-
+        let book_channels = Arc::clone(&self.book_channels);
         self.spawn_ws(
             async move {
-                match depth {
-                    50 => {
-                        if vip < 4 {
-                            anyhow::bail!(
-                                "VIP level {vip} insufficient for 50 depth subscription (requires VIP4)"
-                            );
-                        }
-                        ws.subscribe_books50_l2_tbt(instrument_id)
-                            .await
-                            .context("books50-l2-tbt subscription")?
-                    }
-                    0 | 400 => {
-                        if vip >= 5 {
-                            ws.subscribe_book_l2_tbt(instrument_id)
-                                .await
-                                .context("books-l2-tbt subscription")?
-                        } else {
-                            ws.subscribe_book(instrument_id)
-                                .await
-                                .context("books subscription")?
-                        }
-                    }
-                    _ => {}
+                match channel {
+                    OKXBookChannel::Books50L2Tbt => ws
+                        .subscribe_books50_l2_tbt(instrument_id)
+                        .await
+                        .context("books50-l2-tbt subscription")?,
+                    OKXBookChannel::BookL2Tbt => ws
+                        .subscribe_book_l2_tbt(instrument_id)
+                        .await
+                        .context("books-l2-tbt subscription")?,
+                    OKXBookChannel::Book => ws
+                        .subscribe_book(instrument_id)
+                        .await
+                        .context("books subscription")?,
                 }
+                book_channels
+                    .write()
+                    .expect("book channel cache lock poisoned")
+                    .insert(instrument_id, channel);
                 Ok(())
             },
             "order book delta subscription",
@@ -664,11 +687,36 @@ impl DataClient for OKXDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
+        let channel = self
+            .book_channels
+            .write()
+            .expect("book channel cache lock poisoned")
+            .remove(&instrument_id);
         self.spawn_ws(
             async move {
-                ws.unsubscribe_book(instrument_id)
-                    .await
-                    .context("book unsubscribe")
+                match channel {
+                    Some(OKXBookChannel::Books50L2Tbt) => ws
+                        .unsubscribe_book50_l2_tbt(instrument_id)
+                        .await
+                        .context("books50-l2-tbt unsubscribe")?,
+                    Some(OKXBookChannel::BookL2Tbt) => ws
+                        .unsubscribe_book_l2_tbt(instrument_id)
+                        .await
+                        .context("books-l2-tbt unsubscribe")?,
+                    Some(OKXBookChannel::Book) => ws
+                        .unsubscribe_book(instrument_id)
+                        .await
+                        .context("book unsubscribe")?,
+                    None => {
+                        tracing::warn!(
+                            "Book channel not found for {instrument_id}; unsubscribing fallback channel"
+                        );
+                        ws.unsubscribe_book(instrument_id)
+                            .await
+                            .context("book fallback unsubscribe")?;
+                    }
+                }
+                Ok(())
             },
             "order book unsubscribe",
         );
