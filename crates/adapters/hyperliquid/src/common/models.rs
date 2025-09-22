@@ -13,13 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fmt::Display,
-    str::FromStr,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 use nautilus_core::{UUID4, UnixNanos};
 pub use nautilus_execution::models::latency::LatencyModel;
@@ -40,6 +36,17 @@ use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
     types::{Price, Quantity},
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+use nautilus_core::{UUID4, UnixNanos};
+pub use nautilus_execution::models::latency::LatencyModel;
+use nautilus_model::{
+    data::{delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder},
+    enums::{AccountType, BookAction, OrderSide, PositionSide, RecordFlag},
+    events::AccountState,
+    identifiers::{AccountId, InstrumentId},
+    reports::PositionStatusReport,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
+>>>>>>> d6947d960 (Change requests applied)
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
@@ -53,10 +60,14 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct HyperliquidInstrumentInfo {
 <<<<<<< HEAD
+<<<<<<< HEAD
     pub instrument_id: InstrumentId,
 =======
     pub instrument_id: Option<InstrumentId>,
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    pub instrument_id: InstrumentId,
+>>>>>>> d6947d960 (Change requests applied)
     pub price_decimals: u8,
     pub size_decimals: u8,
     /// Minimum tick size for price (optional)
@@ -69,6 +80,7 @@ pub struct HyperliquidInstrumentInfo {
 
 impl HyperliquidInstrumentInfo {
 <<<<<<< HEAD
+<<<<<<< HEAD
     /// Create config with specific precision
     pub fn new(instrument_id: InstrumentId, price_decimals: u8, size_decimals: u8) -> Self {
         Self {
@@ -79,6 +91,12 @@ impl HyperliquidInstrumentInfo {
         Self {
             instrument_id: None,
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    /// Create config with specific precision
+    pub fn new(instrument_id: InstrumentId, price_decimals: u8, size_decimals: u8) -> Self {
+        Self {
+            instrument_id,
+>>>>>>> d6947d960 (Change requests applied)
             price_decimals,
             size_decimals,
             tick_size: None,
@@ -98,10 +116,14 @@ impl HyperliquidInstrumentInfo {
     ) -> Self {
         Self {
 <<<<<<< HEAD
+<<<<<<< HEAD
             instrument_id,
 =======
             instrument_id: Some(instrument_id),
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+            instrument_id,
+>>>>>>> d6947d960 (Change requests applied)
             price_decimals,
             size_decimals,
             tick_size: Some(tick_size),
@@ -112,11 +134,15 @@ impl HyperliquidInstrumentInfo {
 
     /// Create with basic precision config and calculated tick/step sizes
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> d6947d960 (Change requests applied)
     pub fn with_precision(
         instrument_id: InstrumentId,
         price_decimals: u8,
         size_decimals: u8,
     ) -> Self {
+<<<<<<< HEAD
         let tick_size = Decimal::new(1, price_decimals as u32);
         let step_size = Decimal::new(1, size_decimals as u32);
         Self {
@@ -128,6 +154,12 @@ impl HyperliquidInstrumentInfo {
         Self {
             instrument_id: None,
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        let tick_size = Decimal::new(1, price_decimals as u32);
+        let step_size = Decimal::new(1, size_decimals as u32);
+        Self {
+            instrument_id,
+>>>>>>> d6947d960 (Change requests applied)
             price_decimals,
             size_decimals,
             tick_size: Some(tick_size),
@@ -137,6 +169,7 @@ impl HyperliquidInstrumentInfo {
     }
 
     /// Default configuration for most crypto assets
+<<<<<<< HEAD
 <<<<<<< HEAD
     pub fn default_crypto(instrument_id: InstrumentId) -> Self {
         Self::with_precision(instrument_id, 2, 5) // 0.01 price precision, 0.00001 size precision
@@ -205,162 +238,60 @@ pub enum HyperliquidTradeKey {
 =======
     pub fn default_crypto() -> Self {
         Self::with_precision(2, 5) // 0.01 price precision, 0.00001 size precision
+=======
+    pub fn default_crypto(instrument_id: InstrumentId) -> Self {
+        Self::with_precision(instrument_id, 2, 5) // 0.01 price precision, 0.00001 size precision
+>>>>>>> d6947d960 (Change requests applied)
     }
 }
 
-/// Trait for providing instrument metadata from external sources
-pub trait HyperliquidInstrumentProvider: Send + Sync {
-    fn fetch_all_instruments(
-        &self,
-    ) -> impl std::future::Future<
-        Output = crate::http::error::Result<Vec<HyperliquidInstrumentInfo>>,
-    > + Send;
-}
-
-/// Default provider that fetches from Hyperliquid HTTP API
-#[derive(Debug)]
-pub struct HyperliquidApiInstrumentProvider {
-    client: crate::http::client::HyperliquidHttpClient,
-}
-
-impl HyperliquidApiInstrumentProvider {
-    pub fn new(client: crate::http::client::HyperliquidHttpClient) -> Self {
-        Self { client }
-    }
-}
-
-impl HyperliquidInstrumentProvider for HyperliquidApiInstrumentProvider {
-    async fn fetch_all_instruments(
-        &self,
-    ) -> crate::http::error::Result<Vec<HyperliquidInstrumentInfo>> {
-        let meta = self.client.info_meta().await?;
-        let mut instruments = Vec::new();
-
-        for asset in meta.universe {
-            // Create InstrumentId using Hyperliquid venue
-            let symbol = asset.name.as_str();
-            let instrument_id = InstrumentId::from(format!("{}.HYPER", symbol).as_str());
-
-            // Calculate step size based on size decimals
-            let step_size = match asset.sz_decimals {
-                0 => Decimal::ONE,
-                1 => Decimal::from_f64_retain(0.1).unwrap(),
-                2 => Decimal::from_f64_retain(0.01).unwrap(),
-                3 => Decimal::from_f64_retain(0.001).unwrap(),
-                4 => Decimal::from_f64_retain(0.0001).unwrap(),
-                5 => Decimal::from_f64_retain(0.00001).unwrap(),
-                _ => Decimal::from_f64_retain(0.000001).unwrap(),
-            };
-
-            instruments.push(HyperliquidInstrumentInfo::with_metadata(
-                instrument_id,
-                2, // Default 2 decimal places for price
-                asset.sz_decimals as u8,
-                Decimal::from_f64_retain(0.01).unwrap(), // Default 1 cent tick
-                step_size,
-                Decimal::from_f64_retain(10.0).unwrap(), // Default $10 min notional
-            ));
-        }
-
-        Ok(instruments)
-    }
-}
-
-/// Cache for instrument metadata with automatic refresh
-#[derive(Debug)]
-pub struct HyperliquidInstrumentCache<P: HyperliquidInstrumentProvider> {
-    provider: P,
-    cache_ttl: Duration,
-    last_refresh: Instant,
+/// Simple instrument cache for parsing messages and responses
+#[derive(Debug, Default)]
+pub struct HyperliquidInstrumentCache {
     instruments_by_symbol: HashMap<Ustr, HyperliquidInstrumentInfo>,
 }
 
-impl<P: HyperliquidInstrumentProvider> HyperliquidInstrumentCache<P> {
-    pub fn new(provider: P, cache_ttl: Duration) -> Self {
+impl HyperliquidInstrumentCache {
+    /// Create a new empty cache
+    pub fn new() -> Self {
         Self {
-            provider,
-            cache_ttl,
-            last_refresh: Instant::now() - cache_ttl, // Force initial refresh
             instruments_by_symbol: HashMap::new(),
         }
     }
 
-    /// Ensure cache is fresh, refresh if needed
-    pub async fn ensure_fresh(&mut self) -> crate::http::error::Result<()> {
-        if self.last_refresh.elapsed() < self.cache_ttl {
-            return Ok(());
-        }
-
-        let instruments = self.provider.fetch_all_instruments().await?;
-        self.instruments_by_symbol.clear();
-
-        for instrument in instruments {
-            // Extract symbol from instrument_id (e.g., "BTC.HYPER" -> "BTC")
-            let symbol = instrument
-                .instrument_id
-                .as_ref()
-                .map(|id| id.symbol.as_str())
-                .unwrap_or("UNKNOWN");
-            if let Some(base_symbol) = symbol.split('.').next() {
-                self.instruments_by_symbol
-                    .insert(Ustr::from(base_symbol), instrument);
-            }
-        }
-
-        self.last_refresh = Instant::now();
-        Ok(())
+    /// Add or update an instrument in the cache
+    pub fn insert(&mut self, symbol: &str, info: HyperliquidInstrumentInfo) {
+        self.instruments_by_symbol.insert(Ustr::from(symbol), info);
     }
 
     /// Get instrument metadata for a symbol
-    pub async fn get_instrument(
-        &mut self,
-        symbol: &str,
-    ) -> crate::http::error::Result<&HyperliquidInstrumentInfo> {
-        self.ensure_fresh().await?;
-        self.instruments_by_symbol
-            .get(&Ustr::from(symbol))
-            .ok_or_else(|| {
-                crate::http::error::Error::bad_request(format!("Instrument not found: {}", symbol))
-            })
+    pub fn get(&self, symbol: &str) -> Option<&HyperliquidInstrumentInfo> {
+        self.instruments_by_symbol.get(&Ustr::from(symbol))
     }
 
     /// Get all cached instruments
-    pub async fn get_all_instruments(
-        &mut self,
-    ) -> crate::http::error::Result<Vec<&HyperliquidInstrumentInfo>> {
-        self.ensure_fresh().await?;
-        Ok(self.instruments_by_symbol.values().collect())
+    pub fn get_all(&self) -> Vec<&HyperliquidInstrumentInfo> {
+        self.instruments_by_symbol.values().collect()
     }
 
-    /// Check if symbol exists in cache without refreshing
-    pub fn has_symbol(&self, symbol: &str) -> bool {
+    /// Check if symbol exists in cache
+    pub fn contains(&self, symbol: &str) -> bool {
         self.instruments_by_symbol.contains_key(&Ustr::from(symbol))
     }
 
-    /// Get cache statistics
-    pub fn cache_info(&self) -> (usize, Duration, bool) {
-        let count = self.instruments_by_symbol.len();
-        let age = self.last_refresh.elapsed();
-        let is_stale = age >= self.cache_ttl;
-        (count, age, is_stale)
+    /// Get the number of cached instruments
+    pub fn len(&self) -> usize {
+        self.instruments_by_symbol.len()
     }
-}
 
-/// Configuration for trade/ticker deduplication
-#[derive(Clone, Debug)]
-pub struct HyperliquidDedupConfig {
-    /// Maximum recent keys kept in memory
-    pub capacity: usize,
-    /// How many sequence steps we allow to be late and still accept
-    pub seq_ooo_window: u64,
-}
+    /// Check if the cache is empty
+    pub fn is_empty(&self) -> bool {
+        self.instruments_by_symbol.is_empty()
+    }
 
-impl Default for HyperliquidDedupConfig {
-    fn default() -> Self {
-        Self {
-            capacity: 8192,
-            seq_ooo_window: 16,
-        }
+    /// Clear all cached instruments
+    pub fn clear(&mut self) {
+        self.instruments_by_symbol.clear();
     }
 }
 
@@ -373,6 +304,7 @@ pub enum HyperliquidTradeKey {
     Seq(u64),
 }
 
+<<<<<<< HEAD
 /// Deduplicator for trades and tickers with out-of-order tolerance
 ///
 /// This implements a bounded LRU-style cache with sequence number tracking.
@@ -552,15 +484,13 @@ impl HyperliquidOrderCorrelator {
 }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
 /// Manages precision configuration and converts Hyperliquid data to standard Nautilus formats
 #[derive(Debug)]
 pub struct HyperliquidDataConverter {
     /// Configuration by instrument symbol
     configs: HashMap<Ustr, HyperliquidInstrumentInfo>,
-    /// Trade deduplicator by symbol
-    trade_dedupers: HashMap<Ustr, HyperliquidTradeDeduper>,
-    /// Deduplication configuration
-    dedup_config: HyperliquidDedupConfig,
 }
 
 impl Default for HyperliquidDataConverter {
@@ -580,6 +510,7 @@ impl HyperliquidDataConverter {
     pub fn new() -> Self {
         Self {
             configs: HashMap::new(),
+<<<<<<< HEAD
 <<<<<<< HEAD
         }
     }
@@ -672,6 +603,11 @@ impl HyperliquidDataConverter {
     }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        }
+    }
+
+>>>>>>> d6947d960 (Change requests applied)
     /// Create a latency model for order processing simulation
     ///
     /// This uses the execution crate's LatencyModel for simulating order processing latencies.
@@ -1075,6 +1011,7 @@ impl std::error::Error for ConversionError {}
 ////////////////////////////////////////////////////////////////////////////////
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 /// Raw position data from Hyperliquid API for parsing position status reports.
 ///
 /// This struct is used only for parsing API responses and converting to Nautilus
@@ -1099,56 +1036,53 @@ impl HyperliquidPositionData {
         self.position.is_zero()
 =======
 /// Hyperliquid-specific position representation
+=======
+/// Raw position data from Hyperliquid API for parsing position status reports.
+>>>>>>> d6947d960 (Change requests applied)
 ///
-/// This follows similar patterns to OKX/BitMEX position models but with Hyperliquid-specific
-/// fields like funding_accrued. The core pattern of signed quantity (long/short) and
-/// entry price tracking is consistent across all Nautilus adapters.
+/// This struct is used only for parsing API responses and converting to Nautilus
+/// PositionStatusReport events. The actual position tracking is handled by the
+/// Nautilus platform, not the adapter.
+///
+/// See Hyperliquid API documentation:
+/// - [User State Info](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals#retrieve-users-perpetuals-account-summary)
 #[derive(Clone, Debug)]
-pub struct HyperliquidPosition {
-    pub instrument_id: InstrumentId,
-    pub qty: Decimal, // signed: positive = long, negative = short
-    pub entry_price: Decimal,
-    pub funding_accrued: Decimal, // cumulative funding payments
-    pub sequence: u64,            // venue/account sequence if available
-    pub ts_event: UnixNanos,
+pub struct HyperliquidPositionData {
+    pub asset: String,
+    pub position: Decimal, // signed: positive = long, negative = short
+    pub entry_px: Option<Decimal>,
+    pub unrealized_pnl: Decimal,
+    pub cumulative_funding: Option<Decimal>,
+    pub position_value: Decimal,
 }
 
-impl HyperliquidPosition {
-    pub fn new(
-        instrument_id: InstrumentId,
-        qty: Decimal,
-        entry_price: Decimal,
-        funding_accrued: Decimal,
-        sequence: u64,
-        ts_event: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            qty,
-            entry_price,
-            funding_accrued,
-            sequence,
-            ts_event,
-        }
-    }
-
+impl HyperliquidPositionData {
     /// Check if position is flat (no quantity)
     pub fn is_flat(&self) -> bool {
+<<<<<<< HEAD
         self.qty.is_zero()
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        self.position.is_zero()
+>>>>>>> d6947d960 (Change requests applied)
     }
 
     /// Check if position is long
     pub fn is_long(&self) -> bool {
 <<<<<<< HEAD
+<<<<<<< HEAD
         self.position > Decimal::ZERO
 =======
         self.qty > Decimal::ZERO
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        self.position > Decimal::ZERO
+>>>>>>> d6947d960 (Change requests applied)
     }
 
     /// Check if position is short
     pub fn is_short(&self) -> bool {
+<<<<<<< HEAD
 <<<<<<< HEAD
         self.position < Decimal::ZERO
     }
@@ -1180,6 +1114,19 @@ impl HyperliquidPosition {
 }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        self.position < Decimal::ZERO
+    }
+}
+
+/// Balance information from Hyperliquid API.
+///
+/// Represents account balance for a specific asset (currency) as returned by Hyperliquid.
+/// Used for converting to Nautilus AccountBalance and AccountState events.
+///
+/// See Hyperliquid API documentation:
+/// - [Perpetuals Account Summary](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals#retrieve-users-perpetuals-account-summary)
+>>>>>>> d6947d960 (Change requests applied)
 #[derive(Clone, Debug)]
 pub struct HyperliquidBalance {
     pub asset: String,
@@ -1213,6 +1160,9 @@ impl HyperliquidBalance {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> d6947d960 (Change requests applied)
 /// Simplified account state for Hyperliquid adapter.
 ///
 /// This tracks only the essential state needed for generating Nautilus AccountState events.
@@ -1220,6 +1170,7 @@ impl HyperliquidBalance {
 ///
 /// See Hyperliquid API documentation:
 /// - [User State Info](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals#retrieve-users-perpetuals-account-summary)
+<<<<<<< HEAD
 #[derive(Default, Debug)]
 pub struct HyperliquidAccountState {
 =======
@@ -1227,6 +1178,10 @@ pub struct HyperliquidAccountState {
 pub struct HyperliquidAccountState {
     pub positions: HashMap<InstrumentId, HyperliquidPosition>,
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+#[derive(Default, Debug)]
+pub struct HyperliquidAccountState {
+>>>>>>> d6947d960 (Change requests applied)
     pub balances: HashMap<String, HyperliquidBalance>,
     pub last_sequence: u64,
 }
@@ -1236,6 +1191,7 @@ impl HyperliquidAccountState {
         Default::default()
     }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
     /// Get position for an instrument, returns flat position if not found
@@ -1256,6 +1212,8 @@ impl HyperliquidAccountState {
     }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
     /// Get balance for an asset, returns zero balance if not found
     pub fn get_balance(&self, asset: &str) -> HyperliquidBalance {
         self.balances.get(asset).cloned().unwrap_or_else(|| {
@@ -1270,11 +1228,15 @@ impl HyperliquidAccountState {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> d6947d960 (Change requests applied)
     /// Calculate total account value from balances only.
     /// Note: This doesn't include unrealized PnL from positions as those are
     /// tracked by the Nautilus platform, not the adapter.
     pub fn account_value(&self) -> Decimal {
         self.balances.values().map(|balance| balance.total).sum()
+<<<<<<< HEAD
     }
 
     /// Convert HyperliquidAccountState to Nautilus AccountState event.
@@ -1375,72 +1337,116 @@ impl HyperliquidAccountState {
             .values()
             .filter(|pos| !pos.is_flat())
             .collect()
+=======
+>>>>>>> d6947d960 (Change requests applied)
     }
 
-    /// Calculate total account value in USD (requires mark prices)
-    pub fn account_value(&self, mark_prices: &HashMap<InstrumentId, Decimal>) -> Decimal {
-        let mut total = Decimal::ZERO;
+    /// Convert HyperliquidAccountState to Nautilus AccountState event.
+    ///
+    /// This creates a standard Nautilus AccountState from the Hyperliquid-specific account state,
+    /// converting balances and handling the margin account type since Hyperliquid supports leverage.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_id` - The account identifier for this state
+    /// * `ts_event` - When this state was observed/received
+    /// * `ts_init` - When this state object was created
+    ///
+    /// # Returns
+    ///
+    /// A Nautilus AccountState event that can be processed by the platform
+    pub fn to_account_state(
+        &self,
+        account_id: AccountId,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<AccountState> {
+        // Convert HyperliquidBalance to AccountBalance
+        let balances: Vec<AccountBalance> = self
+            .balances
+            .values()
+            .map(|balance| {
+                // Create currency - Hyperliquid primarily uses USD/USDC
+                let currency = Currency::from(balance.asset.as_str());
 
-        // Add USD balance
-        if let Some(usd_balance) = self.balances.get("USD") {
-            total += usd_balance.total;
-        }
+                // Convert Decimal to f64 and create Money with proper currency
+                let total = Money::new(balance.total.to_f64().unwrap_or(0.0), currency);
+                let free = Money::new(balance.available.to_f64().unwrap_or(0.0), currency);
+                let locked = total - free; // locked = total - available
 
-        // Add unrealized PnL from positions
-        for position in self.positions.values() {
-            if let Some(&mark_price) = mark_prices.get(&position.instrument_id) {
-                total += position.unrealized_pnl(mark_price);
-            }
-        }
+                AccountBalance::new(total, locked, free)
+            })
+            .collect();
 
-        total
+        // For now, we don't map individual position margins since Hyperliquid uses cross-margin
+        // The risk management happens at the exchange level
+        let margins = Vec::new();
+
+        // Hyperliquid is a margin exchange (supports leverage)
+        let account_type = AccountType::Margin;
+
+        // This state comes from the exchange
+        let is_reported = true;
+
+        // Generate event ID
+        let event_id = UUID4::new();
+
+        Ok(AccountState::new(
+            account_id,
+            account_type,
+            balances,
+            margins,
+            is_reported,
+            event_id,
+            ts_event,
+            ts_init,
+            None, // base_currency: None for multi-currency support
+        ))
     }
 }
 
+/// Account balance update events from Hyperliquid exchange.
+///
+/// This enum represents balance update events that can be received from Hyperliquid
+/// via WebSocket streams or HTTP responses. Position tracking is handled by the
+/// Nautilus platform, so this only processes balance changes.
+///
+/// See Hyperliquid documentation:
+/// - [WebSocket API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket)
+/// - [User State Updates](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket#user-data)
 #[derive(Debug, Clone)]
-pub enum HyperliquidPositionEvent {
-    /// Complete snapshot of positions and balances
-    Snapshot {
-        positions: Vec<HyperliquidPosition>,
+pub enum HyperliquidAccountEvent {
+    /// Complete snapshot of balances
+    BalanceSnapshot {
         balances: Vec<HyperliquidBalance>,
         sequence: u64,
     },
-    /// Delta update for a single position
-    PositionDelta { position: HyperliquidPosition },
     /// Delta update for a single balance
     BalanceDelta { balance: HyperliquidBalance },
-    /// Funding payment update
-    Funding {
-        instrument_id: InstrumentId,
-        funding_delta: Decimal,
-        sequence: u64,
-        ts_event: UnixNanos,
-    },
 }
 
 impl HyperliquidAccountState {
-    /// Apply a position event to update the account state
-    pub fn apply(&mut self, event: HyperliquidPositionEvent) {
+    /// Apply a balance event to update the account state
+    pub fn apply(&mut self, event: HyperliquidAccountEvent) {
         match event {
-            HyperliquidPositionEvent::Snapshot {
-                positions,
-                balances,
-                sequence,
-            } => {
-                self.positions.clear();
+            HyperliquidAccountEvent::BalanceSnapshot { balances, sequence } => {
                 self.balances.clear();
 
+<<<<<<< HEAD
                 for position in positions {
                     self.positions.insert(position.instrument_id, position);
                 }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
                 for balance in balances {
                     self.balances.insert(balance.asset.clone(), balance);
                 }
 
                 self.last_sequence = sequence;
             }
+<<<<<<< HEAD
 <<<<<<< HEAD
             HyperliquidAccountEvent::BalanceDelta { balance } => {
 =======
@@ -1459,6 +1465,9 @@ impl HyperliquidAccountState {
             }
             HyperliquidPositionEvent::BalanceDelta { balance } => {
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+            HyperliquidAccountEvent::BalanceDelta { balance } => {
+>>>>>>> d6947d960 (Change requests applied)
                 let sequence = balance.sequence;
                 let entry = self
                     .balances
@@ -1471,6 +1480,7 @@ impl HyperliquidAccountState {
                     self.last_sequence = self.last_sequence.max(sequence);
                 }
             }
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
             HyperliquidPositionEvent::Funding {
@@ -1490,11 +1500,16 @@ impl HyperliquidAccountState {
                 }
             }
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
         }
     }
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> d6947d960 (Change requests applied)
 /// Parse Hyperliquid position data into a Nautilus PositionStatusReport.
 ///
 /// This function converts raw position data from Hyperliquid API responses into
@@ -1541,9 +1556,12 @@ pub fn parse_position_status_report(
     ))
 }
 
+<<<<<<< HEAD
 ////////////////////////////////////////////////////////////////////////////////
 =======
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -1819,6 +1837,7 @@ mod tests {
 
     #[rstest]
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     fn test_trade_deduplication_id_based() {
         let mut converter = HyperliquidDataConverter::new();
@@ -1993,6 +2012,8 @@ mod tests {
 
     #[rstest]
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
     fn test_instrument_info_creation() {
         let instrument_id = InstrumentId::from("BTC.HYPER");
         let info = HyperliquidInstrumentInfo::with_metadata(
@@ -2005,10 +2026,14 @@ mod tests {
         );
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         assert_eq!(info.instrument_id, instrument_id);
 =======
         assert_eq!(info.instrument_id, Some(instrument_id));
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        assert_eq!(info.instrument_id, instrument_id);
+>>>>>>> d6947d960 (Change requests applied)
         assert_eq!(info.price_decimals, 2);
         assert_eq!(info.size_decimals, 5);
         assert_eq!(
@@ -2028,12 +2053,18 @@ mod tests {
     #[rstest]
     fn test_instrument_info_with_precision() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         let instrument_id = test_instrument_id();
         let info = HyperliquidInstrumentInfo::with_precision(instrument_id, 3, 4);
         assert_eq!(info.instrument_id, instrument_id);
 =======
         let info = HyperliquidInstrumentInfo::with_precision(3, 4);
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        let instrument_id = test_instrument_id();
+        let info = HyperliquidInstrumentInfo::with_precision(instrument_id, 3, 4);
+        assert_eq!(info.instrument_id, instrument_id);
+>>>>>>> d6947d960 (Change requests applied)
         assert_eq!(info.price_decimals, 3);
         assert_eq!(info.size_decimals, 4);
         assert_eq!(info.tick_size, Some(Decimal::new(1, 3))); // 0.001
@@ -2041,6 +2072,7 @@ mod tests {
     }
 
     #[tokio::test]
+<<<<<<< HEAD
 <<<<<<< HEAD
     async fn test_instrument_cache_basic_operations() {
 =======
@@ -2058,6 +2090,9 @@ mod tests {
         }
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    async fn test_instrument_cache_basic_operations() {
+>>>>>>> d6947d960 (Change requests applied)
         let btc_info = HyperliquidInstrumentInfo::with_metadata(
             InstrumentId::from("BTC.HYPER"),
             2,
@@ -2076,6 +2111,7 @@ mod tests {
             Decimal::from_f64_retain(10.0).unwrap(),
         );
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         let mut cache = HyperliquidInstrumentCache::new();
 
@@ -2118,35 +2154,39 @@ mod tests {
         let provider = MockProvider {
             instruments: vec![btc_info.clone(), eth_info.clone()],
         };
+=======
+        let mut cache = HyperliquidInstrumentCache::new();
+>>>>>>> d6947d960 (Change requests applied)
 
-        let mut cache = HyperliquidInstrumentCache::new(provider, Duration::from_secs(60));
+        // Insert instruments manually
+        cache.insert("BTC", btc_info.clone());
+        cache.insert("ETH", eth_info.clone());
 
-        // First access should trigger refresh
-        let retrieved_btc = cache.get_instrument("BTC").await.unwrap();
+        // Get BTC instrument
+        let retrieved_btc = cache.get("BTC").unwrap();
         assert_eq!(retrieved_btc.instrument_id, btc_info.instrument_id);
         assert_eq!(retrieved_btc.size_decimals, 5);
 
-        // Second access should use cache
-        let retrieved_eth = cache.get_instrument("ETH").await.unwrap();
+        // Get ETH instrument
+        let retrieved_eth = cache.get("ETH").unwrap();
         assert_eq!(retrieved_eth.instrument_id, eth_info.instrument_id);
         assert_eq!(retrieved_eth.size_decimals, 4);
 
-        // Test cache info
-        let (count, age, is_stale) = cache.cache_info();
-        assert_eq!(count, 2);
-        assert!(!is_stale);
-        assert!(age < Duration::from_secs(1));
+        // Test cache methods
+        assert_eq!(cache.len(), 2);
+        assert!(!cache.is_empty());
 
-        // Test has_symbol
-        assert!(cache.has_symbol("BTC"));
-        assert!(cache.has_symbol("ETH"));
-        assert!(!cache.has_symbol("UNKNOWN"));
+        // Test contains
+        assert!(cache.contains("BTC"));
+        assert!(cache.contains("ETH"));
+        assert!(!cache.contains("UNKNOWN"));
 
-        // Test get_all_instruments
-        let all_instruments = cache.get_all_instruments().await.unwrap();
+        // Test get_all
+        let all_instruments = cache.get_all();
         assert_eq!(all_instruments.len(), 2);
     }
 
+<<<<<<< HEAD
     #[tokio::test]
     async fn test_instrument_cache_unknown_symbol() {
         struct EmptyProvider;
@@ -2163,6 +2203,15 @@ mod tests {
         let result = cache.get_instrument("UNKNOWN").await;
         assert!(result.is_err());
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    #[rstest]
+    fn test_instrument_cache_empty() {
+        let cache = HyperliquidInstrumentCache::new();
+        let result = cache.get("UNKNOWN");
+        assert!(result.is_none());
+        assert!(cache.is_empty());
+        assert_eq!(cache.len(), 0);
+>>>>>>> d6947d960 (Change requests applied)
     }
 
     #[rstest]
@@ -2238,6 +2287,7 @@ mod tests {
     }
 
     #[rstest]
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
     fn test_hyperliquid_position_creation() {
@@ -2322,6 +2372,8 @@ mod tests {
 
     #[rstest]
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
     fn test_hyperliquid_balance_creation_and_properties() {
         use rust_decimal_macros::dec;
 
@@ -2365,17 +2417,23 @@ mod tests {
     fn test_hyperliquid_account_state_creation() {
         let state = HyperliquidAccountState::new();
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         assert!(state.positions.is_empty());
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
         assert!(state.balances.is_empty());
         assert_eq!(state.last_sequence, 0);
 
         let default_state = HyperliquidAccountState::default();
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         assert!(default_state.positions.is_empty());
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
         assert!(default_state.balances.is_empty());
         assert_eq!(default_state.last_sequence, 0);
     }
@@ -2386,6 +2444,7 @@ mod tests {
 
         let mut state = HyperliquidAccountState::new();
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         let instrument_id = InstrumentId::from("BTC.HYPER");
 
@@ -2394,6 +2453,8 @@ mod tests {
         assert_eq!(pos.instrument_id, instrument_id);
         assert!(pos.is_flat());
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
 
         // Test get_balance for non-existent asset (should return zero balance)
         let balance = state.get_balance("USD");
@@ -2401,6 +2462,7 @@ mod tests {
         assert_eq!(balance.total, dec!(0.0));
         assert_eq!(balance.available, dec!(0.0));
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         // Add actual balance
 =======
@@ -2416,6 +2478,9 @@ mod tests {
         state.positions.insert(instrument_id, real_position);
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        // Add actual balance
+>>>>>>> d6947d960 (Change requests applied)
         let real_balance = HyperliquidBalance::new(
             "USD".to_string(),
             dec!(1000.0),
@@ -2427,16 +2492,20 @@ mod tests {
 
         // Test retrieving real data
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         let retrieved_pos = state.get_position(&instrument_id);
         assert_eq!(retrieved_pos.qty, dec!(1.0));
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
         let retrieved_balance = state.get_balance("USD");
         assert_eq!(retrieved_balance.total, dec!(1000.0));
     }
 
     #[rstest]
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
     fn test_hyperliquid_account_state_active_positions() {
@@ -2498,10 +2567,13 @@ mod tests {
 
     #[rstest]
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
     fn test_hyperliquid_account_state_account_value() {
         use rust_decimal_macros::dec;
 
         let mut state = HyperliquidAccountState::new();
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
         let mut mark_prices = HashMap::new();
@@ -2509,6 +2581,8 @@ mod tests {
         let btc_id = InstrumentId::from("BTC.HYPER");
         let eth_id = InstrumentId::from("ETH.HYPER");
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
 
         // Add USD balance
         state.balances.insert(
@@ -2522,6 +2596,7 @@ mod tests {
             ),
         );
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         let total_value = state.account_value();
         assert_eq!(total_value, dec!(10000.0));
@@ -2547,45 +2622,29 @@ mod tests {
                 UnixNanos::default(),
             ),
         );
+=======
+        let total_value = state.account_value();
+        assert_eq!(total_value, dec!(10000.0));
+>>>>>>> d6947d960 (Change requests applied)
 
-        // Add loss-making ETH short position
-        state.positions.insert(
-            eth_id,
-            HyperliquidPosition::new(
-                eth_id,
-                dec!(-2.0),
-                dec!(3000.0),
-                dec!(0.0),
-                2,
-                UnixNanos::default(),
-            ),
-        );
-
-        // Set mark prices
-        mark_prices.insert(btc_id, dec!(52000.0)); // +2000 PnL
-        mark_prices.insert(eth_id, dec!(3200.0)); // -400 PnL (-2.0 * (3200 - 3000))
-
-        let total_value = state.account_value(&mark_prices);
-        assert_eq!(total_value, dec!(11600.0)); // 10000 + 2000 - 400
-
-        // Test with missing mark price (should ignore that position)
-        mark_prices.remove(&eth_id);
-        let partial_value = state.account_value(&mark_prices);
-        assert_eq!(partial_value, dec!(12000.0)); // 10000 + 2000
-
-        // Test with no USD balance
+        // Test with no balance
         state.balances.clear();
-        let no_cash_value = state.account_value(&mark_prices);
-        assert_eq!(no_cash_value, dec!(2000.0)); // Only BTC PnL
+        let no_balance_value = state.account_value();
+        assert_eq!(no_balance_value, dec!(0.0));
     }
 
     #[rstest]
+<<<<<<< HEAD
     fn test_hyperliquid_position_event_snapshot() {
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    fn test_hyperliquid_account_event_balance_snapshot() {
+>>>>>>> d6947d960 (Change requests applied)
         use rust_decimal_macros::dec;
 
         let mut state = HyperliquidAccountState::new();
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
         let btc_id = InstrumentId::from("BTC.HYPER");
@@ -2599,6 +2658,8 @@ mod tests {
         );
 
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
         let balance = HyperliquidBalance::new(
             "USD".to_string(),
             dec!(1000.0),
@@ -2608,17 +2669,22 @@ mod tests {
         );
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         let snapshot_event = HyperliquidAccountEvent::BalanceSnapshot {
 =======
         let snapshot_event = HyperliquidPositionEvent::Snapshot {
             positions: vec![position],
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        let snapshot_event = HyperliquidAccountEvent::BalanceSnapshot {
+>>>>>>> d6947d960 (Change requests applied)
             balances: vec![balance],
             sequence: 10,
         };
 
         state.apply(snapshot_event);
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         assert_eq!(state.balances.len(), 1);
         assert_eq!(state.last_sequence, 10);
@@ -2628,10 +2694,15 @@ mod tests {
         assert_eq!(state.last_sequence, 10);
         assert_eq!(state.get_position(&btc_id).qty, dec!(1.0));
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.last_sequence, 10);
+>>>>>>> d6947d960 (Change requests applied)
         assert_eq!(state.get_balance("USD").total, dec!(1000.0));
     }
 
     #[rstest]
+<<<<<<< HEAD
 <<<<<<< HEAD
     fn test_hyperliquid_account_event_balance_delta() {
 =======
@@ -2700,6 +2771,9 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_position_event_balance_delta() {
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+    fn test_hyperliquid_account_event_balance_delta() {
+>>>>>>> d6947d960 (Change requests applied)
         use rust_decimal_macros::dec;
 
         let mut state = HyperliquidAccountState::new();
@@ -2725,10 +2799,14 @@ mod tests {
         );
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         let delta_event = HyperliquidAccountEvent::BalanceDelta {
 =======
         let delta_event = HyperliquidPositionEvent::BalanceDelta {
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        let delta_event = HyperliquidAccountEvent::BalanceDelta {
+>>>>>>> d6947d960 (Change requests applied)
             balance: updated_balance,
         };
 
@@ -2750,10 +2828,14 @@ mod tests {
         );
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         let old_delta_event = HyperliquidAccountEvent::BalanceDelta {
 =======
         let old_delta_event = HyperliquidPositionEvent::BalanceDelta {
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+        let old_delta_event = HyperliquidAccountEvent::BalanceDelta {
+>>>>>>> d6947d960 (Change requests applied)
             balance: old_balance,
         };
 
@@ -2765,6 +2847,7 @@ mod tests {
         assert_eq!(balance.sequence, 10); // Still the newer sequence
         assert_eq!(state.last_sequence, 10); // Global sequence unchanged
     }
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 
@@ -2830,4 +2913,6 @@ mod tests {
         assert_eq!(state.last_sequence, 10); // Should remain unchanged
     }
 >>>>>>> c518fee38 (feat: improve Hyperliquid adapter patterns and fix clippy issues)
+=======
+>>>>>>> d6947d960 (Change requests applied)
 }
