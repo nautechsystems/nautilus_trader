@@ -217,11 +217,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         start_instrument_ids = [
-            (InstrumentId.from_str(i) if isinstance(i, str) else i) for i in self._load_ids_on_start
+            (InstrumentId.from_str(i) if isinstance(i, str) else i)
+            for i in (self._load_ids_on_start or [])
         ]
 
         start_ib_contracts = [
-            (IBContract(**c) if isinstance(c, dict) else c) for c in self._load_contracts_on_start
+            (IBContract(**c) if isinstance(c, dict) else c)
+            for c in (self._load_contracts_on_start or [])
         ]
 
         await self.load_ids_with_return_async(start_instrument_ids + start_ib_contracts)
