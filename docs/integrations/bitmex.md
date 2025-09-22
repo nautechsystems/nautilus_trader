@@ -231,13 +231,13 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                      |
-|--------------------|-----------|--------------------------------------------|
-| Pegged Orders      | -         | *Not implemented* (supported by BitMEX).   |
-| Order Modification | ✓         | Modify price, quantity, and trigger price. |
-| Trailing Stops     | -         | *Not implemented* (supported by BitMEX).   |
-| Bracket Orders     | -         | *Not implemented*.                         |
-| Iceberg Orders     | ✓         | Use `display_qty`.                         |
+| Feature            | Supported | Notes                                          |
+|--------------------|-----------|------------------------------------------------|
+| Order Modification | ✓         | Modify price, quantity, and trigger price.     |
+| Bracket Orders     | -         | Use `contingency_type` and `linked_order_ids`. |
+| Iceberg Orders     | ✓         | Use `display_qty`.                             |
+| Trailing Stops     | -         | *Not implemented* (supported by BitMEX).       |
+| Pegged Orders      | -         | *Not implemented* (supported by BitMEX).       |
 
 ### Batch operations
 
@@ -376,6 +376,24 @@ mainnet_exec_config = BitmexExecClientConfig(
 ```
 
 ## Trading considerations
+
+### Contingent orders
+
+The BitMEX execution adapter now maps Nautilus contingent order lists to the exchange's
+native `clOrdLinkID`/`contingencyType` mechanics. When the engine submits
+`ContingencyType::Oco` or `ContingencyType::Oto` orders the adapter will:
+
+- Create/maintain the linked order group on BitMEX so child stops and targets inherit the
+  parent order status.
+- Propagate order list updates and cancellations so that contingent peers stay aligned with
+  the current position state.
+- Surface execution reports with the appropriate contingency metadata, enabling strategy-level
+  tracking without additional manual wiring.
+
+This means common bracket flows (entry + stop + take-profit) and multi-leg stop structures can
+now be managed directly by BitMEX instead of being emulated client-side. When defining
+strategies, continue to use Nautilus `OrderList`/`ContingencyType` abstractions—the adapter
+handles the required BitMEX wiring automatically.
 
 ### Contract specifications
 

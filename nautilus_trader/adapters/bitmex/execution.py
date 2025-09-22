@@ -25,6 +25,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -43,6 +44,7 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events import AccountState
@@ -50,6 +52,7 @@ from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import contingency_type_to_pyo3
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
@@ -386,6 +389,15 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
 
+        pyo3_contingency_type = None
+        pyo3_order_list_id = None
+
+        if order.order_list_id is not None:
+            pyo3_order_list_id = nautilus_pyo3.OrderListId(order.order_list_id.value)
+
+        if order.contingency_type in (ContingencyType.OCO, ContingencyType.OTO):
+            pyo3_contingency_type = contingency_type_to_pyo3(order.contingency_type)
+
         try:
             await self._http_client.submit_order(
                 instrument_id=pyo3_instrument_id,
@@ -400,6 +412,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                 display_qty=pyo3_display_qty,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
+                order_list_id=pyo3_order_list_id,
+                contingency_type=pyo3_contingency_type,
             )
         except Exception as e:
             self.generate_order_rejected(
@@ -411,7 +425,18 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.warning("Order list submission not yet implemented")
+        for order in command.order_list.orders:
+            submit_command = SubmitOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+                position_id=command.position_id,
+                client_id=command.client_id,
+                params=command.params,
+            )
+            await self._submit_order(submit_command)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -705,6 +730,9 @@ class BitmexExecutionClient(LiveExecutionClient):
                 f"Cannot process order status report - order for {report.client_order_id!r} not found",
             )
             return
+
+        if order.linked_order_ids is not None:
+            report.linked_order_ids = list(order.linked_order_ids)
 
         if report.order_status == OrderStatus.REJECTED:
             pass  # Handled by submit_order

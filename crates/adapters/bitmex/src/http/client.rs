@@ -38,9 +38,9 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::TradeTick,
-    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
@@ -72,7 +72,7 @@ use crate::{
     common::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
-        enums::{BitmexOrderStatus, BitmexSide},
+        enums::{BitmexContingencyType, BitmexOrderStatus, BitmexSide},
         parse::{parse_account_state, parse_instrument_id, quantity_to_u32},
     },
     http::{
@@ -783,6 +783,188 @@ impl BitmexHttpClient {
         get_atomic_clock_realtime().get_time_ns()
     }
 
+    /// Check if the order has a contingency type that requires linking.
+    fn is_contingent_order(contingency_type: ContingencyType) -> bool {
+        matches!(
+            contingency_type,
+            ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
+        )
+    }
+
+    /// Check if the order is a parent in contingency relationships.
+    fn is_parent_contingency(contingency_type: ContingencyType) -> bool {
+        matches!(
+            contingency_type,
+            ContingencyType::Oco | ContingencyType::Oto
+        )
+    }
+
+    /// Populate missing `linked_order_ids` for contingency orders by grouping on `order_list_id`.
+    fn populate_linked_order_ids(reports: &mut [OrderStatusReport]) {
+        let mut order_list_groups: HashMap<OrderListId, Vec<ClientOrderId>> = HashMap::new();
+        let mut order_list_parents: HashMap<OrderListId, ClientOrderId> = HashMap::new();
+        let mut prefix_groups: HashMap<String, Vec<ClientOrderId>> = HashMap::new();
+        let mut prefix_parents: HashMap<String, ClientOrderId> = HashMap::new();
+
+        for report in reports.iter() {
+            let Some(client_order_id) = report.client_order_id else {
+                continue;
+            };
+
+            if let Some(order_list_id) = report.order_list_id {
+                order_list_groups
+                    .entry(order_list_id)
+                    .or_default()
+                    .push(client_order_id);
+
+                if Self::is_parent_contingency(report.contingency_type) {
+                    order_list_parents
+                        .entry(order_list_id)
+                        .or_insert(client_order_id);
+                }
+            }
+
+            if let Some((base, _)) = client_order_id.as_str().rsplit_once('-')
+                && Self::is_contingent_order(report.contingency_type)
+            {
+                prefix_groups
+                    .entry(base.to_owned())
+                    .or_default()
+                    .push(client_order_id);
+
+                if Self::is_parent_contingency(report.contingency_type) {
+                    prefix_parents
+                        .entry(base.to_owned())
+                        .or_insert(client_order_id);
+                }
+            }
+        }
+
+        for report in reports.iter_mut() {
+            let Some(client_order_id) = report.client_order_id else {
+                continue;
+            };
+
+            if report.linked_order_ids.is_some() {
+                continue;
+            }
+
+            // Only process contingent orders
+            if !Self::is_contingent_order(report.contingency_type) {
+                continue;
+            }
+
+            if let Some(order_list_id) = report.order_list_id
+                && let Some(group) = order_list_groups.get(&order_list_id)
+            {
+                let mut linked: Vec<ClientOrderId> = group
+                    .iter()
+                    .copied()
+                    .filter(|candidate| candidate != &client_order_id)
+                    .collect();
+
+                if !linked.is_empty() {
+                    if let Some(parent_id) = order_list_parents.get(&order_list_id) {
+                        if client_order_id != *parent_id {
+                            linked.sort_by_key(
+                                |candidate| {
+                                    if candidate == parent_id { 0 } else { 1 }
+                                },
+                            );
+                            report.parent_order_id = Some(*parent_id);
+                        } else {
+                            report.parent_order_id = None;
+                        }
+                    } else {
+                        report.parent_order_id = None;
+                    }
+
+                    tracing::trace!(
+                        client_order_id = ?client_order_id,
+                        order_list_id = ?order_list_id,
+                        contingency_type = ?report.contingency_type,
+                        linked_order_ids = ?linked,
+                        "BitMEX linked ids sourced from order list id",
+                    );
+                    report.linked_order_ids = Some(linked);
+                    continue;
+                }
+
+                tracing::trace!(
+                    client_order_id = ?client_order_id,
+                    order_list_id = ?order_list_id,
+                    contingency_type = ?report.contingency_type,
+                    order_list_group = ?group,
+                    "BitMEX order list id group had no peers",
+                );
+                report.parent_order_id = None;
+            } else if report.order_list_id.is_none() {
+                report.parent_order_id = None;
+            }
+
+            if let Some((base, _)) = client_order_id.as_str().rsplit_once('-')
+                && let Some(group) = prefix_groups.get(base)
+            {
+                let mut linked: Vec<ClientOrderId> = group
+                    .iter()
+                    .copied()
+                    .filter(|candidate| candidate != &client_order_id)
+                    .collect();
+
+                if !linked.is_empty() {
+                    if let Some(parent_id) = prefix_parents.get(base) {
+                        if client_order_id != *parent_id {
+                            linked.sort_by_key(
+                                |candidate| {
+                                    if candidate == parent_id { 0 } else { 1 }
+                                },
+                            );
+                            report.parent_order_id = Some(*parent_id);
+                        } else {
+                            report.parent_order_id = None;
+                        }
+                    } else {
+                        report.parent_order_id = None;
+                    }
+
+                    tracing::trace!(
+                        client_order_id = ?client_order_id,
+                        contingency_type = ?report.contingency_type,
+                        base = base,
+                        linked_order_ids = ?linked,
+                        "BitMEX linked ids constructed from client order id prefix",
+                    );
+                    report.linked_order_ids = Some(linked);
+                    continue;
+                }
+
+                tracing::trace!(
+                    client_order_id = ?client_order_id,
+                    contingency_type = ?report.contingency_type,
+                    base = base,
+                    prefix_group = ?group,
+                    "BitMEX client order id prefix group had no peers",
+                );
+                report.parent_order_id = None;
+            } else if client_order_id.as_str().contains('-') {
+                report.parent_order_id = None;
+            }
+
+            if Self::is_contingent_order(report.contingency_type) {
+                tracing::warn!(
+                    client_order_id = ?report.client_order_id,
+                    order_list_id = ?report.order_list_id,
+                    contingency_type = ?report.contingency_type,
+                    "BitMEX order status report missing linked ids after grouping",
+                );
+                report.contingency_type = ContingencyType::NoContingency;
+                report.parent_order_id = None;
+            }
+
+            report.linked_order_ids = None;
+        }
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
@@ -1062,6 +1244,8 @@ impl BitmexHttpClient {
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
+        order_list_id: Option<OrderListId>,
+        contingency_type: Option<ContingencyType>,
     ) -> anyhow::Result<OrderStatusReport> {
         use crate::common::enums::{
             BitmexExecInstruction, BitmexOrderType, BitmexSide, BitmexTimeInForce,
@@ -1095,6 +1279,10 @@ impl BitmexHttpClient {
             params.display_qty(quantity_to_u32(&display_qty));
         }
 
+        if let Some(order_list_id) = order_list_id {
+            params.cl_ord_link_id(order_list_id.as_str());
+        }
+
         let mut exec_inst = Vec::new();
 
         if post_only {
@@ -1118,6 +1306,11 @@ impl BitmexHttpClient {
 
         if !exec_inst.is_empty() {
             params.exec_inst(exec_inst);
+        }
+
+        if let Some(contingency_type) = contingency_type {
+            let bitmex_contingency = BitmexContingencyType::try_from(contingency_type)?;
+            params.contingency_type(bitmex_contingency);
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -1217,9 +1410,7 @@ impl BitmexHttpClient {
                     .collect::<Vec<_>>(),
             );
         } else {
-            return Err(anyhow::anyhow!(
-                "Either client_order_ids or venue_order_ids must be provided"
-            ));
+            anyhow::bail!("Either client_order_ids or venue_order_ids must be provided");
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -1242,6 +1433,8 @@ impl BitmexHttpClient {
                 ts_init,
             )?);
         }
+
+        Self::populate_linked_order_ids(&mut reports);
 
         Ok(reports)
     }
@@ -1290,6 +1483,8 @@ impl BitmexHttpClient {
                 ts_init,
             )?);
         }
+
+        Self::populate_linked_order_ids(&mut reports);
 
         Ok(reports)
     }
@@ -1507,6 +1702,8 @@ impl BitmexHttpClient {
             }
         }
 
+        Self::populate_linked_order_ids(&mut reports);
+
         Ok(reports)
     }
 
@@ -1663,10 +1860,42 @@ impl BitmexHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UUID4;
+    use nautilus_model::enums::OrderStatus;
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+
+    fn build_report(
+        client_order_id: &str,
+        venue_order_id: &str,
+        contingency_type: ContingencyType,
+        order_list_id: Option<&str>,
+    ) -> OrderStatusReport {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("BITMEX-1"),
+            InstrumentId::from("XBTUSD.BITMEX"),
+            Some(ClientOrderId::from(client_order_id)),
+            VenueOrderId::from(venue_order_id),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::new(100.0, 0),
+            Quantity::default(),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+            Some(UUID4::new()),
+        );
+
+        if let Some(id) = order_list_id {
+            report = report.with_order_list_id(OrderListId::from(id));
+        }
+
+        report.with_contingency_type(contingency_type)
+    }
 
     #[rstest]
     fn test_sign_request_generates_correct_headers() {
@@ -1719,5 +1948,102 @@ mod tests {
             headers_without_body.get("api-signature").unwrap(),
             headers_with_body.get("api-signature").unwrap()
         );
+    }
+
+    #[test]
+    fn test_populate_linked_order_ids_from_order_list() {
+        let base = "O-20250922-002219-001-000";
+        let entry = format!("{base}-1");
+        let stop = format!("{base}-2");
+        let take = format!("{base}-3");
+
+        let mut reports = vec![
+            build_report(&entry, "V-1", ContingencyType::Oto, Some("OL-1")),
+            build_report(&stop, "V-2", ContingencyType::Ouo, Some("OL-1")),
+            build_report(&take, "V-3", ContingencyType::Ouo, Some("OL-1")),
+        ];
+
+        BitmexHttpClient::populate_linked_order_ids(&mut reports);
+
+        assert_eq!(
+            reports[0].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(stop.as_str()),
+                ClientOrderId::from(take.as_str()),
+            ]),
+        );
+        assert_eq!(
+            reports[1].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(entry.as_str()),
+                ClientOrderId::from(take.as_str()),
+            ]),
+        );
+        assert_eq!(
+            reports[2].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(entry.as_str()),
+                ClientOrderId::from(stop.as_str()),
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_populate_linked_order_ids_from_id_prefix() {
+        let base = "O-20250922-002220-001-000";
+        let entry = format!("{base}-1");
+        let stop = format!("{base}-2");
+        let take = format!("{base}-3");
+
+        let mut reports = vec![
+            build_report(&entry, "V-1", ContingencyType::Oto, None),
+            build_report(&stop, "V-2", ContingencyType::Ouo, None),
+            build_report(&take, "V-3", ContingencyType::Ouo, None),
+        ];
+
+        BitmexHttpClient::populate_linked_order_ids(&mut reports);
+
+        assert_eq!(
+            reports[0].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(stop.as_str()),
+                ClientOrderId::from(take.as_str()),
+            ]),
+        );
+        assert_eq!(
+            reports[1].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(entry.as_str()),
+                ClientOrderId::from(take.as_str()),
+            ]),
+        );
+        assert_eq!(
+            reports[2].linked_order_ids,
+            Some(vec![
+                ClientOrderId::from(entry.as_str()),
+                ClientOrderId::from(stop.as_str()),
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_populate_linked_order_ids_respects_non_contingent_orders() {
+        let base = "O-20250922-002221-001-000";
+        let entry = format!("{base}-1");
+        let passive = format!("{base}-2");
+
+        let mut reports = vec![
+            build_report(&entry, "V-1", ContingencyType::NoContingency, None),
+            build_report(&passive, "V-2", ContingencyType::Ouo, None),
+        ];
+
+        BitmexHttpClient::populate_linked_order_ids(&mut reports);
+
+        // Non-contingent orders should not be linked
+        assert!(reports[0].linked_order_ids.is_none());
+
+        // A contingent order with no other contingent peers should have contingency reset
+        assert!(reports[1].linked_order_ids.is_none());
+        assert_eq!(reports[1].contingency_type, ContingencyType::NoContingency);
     }
 }

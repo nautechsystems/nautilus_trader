@@ -26,9 +26,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -96,16 +94,19 @@ config_tester = ExecTesterConfig(
     external_order_claims=[instrument_id],
     order_qty=order_qty,
     # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
+    enable_buys=True,
+    enable_sells=True,
     use_post_only=True,
     tob_offset_ticks=0,
-    modify_orders_to_maintain_tob_offset=True,
-    open_position_on_start_qty=order_qty,
-    open_position_time_in_force=TimeInForce.IOC,
+    # modify_orders_to_maintain_tob_offset=True,
+    # open_position_on_start_qty=order_qty,
+    # open_position_time_in_force=TimeInForce.IOC,
     close_positions_time_in_force=TimeInForce.IOC,
     # enable_stop_buys=True,
-    enable_stop_sells=True,
-    stop_order_type=OrderType.STOP_MARKET,
-    stop_trigger_type=TriggerType.MARK_PRICE,
+    # enable_stop_sells=True,
+    # stop_order_type=OrderType.STOP_MARKET,
+    # stop_trigger_type=TriggerType.MARK_PRICE,
+    # enable_brackets=True,
     # test_reject_post_only=True,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,

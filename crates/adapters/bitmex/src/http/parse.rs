@@ -19,7 +19,9 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::TradeTick,
-    enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
     },
@@ -607,10 +609,21 @@ pub fn parse_order_status_report(
         report = report.with_contingency_type(contingency_type.into());
     }
 
-    // if let Some(expire_time) = order.ex {
-    //     report = report.with_trigger_price(Price::new(trigger_price, price_precision));
-    // }
+    if matches!(
+        report.contingency_type,
+        ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
+    ) && report.order_list_id.is_none()
+    {
+        tracing::debug!(
+            order_id = %order.order_id,
+            client_order_id = ?report.client_order_id,
+            contingency_type = ?report.contingency_type,
+            "BitMEX order missing clOrdLinkID for contingent order",
+        );
+    }
 
+    // BitMEX does not currently include an explicit expiry timestamp
+    // in the order status response, so `report.expire_time` remains `None`.
     Ok(report)
 }
 

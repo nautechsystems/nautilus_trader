@@ -15,8 +15,8 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
@@ -317,7 +317,9 @@ impl BitmexHttpClient {
         trigger_type = None,
         display_qty = None,
         post_only = false,
-        reduce_only = false
+        reduce_only = false,
+        order_list_id = None,
+        contingency_type = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -335,6 +337,8 @@ impl BitmexHttpClient {
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
+        order_list_id: Option<OrderListId>,
+        contingency_type: Option<ContingencyType>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -353,6 +357,8 @@ impl BitmexHttpClient {
                     display_qty,
                     post_only,
                     reduce_only,
+                    order_list_id,
+                    contingency_type,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

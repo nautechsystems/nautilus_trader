@@ -22,6 +22,7 @@ from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -169,6 +170,44 @@ async def test_submit_limit_order_post_only(exec_client, instrument, strategy):
     assert call_args["quantity"].as_double() == 50.0
     assert call_args["price"].as_double() == 50000.0
     assert call_args["post_only"] is True
+
+
+async def test_submit_order_for_contingency(exec_client, instrument, strategy):
+    """
+    Ensure contingency metadata is forwarded to the HTTP client.
+    """
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-010"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(10),
+        price=Price.from_str("48000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        contingency_type=ContingencyType.OCO,
+        order_list_id=TestIdStubs.order_list_id(),
+        linked_order_ids=[ClientOrderId("O-011")],
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["contingency_type"] == nautilus_pyo3.ContingencyType.OCO
+    assert call_args["order_list_id"].value == order.order_list_id.value
 
 
 async def test_submit_stop_order(exec_client, instrument, strategy):
