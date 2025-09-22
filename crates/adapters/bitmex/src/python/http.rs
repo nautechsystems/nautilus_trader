@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the BitMEX HTTP client.
+
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},

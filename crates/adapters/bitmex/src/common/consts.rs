@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX adapter constants including base URLs and the venue identifier.
+
 use std::sync::LazyLock;
 
 use nautilus_model::identifiers::Venue;

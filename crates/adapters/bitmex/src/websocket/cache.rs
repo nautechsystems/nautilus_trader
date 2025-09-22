@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Quote cache for reconstructing BitMEX WebSocket partial updates.
+
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId, types::price::Price};
@@ -37,6 +39,12 @@ impl QuoteCache {
         }
     }
 
+    /// Clears all cached quotes, typically used after reconnection.
+    pub fn clear(&mut self) {
+        self.last_quotes.clear();
+    }
+
+    /// Processes an incoming quote message, emitting a complete quote when possible.
     pub fn process(
         &mut self,
         msg: &BitmexQuoteMsg,

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX WebSocket message structures and helper types.
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};

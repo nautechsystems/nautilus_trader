@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX-specific enumerations shared by HTTP and WebSocket components.
+
 use nautilus_model::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
 };
@@ -468,6 +470,7 @@ pub enum BitmexExecInstruction {
 }
 
 impl BitmexExecInstruction {
+    /// Joins execution instructions into the comma-separated string expected by BitMEX.
     pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()

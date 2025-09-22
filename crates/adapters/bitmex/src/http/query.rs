@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Builder types for BitMEX REST query parameters and filters.
+
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize, Serializer};

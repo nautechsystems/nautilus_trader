@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Parsers that convert BitMEX WebSocket payloads into Nautilus data structures.
+
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
@@ -96,6 +98,7 @@ pub fn is_index_symbol(symbol: &Ustr) -> bool {
     symbol.starts_with('.')
 }
 
+/// Converts a batch of BitMEX order-book rows into Nautilus delta events.
 #[must_use]
 pub fn parse_book_msg_vec(
     data: Vec<BitmexOrderBookMsg>,
@@ -116,6 +119,7 @@ pub fn parse_book_msg_vec(
     deltas
 }
 
+/// Converts BitMEX level-10 snapshots into Nautilus depth events.
 #[must_use]
 pub fn parse_book10_msg_vec(
     data: Vec<BitmexOrderBook10Msg>,
@@ -134,6 +138,7 @@ pub fn parse_book10_msg_vec(
     depths
 }
 
+/// Converts BitMEX trade messages into Nautilus trade data events.
 #[must_use]
 pub fn parse_trade_msg_vec(
     data: Vec<BitmexTradeMsg>,
@@ -148,6 +153,7 @@ pub fn parse_trade_msg_vec(
     trades
 }
 
+/// Converts aggregated trade-bin messages into Nautilus data events.
 #[must_use]
 pub fn parse_trade_bin_msg_vec(
     data: Vec<BitmexTradeBinMsg>,
@@ -168,6 +174,7 @@ pub fn parse_trade_bin_msg_vec(
     trades
 }
 
+/// Converts a BitMEX order book row into a Nautilus order-book delta.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book_msg(
@@ -276,6 +283,7 @@ pub fn parse_book10_msg(
     )
 }
 
+/// Converts a BitMEX quote message into a `QuoteTick`, filling missing data from cache.
 #[must_use]
 pub fn parse_quote_msg(
     msg: &BitmexQuoteMsg,
@@ -318,6 +326,7 @@ pub fn parse_quote_msg(
     )
 }
 
+/// Converts a BitMEX trade message into a `TradeTick`.
 #[must_use]
 pub fn parse_trade_msg(msg: &BitmexTradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
     let instrument_id = parse_instrument_id(msg.symbol);
@@ -341,6 +350,7 @@ pub fn parse_trade_msg(msg: &BitmexTradeMsg, price_precision: u8, ts_init: UnixN
     )
 }
 
+/// Converts a BitMEX trade-bin summary into a `Bar` for the matching topic.
 #[must_use]
 pub fn parse_trade_bin_msg(
     msg: &BitmexTradeBinMsg,
@@ -1097,20 +1107,9 @@ mod tests {
     #[rstest]
     fn test_parse_cancel_reject_execution() {
         // Test that CancelReject messages can be parsed (even without symbol)
-        let json = r#"{
-            "execID":"00000000-006d-1000-0000-001e7f5081ad",
-            "orderID":"ece0a2cc-7729-4f4c-bc6c-65d7c723e75b",
-            "account":1667725,
-            "execType":"CancelReject",
-            "ordStatus":"Rejected",
-            "workingIndicator":false,
-            "ordRejReason":"Invalid orderID",
-            "text":"Invalid orderID",
-            "transactTime":"2025-09-05T05:38:28.001Z",
-            "timestamp":"2025-09-05T05:38:28.001Z"
-        }"#;
+        let json = load_test_json("ws_execution_cancel_reject.json");
 
-        let msg: BitmexExecutionMsg = serde_json::from_str(json).unwrap();
+        let msg: BitmexExecutionMsg = serde_json::from_str(&json).unwrap();
         assert_eq!(msg.exec_type, Some(BitmexExecType::CancelReject));
         assert_eq!(msg.ord_status, Some(BitmexOrderStatus::Rejected));
         assert_eq!(msg.symbol, None);

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Shared parsing helpers that transform BitMEX payloads into Nautilus types.
+
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -57,6 +59,7 @@ pub fn quantity_to_u32(quantity: &Quantity) -> u32 {
     }
 }
 
+/// Converts a BitMEX contracts value into a clamped Nautilus quantity.
 #[must_use]
 pub fn parse_contracts_quantity(value: u64) -> Quantity {
     let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
@@ -69,6 +72,7 @@ pub fn parse_contracts_quantity(value: u64) -> Quantity {
     Quantity::new(size_workaround as f64, 0)
 }
 
+/// Converts a fractional contract size into a quantity honoring BitMEX precision.
 #[must_use]
 pub fn parse_frac_quantity(value: f64, size_precision: u8) -> Quantity {
     let value_u64 = value as u64;
@@ -101,6 +105,7 @@ pub fn parse_optional_datetime_to_unix_nanos(
         .unwrap_or_default()
 }
 
+/// Maps an optional BitMEX side to the corresponding Nautilus aggressor side.
 #[must_use]
 pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     match side {
@@ -110,6 +115,7 @@ pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     }
 }
 
+/// Maps BitMEX liquidity indicators to Nautilus liquidity sides.
 #[must_use]
 pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> LiquiditySide {
     liquidity
@@ -117,6 +123,7 @@ pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> Liq
         .unwrap_or(LiquiditySide::NoLiquiditySide)
 }
 
+/// Derives a Nautilus position side from the BitMEX `currentQty` value.
 #[must_use]
 pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     match current_qty {

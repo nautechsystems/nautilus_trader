@@ -121,6 +121,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_test_json;
 
     #[rstest]
     fn test_bitmex_build_error_display() {
@@ -145,14 +146,9 @@ mod tests {
 
     #[rstest]
     fn test_bitmex_error_response_from_json() {
-        let json = r#"{
-            "error": {
-                "message": "Invalid API Key.",
-                "name": "HTTPError"
-            }
-        }"#;
+        let json = load_test_json("http_error_response.json");
 
-        let error_response: BitmexErrorResponse = serde_json::from_str(json).unwrap();
+        let error_response: BitmexErrorResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(error_response.error.message, "Invalid API Key.");
         assert_eq!(error_response.error.name, "HTTPError");
     }

@@ -1950,7 +1950,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_populate_linked_order_ids_from_order_list() {
         let base = "O-20250922-002219-001-000";
         let entry = format!("{base}-1");
@@ -1988,7 +1988,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_populate_linked_order_ids_from_id_prefix() {
         let base = "O-20250922-002220-001-000";
         let entry = format!("{base}-1");
@@ -2026,7 +2026,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_populate_linked_order_ids_respects_non_contingent_orders() {
         let base = "O-20250922-002221-001-000";
         let entry = format!("{base}-1");

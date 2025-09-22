@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Conversion routines that map BitMEX REST models into Nautilus domain structures.
+
 use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
@@ -42,6 +44,7 @@ use crate::common::{
     },
 };
 
+/// Attempts to convert a BitMEX instrument record into a Nautilus instrument by type.
 #[must_use]
 pub fn parse_instrument_any(
     instrument: &BitmexInstrument,

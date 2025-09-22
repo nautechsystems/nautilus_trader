@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data structures representing BitMEX REST API payloads.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;

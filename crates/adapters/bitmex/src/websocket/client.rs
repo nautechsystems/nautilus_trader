@@ -258,7 +258,7 @@ impl BitmexWebSocketClient {
                             // Always resubscribe to instruments
                             let subscribe_msg = BitmexSubscription {
                                 op: BitmexWsOperation::Subscribe,
-                                args: vec![Ustr::from("instrument")],
+                                args: vec![Ustr::from(BitmexWsTopic::Instrument.as_ref())],
                             };
 
                             let subscribe_json = match serde_json::to_string(&subscribe_msg) {
@@ -282,7 +282,7 @@ impl BitmexWebSocketClient {
                             for entry in subscriptions.iter() {
                                 let (channel, symbols) = entry.pair();
                                 if symbols.is_empty() {
-                                    topics_to_restore.push(channel.clone());
+                                        topics_to_restore.push(channel.clone());
                                 } else {
                                     for symbol in symbols.iter() {
                                         topics_to_restore.push(format!("{channel}:{symbol}"));
@@ -346,7 +346,7 @@ impl BitmexWebSocketClient {
             if let Some(inner) = &*inner_guard {
                 let subscribe_msg = BitmexSubscription {
                     op: BitmexWsOperation::Subscribe,
-                    args: vec![Ustr::from("instrument")],
+                    args: vec![Ustr::from(BitmexWsTopic::Instrument.as_ref())],
                 };
 
                 match serde_json::to_string(&subscribe_msg) {
@@ -683,7 +683,10 @@ impl BitmexWebSocketClient {
             if symbols.contains(&symbol) {
                 // Return the full topic string (e.g., "orderBookL2:XBTUSD")
                 channels.push(format!("{channel}:{symbol}"));
-            } else if symbols.is_empty() && (channel == "execution" || channel == "order") {
+            } else if symbols.is_empty()
+                && (channel == BitmexWsAuthChannel::Execution.as_ref()
+                    || channel == BitmexWsAuthChannel::Order.as_ref())
+            {
                 // These are account-level subscriptions without symbols
                 channels.push(channel.clone());
             }
@@ -1200,8 +1203,8 @@ impl BitmexFeedHandler {
                             tracing::debug!("Raw binary: {msg:?}");
                         }
                         Message::Close(_) => {
-                            tracing::debug!("Received close message");
-                            return None;
+                            tracing::debug!("Received close message, waiting for reconnection");
+                            continue;
                         }
                         msg => match msg {
                             Message::Ping(data) => {
@@ -1244,6 +1247,7 @@ struct BitmexWsMessageHandler {
     account_id: AccountId,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
+    quote_cache: QuoteCache,
 }
 
 impl BitmexWsMessageHandler {
@@ -1263,6 +1267,7 @@ impl BitmexWsMessageHandler {
             account_id,
             instruments_cache,
             order_type_cache,
+            quote_cache: QuoteCache::new(),
         }
     }
 
@@ -1281,12 +1286,12 @@ impl BitmexWsMessageHandler {
 
     async fn next(&mut self) -> Option<NautilusWsMessage> {
         let clock = get_atomic_clock_realtime();
-        let mut quote_cache = QuoteCache::new();
 
         while let Some(msg) = self.handler.next().await {
             match msg {
                 BitmexWsMessage::Reconnected => {
                     // Return reconnection signal to outer loop
+                    self.quote_cache.clear();
                     return Some(NautilusWsMessage::Reconnected);
                 }
                 BitmexWsMessage::Table(table_msg) => {
@@ -1329,7 +1334,8 @@ impl BitmexWsMessageHandler {
                             let msg = data.remove(0);
                             let price_precision = self.get_price_precision(&msg.symbol);
 
-                            if let Some(quote) = quote_cache.process(&msg, price_precision, ts_init)
+                            if let Some(quote) =
+                                self.quote_cache.process(&msg, price_precision, ts_init)
                             {
                                 NautilusWsMessage::Data(vec![Data::Quote(quote)])
                             } else {
@@ -1599,26 +1605,32 @@ mod tests {
         .unwrap();
 
         // Populate subscriptions like they would be during normal operation
-        client.subscriptions.insert("trade".to_string(), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set.insert(Ustr::from("ETHUSD"));
-            set
-        });
+        client
+            .subscriptions
+            .insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+                let mut set = AHashSet::new();
+                set.insert(Ustr::from("XBTUSD"));
+                set.insert(Ustr::from("ETHUSD"));
+                set
+            });
 
-        client.subscriptions.insert("orderBookL2".to_string(), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set
-        });
+        client
+            .subscriptions
+            .insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+                let mut set = AHashSet::new();
+                set.insert(Ustr::from("XBTUSD"));
+                set
+            });
 
         // Private channels (no symbols)
-        client
-            .subscriptions
-            .insert("order".to_string(), AHashSet::new());
-        client
-            .subscriptions
-            .insert("position".to_string(), AHashSet::new());
+        client.subscriptions.insert(
+            BitmexWsAuthChannel::Order.as_ref().to_string(),
+            AHashSet::new(),
+        );
+        client.subscriptions.insert(
+            BitmexWsAuthChannel::Position.as_ref().to_string(),
+            AHashSet::new(),
+        );
 
         // Test the actual reconnection topic building logic from lines 258-268
         let mut topics_to_restore = Vec::new();
@@ -1634,11 +1646,13 @@ mod tests {
         }
 
         // Verify it builds the correct restoration topics
-        assert!(topics_to_restore.contains(&"trade:XBTUSD".to_string()));
-        assert!(topics_to_restore.contains(&"trade:ETHUSD".to_string()));
-        assert!(topics_to_restore.contains(&"orderBookL2:XBTUSD".to_string()));
-        assert!(topics_to_restore.contains(&"order".to_string()));
-        assert!(topics_to_restore.contains(&"position".to_string()));
+        assert!(topics_to_restore.contains(&format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref())));
+        assert!(topics_to_restore.contains(&format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref())));
+        assert!(
+            topics_to_restore.contains(&format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref()))
+        );
+        assert!(topics_to_restore.contains(&BitmexWsAuthChannel::Order.as_ref().to_string()));
+        assert!(topics_to_restore.contains(&BitmexWsAuthChannel::Position.as_ref().to_string()));
         assert_eq!(topics_to_restore.len(), 5);
     }
 
@@ -1698,21 +1712,25 @@ mod tests {
         .unwrap();
 
         // Set up initial subscriptions
-        client.subscriptions.insert("trade".to_string(), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set.insert(Ustr::from("ETHUSD"));
-            set
-        });
+        client
+            .subscriptions
+            .insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+                let mut set = AHashSet::new();
+                set.insert(Ustr::from("XBTUSD"));
+                set.insert(Ustr::from("ETHUSD"));
+                set
+            });
 
-        client.subscriptions.insert("orderBookL2".to_string(), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set
-        });
+        client
+            .subscriptions
+            .insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+                let mut set = AHashSet::new();
+                set.insert(Ustr::from("XBTUSD"));
+                set
+            });
 
         // Simulate unsubscribe logic (like from unsubscribe() method lines 586-599)
-        let topic = "trade:ETHUSD";
+        let topic = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
         if let Some((channel, symbol)) = topic.split_once(':')
             && let Some(mut entry) = client.subscriptions.get_mut(channel)
         {
@@ -1737,9 +1755,13 @@ mod tests {
         }
 
         // Should have XBTUSD trade but not ETHUSD trade
-        assert!(topics_to_restore.contains(&"trade:XBTUSD".to_string()));
-        assert!(!topics_to_restore.contains(&"trade:ETHUSD".to_string()));
-        assert!(topics_to_restore.contains(&"orderBookL2:XBTUSD".to_string()));
+        let trade_xbt = format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref());
+        let trade_eth = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
+        let book_xbt = format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref());
+
+        assert!(topics_to_restore.contains(&trade_xbt));
+        assert!(!topics_to_restore.contains(&trade_eth));
+        assert!(topics_to_restore.contains(&book_xbt));
         assert_eq!(topics_to_restore.len(), 2);
     }
 }

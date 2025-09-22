@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Error definitions for the BitMEX WebSocket client.
+
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 

@@ -8,12 +8,7 @@ execution with BitMEX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-**It does not require any external BitMEX client library dependencies**.
-
-:::info
-There is **no** need for additional installation steps for `bitmex`.
-The core components of the adapter are compiled as a static library and automatically linked during the build process.
-:::
+It does not require external BitMEX client libraries—the core components are compiled as a static library and linked automatically during the build.
 
 ## Examples
 
@@ -347,6 +342,39 @@ To generate API keys:
 2. Navigate to Account & Security → API Keys.
 3. Create a new API key with appropriate permissions.
 4. For testnet, use [testnet.bitmex.com](https://testnet.bitmex.com).
+
+### Data client configuration options
+
+The BitMEX data client provides the following configuration options:
+
+| Option                            | Default | Description |
+|-----------------------------------|---------|-------------|
+| `api_key`                         | `None`  | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
+| `api_secret`                      | `None`  | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `base_url_http`                   | `None`  | Override for the REST base URL (defaults to production). |
+| `base_url_ws`                     | `None`  | Override for the WebSocket base URL (defaults to production). |
+| `testnet`                         | `False` | Route requests to the BitMEX testnet when `True`. |
+| `http_timeout_secs`               | `60`    | Request timeout applied to HTTP calls. |
+| `max_retries`                     | `None`  | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `retry_delay_initial_ms`          | `1,000` | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`              | `5,000` | Maximum backoff delay (milliseconds) between retries. |
+| `update_instruments_interval_mins`| `60`    | Interval (minutes) between instrument catalogue refreshes. |
+
+### Execution client configuration options
+
+The BitMEX execution client provides the following configuration options:
+
+| Option                   | Default | Description |
+|--------------------------|---------|-------------|
+| `api_key`                | `None`  | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
+| `api_secret`             | `None`  | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `base_url_http`          | `None`  | Override for the REST base URL (defaults to production). |
+| `base_url_ws`            | `None`  | Override for the WebSocket base URL (defaults to production). |
+| `testnet`                | `False` | Route orders to the BitMEX testnet when `True`. |
+| `http_timeout_secs`      | `60`    | Request timeout applied to HTTP calls. |
+| `max_retries`            | `None`  | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `retry_delay_initial_ms` | `1,000` | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `5,000` | Maximum backoff delay (milliseconds) between retries. |
 
 ### Configuration examples
 
