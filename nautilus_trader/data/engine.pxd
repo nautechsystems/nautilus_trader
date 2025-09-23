@@ -126,6 +126,7 @@ cdef class DataEngine(Component):
     cdef readonly int _time_bars_build_delay
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
+    cdef readonly bint _emit_quotes_from_book_depth
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -236,6 +237,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
+    cpdef void _create_quote_tick_from_depth(self, OrderBookDepth10 depth)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price)
