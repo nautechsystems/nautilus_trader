@@ -46,7 +46,7 @@
 
 // Re-export execution models from the http module
 pub use crate::http::models::{
-    AssetId, Cloid, DecimalStr, HyperliquidExecAction, HyperliquidExecBuilderFee,
+    AssetId, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
     HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
     HyperliquidExecCancelResponseData, HyperliquidExecCancelStatus, HyperliquidExecFilledInfo,
     HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest,

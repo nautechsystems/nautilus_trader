@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -246,81 +247,6 @@ mod tests {
 // Exchange execution endpoint models
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Custom serde module for handling decimal strings without trailing zeros.
-pub mod execution_decimal_str {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
-    use std::fmt;
-
-    /// A decimal string that ensures no trailing zeros for Hyperliquid compatibility.
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct DecimalStr(pub String);
-
-    impl DecimalStr {
-        /// Creates a new `DecimalStr`, normalizing the input by removing trailing zeros.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if the input is empty or not a valid decimal.
-        pub fn new<S: AsRef<str>>(s: S) -> Result<Self, String> {
-            let mut normalized = s.as_ref().trim().to_string();
-
-            if normalized.is_empty() {
-                return Err("decimal string cannot be empty".to_string());
-            }
-
-            // Remove leading '+' if present
-            if normalized.starts_with('+') {
-                normalized.remove(0);
-            }
-
-            // Remove trailing zeros and decimal point if necessary
-            if normalized.contains('.') {
-                while normalized.ends_with('0') {
-                    normalized.pop();
-                }
-                if normalized.ends_with('.') {
-                    normalized.pop();
-                }
-                if normalized.is_empty() {
-                    normalized.push('0');
-                }
-            }
-
-            Ok(DecimalStr(normalized))
-        }
-
-        /// Returns the normalized decimal string.
-        pub fn as_str(&self) -> &str {
-            &self.0
-        }
-    }
-
-    impl fmt::Display for DecimalStr {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.0)
-        }
-    }
-
-    impl Serialize for DecimalStr {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            serializer.serialize_str(&self.0)
-        }
-    }
-
-    impl<'de> Deserialize<'de> for DecimalStr {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let s = String::deserialize(deserializer)?;
-            DecimalStr::new(&s).map_err(D::Error::custom)
-        }
-    }
-}
-
 /// Custom serde module for handling 128-bit hex client order IDs.
 pub mod execution_cloid {
     use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
@@ -394,7 +320,6 @@ pub mod execution_cloid {
 }
 
 pub use execution_cloid::Cloid;
-pub use execution_decimal_str::DecimalStr;
 
 /// Asset ID type for Hyperliquid.
 ///
@@ -482,7 +407,11 @@ pub struct HyperliquidExecTriggerParams {
     /// Whether to use market price when triggered.
     pub is_market: bool,
     /// Trigger price as a string.
-    pub trigger_px: DecimalStr,
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub trigger_px: Decimal,
     /// Whether this is a take profit or stop loss.
     pub tpsl: HyperliquidExecTpSl,
 }
@@ -514,11 +443,19 @@ pub struct HyperliquidExecPlaceOrderRequest {
     #[serde(rename = "b")]
     pub is_buy: bool,
     /// Price as a string with no trailing zeros.
-    #[serde(rename = "p")]
-    pub price: DecimalStr,
+    #[serde(
+        rename = "p",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub price: Decimal,
     /// Size as a string with no trailing zeros.
-    #[serde(rename = "s")]
-    pub size: DecimalStr,
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub size: Decimal,
     /// Reduce-only flag.
     #[serde(rename = "r")]
     pub reduce_only: bool,
@@ -562,11 +499,21 @@ pub struct HyperliquidExecModifyOrderRequest {
     #[serde(rename = "o")]
     pub oid: OrderId,
     /// New price (optional).
-    #[serde(rename = "p", skip_serializing_if = "Option::is_none")]
-    pub price: Option<DecimalStr>,
+    #[serde(
+        rename = "p",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub price: Option<Decimal>,
     /// New size (optional).
-    #[serde(rename = "s", skip_serializing_if = "Option::is_none")]
-    pub size: Option<DecimalStr>,
+    #[serde(
+        rename = "s",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub size: Option<Decimal>,
     /// New reduce-only flag (optional).
     #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
@@ -585,8 +532,12 @@ pub struct HyperliquidExecTwapRequest {
     #[serde(rename = "b")]
     pub is_buy: bool,
     /// Total size to execute.
-    #[serde(rename = "s")]
-    pub size: DecimalStr,
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub size: Decimal,
     /// Duration in milliseconds.
     #[serde(rename = "m")]
     pub duration_ms: u64,
@@ -672,8 +623,12 @@ pub enum HyperliquidExecAction {
         #[serde(rename = "a")]
         asset: AssetId,
         /// Margin delta as a string.
-        #[serde(rename = "delta")]
-        delta: DecimalStr,
+        #[serde(
+            rename = "delta",
+            serialize_with = "crate::common::parse::serialize_decimal_as_str",
+            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        )]
+        delta: Decimal,
     },
 
     /// Transfer USD between spot and perp accounts.
@@ -684,7 +639,11 @@ pub enum HyperliquidExecAction {
         /// Destination account type.
         to: String,
         /// Amount to transfer.
-        amount: DecimalStr,
+        #[serde(
+            serialize_with = "crate::common::parse::serialize_decimal_as_str",
+            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        )]
+        amount: Decimal,
     },
 
     /// Place a TWAP order.
@@ -830,11 +789,19 @@ pub struct HyperliquidExecRestingInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecFilledInfo {
     /// Total filled size.
-    #[serde(rename = "totalSz")]
-    pub total_sz: DecimalStr,
+    #[serde(
+        rename = "totalSz",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total_sz: Decimal,
     /// Average fill price.
-    #[serde(rename = "avgPx")]
-    pub avg_px: DecimalStr,
+    #[serde(
+        rename = "avgPx",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub avg_px: Decimal,
     /// Order ID.
     pub oid: OrderId,
 }
