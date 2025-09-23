@@ -21,7 +21,7 @@ crate-type = ["rlib", "staticlib"]
 default = []
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
-python = ["pyo3", "strum"]
+python = ["pyo3", "pyo3-stub-gen", "strum"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -35,7 +35,7 @@ chrono = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-stub-gen = { workspace = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 rand = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }

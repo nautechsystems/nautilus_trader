@@ -24,7 +24,7 @@ extension-module = [
   "pyo3/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
-python = ["nautilus-core/python", "pyo3"]
+python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
 stubs = ["rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
@@ -50,6 +50,7 @@ implied-vol = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

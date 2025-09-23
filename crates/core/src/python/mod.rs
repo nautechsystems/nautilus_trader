@@ -14,6 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Python bindings and interoperability built using [`PyO3`](https://pyo3.rs).
+
+#![allow(
+    deprecated,
+    reason = "pyo3-stub-gen currently relies on PyO3 initialization helpers marked as deprecated"
+)]
 //!
 //! This sub-module groups together the Rust code that is *only* required when compiling the
 //! `python` feature flag. It provides thin adapters so that NautilusTrader functionality can be
@@ -36,6 +41,7 @@ use pyo3::{
     types::PyString,
     wrap_pyfunction,
 };
+use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
 use crate::{
     UUID4,
@@ -123,10 +129,21 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
-#[pyfunction]
+/// Return a value indicating whether the `obj` is a `PyCapsule`.
+///
+/// Parameters
+/// ----------
+/// obj : Any
+///     The object to check.
+///
+/// Returns
+/// -------
+/// bool
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+#[pyfunction(name = "is_pycapsule")]
 #[allow(clippy::needless_pass_by_value)]
 #[allow(unsafe_code)]
-fn is_pycapsule(obj: Py<PyAny>) -> bool {
+fn py_is_pycapsule(obj: Py<PyAny>) -> bool {
     unsafe {
         // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
         pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0
@@ -148,7 +165,7 @@ pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MICROSECOND), NANOSECONDS_IN_MICROSECOND)?;
     m.add_class::<UUID4>()?;
-    m.add_function(wrap_pyfunction!(is_pycapsule, m)?)?;
+    m.add_function(wrap_pyfunction!(py_is_pycapsule, m)?)?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;

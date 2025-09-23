@@ -28,8 +28,8 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "numpy>=1.26.4",
     "pandas>=2.2.3,<3.0.0",
-    "pyarrow>=20.0.0",
-    "pytz>=2025.1.0",
+    "pyarrow>=21.0.0",
+    "pytz>=2025.2.0",
 ]
 
 [project.urls]
@@ -39,7 +39,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = [
-    "maturin>=1.9.3",
+    "maturin>=1.9.4",
     "patchelf",
 ]
 build-backend = "maturin"
@@ -50,6 +50,7 @@ pre-build = "python generate_stubs.py"
 [tool.maturin]
 manifest-path = "../crates/pyo3/Cargo.toml"
 module-name = "nautilus_trader._libnautilus"
+python-source = "."
 features = ["extension-module", "high-precision", "redis", "postgres", "defi", "hypersync"]
 strip = false
 
@@ -59,9 +60,9 @@ include = [
 
 [dependency-groups]
 dev = [
-    "maturin>=1.9.3",
-    "ruff>=0.12.10,<1.0.0",
-    "mypy>=1.17.1,<2.0.0",
+    "maturin>=1.9.4",
+    "ruff>=0.12.12,<1.0.0",  # Pinned to 0.12.12 for import sorting stability
+    "mypy>=1.18.2,<2.0.0",
     "pre-commit>=4.3.0,<5.0.0",
 ]
 test = [

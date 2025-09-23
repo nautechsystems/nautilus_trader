@@ -10,9 +10,9 @@ This script can be used as:
 """
 
 import argparse
-import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -33,56 +33,103 @@ def run_command(cmd, cwd=None, check=True):
     return result
 
 
+def load_pyproject():
+    """
+    Load the pyproject.toml located next to this script.
+    """
+    pyproject_path = Path(__file__).parent / "pyproject.toml"
+    with pyproject_path.open("rb") as fp:
+        return tomllib.load(fp)
+
+
+def resolve_python_stub_root(pyproject: dict) -> Path:
+    """
+    Return the directory where pyo3-stub-gen writes .pyi files.
+    """
+    python_source = pyproject.get("tool", {}).get("maturin", {}).get("python-source", ".")
+
+    dest_dir = (Path(__file__).parent / python_source).resolve()
+    python_dir = Path(__file__).parent.resolve()
+    try:
+        dest_dir.relative_to(python_dir)
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise RuntimeError(
+            "python-source must stay within the python/ package directory",
+        ) from exc
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    return dest_dir
+
+
 def generate_stubs():
     """
     Generate type stubs using pyo3-stub-gen.
     """
     print("Generating type stubs with pyo3-stub-gen...")
 
-    # Path to the crates/pyo3 directory
     crates_dir = Path(__file__).parent.parent / "crates" / "pyo3"
+    pyproject = load_pyproject()
+    dest_dir = resolve_python_stub_root(pyproject)
+    module_name = pyproject.get("tool", {}).get("maturin", {}).get("module-name") or pyproject.get(
+        "project",
+        {},
+    ).get("name", "nautilus_trader")
+    module_root = module_name.split(".")[0]
 
-    # Generate stubs using cargo
     result = run_command(["cargo", "run", "--bin", "python-stub-gen"], cwd=crates_dir)
 
     print("Stubs generated successfully")
     if result.stdout:
         print(f"Output: {result.stdout}")
 
-    # Find the generated stub directory
-    target_dir = crates_dir / "target" / "pyo3-stub-gen"
-    stub_dirs = list(target_dir.glob("_libnautilus*"))
+    stub_files = sorted(dest_dir.rglob("*.pyi"))
 
-    if not stub_dirs:
-        print("No stub directory found")
+    if not stub_files:
+        print("Stub generation completed but no .pyi files were produced")
         return False
 
-    stub_dir = stub_dirs[0]
-    print(f"Found stubs in: {stub_dir}")
+    relocate_package_stubs(dest_dir)
 
-    # Copy stubs to the Python package
-    dest_dir = Path(__file__).parent / "nautilus_trader"
+    relative_root = dest_dir.relative_to(Path(__file__).parent)
+    print(f"Type stubs written to {relative_root or Path('.')} ")
 
-    # Clean existing stubs first
-    for existing_stub in dest_dir.rglob("*.pyi"):
-        existing_stub.unlink()
-        print(f"Removed existing stub: {existing_stub.relative_to(dest_dir)}")
+    preview_limit = 20
+    filtered = [
+        stub_file
+        for stub_file in stub_files
+        if stub_file.relative_to(dest_dir).parts
+        and stub_file.relative_to(dest_dir).parts[0] == module_root
+    ]
 
-    # Copy new stubs
-    for stub_file in stub_dir.rglob("*.pyi"):
-        # Determine relative path from stub_dir
-        rel_path = stub_file.relative_to(stub_dir)
-        dest_file = dest_dir / rel_path
+    targets = filtered if filtered else stub_files
 
-        # Create destination directory if needed
-        dest_file.parent.mkdir(parents=True, exist_ok=True)
+    for stub_file in targets[:preview_limit]:
+        print(f"Generated: {stub_file.relative_to(dest_dir)}")
 
-        # Copy the stub file
-        shutil.copy2(stub_file, dest_file)
-        print(f"Copied: {rel_path}")
+    remaining = len(targets) - preview_limit
+    if remaining > 0:
+        print(f"...and {remaining} more stub files")
 
-    print("Type stubs copied to nautilus_trader/")
     return True
+
+
+def relocate_package_stubs(dest_dir: Path) -> None:
+    """
+    Move top-level module stubs into package __init__.pyi files when needed.
+    """
+    core_stub = dest_dir / "nautilus_trader" / "core.pyi"
+    if core_stub.exists():
+        package_init = dest_dir / "nautilus_trader" / "core" / "__init__.pyi"
+        package_init.parent.mkdir(parents=True, exist_ok=True)
+        package_init.write_text(core_stub.read_text())
+        core_stub.unlink()
+
+    model_stub = dest_dir / "nautilus_trader" / "model.pyi"
+    if model_stub.exists():
+        package_init = dest_dir / "nautilus_trader" / "model" / "__init__.pyi"
+        package_init.parent.mkdir(parents=True, exist_ok=True)
+        package_init.write_text(model_stub.read_text())
+        model_stub.unlink()
 
 
 def build_extension():

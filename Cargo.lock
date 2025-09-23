@@ -4917,6 +4917,7 @@ dependencies = [
  "nautilus-core",
  "proptest",
  "pyo3",
+ "pyo3-stub-gen",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
