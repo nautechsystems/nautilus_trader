@@ -87,7 +87,7 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_lookback_mins=60,
+        reconciliation_lookback_mins=2880,
         reconciliation_instrument_ids=reconciliation_instrument_ids,
         open_check_interval_secs=5.0,
         open_check_open_only=False,
@@ -97,13 +97,13 @@ config_node = TradingNodeConfig(
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        purge_closed_orders_interval_mins=1,  # Example of purging closed orders for HFT
-        purge_closed_orders_buffer_mins=0,  # Purged orders closed for at least an hour
-        purge_closed_positions_interval_mins=1,  # Example of purging closed positions for HFT
-        purge_closed_positions_buffer_mins=0,  # Purge positions closed for at least an hour
-        purge_account_events_interval_mins=1,  # Example of purging account events for HFT
-        purge_account_events_lookback_mins=0,  # Purge account events occurring more than an hour ago
-        purge_from_database=True,  # Set True with caution
+        # purge_closed_orders_interval_mins=1,  # Example of purging closed orders for HFT
+        # purge_closed_orders_buffer_mins=0,  # Purged orders closed for at least an hour
+        # purge_closed_positions_interval_mins=1,  # Example of purging closed positions for HFT
+        # purge_closed_positions_buffer_mins=0,  # Purge positions closed for at least an hour
+        # purge_account_events_interval_mins=1,  # Example of purging account events for HFT
+        # purge_account_events_lookback_mins=0,  # Purge account events occurring more than an hour ago
+        # purge_from_database=True,  # Set True with caution
         graceful_shutdown_on_exception=True,
     ),
     risk_engine=LiveRiskEngineConfig(bypass=True),
