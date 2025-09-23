@@ -1,9 +1,5 @@
 # OKX
 
-:::warning
-The OKX integration is still under active development.
-:::
-
 Founded in 2017, OKX is a leading cryptocurrency exchange offering spot, perpetual swap,
 futures, and options trading. This integration supports live market data ingest and order
 execution on OKX.

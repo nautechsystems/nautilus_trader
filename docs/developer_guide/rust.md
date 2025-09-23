@@ -270,7 +270,7 @@ pub use crate::identifiers::{
 
 ### Documentation standards
 
-#### Module-Level Documentation
+#### Module-Level documentation
 
 All modules must have module-level documentation starting with a brief description:
 
@@ -297,7 +297,7 @@ For modules with feature flags, document them clearly:
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 ```
 
-#### Field Documentation
+#### Field documentation
 
 All struct and enum fields must have documentation with terminating periods:
 
@@ -316,7 +316,7 @@ pub struct Currency {
 }
 ```
 
-#### Function Documentation
+#### Function documentation
 
 Document all public functions with:
 
@@ -336,7 +336,7 @@ pub fn base_balance(&self, currency: Option<Currency>) -> Option<&AccountBalance
 }
 ```
 
-#### Errors and Panics Documentation Format
+#### Errors and panics documentation format
 
 For single line errors and panics documentation, use sentence case with the following convention:
 
@@ -378,7 +378,7 @@ pub fn calculate_unrealized_pnl(&self, market_price: Price) -> anyhow::Result<Mo
 }
 ```
 
-#### Safety Documentation Format
+#### Safety documentation format
 
 For Safety documentation, use the `SAFETY:` prefix followed by a short description explaining why the unsafe operation is valid:
 
@@ -415,7 +415,7 @@ impl Send for MessageBus {
 - Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
 - Do *not* use Arrange, Act, Assert separator comments in Rust tests.
 
-#### Test Organization
+#### Test organization
 
 Use consistent test module structure with section separators:
 
@@ -438,7 +438,7 @@ mod tests {
 }
 ```
 
-#### Parameterized Testing
+#### Parameterized testing
 
 Use the `rstest` attribute consistently, and for parameterized tests:
 
@@ -453,7 +453,7 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 }
 ```
 
-#### Test Naming
+#### Test naming
 
 Use descriptive test names that explain the scenario:
 
@@ -463,12 +463,12 @@ fn test_sma_with_single_input()
 fn test_symbol_is_composite()
 ```
 
-## Rust-Python Memory Management
+## Rust-Python memory management
 
 When working with PyO3 bindings, it's critical to understand and avoid reference cycles between Rust's `Arc` reference counting and Python's garbage collector.
 This section documents best practices for handling Python objects in Rust callback-holding structures.
 
-### The Reference Cycle Problem
+### The reference cycle problem
 
 **Problem**: Using `Arc<PyObject>` in callback-holding structs creates circular references:
 
@@ -485,7 +485,7 @@ struct CallbackHolder {
 }
 ```
 
-### The Solution: GIL-Based Cloning
+### The solution: GIL-based cloning
 
 **Solution**: Use plain `PyObject` with proper GIL-based cloning via `clone_py_object()`:
 
@@ -507,7 +507,7 @@ impl Clone for CallbackHolder {
 }
 ```
 
-### Best Practices
+### Best practices
 
 #### 1. Use `clone_py_object()` for Python object cloning
 

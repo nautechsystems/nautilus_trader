@@ -1,27 +1,9 @@
 # Bybit
 
-:::info
-We are currently working on this integration guide.
-:::
-
 Founded in 2018, Bybit is one of the largest cryptocurrency exchanges in terms
 of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Bybit.
-
-## Installation
-
-To install NautilusTrader with Bybit support:
-
-```bash
-pip install --upgrade "nautilus_trader[bybit]"
-```
-
-To build from source with all extras (including Bybit):
-
-```bash
-uv sync --all-extras
-```
 
 ## Examples
 
@@ -61,12 +43,14 @@ Product is also referred to as `category` in the Bybit v5 API.
 
 The following product types are supported on Bybit:
 
-- Spot cryptocurrencies
-- Perpetual contracts
-- Perpetual inverse contracts
-- Futures contracts
-- Futures inverse contracts
-- Option contracts
+| Product Type                | Supported | Notes                                    |
+|-----------------------------|-----------|------------------------------------------|
+| Spot cryptocurrencies       | ✓         | Native spot markets with margin support. |
+| Linear perpetual contracts  | ✓         | USDT/USDC margined perpetual swaps.      |
+| Linear futures contracts    | ✓         | Delivery-settled linear futures.         |
+| Inverse perpetual contracts | ✓         | Coin-margined perpetual swaps.           |
+| Inverse futures contracts   | ✓         | Coin-margined delivery futures.          |
+| Option contracts            | ✓         | USDC-settled options.                    |
 
 ## Symbology
 
@@ -92,22 +76,22 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Order types
 
-| Order Type             | Spot | Linear | Inverse | Notes                    |
-|------------------------|------|--------|---------|--------------------------|
-| `MARKET`               | ✓    | ✓      | ✓       |                          |
-| `LIMIT`                | ✓    | ✓      | ✓       |                          |
-| `STOP_MARKET`          | ✓    | ✓      | ✓       |                          |
-| `STOP_LIMIT`           | ✓    | ✓      | ✓       |                          |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓      | ✓       |                          |
-| `LIMIT_IF_TOUCHED`     | ✓    | ✓      | ✓       |                          |
-| `TRAILING_STOP_MARKET` | -    | ✓      | ✓       | Not supported for Spot.  |
+| Order Type             | Spot | Linear | Inverse | Notes                     |
+|------------------------|------|--------|---------|---------------------------|
+| `MARKET`               | ✓    | ✓      | ✓       |                           |
+| `LIMIT`                | ✓    | ✓      | ✓       |                           |
+| `STOP_MARKET`          | ✓    | ✓      | ✓       |                           |
+| `STOP_LIMIT`           | ✓    | ✓      | ✓       |                           |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓      | ✓       |                           |
+| `LIMIT_IF_TOUCHED`     | ✓    | ✓      | ✓       |                           |
+| `TRAILING_STOP_MARKET` | -    | ✓      | ✓       | *Not supported for Spot*. |
 
 ### Execution instructions
 
-| Instruction   | Spot | Linear | Inverse | Notes                             |
-|---------------|------|--------|---------|-----------------------------------|
-| `post_only`   | ✓    | ✓      | ✓       | Only supported on `LIMIT` orders. |
-| `reduce_only` | -    | ✓      | ✓       | Not supported for Spot products.  |
+| Instruction   | Spot | Linear | Inverse | Notes                              |
+|---------------|------|--------|---------|------------------------------------|
+| `post_only`   | ✓    | ✓      | ✓       | Only supported on `LIMIT` orders.  |
+| `reduce_only` | -    | ✓      | ✓       | *Not supported for Spot*.          |
 
 ### Time in force
 
@@ -136,7 +120,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Position management
 
-| Feature              | Spot | Linear | Inverse | Notes                                    |
+| Feature             | Spot | Linear | Inverse | Notes                                    |
 |---------------------|------|--------|---------|------------------------------------------|
 | Query positions     | -    | ✓      | ✓       | Real-time position updates.              |
 | Position mode       | -    | ✓      | ✓       | One-Way vs Hedge mode.                   |
@@ -145,18 +129,18 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Order querying
 
-| Feature              | Spot | Linear | Inverse | Notes                                    |
-|---------------------|------|--------|---------|------------------------------------------|
-| Query open orders   | ✓    | ✓      | ✓       | List all active orders.                  |
-| Query order history | ✓    | ✓      | ✓       | Historical order data.                   |
+| Feature             | Spot | Linear | Inverse | Notes                                   |
+|---------------------|------|--------|---------|-----------------------------------------|
+| Query open orders   | ✓    | ✓      | ✓       | List all active orders.                 |
+| Query order history | ✓    | ✓      | ✓       | Historical order data.                  |
 | Order status updates| ✓    | ✓      | ✓       | Real-time order state changes.          |
 | Trade history       | ✓    | ✓      | ✓       | Execution and fill reports.             |
 
 ### Contingent orders
 
-| Feature              | Spot | Linear | Inverse | Notes                                    |
-|---------------------|------|--------|---------|------------------------------------------|
-| Order lists         | -    | -      | -       | *Not supported*.                         |
+| Feature             | Spot | Linear | Inverse | Notes                                   |
+|---------------------|------|--------|---------|-----------------------------------------|
+| Order lists         | -    | -      | -       | *Not supported*.                        |
 | OCO orders          | ✓    | ✓      | ✓       | UI only; API users implement manually.  |
 | Bracket orders      | ✓    | ✓      | ✓       | UI only; API users implement manually.  |
 | Conditional orders  | ✓    | ✓      | ✓       | Stop and limit-if-touched orders.       |
@@ -203,7 +187,7 @@ and won't borrow funds, even if you have auto-borrow enabled on your Bybit accou
 For a complete example of using order parameters including `is_leverage`, see the
 [bybit_exec_tester.py](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/bybit_exec_tester.py) example.
 
-### Product-specific limitations
+### SPOT trading limitations
 
 The following limitations apply to SPOT products, as positions are not tracked on the venue side:
 

@@ -36,12 +36,12 @@ The primary goal of NautilusTrader is to provide a unified trading system for
 use with a variety of integrations. To support the widest range of trading
 strategies, priority will be given to *standard* functionality:
 
-- Requesting historical market data
-- Streaming live market data
-- Reconciling execution state
-- Submitting standard order types with standard execution instructions
-- Modifying existing orders (if possible on an exchange)
-- Canceling orders
+- Requesting historical market data.
+- Streaming live market data.
+- Reconciling execution state.
+- Submitting standard order types with standard execution instructions.
+- Modifying existing orders (if possible on an exchange).
+- Canceling orders.
 
 The implementation of each integration aims to meet the following criteria:
 
