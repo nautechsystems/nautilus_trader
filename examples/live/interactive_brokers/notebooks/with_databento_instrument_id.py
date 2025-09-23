@@ -13,8 +13,9 @@
 #     name: python3
 # ---
 
-# %%
-# Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
+# %% [markdown]
+# Note: Use the jupytext python package to be able to open this python file in jupyter as a notebook.
+# Also run `jupytext-config set-default-viewer` to open jupytext python files as notebooks by default.
 
 # %%
 # fmt: off

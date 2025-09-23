@@ -14,10 +14,11 @@
 # ---
 
 # %% [markdown]
-# ## imports
+# Note: Use the jupytext python package to be able to open this python file in jupyter as a notebook.
+# Also run `jupytext-config set-default-viewer` to open jupytext python files as notebooks by default.
 
-# %%
-# Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
+# %% [markdown]
+# ## imports
 
 # %%
 import numpy as np
