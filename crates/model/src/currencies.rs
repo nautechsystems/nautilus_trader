@@ -14,6 +14,21 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Common `Currency` constants.
+//!
+//! Precision and metadata references:
+//! - ISO 4217 Maintenance Agency dataset (<https://github.com/datasets/currency-codes>):
+//!   authoritative alphabetic codes, numeric codes, and minor units for fiat and commodity-backed entries.
+//! - Cardano ledger documentation (<https://docs.cardano.org/native-tokens/understanding-assets>):
+//!   1 ADA = 1,000,000 lovelace, underpinning the six-decimal crypto precision we retain.
+//! - XRPL documentation on drops (<https://xrpl.org/xrp-ledger-tokens.html#drops-and-xrp>):
+//!   1 XRP = 1,000,000 drops, confirming the six-decimal allowance for XRP.
+//! - Tezos protocol reference (<https://tezos.gitlab.io/active/numismatics.html>):
+//!   1 tez = 1,000,000 mutez, informing the six-decimal precision for XTZ.
+//! - Stablecoin contract metadata on Etherscan for USDC, USDP, and BRZ
+//!   (e.g. <https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#readContract>,
+//!   <https://etherscan.io/token/0x8e870d67f660d95d5be530380d0ec0bd388289e1#readContract>,
+//!   <https://etherscan.io/token/0x01d33fd36ec67c6ada32cf36b31e88ee190b1839#readContract>):
+//!   each exposes 6–18 on-chain decimals; we clamp to an 8-decimal internal default.
 
 use std::{
     collections::HashMap,
@@ -644,7 +659,7 @@ impl Currency {
     pub fn BRZ() -> Self {
         *BRZ_LOCK.get_or_init(|| Self {
             code: Ustr::from("BRZ"),
-            precision: 6,
+            precision: 8,
             iso4217: 0,
             name: Ustr::from("Brazilian Digital Token"),
             currency_type: CurrencyType::Crypto,
@@ -934,7 +949,7 @@ impl Currency {
             code: Ustr::from("TRYB"),
             precision: 8,
             iso4217: 0,
-            name: Ustr::from("BiLibra"),
+            name: Ustr::from("BiLira"),
             currency_type: CurrencyType::Crypto,
         })
     }
@@ -1100,7 +1115,7 @@ impl Currency {
     pub fn USDP() -> Self {
         *USDP_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDP"),
-            precision: 4,
+            precision: 8,
             iso4217: 0,
             name: Ustr::from("Pax Dollar"),
             currency_type: CurrencyType::Crypto,
