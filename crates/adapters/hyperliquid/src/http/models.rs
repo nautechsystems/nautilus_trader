@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -240,4 +241,593 @@ mod tests {
             _ => panic!("Expected status response"),
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Exchange execution endpoint models
+////////////////////////////////////////////////////////////////////////////////
+
+/// Custom serde module for handling 128-bit hex client order IDs.
+pub mod execution_cloid {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    use std::fmt;
+
+    /// A 128-bit client order ID represented as a hex string with `0x` prefix.
+    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+    pub struct Cloid(pub [u8; 16]);
+
+    impl Cloid {
+        /// Creates a new `Cloid` from a hex string.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the string is not a valid 128-bit hex with `0x` prefix.
+        pub fn from_hex<S: AsRef<str>>(s: S) -> Result<Self, String> {
+            let hex_str = s.as_ref();
+            let without_prefix = hex_str
+                .strip_prefix("0x")
+                .ok_or("CLOID must start with '0x'")?;
+
+            if without_prefix.len() != 32 {
+                return Err("CLOID must be exactly 32 hex characters (128 bits)".to_string());
+            }
+
+            let mut bytes = [0u8; 16];
+            for i in 0..16 {
+                let byte_str = &without_prefix[i * 2..i * 2 + 2];
+                bytes[i] = u8::from_str_radix(byte_str, 16)
+                    .map_err(|_| "Invalid hex character in CLOID".to_string())?;
+            }
+
+            Ok(Cloid(bytes))
+        }
+
+        /// Converts the CLOID to a hex string with `0x` prefix.
+        pub fn to_hex(&self) -> String {
+            let mut result = String::with_capacity(34);
+            result.push_str("0x");
+            for byte in &self.0 {
+                result.push_str(&format!("{:02x}", byte));
+            }
+            result
+        }
+    }
+
+    impl fmt::Display for Cloid {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.to_hex())
+        }
+    }
+
+    impl Serialize for Cloid {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(&self.to_hex())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Cloid {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            Cloid::from_hex(&s).map_err(D::Error::custom)
+        }
+    }
+}
+
+pub use execution_cloid::Cloid;
+
+/// Asset ID type for Hyperliquid.
+///
+/// For perpetuals, this is the index in `meta.universe`.
+/// For spot trading, this is `10000 + index` from `spotMeta.universe`.
+pub type AssetId = u32;
+
+/// Order ID assigned by Hyperliquid.
+pub type OrderId = u64;
+
+/// Time-in-force for limit orders in exchange endpoint.
+///
+/// These values must match exactly what Hyperliquid expects for proper serialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HyperliquidExecTif {
+    /// Add Liquidity Only (post-only order).
+    #[serde(rename = "Alo")]
+    Alo,
+    /// Immediate or Cancel.
+    #[serde(rename = "Ioc")]
+    Ioc,
+    /// Good Till Canceled.
+    #[serde(rename = "Gtc")]
+    Gtc,
+}
+
+/// Take profit or stop loss side for trigger orders in exchange endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HyperliquidExecTpSl {
+    /// Take profit.
+    #[serde(rename = "tp")]
+    Tp,
+    /// Stop loss.
+    #[serde(rename = "sl")]
+    Sl,
+}
+
+/// Order grouping strategy for linked TP/SL orders in exchange endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HyperliquidExecGrouping {
+    /// No grouping semantics.
+    #[serde(rename = "na")]
+    Na,
+    /// Normal TP/SL grouping (linked orders).
+    #[serde(rename = "normalTpsl")]
+    NormalTpsl,
+    /// Position-level TP/SL grouping.
+    #[serde(rename = "positionTpsl")]
+    PositionTpsl,
+}
+
+impl Default for HyperliquidExecGrouping {
+    fn default() -> Self {
+        Self::Na
+    }
+}
+
+/// Order kind specification for the `t` field in exchange endpoint order requests.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecOrderKind {
+    /// Limit order with time-in-force.
+    Limit {
+        /// Limit order parameters.
+        limit: HyperliquidExecLimitParams,
+    },
+    /// Trigger order (stop/take profit).
+    Trigger {
+        /// Trigger order parameters.
+        trigger: HyperliquidExecTriggerParams,
+    },
+}
+
+/// Parameters for limit orders in exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecLimitParams {
+    /// Time-in-force for the limit order.
+    pub tif: HyperliquidExecTif,
+}
+
+/// Parameters for trigger orders (stop/take profit) in exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidExecTriggerParams {
+    /// Whether to use market price when triggered.
+    pub is_market: bool,
+    /// Trigger price as a string.
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub trigger_px: Decimal,
+    /// Whether this is a take profit or stop loss.
+    pub tpsl: HyperliquidExecTpSl,
+}
+
+/// Optional builder fee for orders in exchange endpoint.
+///
+/// The builder fee is specified in tenths of a basis point.
+/// For example, `f: 10` represents 1 basis point (0.01%).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HyperliquidExecBuilderFee {
+    /// Builder address to receive the fee.
+    #[serde(rename = "b")]
+    pub address: String,
+    /// Fee in tenths of a basis point.
+    #[serde(rename = "f")]
+    pub fee_tenths_bp: u32,
+}
+
+/// Order specification for placing orders via exchange endpoint.
+///
+/// This struct represents a single order in the exact format expected
+/// by the Hyperliquid exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecPlaceOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Is buy order (true for buy, false for sell).
+    #[serde(rename = "b")]
+    pub is_buy: bool,
+    /// Price as a string with no trailing zeros.
+    #[serde(
+        rename = "p",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub price: Decimal,
+    /// Size as a string with no trailing zeros.
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub size: Decimal,
+    /// Reduce-only flag.
+    #[serde(rename = "r")]
+    pub reduce_only: bool,
+    /// Order type (limit or trigger).
+    #[serde(rename = "t")]
+    pub kind: HyperliquidExecOrderKind,
+    /// Optional client order ID (128-bit hex).
+    #[serde(rename = "c", skip_serializing_if = "Option::is_none")]
+    pub cloid: Option<Cloid>,
+}
+
+/// Cancel specification for canceling orders by order ID via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HyperliquidExecCancelOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Order ID to cancel.
+    #[serde(rename = "o")]
+    pub oid: OrderId,
+}
+
+/// Cancel specification for canceling orders by client order ID via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecCancelByCloidRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Client order ID to cancel.
+    #[serde(rename = "c")]
+    pub cloid: Cloid,
+}
+
+/// Modify specification for modifying existing orders via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecModifyOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Order ID to modify.
+    #[serde(rename = "o")]
+    pub oid: OrderId,
+    /// New price (optional).
+    #[serde(
+        rename = "p",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub price: Option<Decimal>,
+    /// New size (optional).
+    #[serde(
+        rename = "s",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub size: Option<Decimal>,
+    /// New reduce-only flag (optional).
+    #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// New order type (optional).
+    #[serde(rename = "t", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<HyperliquidExecOrderKind>,
+}
+
+/// TWAP (Time-Weighted Average Price) order specification for exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecTwapRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Is buy order.
+    #[serde(rename = "b")]
+    pub is_buy: bool,
+    /// Total size to execute.
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub size: Decimal,
+    /// Duration in milliseconds.
+    #[serde(rename = "m")]
+    pub duration_ms: u64,
+}
+
+/// All possible exchange actions for the Hyperliquid `/exchange` endpoint.
+///
+/// Each variant corresponds to a specific action type that can be performed
+/// through the exchange API. The serialization uses the exact action type
+/// names expected by Hyperliquid.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum HyperliquidExecAction {
+    /// Place one or more orders.
+    #[serde(rename = "order")]
+    Order {
+        /// List of orders to place.
+        orders: Vec<HyperliquidExecPlaceOrderRequest>,
+        /// Grouping strategy for TP/SL orders.
+        #[serde(default, skip_serializing_if = "is_default_exec_grouping")]
+        grouping: HyperliquidExecGrouping,
+        /// Optional builder fee.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        builder: Option<HyperliquidExecBuilderFee>,
+    },
+
+    /// Cancel orders by order ID.
+    #[serde(rename = "cancel")]
+    Cancel {
+        /// Orders to cancel.
+        cancels: Vec<HyperliquidExecCancelOrderRequest>,
+    },
+
+    /// Cancel orders by client order ID.
+    #[serde(rename = "cancelByCloid")]
+    CancelByCloid {
+        /// Orders to cancel by CLOID.
+        cancels: Vec<HyperliquidExecCancelByCloidRequest>,
+    },
+
+    /// Modify a single order.
+    #[serde(rename = "modify")]
+    Modify {
+        /// Order modification specification.
+        #[serde(flatten)]
+        modify: HyperliquidExecModifyOrderRequest,
+    },
+
+    /// Modify multiple orders atomically.
+    #[serde(rename = "batchModify")]
+    BatchModify {
+        /// Multiple order modifications.
+        modifies: Vec<HyperliquidExecModifyOrderRequest>,
+    },
+
+    /// Schedule automatic order cancellation (dead man's switch).
+    #[serde(rename = "scheduleCancel")]
+    ScheduleCancel {
+        /// Time in milliseconds when orders should be cancelled.
+        /// If None, clears the existing schedule.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time: Option<u64>,
+    },
+
+    /// Update leverage for a position.
+    #[serde(rename = "updateLeverage")]
+    UpdateLeverage {
+        /// Asset ID.
+        #[serde(rename = "a")]
+        asset: AssetId,
+        /// Whether to use cross margin.
+        #[serde(rename = "isCross")]
+        is_cross: bool,
+        /// Leverage value.
+        #[serde(rename = "leverage")]
+        leverage: u32,
+    },
+
+    /// Update isolated margin for a position.
+    #[serde(rename = "updateIsolatedMargin")]
+    UpdateIsolatedMargin {
+        /// Asset ID.
+        #[serde(rename = "a")]
+        asset: AssetId,
+        /// Margin delta as a string.
+        #[serde(
+            rename = "delta",
+            serialize_with = "crate::common::parse::serialize_decimal_as_str",
+            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        )]
+        delta: Decimal,
+    },
+
+    /// Transfer USD between spot and perp accounts.
+    #[serde(rename = "usdClassTransfer")]
+    UsdClassTransfer {
+        /// Source account type.
+        from: String,
+        /// Destination account type.
+        to: String,
+        /// Amount to transfer.
+        #[serde(
+            serialize_with = "crate::common::parse::serialize_decimal_as_str",
+            deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        )]
+        amount: Decimal,
+    },
+
+    /// Place a TWAP order.
+    #[serde(rename = "twapPlace")]
+    TwapPlace {
+        /// TWAP order specification.
+        #[serde(flatten)]
+        twap: HyperliquidExecTwapRequest,
+    },
+
+    /// Cancel a TWAP order.
+    #[serde(rename = "twapCancel")]
+    TwapCancel {
+        /// Asset ID.
+        #[serde(rename = "a")]
+        asset: AssetId,
+        /// TWAP ID.
+        #[serde(rename = "t")]
+        twap_id: u64,
+    },
+
+    /// No-operation to invalidate pending nonces.
+    #[serde(rename = "noop")]
+    Noop,
+}
+
+/// Helper function to check if grouping is the default value for exchange endpoint.
+fn is_default_exec_grouping(grouping: &HyperliquidExecGrouping) -> bool {
+    matches!(grouping, HyperliquidExecGrouping::Na)
+}
+
+/// Exchange request envelope for the `/exchange` endpoint.
+///
+/// This is the top-level structure sent to Hyperliquid's exchange endpoint.
+/// It includes the action to perform along with authentication and metadata.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidExecRequest {
+    /// The exchange action to perform.
+    pub action: HyperliquidExecAction,
+    /// Request nonce for replay protection (milliseconds timestamp recommended).
+    pub nonce: u64,
+    /// ECC signature over the action and nonce.
+    pub signature: String,
+    /// Optional vault address for sub-account trading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vault_address: Option<String>,
+    /// Optional expiration time in milliseconds.
+    /// Note: Using this field increases rate limit weight by 5x if the request expires.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_after: Option<u64>,
+}
+
+/// Exchange response envelope from the `/exchange` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidExecResponse {
+    /// Response status ("ok" for success).
+    pub status: String,
+    /// Response payload.
+    pub response: HyperliquidExecResponseData,
+}
+
+/// Response data containing the actual response payload from exchange endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum HyperliquidExecResponseData {
+    /// Response for order actions.
+    #[serde(rename = "order")]
+    Order {
+        /// Order response data.
+        data: HyperliquidExecOrderResponseData,
+    },
+    /// Response for cancel actions.
+    #[serde(rename = "cancel")]
+    Cancel {
+        /// Cancel response data.
+        data: HyperliquidExecCancelResponseData,
+    },
+    /// Response for modify actions.
+    #[serde(rename = "modify")]
+    Modify {
+        /// Modify response data.
+        data: HyperliquidExecModifyResponseData,
+    },
+    /// Generic response for other actions.
+    #[serde(rename = "default")]
+    Default,
+    /// Catch-all for unknown response types.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Order response data containing status for each order from exchange endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidExecOrderResponseData {
+    /// Status for each order in the request.
+    pub statuses: Vec<HyperliquidExecOrderStatus>,
+}
+
+/// Cancel response data containing status for each cancellation from exchange endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidExecCancelResponseData {
+    /// Status for each cancellation in the request.
+    pub statuses: Vec<HyperliquidExecCancelStatus>,
+}
+
+/// Modify response data containing status for each modification from exchange endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidExecModifyResponseData {
+    /// Status for each modification in the request.
+    pub statuses: Vec<HyperliquidExecModifyStatus>,
+}
+
+/// Status of an individual order submission via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecOrderStatus {
+    /// Order is resting on the order book.
+    Resting {
+        /// Resting order information.
+        resting: HyperliquidExecRestingInfo,
+    },
+    /// Order was filled immediately.
+    Filled {
+        /// Fill information.
+        filled: HyperliquidExecFilledInfo,
+    },
+    /// Order submission failed.
+    Error {
+        /// Error message.
+        error: String,
+    },
+}
+
+/// Information about a resting order via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HyperliquidExecRestingInfo {
+    /// Order ID assigned by Hyperliquid.
+    pub oid: OrderId,
+}
+
+/// Information about a filled order via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecFilledInfo {
+    /// Total filled size.
+    #[serde(
+        rename = "totalSz",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total_sz: Decimal,
+    /// Average fill price.
+    #[serde(
+        rename = "avgPx",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub avg_px: Decimal,
+    /// Order ID.
+    pub oid: OrderId,
+}
+
+/// Status of an individual order cancellation via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecCancelStatus {
+    /// Cancellation succeeded.
+    Success(String), // Usually "success"
+    /// Cancellation failed.
+    Error {
+        /// Error message.
+        error: String,
+    },
+}
+
+/// Status of an individual order modification via exchange endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecModifyStatus {
+    /// Modification succeeded.
+    Success(String), // Usually "success"
+    /// Modification failed.
+    Error {
+        /// Error message.
+        error: String,
+    },
 }
