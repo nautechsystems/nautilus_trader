@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
+- Added support for quotes from book depths (#2977), thanks @faysou
 - Added Renko bar aggregator (#2941), thanks @faysou
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
@@ -27,6 +28,7 @@ None
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
 - Implemented Hyperliquid L2 order book with tick-based pricing (#2967), thanks @nicolad
 - Implemented Hyperliquid data client and fix dependencies (#2975), thanks @nicolad
+- Implemented Hyperliquid REST API models for execution (#2983), thanks @nicolad
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou

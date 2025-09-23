@@ -84,7 +84,7 @@ alloy-primitives = { version = "1.3.1", features = ["serde"] }
 anyhow = "1.0.100"
 arraydeque = "0.5.1"
 # Keep arrow major version in line with datafusion
-arrow = { version = "56.1.0", default-features = false, features = ["csv", "json", "ipc"] }
+arrow = { version = "56.2.0", default-features = false, features = ["csv", "json", "ipc"] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 aws-lc-rs = { version = "1.14.0", default-features = false, features = ["non-fips"] }
@@ -97,7 +97,7 @@ clap = { version = "4.5.48", features = ["derive", "env"] }
 compare = "0.1.0"
 csv = "1.3.1"
 dashmap = "6.1.0"
-databento = { version = "0.33.1", default-features = false, features = ["historical", "live"] }
+databento = { version = "0.34.0", default-features = false, features = ["historical", "live"] }
 datafusion = { version = "50.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
@@ -131,7 +131,7 @@ log = { version = "0.4.28", features = [
 ] }
 memchr = "2.7.4"
 nonzero_ext = "0.3.0"
-object_store = { version = "0.12.3", default-features = false, features = [
+object_store = { version = "0.12.4", default-features = false, features = [
   "fs",
   "aws",
   "azure",
@@ -139,7 +139,7 @@ object_store = { version = "0.12.3", default-features = false, features = [
   "http",
 ] }
 # Keep parquet major version in line with datafusion
-parquet = { version = "56.1.0", default-features = false, features = ["arrow", "async"] }
+parquet = { version = "56.2.0", default-features = false, features = ["arrow", "async"] }
 pem = "3.0.5"
 pyo3 = { version = "0.26.0", default-features = false, features = [
   "chrono",
@@ -248,7 +248,7 @@ iai = "0.1.1"
 pretty_assertions = "1.4.1"
 proptest = "1.8.0"
 rstest = "0.26.1"
-tempfile = "3.22.0"
+tempfile = "3.23.0"
 tracing-test = "0.2.5"
 turmoil = "0.6.6"
 
