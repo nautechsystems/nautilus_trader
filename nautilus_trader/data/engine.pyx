@@ -35,7 +35,6 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
@@ -106,7 +105,6 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
-from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport FundingRateUpdate
@@ -209,7 +207,7 @@ cdef class DataEngine(Component):
         self._time_bars_build_delay = config.time_bars_build_delay
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
-        self._emit_quotes_from_book_depth = config.emit_quotes_from_book_depth
+        self._emit_quotes_from_book_depths = config.emit_quotes_from_book_depths
 
         if config.external_clients:
             self._external_clients = set(config.external_clients)
@@ -1799,49 +1797,12 @@ cdef class DataEngine(Component):
             msg=depth,
         )
 
-        if self._emit_quotes_from_book_depth:
-            # Create QuoteTick from top of book if both bid and ask are available
-            self._create_quote_tick_from_depth(depth)
+        cdef QuoteTick quote_tick
 
-    cpdef void _create_quote_tick_from_depth(self, OrderBookDepth10 depth):
-        """
-        Create a QuoteTick from the top of book bid and ask in OrderBookDepth10.
-
-        Parameters
-        ----------
-        depth : OrderBookDepth10
-            The order book depth data containing bid and ask levels.
-        """
-        cdef list bids = depth.bids
-        cdef list asks = depth.asks
-
-        # Check if we have valid top of book data
-        if not bids or not asks:
-            return
-
-        cdef BookOrder top_bid = bids[0]
-        cdef BookOrder top_ask = asks[0]
-
-        # Check if the top levels are not NULL orders (empty levels)
-        if (top_bid.side == OrderSide.NO_ORDER_SIDE or
-            top_ask.side == OrderSide.NO_ORDER_SIDE or
-            top_bid.size.as_double() == 0.0 or
-            top_ask.size.as_double() == 0.0):
-            return
-
-        # Create QuoteTick from top of book
-        cdef QuoteTick quote_tick = QuoteTick(
-            instrument_id=depth.instrument_id,
-            bid_price=top_bid.price,
-            ask_price=top_ask.price,
-            bid_size=top_bid.size,
-            ask_size=top_ask.size,
-            ts_event=depth.ts_event,
-            ts_init=depth.ts_init,
-        )
-
-        # Handle the quote tick through the normal processing pipeline
-        self._handle_quote_tick(quote_tick)
+        if self._emit_quotes_from_book_depths:
+            quote_tick = depth.to_quote_tick()
+            if quote_tick is not None:
+                self._handle_quote_tick(quote_tick)
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)

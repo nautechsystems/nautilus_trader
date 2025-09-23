@@ -35,6 +35,7 @@ None
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4
+- Upgraded `databento` crate to v0.34.0
 - Upgraded `datafusion` crate to v0.50.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 

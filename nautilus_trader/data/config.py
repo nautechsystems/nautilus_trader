@@ -46,7 +46,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
-    emit_quotes_from_book_depth: bool, default False
+    emit_quotes_from_book_depths : bool, default False
         If order book depths should be emitted as quotes.
     external_clients : list[ClientId], optional
         Client IDs representing external data streams.
@@ -65,6 +65,6 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_build_delay: int = 0
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
-    emit_quotes_from_book_depth: bool = False
+    emit_quotes_from_book_depths: bool = False
     external_clients: list[ClientId] | None = None
     debug: bool = False

@@ -135,6 +135,7 @@ class TestDataEngine:
 
         config = DataEngineConfig(
             validate_data_sequence=True,
+            emit_quotes_from_book_depths=True,
             debug=True,
         )
         self.data_engine = DataEngine(
@@ -4388,7 +4389,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 1
@@ -4428,7 +4429,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 0
@@ -4459,7 +4460,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 0
@@ -4490,7 +4491,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 0
@@ -4524,7 +4525,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 0
@@ -4560,8 +4561,8 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(eth_depth)
-        self.data_engine._create_quote_tick_from_depth(btc_depth)
+        self.data_engine.process(eth_depth)
+        self.data_engine.process(btc_depth)
 
         # Assert
         assert len(eth_quote_handler) == 1
@@ -4609,7 +4610,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine._create_quote_tick_from_depth(depth)
+        self.data_engine.process(depth)
 
         # Assert
         assert len(quote_handler) == 1
@@ -4648,7 +4649,7 @@ class TestDataEngineQuoteFromDepth:
         config = DataEngineConfig(
             validate_data_sequence=True,
             debug=True,
-            emit_quotes_from_book_depth=True,
+            emit_quotes_from_book_depths=True,
         )
         self.data_engine = DataEngine(
             msgbus=self.msgbus,

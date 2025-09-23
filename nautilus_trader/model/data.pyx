@@ -3526,6 +3526,45 @@ cdef class OrderBookDepth10(Data):
 
         return asks
 
+    cpdef QuoteTick to_quote_tick(self):
+        """
+        Return a `QuoteTick` created from the top of book levels.
+
+        Returns ``None`` when the top-of-book bid or ask is missing or invalid
+        (NULL order or zero size).
+
+        Returns
+        -------
+        QuoteTick or ``None``
+
+        """
+        cdef list[BookOrder] bids = self.bids
+        cdef list[BookOrder] asks = self.asks
+
+        if not bids or not asks:
+            return None
+
+        cdef BookOrder top_bid = bids[0]
+        cdef BookOrder top_ask = asks[0]
+
+        if (
+            top_bid.side == OrderSide.NO_ORDER_SIDE or
+            top_ask.side == OrderSide.NO_ORDER_SIDE or
+            top_bid._mem.size.raw == 0 or
+            top_ask._mem.size.raw == 0
+        ):
+            return None
+
+        return QuoteTick(
+            instrument_id=self.instrument_id,
+            bid_price=top_bid.price,
+            ask_price=top_ask.price,
+            bid_size=top_bid.size,
+            ask_size=top_ask.size,
+            ts_event=self.ts_event,
+            ts_init=self.ts_init,
+        )
+
     @property
     def bid_counts(self) -> list[uint32_t]:
         """
