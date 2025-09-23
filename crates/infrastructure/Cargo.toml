@@ -23,6 +23,7 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -54,8 +55,6 @@ chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 log = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true }
@@ -63,11 +62,14 @@ rust_decimal = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

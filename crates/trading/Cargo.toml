@@ -25,6 +25,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -53,9 +54,10 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

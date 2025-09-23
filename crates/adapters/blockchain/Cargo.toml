@@ -26,6 +26,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 hypersync = [
@@ -62,10 +63,7 @@ dotenvy = { workspace = true }
 enum_dispatch = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
-hypersync-client = { workspace = true, optional = true }
-hypersync-schema = { workspace = true, optional = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -76,6 +74,10 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
+
+hypersync-client = { workspace = true, optional = true }
+hypersync-schema = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

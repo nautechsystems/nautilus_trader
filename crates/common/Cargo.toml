@@ -23,6 +23,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-indicators/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = [
@@ -52,7 +53,6 @@ nautilus-indicators = { workspace = true, optional = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 ahash = { workspace = true }
-alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -62,11 +62,8 @@ derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true }
 regex = { workspace = true }
-rstest = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -76,6 +73,11 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

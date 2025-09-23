@@ -23,6 +23,7 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = [
@@ -49,14 +50,14 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+criterion = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
+rstest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
-criterion = { workspace = true }
-rstest = { workspace = true }
+pyo3 = { workspace = true, optional = true }

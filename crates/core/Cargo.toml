@@ -19,7 +19,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
-extension-module = ["pyo3/extension-module"]
+extension-module = ["python", "pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3", "pyo3-stub-gen", "strum"]
 
@@ -34,16 +34,17 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-stub-gen = { workspace = true, optional = true }
 rand = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-strum = { workspace = true, optional = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+strum = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

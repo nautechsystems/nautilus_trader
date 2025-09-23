@@ -19,7 +19,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = ["pyo3/extension-module"]
+extension-module = ["python", "pyo3/extension-module"]
 python = ["pyo3"]
 
 [package.metadata.docs.rs]
@@ -41,8 +41,9 @@ anyhow = { workspace = true }
 futures = { workspace = true }
 hostname = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

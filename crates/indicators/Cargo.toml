@@ -22,6 +22,7 @@ default = []
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -40,8 +41,9 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
 arraydeque = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

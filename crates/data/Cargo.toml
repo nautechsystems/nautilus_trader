@@ -24,6 +24,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-persistence/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = [
@@ -57,14 +58,15 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
 
 ahash = { workspace = true }
-alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

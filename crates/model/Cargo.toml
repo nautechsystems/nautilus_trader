@@ -21,6 +21,7 @@ crate-type = ["rlib", "staticlib"]
 default = []
 extension-module = [
   "nautilus-core/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
@@ -40,18 +41,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 
-alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
 evalexpr = { workspace = true }
+hex = { workspace = true }
 implied-vol = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-stub-gen = { workspace = true, optional = true }
-rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -61,7 +59,11 @@ tabled = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
-hex = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

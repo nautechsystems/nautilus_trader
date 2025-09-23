@@ -1,10 +1,42 @@
 # Rust Style Guide
 
-The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
+The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems.
+Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction,
+while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
-## Python bindings
+## Cargo manifest conventions
 
-Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
+- In `[dependencies]`, list internal crates (`nautilus-*`) first in alphabetical order, insert a blank line, then external required dependencies alphabetically, followed by another blank line and the optional dependencies (those with `optional = true`) in alphabetical order. Preserve inline comments with their dependency.
+- Add `"python"` to every `extension-module` feature list that builds a Python artefact, keeping it adjacent to `"pyo3/extension-module"` so the full Python stack is obvious.
+- When a manifest groups adapters separately (for example `crates/pyo3`), keep the `# Adapters` block immediately below the internal crate list so downstream consumers can scan adapter coverage quickly.
+- Always include a blank line before `[dev-dependencies]` and `[build-dependencies]` sections.
+- Apply the same layout across related manifests when the feature or dependency sets change to avoid drift between crates.
+
+## Versioning guidance
+
+- Use workspace inheritance for shared dependencies (for example `serde = { workspace = true }`).
+- Only pin versions directly for crate-specific dependencies that are not part of the workspace.
+- Group workspace-provided dependencies before crate-only dependencies so the inheritance is easy to audit.
+
+## Feature flag conventions
+
+- Prefer additive feature flags—enabling a feature must not break existing functionality.
+- Use descriptive flag names that explain what capability is enabled.
+- Document every feature in the crate-level documentation so consumers know what they toggle.
+- Common patterns:
+  - `high-precision`: switches the value-type backing (64-bit or 128-bit integers) to support domains that require extra precision.
+  - `default = []`: keep defaults minimal.
+  - `python`: enables Python bindings.
+  - `extension-module`: builds a Python extension module (always include `python`).
+  - `ffi`: enables C FFI bindings.
+  - `stubs`: exposes testing stubs.
+
+## Module organization
+
+- Keep modules focused on a single responsibility.
+- Use `mod.rs` as the module root when defining submodules.
+- Prefer relatively flat hierarchies over deep nesting to keep paths manageable.
+- Re-export commonly used items from the crate root for convenience.
 
 ## Code style and conventions
 
@@ -34,7 +66,7 @@ All Rust files must include the standardized copyright header:
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
 
-#### Function spacing
+Within this section, follow these spacing rules:
 
 - Leave **one blank line between functions** (including tests) – this improves readability and
 mirrors the default behavior of `rustfmt`.
@@ -61,22 +93,6 @@ This makes messages more readable and self-documenting, especially when there ar
   - Use `log::…` (`log::info!`, `log::warn!`, etc.) inside synchronous core crates.
   - Use `tracing::…` (`tracing::debug!`, `tracing::info!`, etc.) for async runtimes, adapters, and peripheral components.
 - Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
-
-#### PyO3 naming conventions
-
-When exposing Rust functions to Python **via PyO3**:
-
-1. The Rust symbol **must** be prefixed with `py_*` to make its purpose explicit inside the Rust
-   codebase.
-2. Use the `#[pyo3(name = "…")]` attribute to publish the *Python* name **without** the `py_`
-   prefix so the Python API remains clean.
-
-```rust
-#[pyo3(name = "do_something")]
-pub fn py_do_something() -> PyResult<()> {
-    // …
-}
-```
 
 ### Error handling
 
@@ -123,6 +139,17 @@ Use structured error handling patterns consistently:
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
 
+### Async patterns
+
+Use consistent async/await patterns:
+
+1. **Async function naming**: No special suffix is required; prefer natural names.
+2. **Tokio usage**: Use `tokio::spawn` for fire-and-forget work, and document when that background task is expected to finish.
+3. **Error handling**: Return `anyhow::Result` from async functions to match the synchronous conventions.
+4. **Cancellation safety**: Call out whether the function is cancellation-safe and what invariants still hold when it is cancelled.
+5. **Stream handling**: Use `tokio_stream` (or `futures::Stream`) for async iterators to make back-pressure explicit.
+6. **Timeout patterns**: Wrap network or long-running awaits with timeouts (`tokio::time::timeout`) and propagate or handle the timeout error.
+
 ### Attribute patterns
 
 Consistent attribute usage and ordering:
@@ -132,7 +159,7 @@ Consistent attribute usage and ordering:
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.model")
 )]
 pub struct Symbol(Ustr);
 ```
@@ -160,7 +187,7 @@ For enums with extensive derive attributes:
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.model")
 )]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
@@ -409,6 +436,26 @@ impl Send for MessageBus {
 }
 ```
 
+## Python bindings
+
+Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
+
+### PyO3 naming conventions
+
+When exposing Rust functions to Python **via PyO3**:
+
+1. The Rust symbol **must** be prefixed with `py_*` to make its purpose explicit inside the Rust
+   codebase.
+2. Use the `#[pyo3(name = "…")]` attribute to publish the *Python* name **without** the `py_`
+   prefix so the Python API remains clean.
+
+```rust
+#[pyo3(name = "do_something")]
+pub fn py_do_something() -> PyResult<()> {
+    // …
+}
+```
+
 ### Testing conventions
 
 - Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
@@ -575,6 +622,14 @@ The `clone_py_object()` function:
 - **Maintains thread safety** through proper GIL management.
 
 This approach allows both Rust and Python garbage collectors to work correctly, eliminating memory leaks from reference cycles.
+
+## Common anti-patterns
+
+1. **Avoid `.clone()` in hot paths** – favour borrowing or shared ownership via `Arc`.
+2. **Avoid `.unwrap()` in production code** – generally propagate errors with `?` or map them into domain errors, but unwrapping lock poisoning is acceptable because it signals a severe program state that should abort fast.
+3. **Avoid `String` when `&str` suffices** – minimise allocations on tight loops.
+4. **Avoid exposing interior mutability** – hide mutexes/`RefCell` behind safe APIs.
+5. **Avoid large structs in `Result<T, E>`** – box large error payloads (`Box<dyn Error + Send + Sync>`).
 
 ## Unsafe Rust
 

@@ -27,6 +27,7 @@ extension-module = [
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -57,18 +58,17 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+hex = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
-aws-lc-rs = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -82,11 +82,13 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
+url = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
-hex = { workspace = true }
-url = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
