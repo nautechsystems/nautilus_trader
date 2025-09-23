@@ -129,7 +129,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._loop: asyncio.AbstractEventLoop = loop
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
-        self._inflight_check_retries: Counter[ClientOrderId] = Counter()
+        self._recon_check_retries: Counter[ClientOrderId] = Counter()
         self._filtered_external_orders_count: int = 0
 
         self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
@@ -174,6 +174,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
         self.open_check_open_only: bool = config.open_check_open_only
         self.open_check_lookback_mins: int = config.open_check_lookback_mins
+        self.open_check_threshold_ms: int = config.open_check_threshold_ms
         self.open_check_missing_retries: int = config.open_check_missing_retries
         self.reconciliation_startup_delay_secs: float = config.reconciliation_startup_delay_secs
         self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
@@ -198,6 +199,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.open_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_missing_retries=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_startup_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_interval_mins=}", LogColor.BLUE)
@@ -210,6 +212,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
 
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
+        self._open_check_threshold_ns: int = millis_to_nanos(self.open_check_threshold_ms)
         self._shutdown_initiated: bool = False
 
         # Register endpoints
@@ -617,7 +620,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         # Clear any retry counts for this order
-        self._inflight_check_retries.pop(order.client_order_id, None)
+        self._recon_check_retries.pop(order.client_order_id, None)
 
         if order.status == OrderStatus.ACCEPTED:
             # Order was accepted locally but doesn't exist at venue
@@ -753,11 +756,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Query and potentially resolve each inconsistent order
         for order in delayed_orders:
-            retries = self._inflight_check_retries[order.client_order_id]
+            retries = self._recon_check_retries[order.client_order_id]
 
             if retries >= self.inflight_check_max_retries:
                 # Max retries exceeded - resolve the order
-                self._inflight_check_retries.pop(order.client_order_id, None)
+                self._recon_check_retries.pop(order.client_order_id, None)
                 self._resolve_inflight_order(order)
             else:
                 self._log.debug(f"Querying {order} with venue...")
@@ -771,7 +774,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 self._execute_command(query)
-                self._inflight_check_retries[order.client_order_id] += 1
+                self._recon_check_retries[order.client_order_id] += 1
 
     async def _check_orders_consistency(self) -> None:  # noqa: C901 (too complex)
         try:
@@ -841,12 +844,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 # Clear any retry counts for successfully queried orders
                 if report.client_order_id:
-                    self._inflight_check_retries.pop(report.client_order_id, None)
+                    self._recon_check_retries.pop(report.client_order_id, None)
                 elif report.venue_order_id:
                     # Try to map venue-only ID to client order ID and clear that retry counter
                     mapped_client_id = self._cache.client_order_id(report.venue_order_id)
                     if mapped_client_id:
-                        self._inflight_check_retries.pop(mapped_client_id, None)
+                        self._recon_check_retries.pop(mapped_client_id, None)
 
                 # Check if we should reconcile this order
                 should_reconcile = False
@@ -903,27 +906,26 @@ class LiveExecutionEngine(ExecutionEngine):
                     continue
 
                 # Check if order is too recent to reconcile (avoid race conditions)
-                # TODO: Using the same threshold as inflight orders (consider adding another config)
                 ts_last = order.ts_last
-                if (ts_now - ts_last) < millis_to_nanos(self.inflight_check_threshold_ms):
+                if (ts_now - ts_last) < self._open_check_threshold_ns:
                     # TODO: Debug log for initial development only
                     self._log.debug(
                         f"Skipping reconciliation for {client_order_id!r} - order too recent "
-                        f"(age={(ts_now - ts_last) / 1_000_000}ms < threshold={self.inflight_check_threshold_ms}ms)",
+                        f"(age={(ts_now - ts_last) / 1_000_000}ms < threshold={self.open_check_threshold_ms}ms)",
                     )
                     continue
 
-                retries = self._inflight_check_retries.get(client_order_id, 0)
+                retries = self._recon_check_retries.get(client_order_id, 0)
 
                 if retries >= self.open_check_missing_retries:
                     self._log.warning(
                         f"Order {client_order_id!r} not found at venue after {retries} retries, performing targeted query",
                         LogColor.YELLOW,
                     )
-                    self._inflight_check_retries.pop(client_order_id, None)
+                    self._recon_check_retries.pop(client_order_id, None)
                     await self._resolve_order_not_found_at_venue(order)
                 else:
-                    self._inflight_check_retries[client_order_id] = retries + 1
+                    self._recon_check_retries[client_order_id] = retries + 1
                     self._log.debug(
                         f"Order {client_order_id!r} not found at venue, retry {retries + 1}/{self.open_check_missing_retries}",
                     )
@@ -1321,7 +1323,7 @@ class LiveExecutionEngine(ExecutionEngine):
             report.client_order_id = client_order_id
 
         # Reset retry count
-        self._inflight_check_retries.pop(client_order_id, None)
+        self._recon_check_retries.pop(client_order_id, None)
 
         self._log.debug(f"Reconciling order for {client_order_id!r}", LogColor.MAGENTA)
         order: Order = self._cache.order(client_order_id)
@@ -1920,13 +1922,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _generate_order_accepted(self, order: Order, report: OrderStatusReport) -> None:
         # Clear any retry counts when order transitions to ACCEPTED
-        self._inflight_check_retries.pop(order.client_order_id, None)
+        self._recon_check_retries.pop(order.client_order_id, None)
 
         # Also try to clear by venue order ID mapping
         if report.venue_order_id:
             mapped_client_id = self._cache.client_order_id(report.venue_order_id)
             if mapped_client_id:
-                self._inflight_check_retries.pop(mapped_client_id, None)
+                self._recon_check_retries.pop(mapped_client_id, None)
 
         accepted = create_order_accepted_event(
             trader_id=self.trader_id,

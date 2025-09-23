@@ -201,7 +201,7 @@ If an order's status cannot be reconciled after exhausting all retries, the engi
 **Important reconciliation caveats:**
 
 - **"Not found" resolutions**: These are only performed in full-history mode (`open_check_open_only=False`). In open-only mode (`open_check_open_only=True`, the default), these checks are intentionally skipped. This is because open-only mode uses venue-specific "open orders" endpoints which exclude closed orders by design, making it impossible to distinguish between genuinely missing orders and recently closed ones.
-- **Recent order protection**: The engine skips "missing" checks for orders with last event timestamp within the `inflight_check_threshold_ms` window (default 5 seconds). This prevents false positives from race conditions where orders may still be processing at the venue.
+- **Recent order protection**: The engine skips reconciliation actions for orders with last event timestamp within the `open_check_threshold_ms` window (default 5 seconds). This prevents false positives from race conditions where orders may still be processing at the venue.
 - **Targeted query safeguard**: Before marking orders as `REJECTED` or `CANCELED` when "not found", the engine attempts a targeted single-order query to the venue. This helps prevent false negatives due to bulk query limitations or timing delays.
 - **`FILLED` orders**: When a `FILLED` order is "not found" at the venue, this is considered normal behavior (venues often don't track completed orders) and is ignored without generating warnings.
 
@@ -217,6 +217,7 @@ This ensures the trading node maintains a consistent execution state even under 
 | `open_check_interval_secs`          | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
 | `open_check_open_only`              | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
 | `open_check_lookback_mins`          | 60&nbsp;min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
+| `open_check_threshold_ms`           | 5,000&nbsp;ms  | Minimum time since the order's last cached event before open-order checks act on venue discrepancies (missing, mismatched status, etc.). |
 | `open_check_missing_retries`        | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
 | `reconciliation_startup_delay_secs` | 10.0&nbsp;s    | Initial delay (seconds) before starting continuous reconciliation loop. Provides time for system stabilization after startup. |
 | `own_books_audit_interval_secs`     | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |

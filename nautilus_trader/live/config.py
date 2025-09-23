@@ -131,6 +131,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     open_check_lookback_mins : PositiveInt, default 60
         The lookback window (minutes) for order status polling during continuous reconciliation.
         Only orders modified within this time window will be considered for reconciliation.
+    open_check_threshold_ms : NonNegativeInt, default 5_000
+        The minimum elapsed time (milliseconds) since the order's last cached event before the
+        open-order check acts on venue discrepancies (missing, status drift, etc.).
     open_check_missing_retries : NonNegativeInt, default 5
         The maximum number of retries before resolving an order that is open in cache but
         not found at the venue. This prevents race conditions where orders are resolved too
@@ -187,6 +190,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     open_check_interval_secs: PositiveFloat | None = None
     open_check_open_only: bool = True
     open_check_lookback_mins: PositiveInt = 60
+    open_check_threshold_ms: NonNegativeInt = 5_000
     open_check_missing_retries: NonNegativeInt = 5
     reconciliation_startup_delay_secs: PositiveFloat = 10.0
     purge_closed_orders_interval_mins: PositiveInt | None = None
