@@ -56,9 +56,9 @@ use crate::{
         consts::BITMEX_VENUE,
         enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
         parse::{
-            map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity,
+            map_bitmex_currency, parse_contracts_quantity, parse_fractional_quantity,
             parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-            parse_position_side,
+            parse_position_side, parse_signed_contracts_quantity,
         },
     },
     websocket::messages::BitmexOrderUpdateMsg,
@@ -103,18 +103,19 @@ pub fn is_index_symbol(symbol: &Ustr) -> bool {
 pub fn parse_book_msg_vec(
     data: Vec<BitmexOrderBookMsg>,
     action: BitmexAction,
-    price_precision: u8,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut deltas = Vec::with_capacity(data.len());
 
     for msg in data {
-        deltas.push(Data::Delta(parse_book_msg(
-            &msg,
-            &action,
-            price_precision,
-            ts_init,
-        )));
+        if let Some(instrument) = instruments.get(&msg.symbol) {
+            deltas.push(Data::Delta(parse_book_msg(
+                &msg, &action, instrument, ts_init,
+            )));
+        } else {
+            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for book delta");
+        }
     }
     deltas
 }
@@ -123,17 +124,19 @@ pub fn parse_book_msg_vec(
 #[must_use]
 pub fn parse_book10_msg_vec(
     data: Vec<BitmexOrderBook10Msg>,
-    price_precision: u8,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut depths = Vec::with_capacity(data.len());
 
     for msg in data {
-        depths.push(Data::Depth10(Box::new(parse_book10_msg(
-            &msg,
-            price_precision,
-            ts_init,
-        ))));
+        if let Some(instrument) = instruments.get(&msg.symbol) {
+            depths.push(Data::Depth10(Box::new(parse_book10_msg(
+                &msg, instrument, ts_init,
+            ))));
+        } else {
+            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for depth10");
+        }
     }
     depths
 }
@@ -142,13 +145,17 @@ pub fn parse_book10_msg_vec(
 #[must_use]
 pub fn parse_trade_msg_vec(
     data: Vec<BitmexTradeMsg>,
-    price_precision: u8,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
 
     for msg in data {
-        trades.push(Data::Trade(parse_trade_msg(&msg, price_precision, ts_init)));
+        if let Some(instrument) = instruments.get(&msg.symbol) {
+            trades.push(Data::Trade(parse_trade_msg(&msg, instrument, ts_init)));
+        } else {
+            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade");
+        }
     }
     trades
 }
@@ -158,18 +165,19 @@ pub fn parse_trade_msg_vec(
 pub fn parse_trade_bin_msg_vec(
     data: Vec<BitmexTradeBinMsg>,
     topic: BitmexWsTopic,
-    price_precision: u8,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
 
     for msg in data {
-        trades.push(Data::Bar(parse_trade_bin_msg(
-            &msg,
-            &topic,
-            price_precision,
-            ts_init,
-        )));
+        if let Some(instrument) = instruments.get(&msg.symbol) {
+            trades.push(Data::Bar(parse_trade_bin_msg(
+                &msg, &topic, instrument, ts_init,
+            )));
+        } else {
+            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade bin");
+        }
     }
     trades
 }
@@ -180,7 +188,7 @@ pub fn parse_trade_bin_msg_vec(
 pub fn parse_book_msg(
     msg: &BitmexOrderBookMsg,
     action: &BitmexAction,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> OrderBookDelta {
     let flags = if action == &BitmexAction::Insert {
@@ -191,9 +199,9 @@ pub fn parse_book_msg(
 
     let instrument_id = parse_instrument_id(msg.symbol);
     let action = action.as_book_action();
-    let price = Price::new(msg.price, price_precision);
+    let price = Price::new(msg.price, instrument.price_precision());
     let side = msg.side.as_order_side();
-    let size = parse_contracts_quantity(msg.size.unwrap_or(0));
+    let size = parse_contracts_quantity(msg.size.unwrap_or(0), instrument);
     let order_id = msg.id;
     let order = BookOrder::new(side, price, size, order_id);
     let sequence = 0; // Not available
@@ -219,10 +227,12 @@ pub fn parse_book_msg(
 #[must_use]
 pub fn parse_book10_msg(
     msg: &BitmexOrderBook10Msg,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
     let instrument_id = parse_instrument_id(msg.symbol);
+
+    let price_precision = instrument.price_precision();
 
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
@@ -235,7 +245,7 @@ pub fn parse_book10_msg(
         let bid_order = BookOrder::new(
             OrderSide::Buy,
             Price::new(level[0], price_precision),
-            parse_frac_quantity(level[1], 0),
+            parse_fractional_quantity(level[1], instrument),
             0,
         );
 
@@ -247,7 +257,7 @@ pub fn parse_book10_msg(
         let ask_order = BookOrder::new(
             OrderSide::Sell,
             Price::new(level[0], price_precision),
-            parse_frac_quantity(level[1], 0),
+            parse_fractional_quantity(level[1], instrument),
             0,
         );
 
@@ -288,28 +298,28 @@ pub fn parse_book10_msg(
 pub fn parse_quote_msg(
     msg: &BitmexQuoteMsg,
     last_quote: &QuoteTick,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> QuoteTick {
     let instrument_id = parse_instrument_id(msg.symbol);
 
     let bid_price = match msg.bid_price {
-        Some(price) => Price::new(price, price_precision),
+        Some(price) => Price::new(price, instrument.price_precision()),
         None => last_quote.bid_price,
     };
 
     let ask_price = match msg.ask_price {
-        Some(price) => Price::new(price, price_precision),
+        Some(price) => Price::new(price, instrument.price_precision()),
         None => last_quote.ask_price,
     };
 
     let bid_size = match msg.bid_size {
-        Some(size) => parse_contracts_quantity(size),
+        Some(size) => parse_contracts_quantity(size, instrument),
         None => last_quote.bid_size,
     };
 
     let ask_size = match msg.ask_size {
-        Some(size) => parse_contracts_quantity(size),
+        Some(size) => parse_contracts_quantity(size, instrument),
         None => last_quote.ask_size,
     };
 
@@ -328,10 +338,14 @@ pub fn parse_quote_msg(
 
 /// Converts a BitMEX trade message into a `TradeTick`.
 #[must_use]
-pub fn parse_trade_msg(msg: &BitmexTradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
+pub fn parse_trade_msg(
+    msg: &BitmexTradeMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> TradeTick {
     let instrument_id = parse_instrument_id(msg.symbol);
-    let price = Price::new(msg.price, price_precision);
-    let size = parse_contracts_quantity(msg.size);
+    let price = Price::new(msg.price, instrument.price_precision());
+    let size = parse_contracts_quantity(msg.size, instrument);
     let aggressor_side = msg.side.as_aggressor_side();
     let trade_id = TradeId::new(
         msg.trd_match_id
@@ -355,18 +369,19 @@ pub fn parse_trade_msg(msg: &BitmexTradeMsg, price_precision: u8, ts_init: UnixN
 pub fn parse_trade_bin_msg(
     msg: &BitmexTradeBinMsg,
     topic: &BitmexWsTopic,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> Bar {
     let instrument_id = parse_instrument_id(msg.symbol);
     let spec = bar_spec_from_topic(topic);
     let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
 
+    let price_precision = instrument.price_precision();
     let open = Price::new(msg.open, price_precision);
     let high = Price::new(msg.high, price_precision);
     let low = Price::new(msg.low, price_precision);
     let close = Price::new(msg.close, price_precision);
-    let volume = parse_contracts_quantity(msg.volume as u64);
+    let volume = parse_contracts_quantity(msg.volume as u64, instrument);
     let ts_event = UnixNanos::from(msg.timestamp);
 
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
@@ -425,7 +440,7 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
 /// Returns an error if the time in force conversion fails.
 pub fn parse_order_msg(
     msg: &BitmexOrderMsg,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     order_type_cache: &DashMap<ClientOrderId, OrderType>,
 ) -> anyhow::Result<OrderStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
@@ -455,8 +470,8 @@ pub fn parse_order_msg(
         None => TimeInForce::Gtc,
     };
     let order_status: OrderStatus = msg.ord_status.into();
-    let quantity = Quantity::from(msg.order_qty);
-    let filled_qty = Quantity::from(msg.cum_qty);
+    let quantity = parse_signed_contracts_quantity(msg.order_qty, instrument);
+    let filled_qty = parse_signed_contracts_quantity(msg.cum_qty, instrument);
     let report_id = UUID4::new();
     let ts_accepted =
         parse_optional_datetime_to_unix_nanos(&Some(msg.transact_time), "transact_time");
@@ -489,7 +504,7 @@ pub fn parse_order_msg(
     }
 
     if let Some(price) = msg.price {
-        report = report.with_price(Price::new(price, price_precision));
+        report = report.with_price(Price::new(price, instrument.price_precision()));
     }
 
     if let Some(avg_px) = msg.avg_px {
@@ -513,7 +528,7 @@ pub fn parse_order_msg(
         };
 
         report = report
-            .with_trigger_price(Price::new(trigger_price, price_precision))
+            .with_trigger_price(Price::new(trigger_price, instrument.price_precision()))
             .with_trigger_type(trigger_type);
     }
 
@@ -547,7 +562,7 @@ pub fn parse_order_msg(
 /// This handles partial updates where only changed fields are present.
 pub fn parse_order_update_msg(
     msg: &BitmexOrderUpdateMsg,
-    price_precision: u8,
+    instrument: &InstrumentAny,
     account_id: AccountId,
 ) -> Option<OrderUpdated> {
     // For BitMEX updates, we don't have trader_id or strategy_id from the exchange
@@ -557,8 +572,10 @@ pub fn parse_order_update_msg(
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
     let client_order_id = msg.cl_ord_id.map(ClientOrderId::new).unwrap_or_default();
-    let quantity = Quantity::zero(0); // Sentinel to signal no quantity update
-    let price = msg.price.map(|p| Price::new(p, price_precision));
+    let quantity = Quantity::zero(instrument.size_precision());
+    let price = msg
+        .price
+        .map(|p| Price::new(p, instrument.price_precision()));
 
     // BitMEX doesn't send trigger price in regular order updates?
     let trigger_price = None;
@@ -594,7 +611,10 @@ pub fn parse_order_update_msg(
 ///
 /// <https://www.bitmex.com/app/wsAPI#Execution>
 ///
-pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Option<FillReport> {
+pub fn parse_execution_msg(
+    msg: BitmexExecutionMsg,
+    instrument: &InstrumentAny,
+) -> Option<FillReport> {
     if msg.exec_type != Some(BitmexExecType::Trade) {
         return None;
     }
@@ -610,8 +630,8 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
             side.into()
         })
         .unwrap_or(OrderSide::NoOrderSide);
-    let last_qty = Quantity::from(msg.last_qty?);
-    let last_px = Price::new(msg.last_px?, price_precision);
+    let last_qty = parse_signed_contracts_quantity(msg.last_qty?, instrument);
+    let last_px = Price::new(msg.last_px?, instrument.price_precision());
     let settlement_currency_str = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
     let mapped_currency = map_bitmex_currency(settlement_currency_str.as_str());
     let commission = Money::new(
@@ -648,11 +668,14 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
 ///
 /// <https://www.bitmex.com/app/wsAPI#Position>
 #[must_use]
-pub fn parse_position_msg(msg: BitmexPositionMsg) -> PositionStatusReport {
+pub fn parse_position_msg(
+    msg: BitmexPositionMsg,
+    instrument: &InstrumentAny,
+) -> PositionStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(msg.symbol);
     let position_side = parse_position_side(msg.current_qty).as_specified();
-    let quantity = Quantity::from(msg.current_qty.map_or(0, i64::abs));
+    let quantity = parse_signed_contracts_quantity(msg.current_qty.unwrap_or(0), instrument);
     let venue_position_id = None; // Not applicable on BitMEX
     let avg_px_open = msg.avg_entry_price.and_then(Decimal::from_f64);
     let ts_last = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
@@ -882,7 +905,10 @@ mod tests {
     };
 
     // Helper function to create a test perpetual instrument for tests
-    fn create_test_perpetual_instrument() -> InstrumentAny {
+    fn create_test_perpetual_instrument_with_precisions(
+        price_precision: u8,
+        size_precision: u8,
+    ) -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             InstrumentId::from("XBTUSD.BITMEX"),
             Symbol::new("XBTUSD"),
@@ -890,10 +916,10 @@ mod tests {
             Currency::USD(),
             Currency::BTC(),
             true, // is_inverse
-            1,    // price_precision
-            0,    // size_precision
-            Price::from("0.5"),
-            Quantity::from(1),
+            price_precision,
+            size_precision,
+            Price::new(0.5, price_precision),
+            Quantity::new(1.0, size_precision),
             None, // multiplier
             None, // lot_size
             None, // max_quantity
@@ -911,6 +937,10 @@ mod tests {
         ))
     }
 
+    fn create_test_perpetual_instrument() -> InstrumentAny {
+        create_test_perpetual_instrument_with_precisions(1, 0)
+    }
+
     #[rstest]
     fn test_orderbook_l2_message() {
         let json_data = load_test_json("ws_orderbook_l2.json");
@@ -919,7 +949,8 @@ mod tests {
         let msg: BitmexOrderBookMsg = serde_json::from_str(&json_data).unwrap();
 
         // Test Insert action
-        let delta = parse_book_msg(&msg, &BitmexAction::Insert, 1, UnixNanos::from(3));
+        let instrument = create_test_perpetual_instrument();
+        let delta = parse_book_msg(&msg, &BitmexAction::Insert, &instrument, UnixNanos::from(3));
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.order.price, Price::from("98459.9"));
         assert_eq!(delta.order.size, Quantity::from(33000));
@@ -932,7 +963,7 @@ mod tests {
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
-        let delta = parse_book_msg(&msg, &BitmexAction::Update, 1, UnixNanos::from(3));
+        let delta = parse_book_msg(&msg, &BitmexAction::Update, &instrument, UnixNanos::from(3));
         assert_eq!(delta.flags, 0);
         assert_eq!(delta.action, BookAction::Update);
     }
@@ -942,7 +973,8 @@ mod tests {
         let json_data = load_test_json("ws_orderbook_10.json");
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: BitmexOrderBook10Msg = serde_json::from_str(&json_data).unwrap();
-        let depth10 = parse_book10_msg(&msg, 1, UnixNanos::from(3));
+        let instrument = create_test_perpetual_instrument();
+        let depth10 = parse_book10_msg(&msg, &instrument, UnixNanos::from(3));
 
         assert_eq!(depth10.instrument_id, instrument_id);
 
@@ -982,7 +1014,8 @@ mod tests {
             UnixNanos::from(2),
         );
         let msg: BitmexQuoteMsg = serde_json::from_str(&json_data).unwrap();
-        let quote = parse_quote_msg(&msg, &last_quote, 2, UnixNanos::from(3));
+        let instrument = create_test_perpetual_instrument_with_precisions(2, 0);
+        let quote = parse_quote_msg(&msg, &last_quote, &instrument, UnixNanos::from(3));
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("487.55"));
@@ -999,7 +1032,8 @@ mod tests {
 
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: BitmexTradeMsg = serde_json::from_str(&json_data).unwrap();
-        let trade = parse_trade_msg(&msg, 1, UnixNanos::from(3));
+        let instrument = create_test_perpetual_instrument();
+        let trade = parse_trade_msg(&msg, &instrument, UnixNanos::from(3));
 
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("98570.9"));
@@ -1021,7 +1055,8 @@ mod tests {
         let topic = BitmexWsTopic::TradeBin1m;
 
         let msg: BitmexTradeBinMsg = serde_json::from_str(&json_data).unwrap();
-        let bar = parse_trade_bin_msg(&msg, &topic, 1, UnixNanos::from(3));
+        let instrument = create_test_perpetual_instrument();
+        let bar = parse_trade_bin_msg(&msg, &topic, &instrument, UnixNanos::from(3));
 
         assert_eq!(bar.instrument_id(), instrument_id);
         assert_eq!(
@@ -1042,7 +1077,8 @@ mod tests {
         let json_data = load_test_json("ws_order.json");
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
         let cache = dashmap::DashMap::new();
-        let report = parse_order_msg(&msg, 1, &cache).unwrap();
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1068,7 +1104,8 @@ mod tests {
     fn test_parse_execution_msg() {
         let json_data = load_test_json("ws_execution.json");
         let msg: BitmexExecutionMsg = serde_json::from_str(&json_data).unwrap();
-        let fill = parse_execution_msg(msg, 1).unwrap();
+        let instrument = create_test_perpetual_instrument();
+        let fill = parse_execution_msg(msg, &instrument).unwrap();
 
         assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1100,7 +1137,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
         msg.exec_type = Some(BitmexExecType::Settlement);
 
-        let result = parse_execution_msg(msg, 1);
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
         assert!(result.is_none());
     }
 
@@ -1115,7 +1153,8 @@ mod tests {
         assert_eq!(msg.symbol, None);
 
         // Should return None since it's not a Trade
-        let result = parse_execution_msg(msg, 1);
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
         assert!(result.is_none());
     }
 
@@ -1123,7 +1162,8 @@ mod tests {
     fn test_parse_position_msg() {
         let json_data = load_test_json("ws_position.json");
         let msg: BitmexPositionMsg = serde_json::from_str(&json_data).unwrap();
-        let report = parse_position_msg(msg);
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_position_msg(msg, &instrument);
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1139,7 +1179,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_position.json")).unwrap();
         msg.current_qty = Some(-500);
 
-        let report = parse_position_msg(msg);
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_position_msg(msg, &instrument);
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from(500));
     }
@@ -1150,7 +1191,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_position.json")).unwrap();
         msg.current_qty = Some(0);
 
-        let report = parse_position_msg(msg);
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_position_msg(msg, &instrument);
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from(0));
     }

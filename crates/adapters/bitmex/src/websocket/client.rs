@@ -1273,15 +1273,13 @@ impl BitmexWsMessageHandler {
 
     // Run is now handled inline in the connect() method where we have access to reconnection resources
 
-    /// Get price precision for a symbol from the instruments cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instrument is not found in the cache.
     #[inline]
-    fn get_price_precision(&self, symbol: &Ustr) -> u8 {
-        self.instruments_cache
-            .get(symbol).map_or_else(|| panic!("Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"), Instrument::price_precision)
+    fn get_instrument(&self, symbol: &Ustr) -> InstrumentAny {
+        self.instruments_cache.get(symbol).cloned().unwrap_or_else(|| {
+            panic!(
+                "Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"
+            )
+        })
     }
 
     async fn next(&mut self) -> Option<NautilusWsMessage> {
@@ -1302,8 +1300,12 @@ impl BitmexWsMessageHandler {
                             if data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
-                            let data = parse_book_msg_vec(data, action, price_precision, ts_init);
+                            let data = parse_book_msg_vec(
+                                data,
+                                action,
+                                self.instruments_cache.as_ref(),
+                                ts_init,
+                            );
 
                             NautilusWsMessage::Data(data)
                         }
@@ -1311,8 +1313,12 @@ impl BitmexWsMessageHandler {
                             if data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
-                            let data = parse_book_msg_vec(data, action, price_precision, ts_init);
+                            let data = parse_book_msg_vec(
+                                data,
+                                action,
+                                self.instruments_cache.as_ref(),
+                                ts_init,
+                            );
 
                             NautilusWsMessage::Data(data)
                         }
@@ -1320,8 +1326,11 @@ impl BitmexWsMessageHandler {
                             if data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
-                            let data = parse_book10_msg_vec(data, price_precision, ts_init);
+                            let data = parse_book10_msg_vec(
+                                data,
+                                self.instruments_cache.as_ref(),
+                                ts_init,
+                            );
 
                             NautilusWsMessage::Data(data)
                         }
@@ -1332,10 +1341,10 @@ impl BitmexWsMessageHandler {
                             }
 
                             let msg = data.remove(0);
-                            let price_precision = self.get_price_precision(&msg.symbol);
+                            let instrument = self.get_instrument(&msg.symbol);
 
                             if let Some(quote) =
-                                self.quote_cache.process(&msg, price_precision, ts_init)
+                                self.quote_cache.process(&msg, &instrument, ts_init)
                             {
                                 NautilusWsMessage::Data(vec![Data::Quote(quote)])
                             } else {
@@ -1346,8 +1355,8 @@ impl BitmexWsMessageHandler {
                             if data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
-                            let data = parse_trade_msg_vec(data, price_precision, ts_init);
+                            let data =
+                                parse_trade_msg_vec(data, self.instruments_cache.as_ref(), ts_init);
 
                             NautilusWsMessage::Data(data)
                         }
@@ -1355,11 +1364,10 @@ impl BitmexWsMessageHandler {
                             if action == BitmexAction::Partial || data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
                             let data = parse_trade_bin_msg_vec(
                                 data,
                                 BitmexWsTopic::TradeBin1m,
-                                price_precision,
+                                self.instruments_cache.as_ref(),
                                 ts_init,
                             );
 
@@ -1369,11 +1377,10 @@ impl BitmexWsMessageHandler {
                             if action == BitmexAction::Partial || data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
                             let data = parse_trade_bin_msg_vec(
                                 data,
                                 BitmexWsTopic::TradeBin5m,
-                                price_precision,
+                                self.instruments_cache.as_ref(),
                                 ts_init,
                             );
 
@@ -1383,11 +1390,10 @@ impl BitmexWsMessageHandler {
                             if action == BitmexAction::Partial || data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
                             let data = parse_trade_bin_msg_vec(
                                 data,
                                 BitmexWsTopic::TradeBin1h,
-                                price_precision,
+                                self.instruments_cache.as_ref(),
                                 ts_init,
                             );
 
@@ -1397,11 +1403,10 @@ impl BitmexWsMessageHandler {
                             if action == BitmexAction::Partial || data.is_empty() {
                                 continue;
                             }
-                            let price_precision = self.get_price_precision(&data[0].symbol);
                             let data = parse_trade_bin_msg_vec(
                                 data,
                                 BitmexWsTopic::TradeBin1d,
-                                price_precision,
+                                self.instruments_cache.as_ref(),
                                 ts_init,
                             );
 
@@ -1417,8 +1422,7 @@ impl BitmexWsMessageHandler {
                             for order_data in data {
                                 match order_data {
                                     OrderData::Full(order_msg) => {
-                                        let price_precision =
-                                            self.get_price_precision(&order_msg.symbol);
+                                        let instrument = self.get_instrument(&order_msg.symbol);
 
                                         // Cache the order type if we have both client order ID and order type
                                         if let (Some(client_order_id), Some(ord_type)) =
@@ -1433,7 +1437,7 @@ impl BitmexWsMessageHandler {
 
                                         match parse_order_msg(
                                             &order_msg,
-                                            price_precision,
+                                            &instrument,
                                             &self.order_type_cache,
                                         ) {
                                             Ok(report) => reports.push(report),
@@ -1451,11 +1455,11 @@ impl BitmexWsMessageHandler {
                                         }
                                     }
                                     OrderData::Update(msg) => {
-                                        let price_precision = self.get_price_precision(&msg.symbol);
+                                        let instrument = self.get_instrument(&msg.symbol);
 
                                         if let Some(event) = parse_order_update_msg(
                                             &msg,
-                                            price_precision,
+                                            &instrument,
                                             self.account_id,
                                         ) {
                                             return Some(NautilusWsMessage::OrderUpdated(event));
@@ -1497,9 +1501,9 @@ impl BitmexWsMessageHandler {
                                     }
                                     continue;
                                 };
-                                let price_precision = self.get_price_precision(symbol);
+                                let instrument = self.get_instrument(symbol);
 
-                                if let Some(fill) = parse_execution_msg(exec_msg, price_precision) {
+                                if let Some(fill) = parse_execution_msg(exec_msg, &instrument) {
                                     fills.push(fill);
                                 }
                             }
@@ -1511,7 +1515,8 @@ impl BitmexWsMessageHandler {
                         }
                         BitmexTableMessage::Position { data, .. } => {
                             if let Some(pos_msg) = data.into_iter().next() {
-                                let report = parse_position_msg(pos_msg);
+                                let instrument = self.get_instrument(&pos_msg.symbol);
+                                let report = parse_position_msg(pos_msg, &instrument);
                                 NautilusWsMessage::PositionStatusReport(report)
                             } else {
                                 continue;

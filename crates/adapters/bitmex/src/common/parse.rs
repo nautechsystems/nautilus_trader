@@ -21,8 +21,13 @@ use nautilus_model::{
     enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
-    types::{AccountBalance, Currency, Money, QUANTITY_MAX, Quantity},
+    instruments::{Instrument, InstrumentAny},
+    types::{
+        AccountBalance, Currency, Money, Quantity,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
+    },
 };
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use crate::{
@@ -39,51 +44,160 @@ pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *BITMEX_VENUE)
 }
 
-/// Safely converts a Quantity to u32 for BitMEX API.
+/// Safely converts a `Quantity` into the integer units expected by the BitMEX REST API.
 ///
-/// Logs a warning if truncation occurs.
+/// The API expects whole-number "contract" counts which vary per instrument. We always use the
+/// instrument size increment (sourced from BitMEX `underlyingToPositionMultiplier`) to translate
+/// Nautilus quantities back to venue units, so each instrument can have its own contract multiplier.
+/// Values are rounded to the nearest whole contract (midpoint rounds away from zero) and clamped
+/// to `u32::MAX` when necessary.
 #[must_use]
-pub fn quantity_to_u32(quantity: &Quantity) -> u32 {
-    let value = quantity.as_f64();
-    if value > u32::MAX as f64 {
-        tracing::warn!(
-            "Quantity {value} exceeds u32::MAX, clamping to {}",
+pub fn quantity_to_u32(quantity: &Quantity, instrument: &InstrumentAny) -> u32 {
+    let size_increment = instrument.size_increment();
+    let step_decimal = size_increment.as_decimal();
+
+    if step_decimal.is_zero() {
+        let value = quantity.as_f64();
+        if value > u32::MAX as f64 {
+            tracing::warn!(
+                "Quantity {value} exceeds u32::MAX without instrument increment, clamping",
+            );
+            return u32::MAX;
+        }
+        return value.max(0.0) as u32;
+    }
+
+    let units_decimal = quantity.as_decimal() / step_decimal;
+    let rounded_units =
+        units_decimal.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+
+    match rounded_units.to_u128() {
+        Some(units) if units <= u32::MAX as u128 => units as u32,
+        Some(units) => {
+            tracing::warn!(
+                "Quantity {} converts to {units} contracts which exceeds u32::MAX, clamping",
+                quantity.as_f64(),
+            );
             u32::MAX
+        }
+        None => {
+            tracing::warn!(
+                "Failed to convert quantity {} to venue units, defaulting to 0",
+                quantity.as_f64(),
+            );
+            0
+        }
+    }
+}
+
+/// Converts a BitMEX contracts value into a Nautilus quantity using instrument precision.
+#[must_use]
+pub fn parse_contracts_quantity(value: u64, instrument: &InstrumentAny) -> Quantity {
+    let size_increment = instrument.size_increment();
+    let precision = instrument.size_precision();
+
+    let increment_raw: QuantityRaw = (&size_increment).into();
+    let value_raw = QuantityRaw::from(value);
+
+    let mut raw = increment_raw.saturating_mul(value_raw);
+    if raw > QUANTITY_RAW_MAX {
+        tracing::warn!(
+            "Quantity value {value} exceeds QUANTITY_RAW_MAX {}, clamping",
+            QUANTITY_RAW_MAX,
         );
-        u32::MAX
-    } else if value < 0.0 {
-        tracing::warn!("Quantity {value} is negative, using 0");
-        0
+        raw = QUANTITY_RAW_MAX;
+    }
+
+    Quantity::from_raw(raw, precision)
+}
+
+/// Converts the BitMEX `underlyingToPositionMultiplier` into a normalized contract size and
+/// size increment for Nautilus instruments.
+///
+/// The returned decimal retains BitMEX precision (clamped to `max_scale`) so downstream
+/// quantity conversions stay lossless.
+///
+/// # Errors
+///
+/// Returns an error when the multiplier cannot be represented with the configured precision.
+pub fn derive_contract_decimal_and_increment(
+    multiplier: Option<f64>,
+    max_scale: u32,
+) -> anyhow::Result<(Decimal, Quantity)> {
+    let raw_multiplier = multiplier.unwrap_or(1.0);
+    let contract_size = if raw_multiplier > 0.0 {
+        1.0 / raw_multiplier
     } else {
-        value as u32
+        1.0
+    };
+
+    let mut contract_decimal = Decimal::from_f64_retain(contract_size)
+        .ok_or_else(|| anyhow::anyhow!("Invalid contract size {contract_size}"))?;
+    if contract_decimal.scale() > max_scale {
+        contract_decimal = contract_decimal
+            .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);
     }
+    contract_decimal = contract_decimal.normalize();
+    let contract_precision = contract_decimal.scale() as u8;
+    let size_increment = Quantity::from_decimal(contract_decimal, contract_precision)?;
+
+    Ok((contract_decimal, size_increment))
 }
 
-/// Converts a BitMEX contracts value into a clamped Nautilus quantity.
-#[must_use]
-pub fn parse_contracts_quantity(value: u64) -> Quantity {
-    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
-    // TODO: Log with more visibility for now
-    if value > QUANTITY_MAX as u64 {
-        tracing::warn!(
-            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
-        );
-    }
-    Quantity::new(size_workaround as f64, 0)
+/// Converts an optional contract-count field (e.g. `lotSize`, `maxOrderQty`) into a Nautilus
+/// quantity using the previously derived contract size.
+///
+/// # Errors
+///
+/// Returns an error when the raw value cannot be represented with the available precision.
+pub fn convert_contract_quantity(
+    value: Option<f64>,
+    contract_decimal: Decimal,
+    max_scale: u32,
+    field_name: &str,
+) -> anyhow::Result<Option<Quantity>> {
+    value
+        .map(|raw| {
+            let mut decimal = Decimal::from_f64_retain(raw)
+                .ok_or_else(|| anyhow::anyhow!("Invalid {field_name} value"))?
+                * contract_decimal;
+            let scale = decimal.scale();
+            if scale > max_scale {
+                decimal = decimal
+                    .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);
+            }
+            let decimal = decimal.normalize();
+            let precision = decimal.scale() as u8;
+            Quantity::from_decimal(decimal, precision)
+        })
+        .transpose()
 }
 
-/// Converts a fractional contract size into a quantity honoring BitMEX precision.
+/// Converts a signed BitMEX contracts value into a Nautilus quantity using instrument precision.
 #[must_use]
-pub fn parse_frac_quantity(value: f64, size_precision: u8) -> Quantity {
-    let value_u64 = value as u64;
-    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value as u64);
-    // TODO: Log with more visibility for now
-    if value_u64 > QUANTITY_MAX as u64 {
-        tracing::warn!(
-            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
-        );
+pub fn parse_signed_contracts_quantity(value: i64, instrument: &InstrumentAny) -> Quantity {
+    let abs_value = value.checked_abs().unwrap_or_else(|| {
+        tracing::warn!("Quantity value {value} overflowed when taking absolute value");
+        i64::MAX
+    }) as u64;
+    parse_contracts_quantity(abs_value, instrument)
+}
+
+/// Converts a fractional size into a quantity honoring the instrument precision.
+#[must_use]
+pub fn parse_fractional_quantity(value: f64, instrument: &InstrumentAny) -> Quantity {
+    if value < 0.0 {
+        tracing::warn!("Received negative fractional quantity {value}, defaulting to 0.0");
+        return instrument.make_qty(0.0, None);
     }
-    Quantity::new(size_workaround as f64, size_precision)
+
+    instrument.try_make_qty(value, None).unwrap_or_else(|err| {
+        tracing::warn!(
+            "Failed to convert fractional quantity {value} with precision {}: {err}",
+            instrument.size_precision(),
+        );
+        instrument.make_qty(0.0, None)
+    })
 }
 
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.
@@ -115,7 +229,7 @@ pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     }
 }
 
-/// Maps BitMEX liquidity indicators to Nautilus liquidity sides.
+/// Maps BitMEX liquidity indicators onto Nautilus liquidity sides.
 #[must_use]
 pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> LiquiditySide {
     liquidity
@@ -275,11 +389,90 @@ pub fn parse_account_state(
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
-    use nautilus_model::enums::AccountType;
+    use nautilus_model::{
+        enums::AccountType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::CurrencyPair,
+        types::{Price, fixed::FIXED_PRECISION},
+    };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+
+    fn make_test_spot_instrument(size_increment: f64, size_precision: u8) -> InstrumentAny {
+        let instrument_id = InstrumentId::from("SOLUSDT.BITMEX");
+        let raw_symbol = Symbol::from("SOLUSDT");
+        let base_currency = Currency::from("SOL");
+        let quote_currency = Currency::from("USDT");
+        let price_precision = 2;
+        let price_increment = Price::new(0.01, price_precision);
+        let size_increment = Quantity::new(size_increment, size_precision);
+        let instrument = CurrencyPair::new(
+            instrument_id,
+            raw_symbol,
+            base_currency,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+        InstrumentAny::CurrencyPair(instrument)
+    }
+
+    #[rstest]
+    fn test_quantity_to_u32_scaled() {
+        let instrument = make_test_spot_instrument(0.0001, 4);
+        let qty = Quantity::new(0.1, 4);
+        assert_eq!(quantity_to_u32(&qty, &instrument), 1_000);
+    }
+
+    #[rstest]
+    fn test_parse_contracts_quantity_scaled() {
+        let instrument = make_test_spot_instrument(0.0001, 4);
+        let qty = parse_contracts_quantity(1_000, &instrument);
+        assert!((qty.as_f64() - 0.1).abs() < 1e-9);
+        assert_eq!(qty.precision, 4);
+    }
+
+    #[rstest]
+    fn test_convert_contract_quantity_scaling() {
+        let max_scale = FIXED_PRECISION as u32;
+        let (contract_decimal, size_increment) =
+            derive_contract_decimal_and_increment(Some(10_000.0), max_scale).unwrap();
+        assert!((size_increment.as_f64() - 0.0001).abs() < 1e-12);
+
+        let lot_qty =
+            convert_contract_quantity(Some(1_000.0), contract_decimal, max_scale, "lot size")
+                .unwrap()
+                .unwrap();
+        assert!((lot_qty.as_f64() - 0.1).abs() < 1e-9);
+        assert_eq!(lot_qty.precision, 1);
+    }
+
+    #[rstest]
+    fn test_derive_contract_decimal_defaults_to_one() {
+        let max_scale = FIXED_PRECISION as u32;
+        let (contract_decimal, size_increment) =
+            derive_contract_decimal_and_increment(Some(0.0), max_scale).unwrap();
+        assert_eq!(contract_decimal, Decimal::ONE);
+        assert_eq!(size_increment.as_f64(), 1.0);
+    }
 
     #[rstest]
     fn test_parse_account_state() {

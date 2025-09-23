@@ -28,6 +28,7 @@ None
 - Implemented Hyperliquid L2 order book with tick-based pricing (#2967), thanks @nicolad
 - Implemented Hyperliquid data client and fix dependencies (#2975), thanks @nicolad
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
+- Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded Rust (MSRV) to 1.90.0

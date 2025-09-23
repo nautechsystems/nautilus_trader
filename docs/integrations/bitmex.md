@@ -143,6 +143,22 @@ BitMEX spot symbols in NautilusTrader don't include the slash (/) that appears i
 BitMEX UI. Use `XBTUSDT` instead of `XBT/USDT`.
 :::
 
+### Quantity scaling
+
+BitMEX reports spot and derivative quantities in *contract* units. The actual asset size per
+contract is exchange-specific and published on the instrument definition:
+
+- `lotSize` – minimum number of contracts you can trade.
+- `underlyingToPositionMultiplier` – number of contracts per unit of the underlying asset.
+
+For example, the SOL/USDT spot instrument (`SOLUSDT`) exposes `lotSize = 1000` and
+`underlyingToPositionMultiplier = 10000`, meaning one contract represents `1 / 10000 = 0.0001`
+SOL, and the minimum order (`lotSize * contract_size`) is `0.1` SOL. The adapter now derives the
+contract size directly from these fields and scales both inbound market data and outbound orders
+accordingly, so quantities in Nautilus are always expressed in base units (SOL, ETH, etc.).
+
+See the BitMEX API documentation for details on these fields: <https://www.bitmex.com/app/apiOverview#Instrument-Properties>.
+
 ## Order capability
 
 The BitMEX integration supports the following order types and execution features.

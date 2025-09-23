@@ -42,8 +42,12 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
-instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 order_qty = Decimal("100")  # Contract size in USD
+
+# symbol = "SOLUSDT"  # Solana quoted in USDT spot
+# order_qty = Decimal("0.1")  # Fractional size
+
+instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 
 # Configure the trading node
 config_node = TradingNodeConfig(

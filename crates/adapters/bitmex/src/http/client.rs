@@ -73,7 +73,7 @@ use crate::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
         enums::{BitmexContingencyType, BitmexOrderStatus, BitmexSide},
-        parse::{parse_account_state, parse_instrument_id, quantity_to_u32},
+        parse::{parse_account_state, quantity_to_u32},
     },
     http::{
         parse::{
@@ -1144,16 +1144,24 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the instruments cache mutex is poisoned.
-    pub fn get_price_precision(&self, symbol: Ustr) -> anyhow::Result<u8> {
+    fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         let cache = self.instruments_cache.lock().unwrap();
-        cache
-            .get(&symbol)
-            .map(|inst| inst.price_precision())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Instrument {symbol} not found in cache, ensure instruments loaded first"
-                )
-            })
+        cache.get(&symbol).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Instrument {symbol} not found in cache, ensure instruments loaded first"
+            )
+        })
+    }
+
+    /// Returns the cached price precision for the given symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument was never cached (for example, if
+    /// instruments were not loaded prior to use).
+    pub fn get_price_precision(&self, symbol: Ustr) -> anyhow::Result<u8> {
+        self.instrument_from_cache(symbol)
+            .map(|instrument| instrument.price_precision())
     }
 
     /// Get user margin information.
@@ -1251,6 +1259,8 @@ impl BitmexHttpClient {
             BitmexExecInstruction, BitmexOrderType, BitmexSide, BitmexTimeInForce,
         };
 
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+
         let mut params = super::query::PostOrderParamsBuilder::default();
         params.text(NAUTILUS_TRADER);
         params.symbol(instrument_id.symbol.as_str());
@@ -1262,7 +1272,7 @@ impl BitmexHttpClient {
         let ord_type = BitmexOrderType::try_from_order_type(order_type)?;
         params.ord_type(ord_type);
 
-        params.order_qty(quantity_to_u32(&quantity));
+        params.order_qty(quantity_to_u32(&quantity, &instrument));
 
         let tif = BitmexTimeInForce::try_from_time_in_force(time_in_force)?;
         params.time_in_force(tif);
@@ -1276,7 +1286,7 @@ impl BitmexHttpClient {
         }
 
         if let Some(display_qty) = display_qty {
-            params.display_qty(quantity_to_u32(&display_qty));
+            params.display_qty(quantity_to_u32(&display_qty, &instrument));
         }
 
         if let Some(order_list_id) = order_list_id {
@@ -1327,10 +1337,10 @@ impl BitmexHttpClient {
             anyhow::bail!("Order rejected: {reason}");
         }
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
+        parse_order_status_report(&order, &instrument, ts_init)
     }
 
     /// Cancel an order.
@@ -1369,10 +1379,10 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No order returned in cancel response"))?;
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
+        parse_order_status_report(&order, &instrument, ts_init)
     }
 
     /// Cancel multiple orders.
@@ -1420,18 +1430,12 @@ impl BitmexHttpClient {
         let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
 
         let ts_init = self.generate_ts_init();
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
 
         let mut reports = Vec::new();
 
         for order in orders {
-            let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
-
-            reports.push(parse_order_status_report(
-                &order,
-                instrument_id,
-                price_precision,
-                ts_init,
-            )?);
+            reports.push(parse_order_status_report(&order, &instrument, ts_init)?);
         }
 
         Self::populate_linked_order_ids(&mut reports);
@@ -1470,18 +1474,13 @@ impl BitmexHttpClient {
 
         let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         let mut reports = Vec::new();
 
         for order in orders {
-            reports.push(parse_order_status_report(
-                &order,
-                instrument_id,
-                price_precision,
-                ts_init,
-            )?);
+            reports.push(parse_order_status_report(&order, &instrument, ts_init)?);
         }
 
         Self::populate_linked_order_ids(&mut reports);
@@ -1521,7 +1520,8 @@ impl BitmexHttpClient {
         }
 
         if let Some(quantity) = quantity {
-            params.order_qty(quantity_to_u32(&quantity));
+            let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+            params.order_qty(quantity_to_u32(&quantity, &instrument));
         }
 
         if let Some(price) = price {
@@ -1546,10 +1546,10 @@ impl BitmexHttpClient {
             anyhow::bail!("Order modification rejected: {reason}");
         }
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
+        parse_order_status_report(&order, &instrument, ts_init)
     }
 
     /// Query a single order by client order ID or venue order ID.
@@ -1593,10 +1593,10 @@ impl BitmexHttpClient {
 
         let order = &response[0];
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        let report = parse_order_status_report(order, instrument_id, price_precision, ts_init)?;
+        let report = parse_order_status_report(order, &instrument, ts_init)?;
 
         Ok(Some(report))
     }
@@ -1638,10 +1638,10 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Order not found"))?;
 
-        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
+        parse_order_status_report(&order, &instrument, ts_init)
     }
 
     /// Request multiple order status reports.
@@ -1693,10 +1693,9 @@ impl BitmexHttpClient {
                 continue;
             };
 
-            let instrument_id = parse_instrument_id(symbol);
-            let price_precision = self.get_price_precision(symbol)?;
+            let instrument = self.instrument_from_cache(symbol)?;
 
-            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
+            match parse_order_status_report(&order, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse order status report: {e}"),
             }
@@ -1778,9 +1777,17 @@ impl BitmexHttpClient {
                 tracing::debug!("Skipping execution without symbol: {:?}", exec.exec_type);
                 continue;
             };
-            let price_precision = self.get_price_precision(symbol)?;
+            let symbol_str = symbol.to_string();
 
-            match parse_fill_report(exec, price_precision, ts_init) {
+            let instrument = match self.instrument_from_cache(symbol) {
+                Ok(instrument) => instrument,
+                Err(err) => {
+                    tracing::error!(symbol = %symbol_str, "Instrument not found in cache for execution parsing: {err}");
+                    continue;
+                }
+            };
+
+            match parse_fill_report(exec, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
                     // Log at debug level for expected skip cases
@@ -1819,7 +1826,19 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for pos in response {
-            match parse_position_report(pos, ts_init) {
+            let symbol = Ustr::from(pos.symbol.as_str());
+            let instrument = match self.instrument_from_cache(symbol) {
+                Ok(instrument) => instrument,
+                Err(err) => {
+                    tracing::error!(
+                        symbol = pos.symbol.as_str(),
+                        "Instrument not found in cache for position parsing: {err}"
+                    );
+                    continue;
+                }
+            };
+
+            match parse_position_report(pos, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse position report: {e}"),
             }
@@ -1848,9 +1867,10 @@ impl BitmexHttpClient {
 
         let response = self.inner.http_update_position_leverage(params).await?;
 
+        let instrument = self.instrument_from_cache(Ustr::from(symbol))?;
         let ts_init = self.generate_ts_init();
 
-        parse_position_report(response, ts_init)
+        parse_position_report(response, &instrument, ts_init)
     }
 }
 
