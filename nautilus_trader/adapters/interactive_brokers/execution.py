@@ -22,6 +22,7 @@ from ibapi.commission_report import CommissionReport
 from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
+from ibapi.execution import ExecutionFilter
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
 
@@ -447,8 +448,153 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
-        return []  # TODO: Implement
+        """
+        Generate a list of `FillReport`s with optional query filters.
+
+        The returned list may be empty if no executions match the given parameters.
+
+        """
+        self._log.debug("Requesting FillReports...")
+        reports: list[FillReport] = []
+
+        try:
+            # Create execution filter based on command parameters
+            execution_filter = ExecutionFilter()
+            execution_filter.acctCode = self.account_id.get_id()
+
+            # Apply instrument filter if specified
+            if command.instrument_id is not None:
+                execution_filter.symbol = command.instrument_id.symbol.value
+
+            # Apply time filter if specified
+            if command.start is not None:
+                # IB expects time format 'yyyymmdd-hh:mm:ss'
+                start_time = command.start.strftime("%Y%m%d-%H:%M:%S")
+                execution_filter.time = start_time
+
+            # Get execution details from IB
+            execution_details = await self._client.get_executions(
+                account_id=self.account_id.get_id(),
+                execution_filter=execution_filter,
+            )
+
+            ts_init = self._clock.timestamp_ns()
+
+            for exec_detail in execution_details:
+                execution = exec_detail.get("execution")
+                contract = exec_detail.get("contract")
+                commission_report = exec_detail.get("commission_report")
+
+                if not all([execution, contract, commission_report]):
+                    self._log.warning(f"Incomplete execution detail: {exec_detail}")
+                    continue
+
+                # Filter by end time if specified
+                if command.end is not None:
+                    exec_time = timestring_to_timestamp(execution.time)
+                    if exec_time.value > command.end.value:
+                        continue
+
+                # Get instrument for this execution
+                instrument = await self.instrument_provider.get_instrument(contract)
+                if instrument is None:
+                    self._log.warning(
+                        f"Cannot generate fill report: instrument not found for contract {contract.conId}",
+                    )
+                    continue
+
+                # Convert IB execution to Nautilus FillReport
+                try:
+                    fill_report = self._create_fill_report(
+                        execution=execution,
+                        contract=contract,
+                        commission_report=commission_report,
+                        instrument=instrument,
+                        ts_init=ts_init,
+                    )
+                    reports.append(fill_report)
+                    self._log.debug(f"Generated {fill_report}")
+                except Exception as e:
+                    self._log.error(
+                        f"Failed to create fill report for execution {execution.execId}: {e}",
+                    )
+                    continue
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Generated {len_reports} FillReport{plural}")
+
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+
+        return reports
+
+    def _create_fill_report(
+        self,
+        execution: Execution,
+        contract: IBContract,
+        commission_report: CommissionReport,
+        instrument,
+        ts_init: int,
+    ) -> FillReport:
+        """
+        Create a FillReport from IB execution data.
+        """
+        # Convert price using price magnifier
+        price_magnifier = self.instrument_provider.get_price_magnifier(instrument.id)
+        converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+
+        # Determine order side
+        order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+
+        # Create client order ID from order reference if available
+        client_order_id = None
+        if execution.orderRef:
+            # Remove the order ID suffix that IB adds
+            order_ref = execution.orderRef.rsplit(":", 1)[0]
+            client_order_id = ClientOrderId(order_ref)
+
+        # Create venue order ID
+        venue_order_id = VenueOrderId(str(execution.orderId))
+
+        # Create trade ID
+        trade_id = TradeId(execution.execId)
+
+        # Create quantities and prices
+        last_qty = Quantity(execution.shares, precision=instrument.size_precision)
+        last_px = Price(converted_execution_price, precision=instrument.price_precision)
+
+        # Create commission
+        commission = Money(
+            commission_report.commission,
+            Currency.from_str(commission_report.currency),
+        )
+
+        # Determine liquidity side (IB doesn't provide this directly, so we use NO_LIQUIDITY_SIDE)
+        liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
+
+        # Convert execution time to timestamp
+        ts_event = timestring_to_timestamp(execution.time).value
+
+        # Generate report ID
+        report_id = UUID4()
+
+        return FillReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            venue_order_id=venue_order_id,
+            trade_id=trade_id,
+            order_side=order_side,
+            last_qty=last_qty,
+            last_px=last_px,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            report_id=report_id,
+            ts_event=ts_event,
+            ts_init=ts_init,
+            client_order_id=client_order_id,
+            venue_position_id=None,  # IB doesn't provide position ID in executions
+        )
 
     async def generate_position_status_reports(
         self,
