@@ -397,3 +397,553 @@ async def test_custom_oca_tags_override_contingency_type(exec_client):
     # Assert - custom tags should override automatic contingency detection
     assert ib_order.ocaGroup == "OVERRIDE_GROUP"  # Not "OCA_OL-OVERRIDE"
     assert ib_order.ocaType == 3  # Not 1
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_conditions(exec_client):
+    """
+    Test that orders with conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create conditions data
+    conditions_data = [
+        {
+            "type": "price",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "price": 1.1000,
+            "triggerMethod": 0,
+            "conjunction": "and",
+        },
+        {
+            "type": "time",
+            "time": "20250315-09:30:00",
+            "isMore": True,
+            "conjunction": "or",
+        },
+        {
+            "type": "volume",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "volume": 1000000,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with conditions
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    # Create order with conditions
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("CONDITIONS-1"),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100),
+        price=instrument.make_price(1.0500),
+        time_in_force=TimeInForce.GTC,
+        expire_time_ns=0,
+        init_id=UUID4(),
+        ts_init=0,
+        post_only=False,
+        reduce_only=False,
+        display_qty=None,
+        contingency_type=ContingencyType.NO_CONTINGENCY,
+        order_list_id=None,
+        linked_order_ids=None,
+        parent_order_id=None,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 3
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check price condition
+    price_condition = ib_order.conditions[0]
+    assert price_condition.type() == 1  # OrderCondition.Price
+    assert price_condition.conId == 265598
+    assert price_condition.exchange == "SMART"
+    assert price_condition.isMore is True
+    assert price_condition.price == 1.1000
+    assert price_condition.triggerMethod == 0
+    assert price_condition.isConjunctionConnection is True  # AND
+
+    # Check time condition
+    time_condition = ib_order.conditions[1]
+    assert time_condition.type() == 3  # OrderCondition.Time
+    assert time_condition.time == "20250315-09:30:00"
+    assert time_condition.isMore is True
+    assert time_condition.isConjunctionConnection is False  # OR
+
+    # Check volume condition
+    volume_condition = ib_order.conditions[2]
+    assert volume_condition.type() == 6  # OrderCondition.Volume
+    assert volume_condition.conId == 265598
+    assert volume_condition.exchange == "SMART"
+    assert volume_condition.isMore is True
+    assert volume_condition.volume == 1000000
+    assert volume_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_execution_condition(exec_client):
+    """
+    Test that orders with execution conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create execution condition data
+    conditions_data = [
+        {
+            "type": "execution",
+            "symbol": "AAPL",
+            "secType": "STK",
+            "exchange": "SMART",
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with execution condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=True,  # Cancel order when condition is met
+    )
+
+    # Create order with execution condition
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("EXECUTION-CONDITION-1"),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100),
+        price=instrument.make_price(1.0500),
+        time_in_force=TimeInForce.GTC,
+        expire_time_ns=0,
+        init_id=UUID4(),
+        ts_init=0,
+        post_only=False,
+        reduce_only=False,
+        display_qty=None,
+        contingency_type=ContingencyType.NO_CONTINGENCY,
+        order_list_id=None,
+        linked_order_ids=None,
+        parent_order_id=None,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is True
+
+    # Check execution condition
+    execution_condition = ib_order.conditions[0]
+    assert execution_condition.type() == 5  # OrderCondition.Execution
+    assert execution_condition.symbol == "AAPL"
+    assert execution_condition.secType == "STK"
+    assert execution_condition.exchange == "SMART"
+    assert execution_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_price_condition(exec_client):
+    """
+    Test that orders with price conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create price condition data
+    conditions_data = [
+        {
+            "type": "price",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "price": 1.1000,
+            "triggerMethod": 0,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with price condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check price condition
+    price_condition = ib_order.conditions[0]
+    assert price_condition.type() == 1  # OrderCondition.Price
+    assert price_condition.conId == 265598
+    assert price_condition.exchange == "SMART"
+    assert price_condition.isMore is True
+    assert price_condition.price == 1.1000
+    assert price_condition.triggerMethod == 0
+    assert price_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_time_condition(exec_client):
+    """
+    Test that orders with time conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create time condition data
+    conditions_data = [
+        {
+            "type": "time",
+            "time": "20250315-09:30:00",
+            "isMore": True,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with time condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check time condition
+    time_condition = ib_order.conditions[0]
+    assert time_condition.type() == 3  # OrderCondition.Time
+    assert time_condition.time == "20250315-09:30:00"
+    assert time_condition.isMore is True
+    assert time_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_volume_condition(exec_client):
+    """
+    Test that orders with volume conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create volume condition data
+    conditions_data = [
+        {
+            "type": "volume",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "volume": 1000000,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with volume condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check volume condition
+    volume_condition = ib_order.conditions[0]
+    assert volume_condition.type() == 6  # OrderCondition.Volume
+    assert volume_condition.conId == 265598
+    assert volume_condition.exchange == "SMART"
+    assert volume_condition.isMore is True
+    assert volume_condition.volume == 1000000
+    assert volume_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_margin_condition(exec_client):
+    """
+    Test that orders with margin conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create margin condition data
+    conditions_data = [
+        {
+            "type": "margin",
+            "percent": 75,
+            "isMore": True,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with margin condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check margin condition
+    margin_condition = ib_order.conditions[0]
+    assert margin_condition.type() == 4  # OrderCondition.Margin
+    assert margin_condition.percent == 75
+    assert margin_condition.isMore is True
+    assert margin_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_percent_change_condition(exec_client):
+    """
+    Test that orders with percent change conditions are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create percent change condition data
+    conditions_data = [
+        {
+            "type": "percent_change",
+            "conId": 265598,
+            "exchange": "SMART",
+            "changePercent": 5.0,
+            "isMore": True,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with percent change condition
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 1
+    assert ib_order.conditionsCancelOrder is False
+
+    # Check percent change condition
+    percent_change_condition = ib_order.conditions[0]
+    assert percent_change_condition.type() == 7  # OrderCondition.PercentChange
+    assert percent_change_condition.conId == 265598
+    assert percent_change_condition.exchange == "SMART"
+    assert percent_change_condition.changePercent == 5.0
+    assert percent_change_condition.isMore is True
+    assert percent_change_condition.isConjunctionConnection is True  # AND
+
+
+@pytest.mark.asyncio
+async def test_transform_order_with_all_condition_types(exec_client):
+    """
+    Test that orders with all 6 condition types are properly transformed.
+    """
+    # Arrange
+    instrument = _EURUSD
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create all 6 condition types
+    conditions_data = [
+        {
+            "type": "price",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "price": 1.1000,
+            "triggerMethod": 0,
+            "conjunction": "and",
+        },
+        {
+            "type": "time",
+            "time": "20250315-09:30:00",
+            "isMore": True,
+            "conjunction": "or",
+        },
+        {
+            "type": "volume",
+            "conId": 265598,
+            "exchange": "SMART",
+            "isMore": True,
+            "volume": 1000000,
+            "conjunction": "and",
+        },
+        {
+            "type": "execution",
+            "symbol": "AAPL",
+            "secType": "STK",
+            "exchange": "SMART",
+            "conjunction": "and",
+        },
+        {
+            "type": "margin",
+            "percent": 75,
+            "isMore": True,
+            "conjunction": "or",
+        },
+        {
+            "type": "percent_change",
+            "conId": 265598,
+            "exchange": "SMART",
+            "changePercent": 5.0,
+            "isMore": True,
+            "conjunction": "and",
+        },
+    ]
+
+    # Create order tags with all conditions
+    order_tags = IBOrderTags(
+        conditions=conditions_data,
+        conditionsCancelOrder=False,
+    )
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=TestIdStubs.client_order_id(),
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(100_000),
+        price=instrument.make_price(1.00050),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.conditions is not None
+    assert len(ib_order.conditions) == 6
+    assert ib_order.conditionsCancelOrder is False
+
+    # Verify all condition types are present
+    condition_types = [condition.type() for condition in ib_order.conditions]
+    assert 1 in condition_types  # Price
+    assert 3 in condition_types  # Time
+    assert 6 in condition_types  # Volume
+    assert 5 in condition_types  # Execution
+    assert 4 in condition_types  # Margin
+    assert 7 in condition_types  # PercentChange

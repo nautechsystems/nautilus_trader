@@ -23,6 +23,13 @@ from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
+from ibapi.order_condition import ExecutionCondition
+from ibapi.order_condition import MarginCondition
+from ibapi.order_condition import OrderCondition
+from ibapi.order_condition import PercentChangeCondition
+from ibapi.order_condition import PriceCondition
+from ibapi.order_condition import TimeCondition
+from ibapi.order_condition import VolumeCondition
 from ibapi.order_state import OrderState as IBOrderState
 
 # fmt: off
@@ -711,8 +718,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Process all tags
         for tag in tags:
             if tag == "conditions":
-                for condition in tags[tag]:
-                    pass  # TODO: Implement conditions handling
+                conditions = self._create_ib_conditions(tags[tag])
+                self._log.debug(
+                    f"Setting {len(conditions)} conditions on order: {[type(c).__name__ for c in conditions]}",
+                )
+                ib_order.conditions = conditions
+            elif tag == "conditionsCancelOrder":
+                ib_order.conditionsCancelOrder = tags[tag]
             elif tag == "ocaGroup":
                 oca_group_from_tags = tags[tag]
             elif tag == "ocaType":
@@ -735,6 +747,158 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
 
         return ib_order
+
+    def _create_ib_conditions(  # noqa: C901
+        self,
+        conditions_data: list[dict],
+    ) -> list[OrderCondition]:
+        """
+        Create IB order conditions from condition dictionaries.
+
+        Parameters
+        ----------
+        conditions_data : list[dict]
+            List of condition dictionaries containing condition parameters.
+
+        Returns
+        -------
+        list[OrderCondition]
+            List of IB order condition objects.
+
+        """
+        conditions = []
+
+        for condition_dict in conditions_data:
+            condition_type = condition_dict.get("type")
+
+            if condition_type == "price":
+                condition = self._create_price_condition(condition_dict)
+            elif condition_type == "time":
+                condition = self._create_time_condition(condition_dict)
+            elif condition_type == "margin":
+                condition = self._create_margin_condition(condition_dict)
+            elif condition_type == "execution":
+                condition = self._create_execution_condition(condition_dict)
+            elif condition_type == "volume":
+                condition = self._create_volume_condition(condition_dict)
+            elif condition_type == "percent_change":
+                condition = self._create_percent_change_condition(condition_dict)
+            else:
+                self._log.warning(f"Unknown condition type: {condition_type}")
+                continue
+
+            if condition:
+                # Set conjunction connection (AND/OR)
+                # True = AND, False = OR
+                condition.isConjunctionConnection = (
+                    condition_dict.get("conjunction", "and").lower() == "and"
+                )
+
+                # Debug logging (handle PriceCondition.__str__ bug in ibapi without monkey patching)
+                condition_name = type(condition).__name__
+                try:
+                    # Try to get string representation, but handle ibapi PriceCondition bug
+                    if hasattr(condition, "__str__") and callable(condition.__str__):
+                        condition_str = str(condition)
+                    else:
+                        # Workaround for ibapi PriceCondition bug where __str__ is a @property
+                        condition_str = f"{condition_name} object"
+                    self._log.debug(f"Created condition: {condition_name} - {condition_str}")
+                except Exception:
+                    # Fallback if string conversion fails
+                    self._log.debug(f"Created condition: {condition_name}")
+                conditions.append(condition)
+
+        return conditions
+
+    def _create_price_condition(self, condition_dict: dict) -> PriceCondition | None:
+        """
+        Create a price condition from condition dictionary.
+        """
+        try:
+            condition = PriceCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.price = condition_dict.get("price", 0.0)
+            condition.triggerMethod = condition_dict.get("triggerMethod", 0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create price condition: {e}")
+            return None
+
+    def _create_time_condition(self, condition_dict: dict) -> TimeCondition | None:
+        """
+        Create a time condition from condition dictionary.
+        """
+        try:
+            condition = TimeCondition()
+            condition.time = condition_dict.get("time", "")
+            condition.isMore = condition_dict.get("isMore", True)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create time condition: {e}")
+            return None
+
+    def _create_margin_condition(self, condition_dict: dict) -> MarginCondition | None:
+        """
+        Create a margin condition from condition dictionary.
+        """
+        try:
+            condition = MarginCondition()
+            condition.percent = condition_dict.get("percent", 0)
+            condition.isMore = condition_dict.get("isMore", True)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create margin condition: {e}")
+            return None
+
+    def _create_execution_condition(self, condition_dict: dict) -> ExecutionCondition | None:
+        """
+        Create an execution condition from condition dictionary.
+        """
+        try:
+            condition = ExecutionCondition()
+            condition.symbol = condition_dict.get("symbol", "")
+            condition.secType = condition_dict.get("secType", "STK")
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create execution condition: {e}")
+            return None
+
+    def _create_volume_condition(self, condition_dict: dict) -> VolumeCondition | None:
+        """
+        Create a volume condition from condition dictionary.
+        """
+        try:
+            condition = VolumeCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.volume = condition_dict.get("volume", 0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create volume condition: {e}")
+            return None
+
+    def _create_percent_change_condition(
+        self,
+        condition_dict: dict,
+    ) -> PercentChangeCondition | None:
+        """
+        Create a percent change condition from condition dictionary.
+        """
+        try:
+            condition = PercentChangeCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.changePercent = condition_dict.get("changePercent", 0.0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create percent change condition: {e}")
+            return None
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
