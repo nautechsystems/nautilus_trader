@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -118,7 +118,7 @@ class TestHistoricalAggStrategy(Strategy):
     def on_start(self):
         if self.config.data_type == "bars":
             ######### for testing bars
-            utc_now = self._clock.utc_now()
+            utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
             )
@@ -163,7 +163,7 @@ class TestHistoricalAggStrategy(Strategy):
             self.user_log("subscribe_bars done")
         elif self.config.data_type == "quotes":
             ######## for testing quotes
-            utc_now = self._clock.utc_now()
+            utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
             )
@@ -190,7 +190,7 @@ class TestHistoricalAggStrategy(Strategy):
             self.subscribe_bars(self.bar_type_2)
         if self.config.data_type == "trades":
             ######## for testing trades
-            utc_now = self._clock.utc_now()
+            utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
             )

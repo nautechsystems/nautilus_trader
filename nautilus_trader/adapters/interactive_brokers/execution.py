@@ -64,7 +64,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -504,151 +503,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return report
 
-    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901 11 > 10
-        if order.is_post_only:
-            raise ValueError("`post_only` not supported by Interactive Brokers")
-
-        ib_order = IBOrder()
-        time_in_force = order.time_in_force
-        price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)
-
-        for key, field, fn in MAP_ORDER_FIELDS:
-            if value := getattr(order, key, None):
-                if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
-                    setattr(ib_order, field, fn((value, time_in_force)))
-                elif key == "price" and value is not None:
-                    converted_price = nautilus_price_to_ib_price(value.as_double(), price_magnifier)
-                    setattr(ib_order, field, converted_price)
-                else:
-                    setattr(ib_order, field, fn(value))
-
-        if self.instrument_provider.find(order.instrument_id).is_inverse:
-            ib_order.cashQty = int(ib_order.totalQuantity)
-            ib_order.totalQuantity = 0
-
-        if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
-            if order.trailing_offset_type != TrailingOffsetType.PRICE:
-                raise ValueError(
-                    f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
-                )
-
-            ib_order.auxPrice = float(order.trailing_offset)
-
-            if order.trigger_price:
-                converted_trigger_price = nautilus_price_to_ib_price(
-                    order.trigger_price.as_double(),
-                    price_magnifier,
-                )
-                ib_order.trailStopPrice = converted_trigger_price
-                ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
-        elif (
-            isinstance(
-                order,
-                MarketIfTouchedOrder | LimitIfTouchedOrder | StopLimitOrder | StopMarketOrder,
-            )
-        ) and order.trigger_price:
-            converted_aux_price = nautilus_price_to_ib_price(
-                order.trigger_price.as_double(),
-                price_magnifier,
-            )
-            ib_order.auxPrice = converted_aux_price
-
-        if order.instrument_id.is_spread():
-            bag_contract = self.instrument_provider.contract.get(order.instrument_id)
-
-            if not bag_contract:
-                raise ValueError(
-                    f"No BAG contract found for spread instrument {order.instrument_id}",
-                )
-
-            ib_order.contract = bag_contract
-        else:
-            details = self.instrument_provider.contract_details[order.instrument_id]
-            ib_order.contract = details.contract
-
-        ib_order.account = self.account_id.get_id()
-        ib_order.clearingAccount = self.account_id.get_id()
-
-        # Handle OCA (One-Cancels-All) settings - check order tags first, then contingency types
-        oca_group_from_tags = None
-        oca_type_from_tags = None
-
-        # Check if OCA settings are specified in order tags
-        if order.tags:
-            for tag in order.tags:
-                if tag.startswith("IBOrderTags:"):
-                    try:
-                        tags_dict = IBOrderTags.parse(tag.replace("IBOrderTags:", "")).dict()
-
-                        if tags_dict.get("ocaGroup"):
-                            oca_group_from_tags = tags_dict["ocaGroup"]
-
-                        # Get ocaType from tags, including 0 as a valid value
-                        if "ocaType" in tags_dict:
-                            oca_type_from_tags = tags_dict["ocaType"]
-                    except Exception as e:
-                        self._log.warning(f"Failed to parse IBOrderTags: {e}")
-
-        # Apply OCA settings from tags if specified
-        if oca_group_from_tags:
-            ib_order.ocaGroup = oca_group_from_tags
-
-            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
-            if oca_type_from_tags is not None and oca_type_from_tags > 0:
-                ib_order.ocaType = oca_type_from_tags
-            else:
-                ib_order.ocaType = 1  # Default to type 1 for safety
-
-            self._log.info(
-                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
-            )
-        # Otherwise, handle OCO/OUO contingency types automatically for bracket orders
-        elif (
-            order.contingency_type in (ContingencyType.OCO, ContingencyType.OUO)
-            and order.linked_order_ids
-            and order.parent_order_id
-        ):  # Child orders in bracket
-
-            # Generate unique OCA group identifier using order list ID
-            if order.order_list_id:
-                oca_group = f"OCA_{order.order_list_id.value}"
-            else:
-                # Fallback to using parent order ID for consistency
-                oca_group = f"OCA_{order.parent_order_id.value}"
-
-            ib_order.ocaGroup = oca_group
-            # Use OCA type 1 (cancel all remaining orders with block) for safety
-            ib_order.ocaType = 1
-
-            self._log.info(
-                f"Setting {order.contingency_type.name} order {order.client_order_id} to OCA group: {oca_group}",
-            )
-
-        if order.tags:
-            return self._attach_order_tags(ib_order, order)
-        else:
-            return ib_order
-
-    def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:
-        tags: dict = {}
-
-        for ot in order.tags:
-            if ot.startswith("IBOrderTags:"):
-                tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
-                break
-
-        for tag in tags:
-            if tag == "conditions":
-                for condition in tags[tag]:
-                    pass  # TODO:
-            elif tag in ("ocaGroup", "ocaType"):
-                # Skip OCA tags as they're handled in the main transformation logic
-                continue
-            else:
-                setattr(ib_order, tag, tags[tag])
-
-        return ib_order
-
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
 
@@ -729,7 +583,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         except ValueError as e:
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
-                order=command.order,
+                order=nautilus_order,
                 reason=str(e),
             )
             return
@@ -766,6 +620,121 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
+
+    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901
+        if order.is_post_only:
+            raise ValueError("`post_only` not supported by Interactive Brokers")
+
+        ib_order = IBOrder()
+        time_in_force = order.time_in_force
+        price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)
+
+        for key, field, fn in MAP_ORDER_FIELDS:
+            if value := getattr(order, key, None):
+                if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
+                    setattr(ib_order, field, fn((value, time_in_force)))
+                elif key == "price" and value is not None:
+                    converted_price = nautilus_price_to_ib_price(value.as_double(), price_magnifier)
+                    setattr(ib_order, field, converted_price)
+                else:
+                    setattr(ib_order, field, fn(value))
+
+        if self.instrument_provider.find(order.instrument_id).is_inverse:
+            ib_order.cashQty = int(ib_order.totalQuantity)
+            ib_order.totalQuantity = 0
+
+        if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
+            if order.trailing_offset_type != TrailingOffsetType.PRICE:
+                raise ValueError(
+                    f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
+                )
+
+            ib_order.auxPrice = float(order.trailing_offset)
+
+            if order.trigger_price:
+                converted_trigger_price = nautilus_price_to_ib_price(
+                    order.trigger_price.as_double(),
+                    price_magnifier,
+                )
+                ib_order.trailStopPrice = converted_trigger_price
+                ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
+        elif (
+            isinstance(
+                order,
+                MarketIfTouchedOrder | LimitIfTouchedOrder | StopLimitOrder | StopMarketOrder,
+            )
+        ) and order.trigger_price:
+            converted_aux_price = nautilus_price_to_ib_price(
+                order.trigger_price.as_double(),
+                price_magnifier,
+            )
+            ib_order.auxPrice = converted_aux_price
+
+        if order.instrument_id.is_spread():
+            bag_contract = self.instrument_provider.contract.get(order.instrument_id)
+
+            if not bag_contract:
+                raise ValueError(
+                    f"No BAG contract found for spread instrument {order.instrument_id}",
+                )
+
+            ib_order.contract = bag_contract
+        else:
+            details = self.instrument_provider.contract_details[order.instrument_id]
+            ib_order.contract = details.contract
+
+        ib_order.account = self.account_id.get_id()
+        ib_order.clearingAccount = self.account_id.get_id()
+
+        if order.tags:
+            return self._attach_order_tags(ib_order, order)
+        else:
+            return ib_order
+
+    def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:  # noqa: C901
+        """
+        Attach all order tags including OCA settings to the IB order.
+        """
+        tags: dict = {}
+        oca_group_from_tags = None
+        oca_type_from_tags = None
+
+        # Parse IBOrderTags from order tags
+        for ot in order.tags:
+            if ot.startswith("IBOrderTags:"):
+                try:
+                    tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
+                    break
+                except Exception as e:
+                    self._log.warning(f"Failed to parse IBOrderTags: {e}")
+
+        # Process all tags
+        for tag in tags:
+            if tag == "conditions":
+                for condition in tags[tag]:
+                    pass  # TODO: Implement conditions handling
+            elif tag == "ocaGroup":
+                oca_group_from_tags = tags[tag]
+            elif tag == "ocaType":
+                oca_type_from_tags = tags[tag]
+            else:
+                setattr(ib_order, tag, tags[tag])
+
+        # Handle OCA (One-Cancels-All) settings
+        if oca_group_from_tags:
+            ib_order.ocaGroup = oca_group_from_tags
+
+            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
+            if oca_type_from_tags is not None and oca_type_from_tags > 0:
+                ib_order.ocaType = oca_type_from_tags
+            else:
+                ib_order.ocaType = 1  # Default to type 1 for safety
+
+            self._log.info(
+                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
+            )
+
+        return ib_order
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")

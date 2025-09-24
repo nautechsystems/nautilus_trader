@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -19,10 +19,10 @@
 # %%
 # fmt: off
 import os
-
-# import pandas as pd
 import threading
 import time
+
+from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -105,7 +105,31 @@ class DemoStrategy(Strategy):
         #     start,
         # )
 
-        self.subscribe_bars(self.config.bar_type)
+        # utc_now = self.clock.utc_now()
+        # self.subscribe_bars(self.config.bar_type, params={"start_ns":(utc_now - pd.Timedelta(minutes=2)).value})
+
+        # Prepare values for order
+        last_price = self.instrument.make_price(46745)
+        tick_size = self.instrument.price_increment
+        profit_price = self.instrument.make_price(last_price + (10 * tick_size))
+        stoploss_price = self.instrument.make_price(last_price - (10 * tick_size))
+
+        # Create BUY MARKET order with PT and SL (both 10 ticks)
+        bracket_order_list = self.order_factory.bracket(
+            instrument_id=self.config.instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(1),  # Trade size: 1 contract
+            time_in_force=TimeInForce.GTC,
+            tp_price=profit_price,
+            sl_trigger_price=stoploss_price,
+            entry_post_only=False,
+            tp_post_only=False,
+        )
+
+        # Submit order and remember it
+        self.submit_order_list(bracket_order_list)
+        self.order_placed = True
+        self.log.info(f"Submitted bracket order: {bracket_order_list}", color=LogColor.GREEN)
 
     def on_bar(self, bar: Bar):
         """
@@ -207,7 +231,7 @@ class DemoStrategy(Strategy):
 
 # %%
 # Tested instrument id
-instrument_id = "YMU5.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
+instrument_id = "YMZ5.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
 
 instrument_provider = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
@@ -234,6 +258,7 @@ config_node = TradingNodeConfig(
             handle_revised_bars=False,
             use_regular_trading_hours=False,
             instrument_provider=instrument_provider,
+            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
         ),
     },
     exec_clients={
@@ -291,12 +316,23 @@ def auto_stop_node(node, delay_seconds=15):
 
 
 # %%
-# Start auto-stop timer
-auto_stop_node(node, delay_seconds=60)
+node.run()
 
-try:
-    node.run()
-except KeyboardInterrupt:
-    node.stop()
-finally:
-    node.dispose()
+# %%
+# # Start auto-stop timer
+# # auto_stop_node(node, delay_seconds=60)
+
+# try:
+#     node.run()
+# except KeyboardInterrupt:
+#     node.stop()
+# finally:
+#     node.dispose()
+
+# %%
+node.trader.strategies()[0].on_bar(2)
+
+# %%
+# ?node.*
+
+# %%

@@ -104,7 +104,7 @@ async def test_transform_order_to_ib_order_limit(
 @pytest.mark.asyncio
 async def test_transform_order_to_ib_order_oco_orders(exec_client):
     """
-    Test that OCO orders are properly transformed with OCA group settings.
+    Test that OCO orders with explicit OCA tags are properly transformed.
     """
     # Arrange
     instrument = _EURUSD
@@ -115,7 +115,11 @@ async def test_transform_order_to_ib_order_oco_orders(exec_client):
     tp_order_id = ClientOrderId("TP-1")
     sl_order_id = ClientOrderId("SL-1")
 
-    # Create take-profit order with OCO contingency
+    # Create explicit OCA tags for OCO orders
+    expected_oca_group = f"OCA_{order_list_id.value}"
+    oca_tags = IBOrderTags(ocaGroup=expected_oca_group, ocaType=1)
+
+    # Create take-profit order with OCO contingency and explicit OCA tags
     tp_order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
         strategy_id=TestIdStubs.strategy_id(),
@@ -135,10 +139,10 @@ async def test_transform_order_to_ib_order_oco_orders(exec_client):
         order_list_id=order_list_id,
         linked_order_ids=[sl_order_id],
         parent_order_id=parent_order_id,
-        tags=None,
+        tags=[oca_tags.value],
     )
 
-    # Create stop-loss order with OCO contingency
+    # Create stop-loss order with OCO contingency and explicit OCA tags
     sl_order = StopMarketOrder(
         trader_id=TestIdStubs.trader_id(),
         strategy_id=TestIdStubs.strategy_id(),
@@ -156,7 +160,7 @@ async def test_transform_order_to_ib_order_oco_orders(exec_client):
         order_list_id=order_list_id,
         linked_order_ids=[tp_order_id],
         parent_order_id=parent_order_id,
-        tags=None,
+        tags=[oca_tags.value],
     )
 
     # Act
@@ -164,8 +168,6 @@ async def test_transform_order_to_ib_order_oco_orders(exec_client):
     ib_sl_order = exec_client._transform_order_to_ib_order(sl_order)
 
     # Assert
-    expected_oca_group = f"OCA_{order_list_id.value}"
-
     # Both orders should have the same OCA group
     assert ib_tp_order.ocaGroup == expected_oca_group
     assert ib_sl_order.ocaGroup == expected_oca_group
@@ -182,7 +184,7 @@ async def test_transform_order_to_ib_order_oco_orders(exec_client):
 @pytest.mark.asyncio
 async def test_transform_order_to_ib_order_ouo_orders(exec_client):
     """
-    Test that OUO orders are properly transformed with OCA group settings.
+    Test that OUO orders with explicit OCA tags are properly transformed.
     """
     # Arrange
     instrument = _EURUSD
@@ -193,7 +195,11 @@ async def test_transform_order_to_ib_order_ouo_orders(exec_client):
     tp_order_id = ClientOrderId("TP-2")
     sl_order_id = ClientOrderId("SL-2")
 
-    # Create take-profit order with OUO contingency (default for bracket orders)
+    # Create explicit OCA tags for OUO orders
+    expected_oca_group = f"OCA_{order_list_id.value}"
+    oca_tags = IBOrderTags(ocaGroup=expected_oca_group, ocaType=1)
+
+    # Create take-profit order with OUO contingency and explicit OCA tags
     tp_order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
         strategy_id=TestIdStubs.strategy_id(),
@@ -213,10 +219,10 @@ async def test_transform_order_to_ib_order_ouo_orders(exec_client):
         order_list_id=order_list_id,
         linked_order_ids=[sl_order_id],
         parent_order_id=parent_order_id,
-        tags=None,
+        tags=[oca_tags.value],
     )
 
-    # Create stop-loss order with OUO contingency
+    # Create stop-loss order with OUO contingency and explicit OCA tags
     sl_order = StopMarketOrder(
         trader_id=TestIdStubs.trader_id(),
         strategy_id=TestIdStubs.strategy_id(),
@@ -234,7 +240,7 @@ async def test_transform_order_to_ib_order_ouo_orders(exec_client):
         order_list_id=order_list_id,
         linked_order_ids=[tp_order_id],
         parent_order_id=parent_order_id,
-        tags=None,
+        tags=[oca_tags.value],
     )
 
     # Act
@@ -242,8 +248,6 @@ async def test_transform_order_to_ib_order_ouo_orders(exec_client):
     ib_sl_order = exec_client._transform_order_to_ib_order(sl_order)
 
     # Assert
-    expected_oca_group = f"OCA_{order_list_id.value}"
-
     # Both orders should have the same OCA group
     assert ib_tp_order.ocaGroup == expected_oca_group
     assert ib_sl_order.ocaGroup == expected_oca_group
