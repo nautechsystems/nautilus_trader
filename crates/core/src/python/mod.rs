@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::doc_markdown, reason = "Python docstrings")]
+
 //! Python bindings and interoperability built using [`PyO3`](https://pyo3.rs).
 
 #![allow(

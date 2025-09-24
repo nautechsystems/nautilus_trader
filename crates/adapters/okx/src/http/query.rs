@@ -470,8 +470,9 @@ pub struct GetOrderParams {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_optional_parameters_are_omitted_when_none() {

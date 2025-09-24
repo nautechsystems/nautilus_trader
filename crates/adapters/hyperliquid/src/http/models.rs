@@ -249,8 +249,9 @@ mod tests {
 
 /// Custom serde module for handling 128-bit hex client order IDs.
 pub mod execution_cloid {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
     use std::fmt;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
     /// A 128-bit client order ID represented as a hex string with `0x` prefix.
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
