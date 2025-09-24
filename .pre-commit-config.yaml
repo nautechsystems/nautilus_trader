@@ -175,7 +175,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.19  # uv version
+    rev: 0.8.22  # uv version
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

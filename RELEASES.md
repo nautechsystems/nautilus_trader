@@ -16,6 +16,8 @@ Released on TBD (UTC).
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
+- Added Interactive Brokers order conditions (#2988), thanks @faysou
+- Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
 - Added OKX conditional orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
 
@@ -50,6 +52,7 @@ None
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
+- Fix Interactive Brokers modify bracket order (#2979), thanks @faysou
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
 
