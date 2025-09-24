@@ -22,6 +22,10 @@ use nautilus_model::defi::{DexType, SharedChain};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
 pub struct DexPoolFilters {
     /// Whether to exclude pools containing tokens with empty name or symbol fields.
     pub remove_pools_with_empty_erc20fields: bool,
@@ -51,6 +55,10 @@ impl Default for DexPoolFilters {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
 )]
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.

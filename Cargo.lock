@@ -4542,6 +4542,7 @@ dependencies = [
  "nautilus-network",
  "nautilus-system",
  "pyo3",
+ "pyo3-stub-gen",
  "reqwest",
  "rstest",
  "serde",

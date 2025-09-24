@@ -24,6 +24,7 @@ use pyo3::prelude::*;
 use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
 impl DexPoolFilters {
     /// Creates a new `DexPoolFilters` instance.
     #[new]
@@ -34,13 +35,26 @@ impl DexPoolFilters {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
 impl BlockchainDataClientConfig {
     /// Creates a new `BlockchainDataClientConfig` instance.
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None))]
     fn py_new(
+        #[gen_stub(
+            override_type(
+                type_repr = "nautilus_trader.model.Chain",
+                imports = ("nautilus_trader.model",),
+            ),
+        )]
         chain: &Chain,
+        #[gen_stub(
+            override_type(
+                type_repr = "typing.Sequence[nautilus_trader.model.DexType]",
+                imports = ("typing", "nautilus_trader.model"),
+            ),
+        )]
         dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
@@ -49,6 +63,12 @@ impl BlockchainDataClientConfig {
         use_hypersync_for_live_data: bool,
         from_block: Option<u64>,
         pool_filters: Option<DexPoolFilters>,
+        #[gen_stub(
+            override_type(
+                type_repr = "typing.Optional[nautilus_trader.infrastructure.PostgresConnectOptions]",
+                imports = ("typing", "nautilus_trader.infrastructure"),
+            ),
+        )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
     ) -> Self {
         Self::new(
@@ -67,6 +87,12 @@ impl BlockchainDataClientConfig {
 
     /// Returns the chain configuration.
     #[getter]
+    #[gen_stub(
+        override_return_type(
+            type_repr = "nautilus_trader.model.Chain",
+            imports = ("nautilus_trader.model",),
+        ),
+    )]
     fn chain(&self) -> Chain {
         (*self.chain).clone()
     }

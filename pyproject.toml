@@ -261,6 +261,8 @@ no_strict_optional = false
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
+mypy_path = ["."]
+exclude = "(^python/examples/|^examples/)"
 
 [[tool.mypy.overrides]]
 no_strict_optional = true

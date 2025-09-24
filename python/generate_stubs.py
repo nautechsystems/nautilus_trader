@@ -10,9 +10,11 @@ This script can be used as:
 """
 
 import argparse
+import re
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -76,7 +78,14 @@ def generate_stubs():
     ).get("name", "nautilus_trader")
     module_root = module_name.split(".")[0]
 
-    result = run_command(["cargo", "run", "--bin", "python-stub-gen"], cwd=crates_dir)
+    maturin_features = pyproject.get("tool", {}).get("maturin", {}).get("features", [])
+    cargo_features = [f for f in maturin_features if f != "extension-module"]
+
+    cmd = ["cargo", "run", "--bin", "python-stub-gen"]
+    if cargo_features:
+        cmd.extend(["--features", ",".join(cargo_features)])
+
+    result = run_command(cmd, cwd=crates_dir)
 
     print("Stubs generated successfully")
     if result.stdout:
@@ -117,19 +126,181 @@ def relocate_package_stubs(dest_dir: Path) -> None:
     """
     Move top-level module stubs into package __init__.pyi files when needed.
     """
-    core_stub = dest_dir / "nautilus_trader" / "core.pyi"
-    if core_stub.exists():
-        package_init = dest_dir / "nautilus_trader" / "core" / "__init__.pyi"
-        package_init.parent.mkdir(parents=True, exist_ok=True)
-        package_init.write_text(core_stub.read_text())
-        core_stub.unlink()
+    root = dest_dir / "nautilus_trader"
+    if not root.exists():  # pragma: no cover - defensive
+        return
 
-    model_stub = dest_dir / "nautilus_trader" / "model.pyi"
-    if model_stub.exists():
-        package_init = dest_dir / "nautilus_trader" / "model" / "__init__.pyi"
+    for stub_path in sorted(root.rglob("*.pyi")):
+        if stub_path.name == "__init__.pyi" or stub_path.stem == "_libnautilus":
+            continue
+
+        package_dir = stub_path.with_suffix("")
+        package_init = package_dir / "__init__.pyi"
+
         package_init.parent.mkdir(parents=True, exist_ok=True)
-        package_init.write_text(model_stub.read_text())
-        model_stub.unlink()
+        package_init.write_text(stub_path.read_text())
+        stub_path.unlink()
+
+    relocate_class_stubs(root)
+    apply_runtime_module_fixups()
+
+
+@dataclass(frozen=True)
+class StubFixup:
+    """
+    Configuration describing how to relocate and patch stub content for a module.
+    """
+
+    classes: tuple[str, ...] = ()
+    imports: tuple[str, ...] = ()
+    placeholders: tuple[str, ...] = ()
+
+
+METHOD_RENAMES = {
+    "py_new": "__init__",
+}
+
+MODULE_FIXUPS: dict[str, StubFixup] = {
+    "adapters.blockchain": StubFixup(
+        classes=(
+            "BlockchainDataClientConfig",
+            "BlockchainDataClientFactory",
+            "DexPoolFilters",
+        ),
+        imports=(
+            "import builtins",
+            "import typing",
+            "import nautilus_trader.infrastructure",
+            "import nautilus_trader.model",
+        ),
+    ),
+    "model": StubFixup(
+        classes=(
+            "DataType",
+            "AmmType",
+            "DexType",
+            "Dex",
+            "Blockchain",
+            "Chain",
+        ),
+        imports=(
+            "import builtins",
+            "import typing",
+            "from enum import Enum",
+        ),
+        placeholders=(
+            "",
+            '__all__ = ["AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"]',
+        ),
+    ),
+    "infrastructure": StubFixup(
+        classes=("PostgresConnectOptions",),
+        imports=("import typing",),
+        placeholders=(
+            "class PostgresConnectOptions: ...",
+            "",
+            '__all__ = ["PostgresConnectOptions"]',
+        ),
+    ),
+}
+
+MODULE_RUNTIME_FIXUPS: dict[Path, str] = {
+    Path(
+        "nautilus_trader/adapters/blockchain/__init__.py",
+    ): "nautilus_trader.core.nautilus_pyo3.blockchain",
+    Path("nautilus_trader/model/__init__.py"): "nautilus_trader.core.nautilus_pyo3.model",
+}
+
+RUNTIME_FIXUP_TEMPLATE = """
+def _reassign_module_names() -> None:
+    for _name, _obj in list(globals().items()):
+        module = getattr(_obj, "__module__", "")
+        if module.startswith("{prefix}"):
+            try:
+                _obj.__module__ = __name__
+            except (AttributeError, TypeError):
+                continue
+
+
+_reassign_module_names()
+del _reassign_module_names
+"""
+
+
+def relocate_class_stubs(root: Path) -> None:
+    lib_stub = root / "_libnautilus.pyi"
+    if not lib_stub.exists():
+        return
+
+    source = lib_stub.read_text()
+
+    remaining = source
+
+    for module_suffix, fixup in MODULE_FIXUPS.items():
+        remaining, blocks = extract_class_blocks(remaining, fixup.classes)
+
+        if not blocks and not fixup.placeholders:
+            continue
+
+        module_parts = module_suffix.split(".")
+        module_path = root.joinpath(*module_parts)
+        module_path.mkdir(parents=True, exist_ok=True)
+        target_file = module_path / "__init__.pyi"
+
+        header = [
+            "# This file is automatically generated by pyo3_stub_gen",
+            "# ruff: noqa: D401, E501, F401",
+            "",
+        ]
+
+        body_parts: list[str] = []
+        if blocks:
+            body_parts.append("\n\n".join(blocks))
+        if fixup.placeholders:
+            body_parts.append("\n".join(fixup.placeholders))
+
+        imports_section = list(fixup.imports)
+        content = (
+            "\n".join(header + imports_section + ["", "\n".join(body_parts), ""]).strip("\n") + "\n"
+        )
+        target_file.write_text(content)
+
+    lib_stub.write_text(remaining.strip() + "\n")
+
+
+def extract_class_blocks(source: str, class_names: tuple[str, ...]) -> tuple[str, list[str]]:
+    remaining = source
+    blocks: list[str] = []
+
+    for class_name in class_names:
+        pattern = re.compile(
+            rf"^class {class_name}(?:\([^)]*\))?:[\s\S]*?(?=^(?:class |def |@|$))",
+            re.MULTILINE,
+        )
+        match = pattern.search(remaining)
+        if not match:
+            continue
+
+        block = match.group().rstrip()
+        block = rename_methods(block)
+        blocks.append(block)
+        remaining = remaining[: match.start()] + remaining[match.end() :]
+
+    return remaining, blocks
+
+
+def rename_methods(block: str) -> str:
+    for source_name, target_name in METHOD_RENAMES.items():
+        block = re.sub(rf"def\s+{source_name}(\s*\()", rf"def {target_name}\1", block)
+    block = re.sub(r"(def __init__\(.*?\)) -> [^:]+:", r"\1 -> None:", block)
+    return block
+
+
+def apply_runtime_module_fixups() -> None:
+    """
+    Runtime alias fixups temporarily disabled during cleanup.
+    """
+    return
 
 
 def build_extension():

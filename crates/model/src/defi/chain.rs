@@ -42,10 +42,8 @@ use strum::{Display, EnumIter, EnumString};
 )]
 #[non_exhaustive]
 #[strum(ascii_case_insensitive)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 pub enum Blockchain {
     Abstract,
     Arbitrum,
@@ -131,6 +129,7 @@ pub enum Blockchain {
 
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
 #[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_pyo3.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     /// The blockchain network type.

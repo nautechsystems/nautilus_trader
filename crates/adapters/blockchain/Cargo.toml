@@ -37,6 +37,7 @@ python = [
   "nautilus-network/python",
   "nautilus-system/python",
   "pyo3",
+  "pyo3-stub-gen",
 ]
 
 [package.metadata.docs.rs]
@@ -78,6 +79,7 @@ ustr = { workspace = true }
 hypersync-client = { workspace = true, optional = true }
 hypersync-schema = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
