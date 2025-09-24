@@ -57,10 +57,6 @@ pip install -U "nautilus_trader[docker,ib]"
 The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
-:::tip
-If your access to `packages.nautechsystems.io` requires authentication, configure `pip` with your credentials (for example via `pip config set` or a `.netrc` file) before running the commands below.
-:::
-
 ### Stable wheels
 
 Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
@@ -74,10 +70,6 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 :::tip
 Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically:
 
-```bash
-pip install -U nautilus_trader --extra-index-url=https://packages.nautechsystems.io/simple
-```
-
 :::
 
 ### Development wheels
@@ -85,15 +77,15 @@ pip install -U nautilus_trader --extra-index-url=https://packages.nautechsystems
 Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
 
-**Note**: Wheels from the `develop` branch are only built for the Linux x86_64 platform to save time
-and compute resources, while `nightly` wheels support additional platforms as shown below.
+**Note**: Development wheels from the `develop` branch publish for every platform below except Linux ARM64.
+Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
 
 | Platform           | Nightly | Develop |
 | :----------------- | :------ | :------ |
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | -       |
+| `macOS (ARM64)`    | ✓       | ✓       |
+| `Windows (x86_64)` | ✓       | ✓       |
 
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
@@ -115,19 +107,10 @@ To install the latest available pre-release (including development wheels):
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
-:::tip
-When combining with PyPI, prefer `--extra-index-url` so pinned dependencies can still resolve from the public index:
+To install a specific development wheel (e.g., `1.221.0a20250912` for September 12, 2025):
 
 ```bash
-pip install -U nautilus_trader --pre --extra-index-url=https://packages.nautechsystems.io/simple
-```
-
-:::
-
-To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
-
-```bash
-pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 ### Available versions
