@@ -120,6 +120,10 @@ crates/adapters/your_adapter/
 - Error scenarios.
 - Public API methods of the client.
 
+### Python testing guidelines
+
+- Keep Python adapter tests focused on the layer boundary with the Rust crate: drive behaviour through the public client/instrument-provider APIs while mocking `nautilus_pyo3` objects (`from_pyo3` helpers, stub clients) instead of constructing real Rust types. This keeps coverage fast and deterministic, yet still validates that the Python glue integrates correctly with the exported Rust surface.
+
 ---
 
 ## Common Rust adapter patterns

@@ -166,6 +166,7 @@ def mock_http_client():
 
     # Mock instrument caching
     mock.add_instrument = MagicMock()
+    mock.request_instruments = AsyncMock(return_value=[])
 
     return mock
 
@@ -190,6 +191,17 @@ def mock_ws_client():
     mock.subscribe_positions = AsyncMock()
     mock.subscribe_margin = AsyncMock()
     mock.subscribe_wallet = AsyncMock()
+    mock.subscribe_book = AsyncMock()
+    mock.subscribe_book_25 = AsyncMock()
+    mock.subscribe_book_depth10 = AsyncMock()
+    mock.subscribe_quotes = AsyncMock()
+    mock.subscribe_trades = AsyncMock()
+    mock.subscribe_instruments = AsyncMock()
+    mock.subscribe_instrument = AsyncMock()
+    mock.subscribe_mark_prices = AsyncMock()
+    mock.subscribe_index_prices = AsyncMock()
+    mock.subscribe_funding_rates = AsyncMock()
+    mock.subscribe_bars = AsyncMock()
 
     # Mock unsubscription methods
     mock.unsubscribe_orders = AsyncMock()
@@ -197,6 +209,17 @@ def mock_ws_client():
     mock.unsubscribe_positions = AsyncMock()
     mock.unsubscribe_margin = AsyncMock()
     mock.unsubscribe_wallet = AsyncMock()
+    mock.unsubscribe_book = AsyncMock()
+    mock.unsubscribe_book_25 = AsyncMock()
+    mock.unsubscribe_book_depth10 = AsyncMock()
+    mock.unsubscribe_quotes = AsyncMock()
+    mock.unsubscribe_trades = AsyncMock()
+    mock.unsubscribe_instruments = AsyncMock()
+    mock.unsubscribe_instrument = AsyncMock()
+    mock.unsubscribe_mark_prices = AsyncMock()
+    mock.unsubscribe_index_prices = AsyncMock()
+    mock.unsubscribe_funding_rates = AsyncMock()
+    mock.unsubscribe_bars = AsyncMock()
 
     # Mock account ID setter
     mock.set_account_id = MagicMock()
@@ -215,6 +238,8 @@ def mock_instrument_provider(instrument):
     # Return pyo3 instruments
     mock_pyo3_instrument = MagicMock()
     mock.instruments_pyo3 = MagicMock(return_value=[mock_pyo3_instrument])
+    mock.get_all = MagicMock(return_value={instrument.id: instrument})
+    mock.currencies = MagicMock(return_value={})
 
     return mock
 

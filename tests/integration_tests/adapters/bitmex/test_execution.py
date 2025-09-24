@@ -20,6 +20,9 @@ import pytest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import ContingencyType
@@ -688,3 +691,161 @@ async def test_handle_account_state_update(exec_client):
 
     # Assert - handler was called without error
     assert handler is not None
+
+
+# ============================================================================
+# REPORT GENERATION TESTS
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_converts_results(
+    exec_client,
+    instrument,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.OrderStatusReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_order_status_reports.return_value = [pyo3_report]
+
+    command = GenerateOrderStatusReports(
+        instrument_id=instrument.id,
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_order_status_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_order_status_reports.assert_awaited_once_with(
+        instrument_id=instrument.id,
+        open_only=True,
+        limit=None,
+    )
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_handles_failure(exec_client, instrument):
+    # Arrange
+    exec_client._mock_http_client.request_order_status_reports.side_effect = Exception("boom")
+
+    reports = None
+    try:
+        command = GenerateOrderStatusReports(
+            instrument_id=instrument.id,
+            start=None,
+            end=None,
+            open_only=False,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+        # Act
+        reports = await exec_client.generate_order_status_reports(command)
+    finally:
+        exec_client._mock_http_client.request_order_status_reports.side_effect = None
+
+    # Assert
+    assert reports == []
+
+
+@pytest.mark.asyncio
+async def test_generate_fill_reports_converts_results(
+    exec_client,
+    instrument,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.FillReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_fill_reports.return_value = [pyo3_report]
+
+    command = GenerateFillReports(
+        instrument_id=instrument.id,
+        venue_order_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_fill_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_fill_reports.assert_awaited_once_with(
+        instrument_id=instrument.id,
+        limit=None,
+    )
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_converts_results(
+    exec_client,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.PositionStatusReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_position_status_reports.return_value = [pyo3_report]
+
+    command = GeneratePositionStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_position_status_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_position_status_reports.assert_awaited_once_with()
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_handles_failure(exec_client):
+    # Arrange
+    exec_client._mock_http_client.request_position_status_reports.side_effect = Exception("boom")
+
+    reports = None
+    try:
+        command = GeneratePositionStatusReports(
+            instrument_id=None,
+            start=None,
+            end=None,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+        # Act
+        reports = await exec_client.generate_position_status_reports(command)
+    finally:
+        exec_client._mock_http_client.request_position_status_reports.side_effect = None
+
+    # Assert
+    assert reports == []
