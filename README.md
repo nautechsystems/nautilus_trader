@@ -222,6 +222,10 @@ pip install -U nautilus_trader
 The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
+> [!TIP]
+>
+> If your access to `packages.nautechsystems.io` requires authentication, configure `pip` with your credentials (for example via `pip config set` or a `.netrc` file) before running the commands below.
+
 #### Stable wheels
 
 Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
@@ -231,6 +235,14 @@ To install the latest stable release:
 ```bash
 pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
 ```
+
+> [!TIP]
+>
+> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically:
+>
+> ```bash
+> pip install -U nautilus_trader --extra-index-url=https://packages.nautechsystems.io/simple
+> ```
 
 #### Development wheels
 
@@ -267,6 +279,14 @@ To install the latest available pre-release (including development wheels):
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
+> [!TIP]
+>
+> When combining with PyPI, prefer `--extra-index-url` so pinned dependencies can still resolve from the public index:
+>
+> ```bash
+> pip install -U nautilus_trader --pre --extra-index-url=https://packages.nautechsystems.io/simple
+> ```
+
 To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
 
 ```bash
@@ -282,6 +302,10 @@ To programmatically fetch and list available versions:
 ```bash
 curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
 ```
+
+> [!NOTE]
+>
+> On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before installing binary wheels.
 
 #### Branch updates
 
@@ -306,7 +330,7 @@ It's possible to install from source using pip if you first install the build de
 
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+       - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
    - Verify (any system):
        from a terminal session run: `rustc --version`
 
@@ -328,12 +352,12 @@ It's possible to install from source using pip if you first install the build de
        ```
 
    - Windows:
-       1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
-          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+       1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
+          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
        2. Enable `clang` in the current shell:
 
           ```powershell
-          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
           ```
 
    - Verify (any system):
@@ -341,9 +365,17 @@ It's possible to install from source using pip if you first install the build de
 
 4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+    - Linux and macOS:
+
+        ```bash
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ```
+
+    - Windows (PowerShell):
+
+        ```powershell
+        irm https://astral.sh/uv/install.ps1 | iex
+        ```
 
 5. Clone the source with `git`, and install from the project's root directory:
 

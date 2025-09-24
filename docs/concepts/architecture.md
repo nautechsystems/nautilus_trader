@@ -283,7 +283,7 @@ Every attempt has been made to accurately document the possible exceptions which
 can be raised from NautilusTrader code, and the conditions which will trigger them.
 
 :::warning
-There may be other undocumented exceptions which can be raised by Pythons standard
+There may be other undocumented exceptions which can be raised by Python's standard
 library, or from third party library dependencies.
 :::
 
