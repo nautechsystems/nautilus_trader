@@ -193,6 +193,12 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
     # This option only applies to orders routed to the NASDAQ exchange.
     hidden: bool = False
 
+    # Order conditions
+    conditions: list[dict] = []  # List of condition dictionaries
+    conditionsCancelOrder: bool = (
+        False  # True = cancel order when condition met, False = transmit order
+    )
+
     @property
     def value(self):
         return f"IBOrderTags:{self.json().decode()}"

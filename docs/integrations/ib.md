@@ -1060,7 +1060,7 @@ The adapter supports most Interactive Brokers order types:
 |--------------------|-----------|----------------------------------------------|
 | Order lists         | ✓         | Atomic multi-order submission.               |
 | OCO orders          | ✓         | One-Cancels-Other with customizable OCA types (1, 2, 3). |
-| Bracket orders      | ✓         | Parent-child order relationships with automatic OCO. |
+| Bracket orders      | ✓         | Parent-child order relationships. |
 | Conditional orders  | ✓         | Advanced order conditions and triggers.     |
 
 #### Basic Execution Client Configuration
@@ -1145,27 +1145,36 @@ order = order_factory.limit(
 
 #### OCA (One-Cancels-All) Orders
 
-The adapter provides comprehensive support for OCA orders with both automatic detection and custom configuration:
+The adapter provides comprehensive support for OCA orders through explicit configuration using `IBOrderTags`:
 
-### Automatic OCO Detection
+### Basic OCA Configuration
 
-Bracket orders automatically use OCA functionality with safe defaults:
+All OCA functionality must be explicitly configured using `IBOrderTags`:
 
 ```python
-# Bracket orders automatically create OCA groups
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
+
+# Create OCA configuration
+oca_tags = IBOrderTags(
+    ocaGroup="MY_OCA_GROUP",
+    ocaType=1,  # Type 1: Cancel All with Block (recommended)
+)
+
+# Apply to bracket orders
 bracket_order = order_factory.bracket(
     instrument_id=instrument.id,
     order_side=OrderSide.BUY,
     quantity=instrument.make_qty(100),
     tp_price=instrument.make_price(110.0),
     sl_trigger_price=instrument.make_price(90.0),
-    contingency_type=ContingencyType.OCO,  # Automatic OCA Type 1
+    tp_tags=[oca_tags.value],  # Must explicitly add OCA tags
+    sl_tags=[oca_tags.value],  # Must explicitly add OCA tags
 )
 ```
 
-### Custom OCA Types
+### Advanced OCA Configuration
 
-You can specify custom OCA behavior using `IBOrderTags`:
+You can specify different OCA types and behaviors using `IBOrderTags`:
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
@@ -1222,17 +1231,217 @@ order2 = order_factory.limit(
 )
 ```
 
-### Priority Order
+### OCA Configuration Requirements
 
-The adapter applies OCA settings in the following priority:
+OCA functionality is **only** available through explicit configuration:
 
-1. **Custom IBOrderTags** (highest priority) - Explicit OCA settings in order tags
-2. **Automatic Detection** - OCO/OUO contingency types in bracket orders (uses Type 1)
-3. **No OCA** - Orders without contingency types or OCA tags
+1. **IBOrderTags Required** - OCA settings must be explicitly specified in order tags
+2. **No Automatic Detection** - `ContingencyType.OCO` and `ContingencyType.OUO` do not automatically create OCA groups
+3. **Manual Configuration** - All OCA groups and types must be manually specified
 
-# Apply tags to order (implementation depends on your strategy code)
+### Conditional Orders
 
+The adapter supports Interactive Brokers conditional orders through the `conditions` parameter in `IBOrderTags`. Conditional orders allow you to specify criteria that must be met before an order is transmitted or cancelled.
+
+#### Supported Condition Types
+
+- **Price Conditions**: Trigger based on price movements of a specific instrument
+- **Time Conditions**: Trigger at a specific date and time
+- **Volume Conditions**: Trigger based on trading volume thresholds
+- **Execution Conditions**: Trigger when trades occur for a specific instrument
+- **Margin Conditions**: Trigger based on account margin levels
+- **Percent Change Conditions**: Trigger based on percentage price changes
+
+#### Basic Conditional Order Example
+
+```python
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
+
+# Create a price condition: trigger when SPY goes above $250
+price_condition = {
+    "type": "price",
+    "conId": 265598,  # SPY contract ID
+    "exchange": "SMART",
+    "isMore": True,  # Trigger when price is greater than threshold
+    "price": 250.00,
+    "triggerMethod": 0,  # Default trigger method
+    "conjunction": "and",
+}
+
+# Create order tags with condition
+order_tags = IBOrderTags(
+    conditions=[price_condition],
+    conditionsCancelOrder=False,  # Transmit order when condition is met
+)
+
+# Apply to order
+order = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    price=instrument.make_price(251.00),
+    tags=[order_tags.value],
+)
 ```
+
+#### Multiple Conditions with Logic
+
+```python
+# Create multiple conditions with AND/OR logic
+conditions = [
+    {
+        "type": "price",
+        "conId": 265598,
+        "exchange": "SMART",
+        "isMore": True,
+        "price": 250.00,
+        "triggerMethod": 0,
+        "conjunction": "and",  # AND with next condition
+    },
+    {
+        "type": "time",
+        "time": "20250315-09:30:00",
+        "isMore": True,
+        "conjunction": "or",  # OR with next condition
+    },
+    {
+        "type": "volume",
+        "conId": 265598,
+        "exchange": "SMART",
+        "isMore": True,
+        "volume": 10000000,
+        "conjunction": "and",
+    },
+]
+
+order_tags = IBOrderTags(
+    conditions=conditions,
+    conditionsCancelOrder=False,
+)
+```
+
+#### Condition Parameters
+
+**Price Condition:**
+
+- `conId`: Contract ID of the instrument to monitor
+- `exchange`: Exchange to monitor (e.g., "SMART", "NASDAQ")
+- `isMore`: True for >=, False for <=
+- `price`: Price threshold
+- `triggerMethod`: 0=Default, 1=DoubleBidAsk, 2=Last, 3=DoubleLast, 4=BidAsk, 7=LastBidAsk, 8=MidPoint
+
+**Time Condition:**
+
+- `time`: Time string in UTC format "YYYYMMDD-HH:MM:SS" (e.g., "20250315-09:30:00")
+- `isMore`: True for after time, False for before time
+
+**Volume Condition:**
+
+- `conId`: Contract ID of the instrument to monitor
+- `exchange`: Exchange to monitor
+- `isMore`: True for >=, False for <=
+- `volume`: Volume threshold
+
+**Execution Condition:**
+
+- `symbol`: Symbol to monitor for trades
+- `secType`: Security type (e.g., "STK", "OPT", "FUT")
+- `exchange`: Exchange to monitor
+
+**Margin Condition:**
+
+- `percent`: Margin cushion percentage threshold
+- `isMore`: True for >=, False for <=
+
+**Percent Change Condition:**
+
+- `conId`: Contract ID of the instrument to monitor
+- `exchange`: Exchange to monitor
+- `isMore`: True for >=, False for <=
+- `changePercent`: Percentage change threshold
+
+#### Complete Example: All Condition Types
+
+```python
+# Example showing all 6 supported condition types
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
+
+# 1. Price Condition - trigger when ES futures > 6000
+price_condition = {
+    "type": "price",
+    "conId": 495512563,  # ES futures contract ID
+    "exchange": "CME",
+    "isMore": True,
+    "price": 6000.0,
+    "triggerMethod": 0,
+    "conjunction": "and",
+}
+
+# 2. Time Condition - trigger at specific time
+time_condition = {
+    "type": "time",
+    "time": "20250315-09:30:00",  # UTC format
+    "isMore": True,
+    "conjunction": "and",
+}
+
+# 3. Volume Condition - trigger when volume > 100,000
+volume_condition = {
+    "type": "volume",
+    "conId": 495512563,
+    "exchange": "CME",
+    "isMore": True,
+    "volume": 100000,
+    "conjunction": "and",
+}
+
+# 4. Execution Condition - trigger when SPY trades
+execution_condition = {
+    "type": "execution",
+    "symbol": "SPY",
+    "secType": "STK",
+    "exchange": "SMART",
+    "conjunction": "and",
+}
+
+# 5. Margin Condition - trigger when margin cushion > 75%
+margin_condition = {
+    "type": "margin",
+    "percent": 75,
+    "isMore": True,
+    "conjunction": "and",
+}
+
+# 6. Percent Change Condition - trigger when price changes > 5%
+percent_change_condition = {
+    "type": "percent_change",
+    "conId": 495512563,
+    "exchange": "CME",
+    "changePercent": 5.0,
+    "isMore": True,
+    "conjunction": "and",
+}
+
+# Use any combination of conditions
+order_tags = IBOrderTags(
+    conditions=[price_condition, time_condition],  # Multiple conditions
+    conditionsCancelOrder=False,  # Transmit when conditions met
+)
+```
+
+#### Order Behavior
+
+Set `conditionsCancelOrder` to control what happens when conditions are met:
+
+- `False`: Transmit the order when conditions are satisfied
+- `True`: Cancel the order when conditions are satisfied
+
+#### Implementation Notes
+
+- **All 6 condition types are fully supported** and tested with live Interactive Brokers orders
+- **Price conditions** work correctly despite a known bug in the ibapi library where `PriceCondition.__str__` is incorrectly decorated as a property
+- **Time conditions** use UTC format with dash separator (`YYYYMMDD-HH:MM:SS`) for reliable parsing
+- **Conjunction logic** allows complex condition combinations using "and"/"or" operators
 
 ### Complete Trading Node Configuration
 
