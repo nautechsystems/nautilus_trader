@@ -27,9 +27,12 @@ crates/adapters/your_adapter/
 │   ├── common/           # Shared types and utilities
 │   ├── http/             # HTTP client implementation
 │   │   ├── client.rs     # HTTP client with authentication
+│   │   ├── models.rs     # Structs for REST payloads
+│   │   ├── query.rs      # Request and query builders
 │   │   └── parse.rs      # Response parsing functions
 │   ├── websocket/        # WebSocket implementation
 │   │   ├── client.rs     # WebSocket client
+│   │   ├── messages.rs   # Structs for stream payloads
 │   │   └── parse.rs      # Message parsing functions
 │   ├── python/           # PyO3 Python bindings
 │   ├── config.rs         # Configuration structures
@@ -119,17 +122,30 @@ crates/adapters/your_adapter/
 
 ---
 
-## REST API field-mapping guideline
+## Common Rust adapter patterns
 
-When translating a venue’s REST payload into our domain model **avoid renaming** the upstream
-fields unless there is a compelling reason (e.g. a clash with reserved keywords). The only
-transformation we apply by default is **camelCase → snake_case**.
+- **Common code (`common/`)**: Group venue constants, credential helpers, enums, and reusable parsers under `src/common`. Adapters such as OKX keep submodules like `consts`, `credential`, `enums`, and `urls` alongside a `testing` module for fixtures, providing a single place for cross-cutting pieces.
+- **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
+- **Error taxonomy (`error.rs`)**: Centralise HTTP/WebSocket failure handling in an adapter-specific error enum. BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport error—follow that shape so operational tooling can react consistently.
+- **Python exports (`python/mod.rs`)**: Mirror the Rust surface area through PyO3 modules by re-exporting clients, enums, and helper functions. When new functionality lands in Rust, add it to `python/mod.rs` so the Python layer stays in sync (the OKX adapter is a good reference).
+- **String interning**: Use `ustr::Ustr` for any non-unique strings the platform stores repeatedly (venues, symbols, instrument IDs) to minimise allocations and comparisons.
+- **Testing helpers (`common/testing.rs`)**: Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests. This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
 
-Keeping the external names intact makes it trivial to debug payloads, compare captures against the
-Rust structs, and speeds up onboarding for new contributors who have the venue’s API reference
-open side-by-side.
+## Modeling venue payloads
 
----
+Use the following conventions when mirroring upstream schemas in Rust.
+
+### REST models (`http::models` and `http::query`)
+
+- Put request and response representations in `src/http/models.rs` and derive `serde::Deserialize` (add `serde::Serialize` when the adapter sends data back).
+- Mirror upstream payload names with blanket casing attributes such as `#[serde(rename_all = "camelCase")]` or `#[serde(rename_all = "snake_case")]`; only add per-field renames when the upstream key would be an invalid Rust identifier or collide with a keyword (for example `#[serde(rename = "type")] pub order_type: String`).
+- Keep helper structs for query parameters in `src/http/query.rs`, deriving `serde::Serialize` to remain type-safe and reusing constants from `common::consts` instead of duplicating literals.
+
+### WebSocket messages (`websocket::messages`)
+
+- Define streaming payload types in `src/websocket/messages.rs`, giving each venue topic a struct or enum that mirrors the upstream JSON.
+- Apply the same naming guidance as REST models: rely on blanket casing renames and keep field names aligned with the venue unless syntax forces a change; consider serde helpers such as `#[serde(tag = "op")]` or `#[serde(flatten)]` and document the choice.
+- Note any intentional deviations from the upstream schema in code comments and module docs so other contributors can follow the mapping quickly.
 
 ## Template for building a Python adapter
 
