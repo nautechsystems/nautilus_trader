@@ -98,20 +98,20 @@ tracing-test = { workspace = true }
 
 [[bin]]
 name = "hyperliquid-http-public"
-path = "bin/http-public.rs"
+path = "bin/http_public.rs"
 
 [[bin]]
 name = "hyperliquid-http-private"
-path = "bin/http-private.rs"
+path = "bin/http_private.rs"
 
 [[bin]]
 name = "hyperliquid-ws-data"
-path = "bin/ws-data.rs"
+path = "bin/ws_data.rs"
 
 [[bin]]
 name = "hyperliquid-ws-exec"
-path = "bin/ws-exec.rs"
+path = "bin/ws_exec.rs"
 
 [[bin]]
 name = "hyperliquid-ws-post"
-path = "bin/ws-post.rs"
+path = "bin/ws_post.rs"

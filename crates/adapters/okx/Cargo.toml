@@ -90,16 +90,16 @@ url = { workspace = true }
 
 [[bin]]
 name = "okx-http-public"
-path = "bin/http-public.rs"
+path = "bin/http_public.rs"
 
 [[bin]]
 name = "okx-http-private"
-path = "bin/http-private.rs"
+path = "bin/http_private.rs"
 
 [[bin]]
 name = "okx-ws-data"
-path = "bin/ws-data.rs"
+path = "bin/ws_data.rs"
 
 [[bin]]
 name = "okx-ws-exec"
-path = "bin/ws-exec.rs"
+path = "bin/ws_exec.rs"

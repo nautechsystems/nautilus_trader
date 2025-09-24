@@ -11,6 +11,8 @@ while zero-cost abstractions and the absence of a garbage collector deliver C-li
 - When a manifest groups adapters separately (for example `crates/pyo3`), keep the `# Adapters` block immediately below the internal crate list so downstream consumers can scan adapter coverage quickly.
 - Always include a blank line before `[dev-dependencies]` and `[build-dependencies]` sections.
 - Apply the same layout across related manifests when the feature or dependency sets change to avoid drift between crates.
+- Use snake_case filenames for `bin/` sources (for example `bin/ws_data.rs`) and reflect those paths in each `[[bin]]` section.
+- Keep `[[bin]] name` entries in kebab-case (for example `name = "hyperliquid-ws-data"`) so the compiled binaries retain their intended CLI names.
 
 ## Versioning guidance
 

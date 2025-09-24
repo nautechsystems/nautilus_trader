@@ -82,12 +82,12 @@ tracing-test = { workspace = true }
 
 [[bin]]
 name = "coinbase-intx-http-private"
-path = "bin/http-private.rs"
+path = "bin/http_private.rs"
 required-features = ["python"]
 
 [[bin]]
 name = "coinbase-intx-http-public"
-path = "bin/http-public.rs"
+path = "bin/http_public.rs"
 required-features = ["python"]
 
 [[bin]]

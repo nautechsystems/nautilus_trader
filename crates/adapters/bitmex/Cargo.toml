@@ -97,8 +97,8 @@ path = "bin/http.rs"
 
 [[bin]]
 name = "bitmex-ws-data"
-path = "bin/ws-data.rs"
+path = "bin/ws_data.rs"
 
 [[bin]]
 name = "bitmex-ws-exec"
-path = "bin/ws-exec.rs"
+path = "bin/ws_exec.rs"
