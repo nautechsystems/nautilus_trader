@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import functools
 from decimal import Decimal
 
 from ibapi.commission_report import CommissionReport
 from ibapi.contract import Contract
 from ibapi.execution import Execution
+from ibapi.execution import ExecutionFilter
 from ibapi.order import Order as IBOrder
 from ibapi.order_cancel import OrderCancel as IBOrderCancel
 from ibapi.order_state import OrderState as IBOrderState
@@ -150,6 +152,70 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             orders = []
 
         return orders
+
+    async def get_executions(
+        self,
+        account_id: str,
+        execution_filter: ExecutionFilter | None = None,
+    ) -> list[dict]:
+        """
+        Retrieve execution reports for a specific account.
+
+        Parameters
+        ----------
+        account_id : str
+            The account identifier for which to retrieve executions.
+        execution_filter : ExecutionFilter, optional
+            Filter criteria for executions. If None, a default filter for the account will be used.
+
+        Returns
+        -------
+        list[dict]
+            List of execution details with associated contracts and commission reports.
+            Each dict contains 'execution', 'contract', and 'commission_report' keys.
+
+        """
+        self._log.debug(f"Requesting executions for {account_id}")
+        name = f"Executions-{account_id}"
+
+        if not (request := self._requests.get(name=name)):
+            # Create execution filter if not provided
+            if execution_filter is None:
+                execution_filter = ExecutionFilter()
+                execution_filter.acctCode = account_id
+
+            req_id = self._next_req_id()
+            request = self._requests.add(
+                req_id=req_id,
+                name=name,
+                handle=functools.partial(
+                    self._eclient.reqExecutions,
+                    reqId=req_id,
+                    execFilter=execution_filter,
+                ),
+                cancel=lambda: None,  # No cancel method for executions
+            )
+
+            if not request:
+                return []
+
+            request.handle()
+
+        # Wait for execution details to be collected
+        execution_details: list[dict] | None = await self._await_request(request, 30)
+
+        if execution_details:
+            # Filter by account if needed (in case filter didn't work perfectly)
+            filtered_executions = [
+                exec_detail
+                for exec_detail in execution_details
+                if exec_detail.get("execution")
+                and exec_detail["execution"].acctNumber == account_id
+            ]
+        else:
+            filtered_executions = []
+
+        return filtered_executions
 
     def next_order_id(self) -> int:
         """
@@ -285,8 +351,23 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         cache["execution"] = execution
         cache["contract"] = IBContract(**contract.__dict__)
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
-        name = f"execDetails-{execution.acctNumber}"
+        cache["req_id"] = req_id
 
+        # Check if this is for a get_executions request
+        execution_request_name = f"Executions-{execution.acctNumber}"
+        if request := self._requests.get(name=execution_request_name):
+            if request.req_id == req_id and cache.get("commission_report"):
+                # Add complete execution detail to request result
+                execution_detail = {
+                    "execution": cache["execution"],
+                    "contract": cache["contract"],
+                    "commission_report": cache["commission_report"],
+                }
+                request.result.append(execution_detail)
+                # Don't remove from cache yet, wait for execDetailsEnd
+
+        # Handle event-based response for live executions
+        name = f"execDetails-{execution.acctNumber}"
         if (handler := self._event_subscriptions.get(name, None)) and cache.get(
             "commission_report",
         ):
@@ -296,7 +377,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 commission_report=cache["commission_report"],
                 contract=cache["contract"],
             )
-            cache.pop(execution.execId, None)
+            # Only remove from cache if not part of a request
+            if not self._requests.get(name=execution_request_name):
+                cache.pop(execution.execId, None)
 
     async def process_commission_report(
         self,
@@ -313,8 +396,22 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         cache["commission_report"] = commission_report
 
         if cache.get("execution") and (account := getattr(cache["execution"], "acctNumber", None)):
-            name = f"execDetails-{account}"
+            # Check if this is for a get_executions request
+            execution_request_name = f"Executions-{account}"
+            if request := self._requests.get(name=execution_request_name):
+                req_id = cache.get("req_id")
+                if req_id == request.req_id:
+                    # Add complete execution detail to request result
+                    execution_detail = {
+                        "execution": cache["execution"],
+                        "contract": cache["contract"],
+                        "commission_report": cache["commission_report"],
+                    }
+                    request.result.append(execution_detail)
+                    # Don't remove from cache yet, wait for execDetailsEnd
 
+            # Handle event-based response for live executions
+            name = f"execDetails-{account}"
             if handler := self._event_subscriptions.get(name, None):
                 handler(
                     order_ref=cache["order_ref"],
@@ -322,4 +419,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     commission_report=cache["commission_report"],
                     contract=cache.get("contract"),
                 )
-                cache.pop(commission_report.execId, None)
+                # Only remove from cache if not part of a request
+                if not self._requests.get(name=execution_request_name):
+                    cache.pop(commission_report.execId, None)
+
+    async def process_exec_details_end(self, req_id: int) -> None:
+        """
+        Process when all executions have been sent for a request.
+        """
+        # End the request if it exists
+        if self._requests.get(req_id=req_id):
+            self._end_request(req_id)
