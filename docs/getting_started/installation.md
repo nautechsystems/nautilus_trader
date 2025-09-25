@@ -2,12 +2,12 @@
 
 NautilusTrader is officially supported for Python 3.11-3.13 on the following 64-bit platforms:
 
-| Operating System       | Supported Versions           | CPU Architecture  |
-|------------------------|------------------------------|-------------------|
-| Linux (Ubuntu)         | 22.04 (glibc 2.35) and later | x86_64            |
-| Linux (Ubuntu)         | 22.04 (glibc 2.35) and later | ARM64             |
-| macOS                  | 15.0 and later               | ARM64             |
-| Windows Server         | 2022 and later               | x86_64            |
+| Operating System       | Supported Versions | CPU Architecture  |
+|------------------------|--------------------|-------------------|
+| Linux (Ubuntu)         | 22.04 and later    | x86_64            |
+| Linux (Ubuntu)         | 22.04 and later    | ARM64             |
+| macOS                  | 15.0 and later     | ARM64             |
+| Windows Server         | 2022 and later     | x86_64            |
 
 :::note
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
@@ -19,7 +19,7 @@ Continuous CI coverage comes from the GitHub Actions runners we build on:
 - `macOS (ARM64)` builds run on `macos-latest`, so support tracks that runner image as it moves ahead.
 - `Windows (x86_64)` builds run on `windows-latest`, so support tracks that runner image as it moves ahead.
 
-On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before proceeding.
+On Linux, confirm your glibc version with `ldd --version` and ensure it reports 2.35 or newer before proceeding.
 
 We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
 
