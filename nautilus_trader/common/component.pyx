@@ -1066,6 +1066,7 @@ cdef class TimeEvent(Event):
         """
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
         uuid4._mem = self._mem.event_id
+
         return uuid4
 
     @property
@@ -1096,6 +1097,7 @@ cdef class TimeEvent(Event):
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = mem
+
         return event
 
 
@@ -1103,6 +1105,7 @@ cdef inline TimeEvent capsule_to_time_event(capsule):
     cdef TimeEvent_t* ptr = <TimeEvent_t*>PyCapsule_GetPointer(capsule, NULL)
     cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
     event._mem = ptr[0]
+
     return event
 
 
@@ -1310,6 +1313,7 @@ cpdef LogGuard init_logging(
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
     log_guard._mem = log_guard_api
+
     return log_guard
 
 
@@ -1684,8 +1688,10 @@ cdef class Component:
     ):
         if component_id is None:
             component_id = ComponentId(type(self).__name__)
+
         if component_name is None:
             component_name = component_id.value
+
         Condition.valid_string(component_name, "component_name")
         Condition.type_or_none(config, NautilusConfig, "config")
 
@@ -2225,11 +2231,15 @@ cdef class MessageBus:
 
         if instance_id is None:
             instance_id = UUID4()
+
         if name is None:
             name = type(self).__name__
+
         Condition.valid_string(name, "name")
+
         if config is None:
             config = MessageBusConfig()
+
         Condition.type(config, MessageBusConfig, "config")
 
         self.trader_id = trader_id
@@ -2320,6 +2330,7 @@ cdef class MessageBus:
         """
         if pattern is None:
             pattern = "*"  # Wildcard
+
         Condition.valid_string(pattern, "pattern")
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
@@ -2561,7 +2572,8 @@ cdef class MessageBus:
             )
             return  # Do not handle duplicates
 
-        self._correlation_index[request.id] = request.callback
+        if request.callback is not None:
+            self._correlation_index[request.id] = request.callback
 
         handler = self._endpoints.get(endpoint)
         if handler is None:
@@ -2787,6 +2799,7 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
         cdef Subscription existing_sub
+
         # Copy to handle subscription changes on iteration
         for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
@@ -2799,8 +2812,10 @@ cdef class MessageBus:
         cdef list matches
         for sub in subs_array:
             matches = self._subscriptions.get(sub, [])
+
             if topic not in matches:
                 matches.append(topic)
+
             self._subscriptions[sub] = sorted(matches)
 
         return subs_array
@@ -3045,9 +3060,11 @@ cdef class Throttler:
         if not self._warm:
             if self.sent_count < self.limit:
                 return 0
+
             self._warm = True
 
         cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
+
         return self._interval_ns - diff
 
     cdef void _limit_msg(self, msg):
@@ -3087,6 +3104,7 @@ cdef class Throttler:
         while self._buffer:
             delta_next = self._delta_next()
             msg = self._buffer.pop()
+
             if delta_next <= 0:
                 self._send_msg(msg)
             else:

@@ -943,7 +943,8 @@ cdef class BacktestEngine:
         cdef RequestData new_request = request.with_dates(
             unix_nanos_to_dt(start_time),
             unix_nanos_to_dt(end_time),
-            self._last_ns
+            self._last_ns,
+            self._handle_data_response
         )
         self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)

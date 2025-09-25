@@ -185,7 +185,7 @@ cdef class Request:
 
     def __init__(
         self,
-        callback not None: Callable[[Any], None],
+        callback: Callable[[Any], None] | None,
         UUID4 request_id not None,
         uint64_t ts_init,
         UUID4 correlation_id = None,
