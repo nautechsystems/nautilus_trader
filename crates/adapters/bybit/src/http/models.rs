@@ -1,0 +1,489 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Data transfer objects for deserializing Bybit HTTP API payloads.
+
+use serde::{Deserialize, Serialize};
+use ustr::Ustr;
+
+use crate::common::{
+    enums::{
+        BybitAccountType, BybitCancelType, BybitContractType, BybitExecType, BybitInnovationFlag,
+        BybitInstrumentStatus, BybitMarginTrading, BybitOptionType, BybitOrderSide,
+        BybitOrderStatus, BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce,
+        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+    },
+    models::{
+        BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
+        LinearLotSizeFilter, LinearPriceFilter, OptionLotSizeFilter, SpotLotSizeFilter,
+        SpotPriceFilter,
+    },
+};
+
+/// Response payload returned by `GET /v5/market/server-time`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitServerTime {
+    /// Server timestamp in seconds represented as string.
+    pub time_second: String,
+    /// Server timestamp in nanoseconds represented as string.
+    pub time_nano: String,
+}
+
+/// Type alias for the server time response envelope.
+pub type BybitServerTimeResponse = BybitResponse<BybitServerTime>;
+
+/// Ticker payload for spot instruments.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitTickerSpot {
+    pub symbol: Ustr,
+    pub bid1_price: String,
+    pub bid1_size: String,
+    pub ask1_price: String,
+    pub ask1_size: String,
+    pub last_price: String,
+    pub prev_price24h: String,
+    pub price24h_pcnt: String,
+    pub high_price24h: String,
+    pub low_price24h: String,
+    pub turnover24h: String,
+    pub volume24h: String,
+    pub usd_index_price: String,
+}
+
+/// Ticker payload for linear and inverse perpetual/futures instruments.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitTickerLinear {
+    pub symbol: Ustr,
+    pub last_price: String,
+    pub index_price: String,
+    pub mark_price: String,
+    pub prev_price24h: String,
+    pub price24h_pcnt: String,
+    pub high_price24h: String,
+    pub low_price24h: String,
+    pub prev_price1h: String,
+    pub open_interest: String,
+    pub open_interest_value: String,
+    pub turnover24h: String,
+    pub volume24h: String,
+    pub funding_rate: String,
+    pub next_funding_time: String,
+    pub predicted_delivery_price: String,
+    pub basis_rate: String,
+    pub delivery_fee_rate: String,
+    pub delivery_time: String,
+    pub ask1_size: String,
+    pub bid1_price: String,
+    pub ask1_price: String,
+    pub bid1_size: String,
+    pub basis: String,
+}
+
+/// Ticker payload for option instruments.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitTickerOption {
+    pub symbol: Ustr,
+    pub bid1_price: String,
+    pub bid1_size: String,
+    pub bid1_iv: String,
+    pub ask1_price: String,
+    pub ask1_size: String,
+    pub ask1_iv: String,
+    pub last_price: String,
+    pub high_price24h: String,
+    pub low_price24h: String,
+    pub mark_price: String,
+    pub index_price: String,
+    pub mark_iv: String,
+    pub underlying_price: String,
+    pub open_interest: String,
+    pub turnover24h: String,
+    pub volume24h: String,
+    pub total_volume: String,
+    pub total_turnover: String,
+    pub delta: String,
+    pub gamma: String,
+    pub vega: String,
+    pub theta: String,
+    pub predicted_delivery_price: String,
+    pub change24h: String,
+}
+
+/// Response alias for spot ticker requests.
+pub type BybitTickersSpotResponse = BybitListResponse<BybitTickerSpot>;
+/// Response alias for linear/inverse ticker requests.
+pub type BybitTickersLinearResponse = BybitListResponse<BybitTickerLinear>;
+/// Response alias for option ticker requests.
+pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
+
+/// Kline/candlestick entry returned by `GET /v5/market/kline`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitKline {
+    pub start: String,
+    pub end: String,
+    pub interval: String,
+    pub open: String,
+    pub close: String,
+    pub high: String,
+    pub low: String,
+    pub volume: String,
+    pub turnover: String,
+    pub confirm: bool,
+    pub timestamp: String,
+}
+
+/// Kline list result returned by Bybit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitKlineResult {
+    pub category: BybitProductType,
+    pub symbol: Ustr,
+    pub list: Vec<BybitKline>,
+}
+
+/// Response alias for kline history requests.
+pub type BybitKlinesResponse = BybitResponse<BybitKlineResult>;
+
+/// Trade entry returned by `GET /v5/market/recent-trade`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitTrade {
+    pub exec_id: String,
+    pub symbol: Ustr,
+    pub price: String,
+    pub size: String,
+    pub side: BybitOrderSide,
+    pub time: String,
+    pub is_block_trade: bool,
+    #[serde(default)]
+    pub m_p: Option<String>,
+    #[serde(default)]
+    pub i_p: Option<String>,
+    #[serde(default)]
+    pub mlv: Option<String>,
+    #[serde(default)]
+    pub iv: Option<String>,
+}
+
+/// Trade list result returned by Bybit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitTradeResult {
+    pub category: BybitProductType,
+    pub list: Vec<BybitTrade>,
+}
+
+/// Response alias for recent trades requests.
+pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
+
+/// Instrument definition for spot symbols.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitInstrumentSpot {
+    pub symbol: Ustr,
+    pub base_coin: Ustr,
+    pub quote_coin: Ustr,
+    pub innovation: BybitInnovationFlag,
+    pub status: BybitInstrumentStatus,
+    pub margin_trading: BybitMarginTrading,
+    pub lot_size_filter: SpotLotSizeFilter,
+    pub price_filter: SpotPriceFilter,
+}
+
+/// Instrument definition for linear contracts.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitInstrumentLinear {
+    pub symbol: Ustr,
+    pub contract_type: BybitContractType,
+    pub status: BybitInstrumentStatus,
+    pub base_coin: Ustr,
+    pub quote_coin: Ustr,
+    pub launch_time: String,
+    pub delivery_time: String,
+    pub delivery_fee_rate: String,
+    pub price_scale: String,
+    pub leverage_filter: LeverageFilter,
+    pub price_filter: LinearPriceFilter,
+    pub lot_size_filter: LinearLotSizeFilter,
+    pub unified_margin_trade: bool,
+    pub funding_interval: i64,
+    pub settle_coin: Ustr,
+}
+
+/// Instrument definition for inverse contracts.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitInstrumentInverse {
+    pub symbol: Ustr,
+    pub contract_type: BybitContractType,
+    pub status: BybitInstrumentStatus,
+    pub base_coin: Ustr,
+    pub quote_coin: Ustr,
+    pub launch_time: String,
+    pub delivery_time: String,
+    pub delivery_fee_rate: String,
+    pub price_scale: String,
+    pub leverage_filter: LeverageFilter,
+    pub price_filter: LinearPriceFilter,
+    pub lot_size_filter: LinearLotSizeFilter,
+    pub unified_margin_trade: bool,
+    pub funding_interval: i64,
+    pub settle_coin: Ustr,
+}
+
+/// Instrument definition for option contracts.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitInstrumentOption {
+    pub symbol: Ustr,
+    pub status: BybitInstrumentStatus,
+    pub base_coin: Ustr,
+    pub quote_coin: Ustr,
+    pub settle_coin: Ustr,
+    pub options_type: BybitOptionType,
+    pub launch_time: String,
+    pub delivery_time: String,
+    pub delivery_fee_rate: String,
+    pub price_filter: LinearPriceFilter,
+    pub lot_size_filter: OptionLotSizeFilter,
+}
+
+/// Response alias for instrument info requests that return spot instruments.
+pub type BybitInstrumentSpotResponse = BybitCursorListResponse<BybitInstrumentSpot>;
+/// Response alias for instrument info requests that return linear contracts.
+pub type BybitInstrumentLinearResponse = BybitCursorListResponse<BybitInstrumentLinear>;
+/// Response alias for instrument info requests that return inverse contracts.
+pub type BybitInstrumentInverseResponse = BybitCursorListResponse<BybitInstrumentInverse>;
+/// Response alias for instrument info requests that return option contracts.
+pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrumentOption>;
+
+/// Fee rate structure returned by `GET /v5/account/fee-rate`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFeeRate {
+    pub symbol: Ustr,
+    pub taker_fee_rate: String,
+    pub maker_fee_rate: String,
+    #[serde(default)]
+    pub base_coin: Option<Ustr>,
+}
+
+/// Response alias for fee rate requests.
+pub type BybitFeeRateResponse = BybitListResponse<BybitFeeRate>;
+
+/// Account balance snapshot coin entry.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitCoinBalance {
+    pub available_to_borrow: String,
+    pub bonus: String,
+    pub accrued_interest: String,
+    pub available_to_withdraw: String,
+    pub total_order_im: String,
+    pub equity: String,
+    pub usd_value: String,
+    pub borrow_amount: String,
+    pub total_position_mm: String,
+    pub total_position_im: String,
+    pub wallet_balance: String,
+    pub unrealised_pnl: String,
+    pub cum_realised_pnl: String,
+    pub locked: String,
+    pub collateral_switch: bool,
+    pub margin_collateral: bool,
+    pub coin: Ustr,
+}
+
+/// Wallet balance snapshot containing per-coin balances.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWalletBalance {
+    pub total_equity: String,
+    pub account_im_rate: String,
+    pub total_margin_balance: String,
+    pub total_initial_margin: String,
+    pub account_type: BybitAccountType,
+    pub total_available_balance: String,
+    pub account_mm_rate: String,
+    pub total_perp_upl: String,
+    pub total_wallet_balance: String,
+    pub account_ltv: String,
+    pub total_maintenance_margin: String,
+    pub coin: Vec<BybitCoinBalance>,
+}
+
+/// Response alias for wallet balance requests.
+pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
+
+/// Order representation as returned by order-related endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitOrder {
+    pub order_id: Ustr,
+    pub order_link_id: Ustr,
+    pub block_trade_id: Option<Ustr>,
+    pub symbol: Ustr,
+    pub price: String,
+    pub qty: String,
+    pub side: BybitOrderSide,
+    pub is_leverage: String,
+    pub position_idx: i32,
+    pub order_status: BybitOrderStatus,
+    pub cancel_type: BybitCancelType,
+    pub reject_reason: Ustr,
+    pub avg_price: Option<String>,
+    pub leaves_qty: String,
+    pub leaves_value: String,
+    pub cum_exec_qty: String,
+    pub cum_exec_value: String,
+    pub cum_exec_fee: String,
+    pub time_in_force: BybitTimeInForce,
+    pub order_type: BybitOrderType,
+    pub stop_order_type: BybitStopOrderType,
+    pub order_iv: Option<String>,
+    pub trigger_price: String,
+    pub take_profit: String,
+    pub stop_loss: String,
+    pub tp_trigger_by: BybitTriggerType,
+    pub sl_trigger_by: BybitTriggerType,
+    pub trigger_direction: BybitTriggerDirection,
+    pub trigger_by: BybitTriggerType,
+    pub last_price_on_created: String,
+    pub reduce_only: bool,
+    pub close_on_trigger: bool,
+    pub smp_type: Ustr,
+    pub smp_group: i32,
+    pub smp_order_id: Ustr,
+    pub tpsl_mode: Option<BybitTpSlMode>,
+    pub tp_limit_price: String,
+    pub sl_limit_price: String,
+    pub place_type: Ustr,
+    pub created_time: String,
+    pub updated_time: String,
+}
+
+/// Response alias for open order queries.
+pub type BybitOpenOrdersResponse = BybitListResponse<BybitOrder>;
+/// Response alias for order history queries with pagination.
+pub type BybitOrderHistoryResponse = BybitCursorListResponse<BybitOrder>;
+
+/// Payload returned after placing a single order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitPlaceOrderResult {
+    pub order_id: Option<Ustr>,
+    pub order_link_id: Option<Ustr>,
+}
+
+/// Response alias for order placement endpoints.
+pub type BybitPlaceOrderResponse = BybitResponse<BybitPlaceOrderResult>;
+
+/// Payload returned after cancelling a single order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitCancelOrderResult {
+    pub order_id: Option<Ustr>,
+    pub order_link_id: Option<Ustr>,
+}
+
+/// Response alias for order cancellation endpoints.
+pub type BybitCancelOrderResponse = BybitResponse<BybitCancelOrderResult>;
+
+/// Execution/Fill payload returned by `GET /v5/execution/list`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitExecution {
+    pub symbol: Ustr,
+    pub order_id: Ustr,
+    pub order_link_id: Ustr,
+    pub side: BybitOrderSide,
+    pub order_price: String,
+    pub order_qty: String,
+    pub leaves_qty: String,
+    pub create_type: Option<String>,
+    pub order_type: BybitOrderType,
+    pub stop_order_type: Option<BybitStopOrderType>,
+    pub exec_fee: String,
+    pub exec_id: String,
+    pub exec_price: String,
+    pub exec_qty: String,
+    pub exec_type: BybitExecType,
+    pub exec_value: String,
+    pub exec_time: String,
+    pub fee_currency: Ustr,
+    pub is_maker: bool,
+    pub fee_rate: String,
+    pub trade_iv: String,
+    pub mark_iv: String,
+    pub mark_price: String,
+    pub index_price: String,
+    pub underlying_price: String,
+    pub block_trade_id: String,
+    pub closed_size: String,
+    pub seq: i64,
+}
+
+/// Response alias for trade history requests.
+pub type BybitTradeHistoryResponse = BybitListResponse<BybitExecution>;
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::testing::load_test_json;
+
+    #[test]
+    fn deserialize_spot_instrument_uses_enums() {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.status, BybitInstrumentStatus::Trading);
+        assert_eq!(instrument.innovation, BybitInnovationFlag::Standard);
+        assert_eq!(instrument.margin_trading, BybitMarginTrading::UtaOnly);
+    }
+
+    #[test]
+    fn deserialize_linear_instrument_status() {
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.status, BybitInstrumentStatus::Trading);
+        assert_eq!(instrument.contract_type, BybitContractType::LinearPerpetual);
+    }
+
+    #[test]
+    fn deserialize_order_response_maps_enums() {
+        let json = load_test_json("http_get_orders_history.json");
+        let response: BybitOrderHistoryResponse = serde_json::from_str(&json).unwrap();
+        let order = &response.result.list[0];
+
+        assert_eq!(order.cancel_type, BybitCancelType::CancelByUser);
+        assert_eq!(order.tp_trigger_by, BybitTriggerType::MarkPrice);
+        assert_eq!(order.sl_trigger_by, BybitTriggerType::LastPrice);
+        assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
+        assert_eq!(order.order_type, BybitOrderType::Limit);
+    }
+}

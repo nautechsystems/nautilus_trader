@@ -4655,6 +4655,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-bybit"
+version = "0.51.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-lc-rs",
+ "chrono",
+ "hex",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-network",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-cli"
 version = "0.51.0"
 dependencies = [
@@ -5174,6 +5202,7 @@ version = "0.51.0"
 dependencies = [
  "nautilus-bitmex",
  "nautilus-blockchain",
+ "nautilus-bybit",
  "nautilus-coinbase-intx",
  "nautilus-common",
  "nautilus-core",
@@ -7254,6 +7283,17 @@ dependencies = [
  "itoa",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]

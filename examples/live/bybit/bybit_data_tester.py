@@ -23,6 +23,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -75,11 +76,13 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 config_tester = DataTesterConfig(
-    instrument_ids=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
+    instrument_ids=[instrument_id],
+    bar_types=[BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")],
     # subscribe_book=True,
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_funding_rates=True,
+    subscribe_bars=True,
 )
 
 # Instantiate your actor

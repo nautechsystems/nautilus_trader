@@ -5626,6 +5626,10 @@ class BookImbalanceRatio:
 # Adapters
 ###################################################################################################
 
+# Bybit
+
+BYBIT_NAUTILUS_BROKER_ID: Final[str]
+
 # Databento
 
 class DatabentoStatisticType(Enum):

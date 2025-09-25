@@ -28,6 +28,7 @@ defi = [
 extension-module = [
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
+  "nautilus-bybit/extension-module",
   "nautilus-coinbase-intx/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -82,6 +83,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 # Adapters
 nautilus-bitmex = { workspace = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = ["python"], optional = true }
+nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }

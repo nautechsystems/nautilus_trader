@@ -1,0 +1,24 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "category": "linear",
+    "symbol": "BTCUSDT",
+    "list": [
+      {
+        "start": "1709891679000",
+        "end": "1709891739000",
+        "interval": "1",
+        "open": "27450",
+        "close": "27455",
+        "high": "27460",
+        "low": "27440",
+        "volume": "123.45",
+        "turnover": "3390000",
+        "confirm": true,
+        "timestamp": "1709891739000"
+      }
+    ]
+  },
+  "time": 1709891679050
+}
