@@ -258,6 +258,8 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         If False, uses reqOpenOrders to fetch only orders from current client ID session.
         Note: When using reqAllOpenOrders with client ID 0, it can see orders from all
         sources including TWS GUI, but cannot see orders from other non-zero client IDs.
+    track_option_exercise_from_position_update : bool, default False
+        If True, subscribes to real-time position updates to track option exercises.
 
     """
 
@@ -271,3 +273,4 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
     connection_timeout: int = 300
     fetch_all_open_orders: bool = False
+    track_option_exercise_from_position_update: bool = False

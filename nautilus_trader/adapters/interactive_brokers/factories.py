@@ -321,6 +321,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             config=config,
             name=name,
             connection_timeout=config.connection_timeout,
+            track_option_exercise_from_position_update=config.track_option_exercise_from_position_update,
         )
 
         return exec_client
