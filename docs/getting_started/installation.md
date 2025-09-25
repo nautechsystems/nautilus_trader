@@ -9,11 +9,17 @@ NautilusTrader is officially supported for Python 3.11-3.13 on the following 64-
 | macOS                  | 15.0 and later               | ARM64             |
 | Windows Server         | 2022 and later               | x86_64            |
 
-On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before proceeding.
-
 :::note
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
 :::
+
+Continuous CI coverage comes from the GitHub Actions runners we build on:
+
+- `Linux (Ubuntu)` builds currently pin to `ubuntu-22.04` to keep glibc 2.35 compatibility even as `ubuntu-latest` moves ahead.
+- `macOS (ARM64)` builds run on `macos-latest`, so support tracks that runner image as it moves ahead.
+- `Windows (x86_64)` builds run on `windows-latest`, so support tracks that runner image as it moves ahead.
+
+On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before proceeding.
 
 We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
 
@@ -77,8 +83,11 @@ Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to
 Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
 
-**Note**: Development wheels from the `develop` branch publish for every platform below except Linux ARM64.
-Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
+This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 | Platform           | Nightly | Develop |
 | :----------------- | :------ | :------ |
@@ -87,11 +96,8 @@ Skipping that target keeps CI feedback fast while avoiding unnecessary build res
 | `macOS (ARM64)`    | ✓       | ✓       |
 | `Windows (x86_64)` | ✓       | ✓       |
 
-This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
-while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
-
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+**Note**: Development wheels from the `develop` branch publish for every supported platform except Linux ARM64.
+Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.

@@ -241,8 +241,11 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
 
-**Note**: Development wheels from the `develop` branch publish for every platform below except Linux ARM64.
-Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
+This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 | Platform           | Nightly | Develop |
 | :----------------- | :------ | :------ |
@@ -251,11 +254,8 @@ Skipping that target keeps CI feedback fast while avoiding unnecessary build res
 | `macOS (ARM64)`    | ✓       | ✓       |
 | `Windows (x86_64)` | ✓       | ✓       |
 
-This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
-while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
-
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+**Note**: Development wheels from the `develop` branch publish for every supported platform except Linux ARM64.
+Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
 
 > [!WARNING]
 >
