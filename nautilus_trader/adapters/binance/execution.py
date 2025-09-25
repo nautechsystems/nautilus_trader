@@ -938,14 +938,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         for order in command.order_list.orders:
-            self.generate_order_submitted(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
-
-        for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO: Implement
                 self._log.error(f"Cannot yet handle OCO conditional orders, {order}")
                 return
