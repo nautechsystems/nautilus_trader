@@ -35,6 +35,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 
@@ -52,18 +53,18 @@ nautilus-network = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
+hex = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-ustr = { workspace = true }
+serde_repr = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-rust_decimal = { workspace = true }
-aws-lc-rs = { workspace = true }
-hex = { workspace = true }
-thiserror = { workspace = true }
+ustr = { workspace = true }
 zeroize = { workspace = true }
-serde_repr = "0.1.18"
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

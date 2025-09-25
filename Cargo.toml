@@ -131,7 +131,7 @@ log = { version = "0.4.28", features = [
   "serde",
   "release_max_level_debug",
 ] }
-memchr = "2.7.4"
+memchr = "2.7.6"
 nonzero_ext = "0.3.0"
 object_store = { version = "0.12.4", default-features = false, features = [
   "fs",
@@ -168,7 +168,7 @@ redis = { version = "0.32.5", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ] }
-regex = { version = "1.11.2", default-features = false, features = ["std", "perf", "unicode-perl"] }
+regex = { version = "1.11.3", default-features = false, features = ["std", "perf", "unicode-perl"] }
 reqwest = { version = "0.12.23", default-features = false, features = [
   "blocking",
   "rustls-tls",
@@ -184,6 +184,7 @@ ryu = "1.0.20"
 semver = "1.0.25"
 serde = { version = "1.0.226", default-features = false, features = ["derive", "std", "rc"] }
 serde_json = { version = "1.0.145", default-features = false, features = ["std"] }
+serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
 simple_logger = "5.0.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -215,7 +216,7 @@ tokio = { version = "1.47.1", default-features = false, features = [
 ] }
 tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
-tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
 toml = { version = "0.9.7", default-features = false, features = ["parse", "serde"] }
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
