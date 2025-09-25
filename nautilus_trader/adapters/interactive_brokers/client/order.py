@@ -355,6 +355,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         # Check if this is for a get_executions request
         execution_request_name = f"Executions-{execution.acctNumber}"
+
         if request := self._requests.get(name=execution_request_name):
             if request.req_id == req_id and cache.get("commission_report"):
                 # Add complete execution detail to request result
@@ -377,9 +378,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 commission_report=cache["commission_report"],
                 contract=cache["contract"],
             )
+
             # Only remove from cache if not part of a request
             if not self._requests.get(name=execution_request_name):
-                cache.pop(execution.execId, None)
+                self._exec_id_details.pop(execution.execId, None)
 
     async def process_commission_report(
         self,
@@ -419,9 +421,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     commission_report=cache["commission_report"],
                     contract=cache.get("contract"),
                 )
+
                 # Only remove from cache if not part of a request
                 if not self._requests.get(name=execution_request_name):
-                    cache.pop(commission_report.execId, None)
+                    self._exec_id_details.pop(commission_report.execId, None)
 
     async def process_exec_details_end(self, req_id: int) -> None:
         """
