@@ -14,13 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 
 from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
@@ -32,6 +37,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -47,6 +53,29 @@ def _make_quote_tick(instrument):
         ask_size=instrument.make_qty(100),
         ts_init=0,
         ts_event=0,
+    )
+
+
+def _make_equity_with_increment(instrument: Equity, price_increment: str) -> Equity:
+    info = instrument.info.copy() if isinstance(instrument.info, dict) else instrument.info
+    return Equity(
+        instrument_id=instrument.id,
+        raw_symbol=instrument.raw_symbol,
+        currency=instrument.quote_currency,
+        price_precision=instrument.price_precision,
+        price_increment=Price.from_str(price_increment),
+        lot_size=instrument.lot_size,
+        ts_event=instrument.ts_event + 1,
+        ts_init=instrument.ts_init + 1,
+        max_quantity=instrument.max_quantity,
+        min_quantity=instrument.min_quantity,
+        margin_init=instrument.margin_init,
+        margin_maint=instrument.margin_maint,
+        maker_fee=instrument.maker_fee,
+        taker_fee=instrument.taker_fee,
+        isin=instrument.isin,
+        tick_scheme_name=instrument.tick_scheme_name,
+        info=info,
     )
 
 
@@ -231,3 +260,66 @@ async def test_cancel_order_fail(exec_client, cache, strategy, instrument, event
     assert client_order_id not in client_order_ids
     venue_order_ids = [o.venue_order_id for o in strategy.cache.orders()]
     assert venue_order_id not in venue_order_ids
+
+
+@pytest.mark.asyncio()
+async def test_on_data_updates_exchange_instrument(exec_client, instrument):
+    # Arrange
+    exec_client.connect()
+    matching_engine = exec_client.exchange.get_matching_engine(instrument.id)
+    assert matching_engine is not None
+    updated_instrument = _make_equity_with_increment(instrument, "0.02")
+
+    # Act
+    exec_client.on_data(updated_instrument)
+
+    # Assert
+    assert matching_engine.instrument.price_increment == Price.from_str("0.02")
+    assert matching_engine.instrument.ts_init == updated_instrument.ts_init
+
+
+@pytest.mark.asyncio()
+async def test_on_data_forwards_instrument_status(exec_client, instrument):
+    # Arrange
+    exec_client.connect()
+    mock_exchange = MagicMock(spec=SimulatedExchange)
+    mock_exchange.process_instrument_status = MagicMock()
+    mock_exchange.process = MagicMock()
+    exec_client.exchange = mock_exchange
+    status = InstrumentStatus(
+        instrument_id=instrument.id,
+        action=MarketStatusAction.TRADING,
+        ts_event=1,
+        ts_init=1,
+    )
+
+    # Act
+    exec_client.on_data(status)
+
+    # Assert
+    mock_exchange.process_instrument_status.assert_called_once_with(status)
+    mock_exchange.process.assert_called_once_with(status.ts_init)
+
+
+@pytest.mark.asyncio()
+async def test_on_data_forwards_instrument_close(exec_client, instrument):
+    # Arrange
+    exec_client.connect()
+    mock_exchange = MagicMock(spec=SimulatedExchange)
+    mock_exchange.process_instrument_close = MagicMock()
+    mock_exchange.process = MagicMock()
+    exec_client.exchange = mock_exchange
+    close = InstrumentClose(
+        instrument_id=instrument.id,
+        close_price=Price.from_str("123.45"),
+        close_type=InstrumentCloseType.CONTRACT_EXPIRED,
+        ts_event=1,
+        ts_init=1,
+    )
+
+    # Act
+    exec_client.on_data(close)
+
+    # Assert
+    mock_exchange.process_instrument_close.assert_called_once_with(close)
+    mock_exchange.process.assert_called_once_with(close.ts_init)
