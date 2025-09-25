@@ -65,7 +65,7 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
 /// This client wraps the underlying `HttpClient` to handle functionality
 /// specific to Hyperliquid, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into specific data models.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HyperliquidHttpClient {
     client: HttpClient,
     is_testnet: bool,
@@ -183,6 +183,34 @@ impl HyperliquidHttpClient {
     /// Get metadata about available markets.
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
         let request = InfoRequest::meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get complete perpetuals metadata.
+    pub async fn get_perp_meta(&self) -> Result<crate::http::models::PerpMeta> {
+        let request = InfoRequest::meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get complete spot metadata (tokens and pairs).
+    pub async fn get_spot_meta(&self) -> Result<crate::http::models::SpotMeta> {
+        let request = InfoRequest::spot_meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get perpetuals metadata with asset contexts (for price precision refinement).
+    pub async fn get_perp_meta_and_ctxs(&self) -> Result<crate::http::models::PerpMetaAndCtxs> {
+        let request = InfoRequest::meta_and_asset_ctxs();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get spot metadata with asset contexts (for price precision refinement).
+    pub async fn get_spot_meta_and_ctxs(&self) -> Result<crate::http::models::SpotMetaAndCtxs> {
+        let request = InfoRequest::spot_meta_and_asset_ctxs();
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }

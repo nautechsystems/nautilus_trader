@@ -46,9 +46,12 @@ use nautilus_core::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
+    currencies::CURRENCY_MAP,
     data::Data,
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::{Instrument, InstrumentAny},
+    enums::CurrencyType,
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    types::{Currency, Price, Quantity},
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -59,9 +62,104 @@ use crate::{
         credential::{EvmPrivateKey, Secrets},
     },
     config::HyperliquidDataClientConfig,
-    http::client::HyperliquidHttpClient,
+    http::{
+        client::HyperliquidHttpClient,
+        parse::{
+            HyperliquidInstrumentDef, HyperliquidMarketType, parse_perp_instruments,
+            parse_spot_instruments,
+        },
+    },
     websocket::client::HyperliquidWebSocketClient,
 };
+
+/// Returns a currency, either from the internal currency map or creates a default crypto.
+fn get_currency(code: &str) -> Currency {
+    // SAFETY: Mutex should not be poisoned in normal operation
+    CURRENCY_MAP
+        .lock()
+        .expect("Failed to acquire CURRENCY_MAP lock")
+        .get(code)
+        .copied()
+        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+}
+
+/// Creates a Nautilus instrument from a Hyperliquid instrument definition.
+fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<InstrumentAny> {
+    let ts_event = get_atomic_clock_realtime().get_time_ns();
+    let ts_init = ts_event;
+
+    // Create instrument ID from the symbol
+    let symbol = Symbol::new(&def.symbol);
+    let venue = Venue::new("HYPERLIQUID");
+    let instrument_id = InstrumentId::new(symbol, venue);
+
+    let raw_symbol = Symbol::new(&def.symbol);
+    let base_currency = get_currency(&def.base);
+    let quote_currency = get_currency(&def.quote);
+    let price_increment = Price::from(&def.tick_size.to_string());
+    let size_increment = Quantity::from(&def.lot_size.to_string());
+
+    // For now, use minimal parameters - no fees, margins, or lot sizes
+    match def.market_type {
+        HyperliquidMarketType::Spot => {
+            Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
+                instrument_id,
+                raw_symbol,
+                base_currency,
+                quote_currency,
+                def.price_decimals as u8,
+                def.size_decimals as u8,
+                price_increment,
+                size_increment,
+                None, // multiplier
+                None, // lot_size
+                None, // max_quantity
+                None, // min_quantity
+                None, // max_notional
+                None, // min_notional
+                None, // max_price
+                None, // min_price
+                None, // margin_init
+                None, // margin_maint
+                None, // maker_fee
+                None, // taker_fee
+                ts_event,
+                ts_init,
+            )))
+        }
+        HyperliquidMarketType::Perp => {
+            // For Hyperliquid, perps are USD-quoted and USDC-settled
+            let settlement_currency = get_currency("USDC");
+
+            Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+                instrument_id,
+                raw_symbol,
+                base_currency,
+                quote_currency,
+                settlement_currency,
+                false, // is_inverse - Hyperliquid perps are linear
+                def.price_decimals as u8,
+                def.size_decimals as u8,
+                price_increment,
+                size_increment,
+                None, // multiplier
+                None, // lot_size
+                None, // max_quantity
+                None, // min_quantity
+                None, // max_notional
+                None, // min_notional
+                None, // max_price
+                None, // min_price
+                None, // margin_init
+                None, // margin_maint
+                None, // maker_fee
+                None, // taker_fee
+                ts_event,
+                ts_init,
+            )))
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
@@ -132,22 +230,51 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
-        // TODO: Implement proper instrument conversion from Hyperliquid metadata
-        // For now, return empty list as placeholder
-        let meta = self
-            .http_client
-            .info_meta()
-            .await
-            .context("failed to load meta information")?;
+        let mut instruments = Vec::new();
 
-        tracing::debug!(
-            "loaded {count} assets from Hyperliquid meta",
-            count = meta.universe.len()
-        );
+        // Load perpetual instruments
+        match self.http_client.get_perp_meta().await {
+            Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
+                Ok(perp_defs) => {
+                    tracing::debug!("Loaded {} perp definitions", perp_defs.len());
+                    for def in perp_defs {
+                        if let Some(instrument) = create_instrument_from_def(&def) {
+                            instruments.push(instrument);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse perp instruments: {}", e);
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to load perp metadata: {}", e);
+            }
+        }
 
-        // TODO: Convert HyperliquidAssetInfo to InstrumentAny
-        let instruments: Vec<InstrumentAny> = Vec::new();
+        // Load spot instruments
+        match self.http_client.get_spot_meta().await {
+            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
+                Ok(spot_defs) => {
+                    tracing::debug!("Loaded {} spot definitions", spot_defs.len());
+                    for def in spot_defs {
+                        if let Some(instrument) = create_instrument_from_def(&def) {
+                            instruments.push(instrument);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse spot instruments: {}", e);
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to load spot metadata: {}", e);
+            }
+        }
 
+        tracing::info!("Loaded {} instruments from Hyperliquid", instruments.len());
+
+        // Update cache
         {
             let mut guard = self
                 .instruments
@@ -258,67 +385,67 @@ impl DataClient for HyperliquidDataClient {
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> Result<()> {
         tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
-        // TODO: Implement trade subscription
+        // WebSocket trade subscription implementation pending
         Ok(())
     }
 
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> Result<()> {
         tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
-        // TODO: Implement quote subscription
+        // WebSocket quote subscription implementation pending
         Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> Result<()> {
         tracing::debug!("Subscribing to book deltas for {}", cmd.instrument_id);
-        // TODO: Implement book delta subscription
+        // WebSocket book delta subscription implementation pending
         Ok(())
     }
 
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> Result<()> {
         tracing::debug!("Subscribing to book snapshots for {}", cmd.instrument_id);
-        // TODO: Implement book snapshot subscription
+        // WebSocket book snapshot subscription implementation pending
         Ok(())
     }
 
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> Result<()> {
         tracing::debug!("Subscribing to bars for {}", cmd.bar_type);
-        // TODO: Implement bar subscription
+        // WebSocket bar subscription implementation pending
         Ok(())
     }
 
     fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> Result<()> {
         tracing::debug!("Subscribing to funding rates for {}", cmd.instrument_id);
-        // TODO: Implement funding rate subscription
+        // WebSocket funding rate subscription implementation pending
         Ok(())
     }
 
     fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> Result<()> {
         tracing::debug!("Subscribing to mark prices for {}", cmd.instrument_id);
-        // TODO: Implement mark price subscription
+        // WebSocket mark price subscription implementation pending
         Ok(())
     }
 
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> Result<()> {
         tracing::debug!("Subscribing to index prices for {}", cmd.instrument_id);
-        // TODO: Implement index price subscription
+        // WebSocket index price subscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> Result<()> {
         tracing::debug!("Unsubscribing from trades for {}", cmd.instrument_id);
-        // TODO: Implement trade unsubscription
+        // WebSocket trade unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> Result<()> {
         tracing::debug!("Unsubscribing from quotes for {}", cmd.instrument_id);
-        // TODO: Implement quote unsubscription
+        // WebSocket quote unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> Result<()> {
         tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
-        // TODO: Implement book delta unsubscription
+        // WebSocket book delta unsubscription implementation pending
         Ok(())
     }
 
@@ -327,31 +454,31 @@ impl DataClient for HyperliquidDataClient {
             "Unsubscribing from book snapshots for {}",
             cmd.instrument_id
         );
-        // TODO: Implement book snapshot unsubscription
+        // WebSocket book snapshot unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> Result<()> {
         tracing::debug!("Unsubscribing from bars for {}", cmd.bar_type);
-        // TODO: Implement bar unsubscription
+        // WebSocket bar unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> Result<()> {
         tracing::debug!("Unsubscribing from funding rates for {}", cmd.instrument_id);
-        // TODO: Implement funding rate unsubscription
+        // WebSocket funding rate unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> Result<()> {
         tracing::debug!("Unsubscribing from mark prices for {}", cmd.instrument_id);
-        // TODO: Implement mark price unsubscription
+        // WebSocket mark price unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> Result<()> {
         tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
-        // TODO: Implement index price unsubscription
+        // WebSocket index price unsubscription implementation pending
         Ok(())
     }
 
@@ -420,7 +547,7 @@ impl DataClient for HyperliquidDataClient {
             None => {
                 tracing::warn!("Instrument {} not found", request.instrument_id);
                 // For now, we don't send a response for missing instruments
-                // TODO: Consider sending an error response
+                // Consider sending an error response in future enhancement
             }
         }
 
@@ -429,7 +556,7 @@ impl DataClient for HyperliquidDataClient {
 
     fn request_trades(&self, request: &RequestTrades) -> Result<()> {
         tracing::debug!("Requesting trades for {}", request.instrument_id);
-        // TODO: Implement trade request
+        // Historical trade request implementation pending
         let response = DataResponse::Trades(TradesResponse::new(
             request.request_id,
             request.client_id.unwrap_or(self.client_id),
@@ -454,7 +581,7 @@ impl DataClient for HyperliquidDataClient {
 
     fn request_bars(&self, request: &RequestBars) -> Result<()> {
         tracing::debug!("Requesting bars for {}", request.bar_type);
-        // TODO: Implement bar request
+        // Historical bar request implementation pending
         let response = DataResponse::Bars(BarsResponse::new(
             request.request_id,
             request.client_id.unwrap_or(self.client_id),
