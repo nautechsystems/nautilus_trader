@@ -25,6 +25,8 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Added BitMEX adapter integration tests
+- Added OKX adapter integration tests
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad

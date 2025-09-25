@@ -5077,6 +5077,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "aws-lc-rs",
+ "axum",
  "base64",
  "chrono",
  "criterion",
