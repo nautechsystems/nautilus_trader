@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
 - Added BitMEX contingent orders support (OCO, OTO, brackets)
+- Added BitMEX historical data requests (trades and bars)
 - Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035

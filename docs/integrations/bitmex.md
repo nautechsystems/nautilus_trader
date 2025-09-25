@@ -281,6 +281,14 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 - Order book snapshots: `L2_MBP` only; `depth` 0 (default 10) or 10.
 - Quotes, trades, and instrument updates are supported via WebSocket.
 - Funding rates, mark prices, and index prices are supported where applicable.
+- Historical requests via REST:
+  - Trade ticks with optional `start`, `end`, and `limit` filters (up to 1,000 results per call).
+  - Time bars (`1m`, `5m`, `1h`, `1d`) for externally aggregated LAST prices, including optional partial bins.
+
+:::note
+BitMEX caps each REST response at 1,000 rows and requires manual pagination via `start`/`startTime`. The current adapter returns only the
+first page; wider pagination support is scheduled for a future update.
+:::
 
 ## Rate limits
 

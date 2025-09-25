@@ -6402,14 +6402,16 @@ class BitmexHttpClient:
     async def request_trades(
         self,
         instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
     async def request_bars(
         self,
         bar_type: BarType,
-        count: int | None = None,
         start: dt.datetime | None = None,
         end: dt.datetime | None = None,
+        limit: int | None = None,
         partial: bool = False,
     ) -> list[Bar]: ...
     async def request_account_state(

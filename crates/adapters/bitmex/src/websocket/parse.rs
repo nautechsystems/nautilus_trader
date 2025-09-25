@@ -56,9 +56,10 @@ use crate::{
         consts::BITMEX_VENUE,
         enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
         parse::{
-            map_bitmex_currency, parse_contracts_quantity, parse_fractional_quantity,
-            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-            parse_position_side, parse_signed_contracts_quantity,
+            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
+            parse_contracts_quantity, parse_fractional_quantity, parse_instrument_id,
+            parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
+            parse_signed_contracts_quantity,
         },
     },
     websocket::messages::BitmexOrderUpdateMsg,
@@ -381,7 +382,12 @@ pub fn parse_trade_bin_msg(
     let high = Price::new(msg.high, price_precision);
     let low = Price::new(msg.low, price_precision);
     let close = Price::new(msg.close, price_precision);
-    let volume = parse_contracts_quantity(msg.volume as u64, instrument);
+
+    let (open, high, low, close) =
+        normalize_trade_bin_prices(open, high, low, close, &msg.symbol, Some(&bar_type));
+
+    let volume_contracts = normalize_trade_bin_volume(Some(msg.volume), &msg.symbol);
+    let volume = parse_contracts_quantity(volume_contracts, instrument);
     let ts_event = UnixNanos::from(msg.timestamp);
 
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
@@ -886,6 +892,7 @@ pub fn parse_margin_msg(msg: BitmexMarginMsg, instrument_id: InstrumentId) -> Ma
 
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, Utc};
     use nautilus_model::{
         data::quote::QuoteTick,
         enums::{
@@ -897,6 +904,7 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::{
@@ -1070,6 +1078,38 @@ mod tests {
         assert_eq!(bar.volume, Quantity::from(84_000));
         assert_eq!(bar.ts_event, 1732392420000000000); // 2024-11-23T20:07:00.000Z in nanos
         assert_eq!(bar.ts_init, 3);
+    }
+
+    #[rstest]
+    fn test_trade_bin_message_extreme_adjustment() {
+        let topic = BitmexWsTopic::TradeBin1m;
+        let instrument = create_test_perpetual_instrument();
+
+        let msg = BitmexTradeBinMsg {
+            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            symbol: Ustr::from("XBTUSD"),
+            open: 50_000.0,
+            high: 49_990.0,
+            low: 50_010.0,
+            close: 50_005.0,
+            trades: 10,
+            volume: 1_000,
+            vwap: 0.0,
+            last_size: 0,
+            turnover: 0,
+            home_notional: 0.0,
+            foreign_notional: 0.0,
+        };
+
+        let bar = parse_trade_bin_msg(&msg, &topic, &instrument, UnixNanos::from(3));
+
+        assert_eq!(bar.high, Price::from("50010.0"));
+        assert_eq!(bar.low, Price::from("49990.0"));
+        assert_eq!(bar.open, Price::from("50000.0"));
+        assert_eq!(bar.close, Price::from("50005.0"));
+        assert_eq!(bar.volume, Quantity::from(1_000));
     }
 
     #[rstest]

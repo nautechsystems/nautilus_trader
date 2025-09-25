@@ -20,7 +20,7 @@ use std::str::FromStr;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    data::TradeTick,
+    data::{Bar, BarType, TradeTick},
     enums::{
         ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
     },
@@ -33,12 +33,15 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
 use uuid::Uuid;
 
-use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade};
+use super::models::{
+    BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade, BitmexTradeBin,
+};
 use crate::common::{
     enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentType},
     parse::{
         convert_contract_quantity, derive_contract_decimal_and_increment, map_bitmex_currency,
-        parse_aggressor_side, parse_instrument_id, parse_liquidity_side,
+        normalize_trade_bin_prices, normalize_trade_bin_volume, parse_aggressor_side,
+        parse_contracts_quantity, parse_instrument_id, parse_liquidity_side,
         parse_optional_datetime_to_unix_nanos, parse_position_side,
         parse_signed_contracts_quantity,
     },
@@ -482,6 +485,55 @@ pub fn parse_trade(
     ))
 }
 
+/// Converts a BitMEX trade-bin record into a Nautilus [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error when required OHLC fields are missing from the payload.
+///
+/// # Panics
+///
+/// Panics if the bar type or price precision cannot be determined for the instrument, which
+/// indicates the instrument cache was not hydrated prior to parsing.
+pub fn parse_trade_bin(
+    bin: BitmexTradeBin,
+    instrument: &InstrumentAny,
+    bar_type: &BarType,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let instrument_id = bar_type.instrument_id();
+    let price_precision = instrument.price_precision();
+
+    let open = bin
+        .open
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+    let high = bin
+        .high
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+    let low = bin
+        .low
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+    let close = bin
+        .close
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+
+    let open = Price::new(open, price_precision);
+    let high = Price::new(high, price_precision);
+    let low = Price::new(low, price_precision);
+    let close = Price::new(close, price_precision);
+
+    let (open, high, low, close) =
+        normalize_trade_bin_prices(open, high, low, close, &bin.symbol, Some(bar_type));
+
+    let volume_contracts = normalize_trade_bin_volume(bin.volume, &bin.symbol);
+    let volume = parse_contracts_quantity(volume_contracts, instrument);
+    let ts_event = UnixNanos::from(bin.timestamp);
+
+    Ok(Bar::new(
+        *bar_type, open, high, low, close, volume, ts_event, ts_init,
+    ))
+}
+
 /// Parse a BitMEX order into a Nautilus `OrderStatusReport`.
 ///
 /// # Errors
@@ -753,9 +805,13 @@ fn get_currency(code: String) -> Currency {
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Utc};
-    use nautilus_model::enums::{LiquiditySide, PositionSide};
+    use nautilus_model::{
+        data::{BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
+        types::Price,
+    };
     use rstest::rstest;
-    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::{Decimal, prelude::ToPrimitive};
     use uuid::Uuid;
 
     use super::*;
@@ -920,6 +976,76 @@ mod tests {
         let bin3 = &bins[2];
         assert_eq!(bin3.close, Some(98970.0));
         assert_eq!(bin3.volume, Some(78000));
+    }
+
+    #[rstest]
+    fn test_parse_trade_bin_to_bar() {
+        let json_data = load_test_json("http_get_trade_bins.json");
+        let bins: Vec<BitmexTradeBin> = serde_json::from_str(&json_data).unwrap();
+        let instrument_json = load_test_json("http_get_instrument_xbtusd.json");
+        let instrument: BitmexInstrument = serde_json::from_str(&instrument_json).unwrap();
+
+        let ts_init = UnixNanos::from(1u64);
+        let instrument_any = parse_instrument_any(&instrument, ts_init).expect("instrument parsed");
+
+        let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
+
+        let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
+
+        let precision = instrument_any.price_precision();
+        let expected_open = Price::from_decimal(Decimal::from_str("98900.0").unwrap(), precision)
+            .expect("open price");
+        let expected_close = Price::from_decimal(Decimal::from_str("98950.0").unwrap(), precision)
+            .expect("close price");
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open, expected_open);
+        assert_eq!(bar.close, expected_close);
+    }
+
+    #[rstest]
+    fn test_parse_trade_bin_extreme_adjustment() {
+        let instrument_json = load_test_json("http_get_instrument_xbtusd.json");
+        let instrument: BitmexInstrument = serde_json::from_str(&instrument_json).unwrap();
+
+        let ts_init = UnixNanos::from(1u64);
+        let instrument_any = parse_instrument_any(&instrument, ts_init).expect("instrument parsed");
+
+        let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
+
+        let bin = BitmexTradeBin {
+            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            symbol: Ustr::from("XBTUSD"),
+            open: Some(50_000.0),
+            high: Some(49_990.0),
+            low: Some(50_010.0),
+            close: Some(50_005.0),
+            trades: Some(5),
+            volume: Some(1_000),
+            vwap: None,
+            last_size: None,
+            turnover: None,
+            home_notional: None,
+            foreign_notional: None,
+        };
+
+        let bar = parse_trade_bin(bin.clone(), &instrument_any, &bar_type, ts_init).unwrap();
+
+        let precision = instrument_any.price_precision();
+        let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)
+            .expect("high price");
+        let expected_low = Price::from_decimal(Decimal::from_str("49990.0").unwrap(), precision)
+            .expect("low price");
+        let expected_open = Price::from_decimal(Decimal::from_str("50000.0").unwrap(), precision)
+            .expect("open price");
+
+        assert_eq!(bar.high, expected_high);
+        assert_eq!(bar.low, expected_low);
+        assert_eq!(bar.open, expected_open);
     }
 
     #[rstest]

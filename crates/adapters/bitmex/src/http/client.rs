@@ -29,7 +29,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
@@ -37,8 +37,11 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::TradeTick,
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    data::{Bar, BarType, TradeTick},
+    enums::{
+        AggregationSource, BarAggregation, ContingencyType, OrderSide, OrderType, PriceType,
+        TimeInForce, TriggerType,
+    },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
@@ -60,12 +63,13 @@ use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
     models::{
         BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder, BitmexPosition, BitmexTrade,
-        BitmexWallet,
+        BitmexTradeBin, BitmexWallet,
     },
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
-        GetOrderParams, GetPositionParams, GetPositionParamsBuilder, GetTradeParams,
-        GetTradeParamsBuilder, PostOrderParams, PostPositionLeverageParams, PutOrderParams,
+        GetOrderParams, GetPositionParams, GetPositionParamsBuilder, GetTradeBucketedParams,
+        GetTradeBucketedParamsBuilder, GetTradeParams, GetTradeParamsBuilder, PostOrderParams,
+        PostPositionLeverageParams, PutOrderParams,
     },
 };
 use crate::{
@@ -78,7 +82,7 @@ use crate::{
     http::{
         parse::{
             parse_fill_report, parse_instrument_any, parse_order_status_report,
-            parse_position_report, parse_trade,
+            parse_position_report, parse_trade, parse_trade_bin,
         },
         query::{DeleteAllOrdersParamsBuilder, GetOrderParamsBuilder, PutOrderParamsBuilder},
     },
@@ -457,6 +461,22 @@ impl BitmexHttpInnerClient {
             BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
         })?;
         let path = format!("/trade?{query}");
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Get bucketed (aggregated) trade data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn http_get_trade_bucketed(
+        &self,
+        params: GetTradeBucketedParams,
+    ) -> Result<Vec<BitmexTradeBin>, BitmexHttpError> {
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
+        let path = format!("/trade/bucketed?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -1714,14 +1734,40 @@ impl BitmexHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         let mut params = GetTradeParamsBuilder::default();
         params.symbol(instrument_id.symbol.as_str());
 
-        if let Some(limit) = limit {
-            params.count(limit as i32);
+        if let Some(start) = start {
+            params.start_time(start);
         }
+
+        if let Some(end) = end {
+            params.end_time(end);
+        }
+
+        if let (Some(start), Some(end)) = (start, end) {
+            anyhow::ensure!(
+                start < end,
+                "Invalid time range: start={start:?} end={end:?}",
+            );
+        }
+
+        if let Some(limit) = limit {
+            let clamped_limit = limit.min(1000);
+            if limit > 1000 {
+                tracing::warn!(
+                    limit,
+                    clamped_limit,
+                    "BitMEX trade request limit exceeds venue maximum; clamping",
+                );
+            }
+            params.count(i32::try_from(clamped_limit).unwrap_or(1000));
+        }
+        params.reverse(false);
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let response = self.inner.http_get_trades(params).await?;
@@ -1731,6 +1777,18 @@ impl BitmexHttpClient {
         let mut parsed_trades = Vec::new();
 
         for trade in response {
+            if let Some(start) = start
+                && trade.timestamp < start
+            {
+                continue;
+            }
+
+            if let Some(end) = end
+                && trade.timestamp > end
+            {
+                continue;
+            }
+
             let price_precision = self.get_price_precision(trade.symbol)?;
 
             match parse_trade(trade, price_precision, ts_init) {
@@ -1740,6 +1798,113 @@ impl BitmexHttpClient {
         }
 
         Ok(parsed_trades)
+    }
+
+    /// Request bars for the given bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, parsing fails, or the bar specification is
+    /// unsupported by BitMEX.
+    pub async fn request_bars(
+        &self,
+        mut bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+        partial: bool,
+    ) -> anyhow::Result<Vec<Bar>> {
+        bar_type = bar_type.standard();
+
+        anyhow::ensure!(
+            bar_type.aggregation_source() == AggregationSource::External,
+            "Only EXTERNAL aggregation bars are supported"
+        );
+        anyhow::ensure!(
+            bar_type.spec().price_type == PriceType::Last,
+            "Only LAST price type bars are supported"
+        );
+        if let (Some(start), Some(end)) = (start, end) {
+            anyhow::ensure!(
+                start < end,
+                "Invalid time range: start={start:?} end={end:?}"
+            );
+        }
+
+        let spec = bar_type.spec();
+        let bin_size = match (spec.aggregation, spec.step.get()) {
+            (BarAggregation::Minute, 1) => "1m",
+            (BarAggregation::Minute, 5) => "5m",
+            (BarAggregation::Hour, 1) => "1h",
+            (BarAggregation::Day, 1) => "1d",
+            _ => anyhow::bail!(
+                "BitMEX does not support {}-{:?}-{:?} bars",
+                spec.step.get(),
+                spec.aggregation,
+                spec.price_type,
+            ),
+        };
+
+        let instrument_id = bar_type.instrument_id();
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+
+        let mut params = GetTradeBucketedParamsBuilder::default();
+        params.symbol(instrument_id.symbol.as_str());
+        params.bin_size(bin_size);
+        if partial {
+            params.partial(true);
+        }
+        if let Some(start) = start {
+            params.start_time(start);
+        }
+        if let Some(end) = end {
+            params.end_time(end);
+        }
+        if let Some(limit) = limit {
+            let clamped_limit = limit.min(1000);
+            if limit > 1000 {
+                tracing::warn!(
+                    limit,
+                    clamped_limit,
+                    "BitMEX bar request limit exceeds venue maximum; clamping",
+                );
+            }
+            params.count(i32::try_from(clamped_limit).unwrap_or(1000));
+        }
+        params.reverse(false);
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let response = self.inner.http_get_trade_bucketed(params).await?;
+        let ts_init = self.generate_ts_init();
+        let mut bars = Vec::new();
+
+        for bin in response {
+            if let Some(start) = start
+                && bin.timestamp < start
+            {
+                continue;
+            }
+            if let Some(end) = end
+                && bin.timestamp > end
+            {
+                continue;
+            }
+            if bin.symbol != instrument_id.symbol.inner() {
+                tracing::warn!(
+                    symbol = %bin.symbol,
+                    expected = %instrument_id.symbol,
+                    "Skipping trade bin for unexpected symbol",
+                );
+                continue;
+            }
+
+            match parse_trade_bin(bin, &instrument, &bar_type, ts_init) {
+                Ok(bar) => bars.push(bar),
+                Err(e) => tracing::warn!("Failed to parse trade bin: {e}"),
+            }
+        }
+
+        Ok(bars)
     }
 
     /// Request fill reports for the given instrument.

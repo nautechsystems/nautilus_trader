@@ -18,16 +18,18 @@
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
+    data::bar::BarType,
     enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     types::{
-        AccountBalance, Currency, Money, Quantity,
+        AccountBalance, Currency, Money, Price, Quantity,
         quantity::{QUANTITY_RAW_MAX, QuantityRaw},
     },
 };
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
+use tracing::warn;
 use ustr::Ustr;
 
 use crate::{
@@ -198,6 +200,61 @@ pub fn parse_fractional_quantity(value: f64, instrument: &InstrumentAny) -> Quan
         );
         instrument.make_qty(0.0, None)
     })
+}
+
+/// Normalizes the OHLC values reported by BitMEX trade bins to ensure `high >= max(open, close)`
+/// and `low <= min(open, close)`.
+///
+/// # Panics
+///
+/// Panics if the price array is empty. This should never occur because the caller always supplies
+/// four price values (open/high/low/close).
+#[must_use]
+pub fn normalize_trade_bin_prices(
+    open: Price,
+    mut high: Price,
+    mut low: Price,
+    close: Price,
+    symbol: &Ustr,
+    bar_type: Option<&BarType>,
+) -> (Price, Price, Price, Price) {
+    let price_extremes = [open, high, low, close];
+    let max_price = *price_extremes
+        .iter()
+        .max()
+        .expect("Price array contains values");
+    let min_price = *price_extremes
+        .iter()
+        .min()
+        .expect("Price array contains values");
+
+    if high < max_price || low > min_price {
+        match bar_type {
+            Some(bt) => warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes"),
+            None => warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
+        }
+        high = max_price;
+        low = min_price;
+    }
+
+    (open, high, low, close)
+}
+
+/// Normalizes the volume reported by BitMEX trade bins, defaulting to zero when the exchange
+/// returns negative or missing values.
+#[must_use]
+pub fn normalize_trade_bin_volume(volume: Option<i64>, symbol: &Ustr) -> u64 {
+    match volume {
+        Some(v) if v >= 0 => v as u64,
+        Some(v) => {
+            warn!(symbol = %symbol, volume = v, "Received negative volume in BitMEX trade bin");
+            0
+        }
+        None => {
+            warn!(symbol = %symbol, "Trade bin missing volume, defaulting to 0");
+            0
+        }
+    }
 }
 
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.
