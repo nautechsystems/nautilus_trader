@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live market data client implementation for the Hyperliquid adapter.
-
 use std::{
     future::Future,
     sync::{
@@ -46,12 +44,9 @@ use nautilus_core::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::Data,
-    enums::CurrencyType,
-    identifiers::{ClientId, InstrumentId, Symbol, Venue},
-    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
-    types::{Currency, Price, Quantity},
+    identifiers::{ClientId, InstrumentId, Venue},
+    instruments::{Instrument, InstrumentAny},
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -62,104 +57,9 @@ use crate::{
         credential::{EvmPrivateKey, Secrets},
     },
     config::HyperliquidDataClientConfig,
-    http::{
-        client::HyperliquidHttpClient,
-        parse::{
-            HyperliquidInstrumentDef, HyperliquidMarketType, parse_perp_instruments,
-            parse_spot_instruments,
-        },
-    },
+    http::client::HyperliquidHttpClient,
     websocket::client::HyperliquidWebSocketClient,
 };
-
-/// Returns a currency, either from the internal currency map or creates a default crypto.
-fn get_currency(code: &str) -> Currency {
-    // SAFETY: Mutex should not be poisoned in normal operation
-    CURRENCY_MAP
-        .lock()
-        .expect("Failed to acquire CURRENCY_MAP lock")
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
-}
-
-/// Creates a Nautilus instrument from a Hyperliquid instrument definition.
-fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<InstrumentAny> {
-    let ts_event = get_atomic_clock_realtime().get_time_ns();
-    let ts_init = ts_event;
-
-    // Create instrument ID from the symbol
-    let symbol = Symbol::new(&def.symbol);
-    let venue = Venue::new("HYPERLIQUID");
-    let instrument_id = InstrumentId::new(symbol, venue);
-
-    let raw_symbol = Symbol::new(&def.symbol);
-    let base_currency = get_currency(&def.base);
-    let quote_currency = get_currency(&def.quote);
-    let price_increment = Price::from(&def.tick_size.to_string());
-    let size_increment = Quantity::from(&def.lot_size.to_string());
-
-    // For now, use minimal parameters - no fees, margins, or lot sizes
-    match def.market_type {
-        HyperliquidMarketType::Spot => {
-            Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None, // lot_size
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                ts_event,
-                ts_init,
-            )))
-        }
-        HyperliquidMarketType::Perp => {
-            // For Hyperliquid, perps are USD-quoted and USDC-settled
-            let settlement_currency = get_currency("USDC");
-
-            Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                false, // is_inverse - Hyperliquid perps are linear
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None, // lot_size
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                ts_event,
-                ts_init,
-            )))
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
@@ -230,49 +130,22 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
-        let mut instruments = Vec::new();
-
-        // Load perpetual instruments
-        match self.http_client.get_perp_meta().await {
-            Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
-                Ok(perp_defs) => {
-                    tracing::debug!("Loaded {} perp definitions", perp_defs.len());
-                    for def in perp_defs {
-                        if let Some(instrument) = create_instrument_from_def(&def) {
-                            instruments.push(instrument);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse perp instruments: {}", e);
-                }
-            },
-            Err(e) => {
-                tracing::warn!("Failed to load perp metadata: {}", e);
+        let instruments = match self.http_client.request_instruments().await {
+            Ok(mut instruments) => {
+                tracing::debug!(
+                    count = instruments.len(),
+                    "Received Hyperliquid instruments"
+                );
+                instruments.sort_by_key(|instrument| instrument.id());
+                instruments
             }
-        }
-
-        // Load spot instruments
-        match self.http_client.get_spot_meta().await {
-            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
-                Ok(spot_defs) => {
-                    tracing::debug!("Loaded {} spot definitions", spot_defs.len());
-                    for def in spot_defs {
-                        if let Some(instrument) = create_instrument_from_def(&def) {
-                            instruments.push(instrument);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse spot instruments: {}", e);
-                }
-            },
-            Err(e) => {
-                tracing::warn!("Failed to load spot metadata: {}", e);
+            Err(err) => {
+                tracing::warn!(%err, "Failed to request Hyperliquid instruments");
+                Vec::new()
             }
-        }
+        };
 
-        tracing::info!("Loaded {} instruments from Hyperliquid", instruments.len());
+        tracing::info!(count = instruments.len(), "Loaded Hyperliquid instruments");
 
         // Update cache
         {

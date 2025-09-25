@@ -16,23 +16,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from decimal import Decimal
 from typing import Any
 
 from nautilus_trader._libnautilus.hyperliquid import HyperliquidHttpClient
-from nautilus_trader._libnautilus.hyperliquid import HyperliquidInstrumentDef
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
+from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Currency
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 
 
 class HyperliquidInstrumentProvider(InstrumentProvider):
@@ -45,30 +41,34 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         client: HyperliquidHttpClient,
         config: InstrumentProviderConfig | None = None,
         *,
-        include_spot: bool = True,
-        include_perp: bool = True,
+        product_types: Iterable[HyperliquidProductType] | None = None,
     ) -> None:
         PyCondition.not_none(client, "client")
         super().__init__(config=config or InstrumentProviderConfig())
 
-        if not include_spot and not include_perp:
-            raise ValueError("At least one of include_spot/include_perp must be True")
-
         self._client: HyperliquidHttpClient = client
-        self._include_spot = include_spot
-        self._include_perp = include_perp
 
-        self._definitions: dict[InstrumentId, HyperliquidInstrumentDef] = {}
+        resolved_types = (
+            DEFAULT_PRODUCT_TYPES
+            if product_types is None
+            else frozenset(HyperliquidProductType(pt) for pt in product_types)
+        )
+        if not resolved_types:
+            raise ValueError("product_types must contain at least one entry")
+
+        self._product_types = resolved_types
+
+        self._loaded_instruments: dict[InstrumentId, Instrument] = {}
 
     # ---------------------------------------------------------------------
     # Public helpers
     # ---------------------------------------------------------------------
 
-    def instruments_pyo3(self) -> list[HyperliquidInstrumentDef]:
+    def instruments_pyo3(self) -> list[Instrument]:
         """
-        Return the cached PyO3 instrument definitions (mostly for debugging).
+        Return the cached PyO3 instruments (mostly for debugging/testing).
         """
-        return list(self._definitions.values())
+        return list(self._loaded_instruments.values())
 
     # ---------------------------------------------------------------------
     # InstrumentProvider interface
@@ -77,12 +77,29 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
     async def load_all_async(self, filters: dict | None = None) -> None:
         filters = filters or self._filters
 
-        self._log.info("Loading Hyperliquid instrument definitions...")
+        self._log.info("Loading Hyperliquid instruments...")
 
+        instruments = await self._load_instruments()
+
+        self._log.info("Applying filters")
+
+        self._reset_caches()
+
+        loaded, skipped = self._ingest_instruments(instruments, filters)
+
+        if loaded:
+            self._log.info(f"Loaded {loaded} instruments for venue {HYPERLIQUID_VENUE.value}")
+        else:
+            self._log.warning("No Hyperliquid instruments matched the requested filters")
+
+        if skipped:
+            self._log.debug(f"Skipped {skipped} instruments after applying filters")
+
+    async def _load_instruments(self) -> list[Instrument]:
         try:
-            definitions = await self._client.load_instrument_definitions(
-                include_perp=self._include_perp,
-                include_spot=self._include_spot,
+            return await self._client.load_instrument_definitions(
+                include_perp=HyperliquidProductType.PERP in self._product_types,
+                include_spot=HyperliquidProductType.SPOT in self._product_types,
             )
         except AttributeError:  # method missing (old wheel?)
             self._log.error("HyperliquidHttpClient is missing load_instrument_definitions")
@@ -91,45 +108,52 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             self._log.exception("Failed to fetch Hyperliquid instrument metadata", exc)
             raise
 
-        self._log.info("Parsing instrument definitions")
-
-        # Reset caches before repopulating
+    def _reset_caches(self) -> None:
         self._instruments.clear()
         self._currencies.clear()
-        self._definitions.clear()
+        self._loaded_instruments.clear()
 
+    def _ingest_instruments(
+        self,
+        instruments: Iterable[Instrument],
+        filters: dict | None,
+    ) -> tuple[int, int]:
         loaded = 0
         skipped = 0
 
-        for definition in definitions:
-            if not definition.active:
+        for instrument in instruments:
+            product_type = self._instrument_product_type(instrument)
+            if product_type is None:
                 skipped += 1
                 continue
 
-            if not self._accept_definition(definition, filters):
+            if product_type not in self._product_types:
                 continue
 
-            try:
-                instrument = self._definition_to_instrument(definition)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                self._log.exception(
-                    f"Failed to convert Hyperliquid def {definition.symbol} into instrument",
-                    exc,
-                )
-                skipped += 1
+            if not self._accept_instrument(instrument, filters):
                 continue
 
-            self._definitions[instrument.id] = definition
+            self._loaded_instruments[instrument.id] = instrument
             self.add(instrument)
             loaded += 1
 
-        if loaded:
-            self._log.info(f"Loaded {loaded} instruments for venue {HYPERLIQUID_VENUE.value}")
-        else:
-            self._log.warning("No Hyperliquid instruments matched the requested filters")
+        return loaded, skipped
 
-        if skipped:
-            self._log.debug(f"Skipped {skipped} definitions (inactive or conversion failures)")
+    def _instrument_product_type(
+        self,
+        instrument: Instrument,
+    ) -> HyperliquidProductType | None:
+        if isinstance(instrument, CryptoPerpetual):
+            return HyperliquidProductType.PERP
+        if isinstance(instrument, CurrencyPair):
+            return HyperliquidProductType.SPOT
+
+        self._log.warning(
+            "Ignoring Hyperliquid instrument %s (unsupported type %s)",
+            instrument.id.value,
+            type(instrument).__name__,
+        )
+        return None
 
     async def load_ids_async(
         self,
@@ -172,64 +196,9 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _definition_to_instrument(self, definition: HyperliquidInstrumentDef) -> Instrument:
-        symbol = str(definition.symbol)
-        instrument_id = InstrumentId(Symbol(symbol), HYPERLIQUID_VENUE)
-
-        price_increment = Price.from_str(definition.tick_size)
-        size_increment = Quantity.from_str(definition.lot_size)
-
-        price_precision = int(definition.price_decimals)
-        size_precision = int(definition.size_decimals)
-
-        base_currency = Currency.from_str(definition.base)
-        quote_currency = Currency.from_str(definition.quote)
-
-        self.add_currency(base_currency)
-        self.add_currency(quote_currency)
-
-        info = self._build_info(definition)
-
-        if definition.market_type == "perp":
-            # Perpetual swaps settle in quote currency (USDC on Hyperliquid).
-            settlement_currency = quote_currency
-            self.add_currency(settlement_currency)
-
-            return CryptoPerpetual(
-                instrument_id=instrument_id,
-                raw_symbol=Symbol(symbol),
-                base_currency=base_currency,
-                quote_currency=quote_currency,
-                settlement_currency=settlement_currency,
-                is_inverse=False,
-                price_precision=price_precision,
-                size_precision=size_precision,
-                price_increment=price_increment,
-                size_increment=size_increment,
-                ts_event=0,
-                ts_init=0,
-                info=info,
-            )
-
-        # Default to spot pair
-        return CurrencyPair(
-            instrument_id=instrument_id,
-            raw_symbol=Symbol(symbol),
-            base_currency=base_currency,
-            quote_currency=quote_currency,
-            price_precision=price_precision,
-            size_precision=size_precision,
-            price_increment=price_increment,
-            size_increment=size_increment,
-            ts_event=0,
-            ts_init=0,
-            lot_size=size_increment,
-            info=info,
-        )
-
-    def _accept_definition(
+    def _accept_instrument(
         self,
-        definition: HyperliquidInstrumentDef,
+        instrument: Instrument,
         filters: dict | None,
     ) -> bool:
         if not filters:
@@ -248,35 +217,24 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
                 if isinstance(item, str)
             }
 
+        market_type = "perp" if isinstance(instrument, CryptoPerpetual) else "spot"
         kinds = _normalize(filters.get("market_types") or filters.get("kinds"), to_lower=True)
-        if kinds and definition.market_type.lower() not in kinds:
+        if kinds and market_type not in kinds:
             return False
 
+        base_code = getattr(getattr(instrument, "base_currency", None), "code", None)
         bases = _normalize(filters.get("bases"))
-        if bases and definition.base.upper() not in bases:
+        if bases and (not base_code or base_code.upper() not in bases):
             return False
 
+        quote_code = getattr(getattr(instrument, "quote_currency", None), "code", None)
         quotes = _normalize(filters.get("quotes"))
-        if quotes and definition.quote.upper() not in quotes:
+        if quotes and (not quote_code or quote_code.upper() not in quotes):
             return False
 
+        symbol_value = getattr(getattr(instrument, "symbol", None), "value", None)
         symbols = _normalize(filters.get("symbols"))
-        if symbols and definition.symbol.upper() not in symbols:
+        if symbols and (not symbol_value or symbol_value.upper() not in symbols):
             return False
 
         return True
-
-    @staticmethod
-    def _build_info(definition: HyperliquidInstrumentDef) -> dict[str, Any]:
-        info: dict[str, Any] = {
-            "hl_market_type": definition.market_type,
-            "hl_only_isolated": definition.only_isolated,
-        }
-
-        if definition.max_leverage is not None:
-            info["hl_max_leverage"] = Decimal(definition.max_leverage)
-
-        if getattr(definition, "raw_data", None):
-            info["hl_raw"] = definition.raw_data
-
-        return info

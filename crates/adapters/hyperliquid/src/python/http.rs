@@ -13,183 +13,76 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::{
+    instruments::{Instrument, InstrumentAny},
+    python::instruments::instrument_any_to_pyobject,
+};
+use pyo3::{prelude::*, types::PyList};
 use serde_json::to_string;
 
-use crate::http::{
-    client::HyperliquidHttpClient,
-    parse::{HyperliquidInstrumentDef, parse_perp_instruments, parse_spot_instruments},
-};
-
-/// Python binding for HyperliquidHttpClient.
-#[pyclass(name = "HyperliquidHttpClient")]
-#[derive(Debug)]
-pub struct PyHyperliquidHttpClient {
-    pub(crate) client: HyperliquidHttpClient,
-}
+use crate::http::client::HyperliquidHttpClient;
 
 #[pymethods]
-impl PyHyperliquidHttpClient {
+impl HyperliquidHttpClient {
     #[new]
     #[pyo3(signature = (is_testnet=false, timeout_secs=None))]
-    fn py_new(is_testnet: bool, timeout_secs: Option<u64>) -> PyResult<Self> {
-        Ok(Self {
-            client: HyperliquidHttpClient::new(is_testnet, timeout_secs),
-        })
+    fn py_new(is_testnet: bool, timeout_secs: Option<u64>) -> Self {
+        Self::new(is_testnet, timeout_secs)
     }
 
     /// Get perpetuals metadata as a JSON string.
     #[pyo3(name = "get_perp_meta")]
-    fn py_get_perp_meta<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let client = self.client.clone();
+    fn py_get_perp_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let meta = client
-                .get_perp_meta()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get perp meta: {e}")))?;
-
-            to_string(&meta)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to serialize perp meta: {e}")))
+            let meta = client.load_perp_meta().await.map_err(to_pyvalue_err)?;
+            to_string(&meta).map_err(to_pyvalue_err)
         })
     }
 
     /// Get spot metadata as a JSON string.
     #[pyo3(name = "get_spot_meta")]
-    fn py_get_spot_meta<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let client = self.client.clone();
+    fn py_get_spot_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let meta = client
-                .get_spot_meta()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get spot meta: {e}")))?;
-
-            to_string(&meta)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to serialize spot meta: {e}")))
+            let meta = client.get_spot_meta().await.map_err(to_pyvalue_err)?;
+            to_string(&meta).map_err(to_pyvalue_err)
         })
     }
 
-    /// Load all available instrument definitions (perps and/or spot).
+    /// Load all available instruments (perps and/or spot) as Nautilus instrument objects.
     #[pyo3(name = "load_instrument_definitions", signature = (include_perp=true, include_spot=true))]
-    fn py_load_instrument_definitions<'a>(
+    fn py_load_instrument_definitions<'py>(
         &self,
-        py: Python<'a>,
+        py: Python<'py>,
         include_perp: bool,
         include_spot: bool,
-    ) -> PyResult<Bound<'a, PyAny>> {
-        let client = self.client.clone();
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut defs: Vec<PyHyperliquidInstrumentDef> = Vec::new();
+            let mut instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
 
-            if include_perp {
-                let meta = client.get_perp_meta().await.map_err(|e| {
-                    PyRuntimeError::new_err(format!("Failed to get perp meta: {e}"))
-                })?;
-
-                let parsed = parse_perp_instruments(&meta).map_err(PyRuntimeError::new_err)?;
-
-                defs.extend(parsed.into_iter().map(PyHyperliquidInstrumentDef::from));
+            if !include_perp || !include_spot {
+                instruments.retain(|instrument| match instrument {
+                    InstrumentAny::CryptoPerpetual(_) => include_perp,
+                    InstrumentAny::CurrencyPair(_) => include_spot,
+                    _ => true,
+                });
             }
 
-            if include_spot {
-                let meta = client.get_spot_meta().await.map_err(|e| {
-                    PyRuntimeError::new_err(format!("Failed to get spot meta: {e}"))
-                })?;
+            instruments.sort_by_key(|instrument| instrument.id());
 
-                let parsed = parse_spot_instruments(&meta).map_err(PyRuntimeError::new_err)?;
+            Python::attach(|py| {
+                let mut py_instruments = Vec::with_capacity(instruments.len());
+                for instrument in instruments {
+                    py_instruments.push(instrument_any_to_pyobject(py, instrument)?);
+                }
 
-                defs.extend(parsed.into_iter().map(PyHyperliquidInstrumentDef::from));
-            }
-
-            defs.sort_by(|lhs, rhs| lhs.inner.symbol.cmp(&rhs.inner.symbol));
-
-            Ok(defs)
+                let py_list = PyList::new(py, &py_instruments)?;
+                Ok(py_list.into_any().unbind())
+            })
         })
-    }
-}
-
-/// Python binding for HyperliquidInstrumentDef.
-#[pyclass(name = "HyperliquidInstrumentDef")]
-#[derive(Clone, Debug)]
-pub struct PyHyperliquidInstrumentDef {
-    pub(crate) inner: HyperliquidInstrumentDef,
-}
-
-#[pymethods]
-impl PyHyperliquidInstrumentDef {
-    #[getter]
-    fn symbol(&self) -> &str {
-        &self.inner.symbol
-    }
-
-    #[getter]
-    fn base(&self) -> &str {
-        &self.inner.base
-    }
-
-    #[getter]
-    fn quote(&self) -> &str {
-        &self.inner.quote
-    }
-
-    #[getter]
-    fn market_type(&self) -> String {
-        match self.inner.market_type {
-            crate::http::parse::HyperliquidMarketType::Perp => "perp".to_string(),
-            crate::http::parse::HyperliquidMarketType::Spot => "spot".to_string(),
-        }
-    }
-
-    #[getter]
-    fn price_decimals(&self) -> u32 {
-        self.inner.price_decimals
-    }
-
-    #[getter]
-    fn size_decimals(&self) -> u32 {
-        self.inner.size_decimals
-    }
-
-    #[getter]
-    fn tick_size(&self) -> String {
-        self.inner.tick_size.to_string()
-    }
-
-    #[getter]
-    fn lot_size(&self) -> String {
-        self.inner.lot_size.to_string()
-    }
-
-    #[getter]
-    fn max_leverage(&self) -> Option<u32> {
-        self.inner.max_leverage
-    }
-
-    #[getter]
-    fn only_isolated(&self) -> bool {
-        self.inner.only_isolated
-    }
-
-    #[getter]
-    fn active(&self) -> bool {
-        self.inner.active
-    }
-
-    #[getter]
-    fn raw_data(&self) -> &str {
-        &self.inner.raw_data
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "HyperliquidInstrumentDef(symbol={}, market_type={:?}, active={})",
-            self.inner.symbol, self.inner.market_type, self.inner.active
-        )
-    }
-}
-
-impl From<HyperliquidInstrumentDef> for PyHyperliquidInstrumentDef {
-    fn from(inner: HyperliquidInstrumentDef) -> Self {
-        Self { inner }
     }
 }

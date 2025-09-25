@@ -28,6 +28,7 @@ from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientCon
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveExecClientFactory
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
@@ -42,4 +43,5 @@ __all__ = [
     "HyperliquidInstrumentProvider",
     "HyperliquidLiveDataClientFactory",
     "HyperliquidLiveExecClientFactory",
+    "HyperliquidProductType",
 ]
