@@ -283,7 +283,7 @@ async def test_check_open_orders_with_no_open_orders(exec_engine_open_check, exe
     # Act
     await exec_engine._check_open_orders()
 
-    # Assert - should not make any API calls
+    # Assert
     assert len(exec_client._order_status_reports) == 0
 
 
@@ -297,7 +297,7 @@ async def test_check_open_orders_with_open_orders_matching_venue(
     """
     Test _check_open_orders when cache and venue agree on open orders.
     """
-    # Arrange - add open order to cache
+    # Arrange
     exec_engine = exec_engine_open_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -339,7 +339,7 @@ async def test_check_open_orders_with_open_orders_matching_venue(
     # Act
     await exec_engine._check_open_orders()
 
-    # Assert - no reconciliation needed
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
 
 
@@ -354,7 +354,7 @@ async def test_check_open_orders_reconciles_status_not_fills(
     Test _check_open_orders reconciles order status but not fills (fills handled
     separately).
     """
-    # Arrange - add open order to cache
+    # Arrange
     exec_engine = exec_engine_open_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -397,7 +397,7 @@ async def test_check_open_orders_reconciles_status_not_fills(
     # Act
     await exec_engine._check_open_orders()
 
-    # Assert - status is reconciled to venue status
+    # Assert
     # Fills are now applied during reconciliation when venue reports them
     assert order.status == OrderStatus.PARTIALLY_FILLED
     assert order.filled_qty == Quantity.from_int(50)  # Reconciled to venue's filled qty
@@ -413,7 +413,7 @@ async def test_check_open_orders_reconciles_closed_order(
     """
     Test _check_open_orders reconciles when an order was closed on venue.
     """
-    # Arrange - add open order to cache
+    # Arrange
     exec_engine = exec_engine_open_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -456,7 +456,7 @@ async def test_check_open_orders_reconciles_closed_order(
     # Act
     await exec_engine._check_open_orders()
 
-    # Assert - status and fills are now reconciled from venue report
+    # Assert
     assert order.status == OrderStatus.FILLED
     assert order.filled_qty == order.quantity  # Fully filled
 
@@ -471,7 +471,7 @@ async def test_check_open_orders_open_only_mode(
     """
     Test _check_open_orders in open_only mode queries venue regardless of cache.
     """
-    # Arrange - configure for open_only mode
+    # Arrange
     exec_engine = exec_engine_open_check
     exec_engine.open_check_open_only = True
 
@@ -502,7 +502,7 @@ async def test_check_open_orders_open_only_mode(
     # Act
     await exec_engine._check_open_orders()
 
-    # Assert - external order should be reconciled
+    # Assert
     assert len(cache.orders()) == 1
     order = cache.orders()[0]
     assert order.client_order_id == ClientOrderId("EXTERNAL-123")
@@ -518,7 +518,7 @@ async def test_check_open_orders_handles_client_exception(
     """
     Test _check_open_orders handles exceptions from client gracefully.
     """
-    # Arrange - add open order to cache
+    # Arrange
     exec_engine = exec_engine_open_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -539,10 +539,10 @@ async def test_check_open_orders_handles_client_exception(
     for client in exec_engine._clients.values():
         client.generate_order_status_reports = raise_error
 
-    # Act - should not raise
+    # Act
     await exec_engine._check_open_orders()
 
-    # Assert - order unchanged
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
 
 
@@ -567,7 +567,7 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
 
     exec_engine._check_orders_consistency = counting_check
 
-    # Act - start the loop
+    # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
@@ -595,7 +595,7 @@ async def test_check_inflight_orders_queries_old_orders(
     """
     Test _check_inflight_orders queries orders exceeding threshold.
     """
-    # Arrange - create inflight order
+    # Arrange
     exec_engine = exec_engine_inflight_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -626,10 +626,55 @@ async def test_check_inflight_orders_queries_old_orders(
     # Act
     await exec_engine._check_inflight_orders()
 
-    # Assert - should have queried the order
+    # Assert
     assert len(executed_commands) == 1
     assert isinstance(executed_commands[0], QueryOrder)
     assert executed_commands[0].client_order_id == order.client_order_id
+
+
+@pytest.mark.asyncio()
+async def test_check_inflight_orders_skips_when_recent_query_pending(
+    exec_engine_inflight_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test inflight checks skip re-querying when a recent query is still awaiting a venue
+    response.
+    """
+    exec_engine = exec_engine_inflight_check
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - (exec_engine._inflight_check_threshold_ns + 1_000_000)
+    submitted_event = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    order.apply(submitted_event)
+    exec_engine.process(submitted_event)
+    cache.update_order(order)
+
+    recent_query_ts = clock.timestamp_ns() - (exec_engine._inflight_check_threshold_ns // 10)
+    exec_engine._ts_last_query[order.client_order_id] = recent_query_ts
+
+    executed_commands = []
+    original_execute = exec_engine._execute_command
+
+    def capture_execute(command):
+        executed_commands.append(command)
+        return original_execute(command)
+
+    exec_engine._execute_command = capture_execute
+
+    await exec_engine._check_inflight_orders()
+
+    exec_engine._execute_command = original_execute
+
+    assert executed_commands == []
+    assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == 0
 
 
 @pytest.mark.asyncio()
@@ -642,7 +687,7 @@ async def test_check_inflight_orders_respects_retry_limit(
     """
     Test _check_inflight_orders stops querying after max retries.
     """
-    # Arrange - create inflight order
+    # Arrange
     exec_engine = exec_engine_inflight_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -663,7 +708,7 @@ async def test_check_inflight_orders_respects_retry_limit(
     # Act
     await exec_engine._check_inflight_orders()
 
-    # Assert - should have resolved the order (rejected)
+    # Assert
     assert order.status == OrderStatus.REJECTED
     assert order.client_order_id not in exec_engine._recon_check_retries
 
@@ -678,7 +723,7 @@ async def test_check_inflight_orders_increments_retry_count(
     """
     Test _check_inflight_orders increments retry count on each check.
     """
-    # Arrange - create inflight order
+    # Arrange
     exec_engine = exec_engine_inflight_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -693,9 +738,13 @@ async def test_check_inflight_orders_increments_retry_count(
     exec_engine.process(submitted_event)
     cache.update_order(order)
 
-    # Act - check twice
+    # Act
     await exec_engine._check_inflight_orders()
     assert exec_engine._recon_check_retries[order.client_order_id] == 1
+
+    exec_engine._ts_last_query[order.client_order_id] -= (
+        exec_engine._inflight_check_threshold_ns + 1
+    )
 
     await exec_engine._check_inflight_orders()
     assert exec_engine._recon_check_retries[order.client_order_id] == 2
@@ -710,7 +759,7 @@ async def test_check_inflight_orders_skips_recent_orders(
     """
     Test _check_inflight_orders skips orders within threshold.
     """
-    # Arrange - create inflight order with recent timestamp
+    # Arrange
     exec_engine = exec_engine_inflight_check
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -740,8 +789,49 @@ async def test_check_inflight_orders_skips_recent_orders(
     # Act
     await exec_engine._check_inflight_orders()
 
-    # Assert - should not have queried the order
+    # Assert
     assert len(executed_commands) == 0
+
+
+@pytest.mark.asyncio()
+async def test_resolve_inflight_order_skips_when_status_updated(
+    exec_engine_inflight_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test inflight resolution leaves the order untouched when it has already exited
+    inflight states.
+    """
+    exec_engine = exec_engine_inflight_check
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - (exec_engine._inflight_check_threshold_ns + 1_000_000)
+    submitted = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+
+    order.apply(submitted)
+    order.apply(accepted)
+    cache.update_order(order)
+
+    exec_engine._recon_check_retries[order.client_order_id] = 3
+    exec_engine._ts_last_query[order.client_order_id] = clock.timestamp_ns()
+
+    exec_engine._resolve_inflight_order(order)
+
+    assert order.status == OrderStatus.ACCEPTED
+    assert order.client_order_id not in exec_engine._recon_check_retries
+    assert order.client_order_id not in exec_engine._ts_last_query
 
 
 @pytest.mark.asyncio()
@@ -763,7 +853,7 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
 
     exec_engine._check_inflight_orders = counting_check
 
-    # Act - start the loop
+    # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
@@ -796,7 +886,7 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
 
     exec_engine._check_inflight_orders = failing_check
 
-    # Act - start the loop
+    # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
@@ -805,7 +895,7 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
     except asyncio.CancelledError:
         pass
 
-    # Assert - should have continued after exception
+    # Assert
     assert check_count >= 2
 
 
@@ -823,7 +913,7 @@ async def test_reconcile_order_with_price_update(
     """
     Test reconciliation generates update when price differs.
     """
-    # Arrange - create limit order
+    # Arrange
     exec_engine = exec_engine_continuous
 
     order = TestExecStubs.limit_order(
@@ -864,7 +954,7 @@ async def test_reconcile_order_with_price_update(
     # Act
     result = exec_engine._reconcile_order_report(report, trades=[])
 
-    # Assert - reconciliation succeeds but order update happens via events
+    # Assert
     # The direct call to _reconcile_order_report doesn't apply the update event
     assert result is True
     # Order price remains unchanged without full event processing
@@ -880,7 +970,7 @@ async def test_reconcile_order_with_quantity_update(
     """
     Test reconciliation generates update when quantity differs.
     """
-    # Arrange - create limit order
+    # Arrange
     exec_engine = exec_engine_continuous
 
     order = TestExecStubs.limit_order(
@@ -921,7 +1011,7 @@ async def test_reconcile_order_with_quantity_update(
     # Act
     result = exec_engine._reconcile_order_report(report, trades=[])
 
-    # Assert - reconciliation succeeds but order update happens via events
+    # Assert
     # The direct call to _reconcile_order_report doesn't apply the update event
     assert result is True
     # Order quantity remains unchanged without full event processing
@@ -937,7 +1027,7 @@ async def test_reconcile_order_without_client_order_id(
     """
     Test reconciliation handles missing client_order_id.
     """
-    # Arrange - create order and add to cache
+    # Arrange
     exec_engine = exec_engine_continuous
 
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
@@ -981,7 +1071,7 @@ async def test_reconcile_order_without_client_order_id(
     # Act
     result = exec_engine._reconcile_order_report(report, trades=[])
 
-    # Assert - should find order by venue_order_id
+    # Assert
     assert result is True
     # Fills are not applied without trade data
     assert order.filled_qty == Quantity.from_int(0)
@@ -1057,7 +1147,7 @@ async def test_check_inflight_orders_detects_inflight(
     """
     Test _check_inflight_orders detects in-flight orders exceeding threshold.
     """
-    # Arrange - create in-flight order
+    # Arrange
     exec_engine = exec_engine_continuous
 
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
@@ -1088,7 +1178,7 @@ async def test_check_inflight_orders_detects_inflight(
     # Act
     await exec_engine._check_inflight_orders()
 
-    # Assert - should have queried the problematic order
+    # Assert
     assert len(executed_commands) == 1
     assert isinstance(executed_commands[0], QueryOrder)
     assert executed_commands[0].client_order_id == order.client_order_id
@@ -1104,7 +1194,7 @@ async def test_check_orders_consistency_reconciles_discrepancies(
     """
     Test _check_orders_consistency reconciles discrepancies between cache and venue.
     """
-    # Arrange - add open order to cache
+    # Arrange
     exec_engine = exec_engine_continuous
 
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
@@ -1148,7 +1238,7 @@ async def test_check_orders_consistency_reconciles_discrepancies(
     # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - reconciliation should have been triggered
+    # Assert
     # Status and fills are now reconciled from venue report
     assert order.status == OrderStatus.FILLED
     # Retry count should be cleared for successfully queried orders
@@ -1185,7 +1275,7 @@ async def test_reconciliation_loop_runs_both_checks(
     exec_engine._check_inflight_orders = counting_problematic_check
     exec_engine._check_orders_consistency = counting_consistency_check
 
-    # Act - start the loop
+    # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
@@ -1211,7 +1301,7 @@ async def test_reconciliation_clears_retry_counts_on_success(
     """
     Test that successful consistency check clears retry counts for orders.
     """
-    # Arrange - create order with retry count
+    # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1258,7 +1348,7 @@ async def test_reconciliation_clears_retry_counts_on_success(
     # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - retry count should be cleared after successful query
+    # Assert
     assert order.client_order_id not in exec_engine._recon_check_retries
 
 
@@ -1357,7 +1447,7 @@ async def test_inflight_and_open_order_combined_scenario(
     cache.update_order(inflight_order)
     cache.update_order(open_order)
 
-    # Act - run both checks
+    # Act
     await exec_engine._check_inflight_orders()
     await exec_engine._check_orders_consistency()
 
@@ -1383,7 +1473,7 @@ async def test_order_transitions_from_inflight_to_open(
     """
     Test order transitioning from inflight check to open check.
     """
-    # Arrange - create order that starts as inflight
+    # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1429,10 +1519,10 @@ async def test_order_transitions_from_inflight_to_open(
     )
     exec_client.add_order_status_report(venue_report)
 
-    # Act - check as open order
+    # Act
     await exec_engine._check_open_orders()
 
-    # Assert - retry count should be cleared
+    # Assert
     assert order.client_order_id not in exec_engine._recon_check_retries
     assert order.status == OrderStatus.ACCEPTED
 
@@ -1453,7 +1543,7 @@ async def test_accepted_order_not_found_at_venue_reconciles_to_rejected(
     """
     Test that an ACCEPTED order not found at venue is reconciled to REJECTED.
     """
-    # Arrange - create an accepted order
+    # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1476,10 +1566,10 @@ async def test_accepted_order_not_found_at_venue_reconciles_to_rejected(
     # Simulate max retries reached by setting retry count to threshold
     exec_engine._recon_check_retries[order.client_order_id] = exec_engine.open_check_missing_retries
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - order should be rejected
+    # Assert
     assert order.status == OrderStatus.REJECTED
     assert order.is_closed
 
@@ -1495,7 +1585,7 @@ async def test_partially_filled_order_not_found_at_venue_reconciles_to_canceled(
     """
     Test that a PARTIALLY_FILLED order not found at venue is reconciled to CANCELED.
     """
-    # Arrange - create a partially filled order
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -1529,10 +1619,10 @@ async def test_partially_filled_order_not_found_at_venue_reconciles_to_canceled(
     # Simulate max retries reached by setting retry count to threshold
     exec_engine._recon_check_retries[order.client_order_id] = exec_engine.open_check_missing_retries
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - order should be canceled but preserve fill
+    # Assert
     assert order.status == OrderStatus.CANCELED
     assert order.is_closed
     assert order.filled_qty == Quantity.from_int(50)
@@ -1549,7 +1639,7 @@ async def test_filled_order_not_found_at_venue_remains_unchanged(
     """
     Test that a FILLED order not found at venue remains unchanged (normal behavior).
     """
-    # Arrange - create a fully filled order
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -1577,10 +1667,10 @@ async def test_filled_order_not_found_at_venue_remains_unchanged(
     # Venue has no orders (expected for filled orders)
     exec_client._order_status_reports.clear()
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - order should remain filled
+    # Assert
     assert order.status == OrderStatus.FILLED
     assert order.is_closed
     assert order.filled_qty == Quantity.from_int(100)
@@ -1597,7 +1687,7 @@ async def test_mixed_orders_with_some_not_found_at_venue(
     """
     Test consistency check with multiple orders where some are not found at venue.
     """
-    # Arrange - create multiple orders with different statuses
+    # Arrange
     order1 = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         client_order_id=ClientOrderId("O-1"),
@@ -1671,7 +1761,7 @@ async def test_mixed_orders_with_some_not_found_at_venue(
         exec_engine.open_check_missing_retries
     )
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
     # Assert
@@ -1692,7 +1782,7 @@ async def test_missing_order_respects_retry_threshold(
     Test that orders missing from venue are not immediately resolved but respect retry
     threshold.
     """
-    # Arrange - create an accepted order with sufficient age
+    # Arrange
     exec_engine.open_check_missing_retries = 2  # Set threshold to 2
 
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
@@ -1720,26 +1810,69 @@ async def test_missing_order_respects_retry_threshold(
     # Venue has no orders
     exec_client._order_status_reports.clear()
 
-    # Act - First check (should not resolve)
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - Order still accepted, retry counter incremented
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
     assert exec_engine._recon_check_retries[order.client_order_id] == 1
 
-    # Act - Second check (should still not resolve)
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - Order still accepted, retry counter incremented
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
     assert exec_engine._recon_check_retries[order.client_order_id] == 2
 
-    # Act - Third check (should resolve now)
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - Order now rejected after exceeding threshold
+    # Assert
     assert order.status == OrderStatus.REJECTED
     assert order.client_order_id not in exec_engine._recon_check_retries
+
+
+@pytest.mark.asyncio
+async def test_missing_order_skips_when_local_activity_recent(
+    exec_engine_open_check,
+    exec_client,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test that recent local activity defers the missing-order reconciliation path.
+    """
+    exec_engine = exec_engine_open_check
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - (exec_engine._open_check_threshold_ns + 1_000_000)
+    submitted = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+
+    order.apply(submitted)
+    order.apply(accepted)
+    exec_engine.process(submitted)
+    exec_engine.process(accepted)
+    cache.update_order(order)
+
+    exec_client._order_status_reports.clear()
+
+    exec_engine._order_local_activity_ns[order.client_order_id] = clock.timestamp_ns()
+
+    await exec_engine._check_orders_consistency()
+
+    assert order.status == OrderStatus.ACCEPTED
+    assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == 0
 
 
 @pytest.mark.asyncio
@@ -1753,7 +1886,7 @@ async def test_recent_order_skipped_from_missing_check(
     """
     Test that very recently submitted orders are skipped from missing order checks.
     """
-    # Arrange - create a very recently accepted order
+    # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1781,10 +1914,10 @@ async def test_recent_order_skipped_from_missing_check(
     # Venue has no orders
     exec_client._order_status_reports.clear()
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - Order should remain accepted, no retry counter
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
     assert order.client_order_id not in exec_engine._recon_check_retries
 
@@ -1836,7 +1969,7 @@ async def test_order_found_at_venue_clears_retry_counter(
     """
     Test that when an order is found at the venue, its retry counter is cleared.
     """
-    # Arrange - create an accepted order with existing retry count
+    # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1873,10 +2006,10 @@ async def test_order_found_at_venue_clears_retry_counter(
     )
     exec_client._order_status_reports = {venue_report.venue_order_id: venue_report}
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - retry counter should be cleared
+    # Assert
     assert order.client_order_id not in exec_engine._recon_check_retries
     assert order.status == OrderStatus.ACCEPTED
 
@@ -1893,7 +2026,7 @@ async def test_open_check_open_only_mode_does_not_reject_missing_orders(
     Test that orders not in venue's open orders response are NOT marked as rejected when
     using open_check_open_only=True mode (they might be filled/canceled).
     """
-    # Arrange - configure for open_only mode
+    # Arrange
     exec_engine.open_check_open_only = True
     exec_engine.open_check_missing_retries = 2
 
@@ -1926,11 +2059,11 @@ async def test_open_check_open_only_mode_does_not_reject_missing_orders(
     # Configure venue to return empty list (simulating order was filled/canceled)
     exec_client._order_status_reports.clear()
 
-    # Act - Run consistency check multiple times to exceed what would be retry threshold
+    # Act
     for _ in range(3):
         await exec_engine._check_orders_consistency()
 
-    # Assert - Order should NOT be marked as rejected in open_only mode
+    # Assert
     assert order.status == OrderStatus.ACCEPTED
     assert not order.is_closed
 
@@ -1947,7 +2080,7 @@ async def test_open_check_full_history_mode_does_reject_missing_orders(
     Test that orders not found at venue ARE marked as rejected when using
     open_check_open_only=False mode (full history query).
     """
-    # Arrange - configure for full history mode
+    # Arrange
     exec_engine.open_check_open_only = False
     exec_engine.open_check_missing_retries = 2
 
@@ -1983,10 +2116,10 @@ async def test_open_check_full_history_mode_does_reject_missing_orders(
     # Simulate max retries reached
     exec_engine._recon_check_retries[order.client_order_id] = 2
 
-    # Act - Run consistency check to trigger resolution
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - Order SHOULD be marked as rejected in full history mode
+    # Assert
     assert order.status == OrderStatus.REJECTED
     assert order.is_closed
 
@@ -2007,7 +2140,7 @@ async def test_continuous_reconciliation_detects_missed_fills(
     Test that continuous reconciliation detects and reconciles missed fills when venue
     filled_qty differs from cache filled_qty.
     """
-    # Arrange - create an order with no fills in cache
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -2063,10 +2196,10 @@ async def test_continuous_reconciliation_detects_missed_fills(
 
     exec_engine._reconcile_order_report = capture_reconcile
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - reconciliation should have been triggered for missed fill
+    # Assert
     assert len(reconciled_orders) > 0, "No orders were reconciled"
     assert order.client_order_id in reconciled_orders
     # The order should be updated with inferred fill
@@ -2088,7 +2221,7 @@ async def test_continuous_reconciliation_skips_matching_fills(
     Test that continuous reconciliation skips orders where filled_qty matches between
     cache and venue.
     """
-    # Arrange - create an order with partial fill in cache
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -2151,10 +2284,10 @@ async def test_continuous_reconciliation_skips_matching_fills(
 
     exec_engine._reconcile_order_report = capture_reconcile
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - reconciliation should NOT have been triggered (fills match)
+    # Assert
     assert order.client_order_id not in reconciled_orders
     assert order.filled_qty == Quantity.from_int(30)
 
@@ -2170,7 +2303,7 @@ async def test_continuous_reconciliation_detects_fully_filled_mismatch(
     Test that continuous reconciliation detects when venue shows order as fully filled
     but cache shows it as partially filled.
     """
-    # Arrange - create an order with partial fill in cache
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -2233,10 +2366,10 @@ async def test_continuous_reconciliation_detects_fully_filled_mismatch(
 
     exec_engine._reconcile_order_report = capture_reconcile
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - reconciliation should have been triggered for fill mismatch
+    # Assert
     assert (
         len(reconciled_orders) > 0
     ), f"No reconciliation triggered. Order status: {order.status}, filled: {order.filled_qty}"
@@ -2259,7 +2392,7 @@ async def test_continuous_reconciliation_handles_zero_fills_from_venue(
     """
     Test that continuous reconciliation handles venue reports with zero filled_qty.
     """
-    # Arrange - create an order with no fills
+    # Arrange
     order = TestExecStubs.limit_order(
         instrument=AUDUSD_SIM,
         quantity=Quantity.from_int(100),
@@ -2313,9 +2446,9 @@ async def test_continuous_reconciliation_handles_zero_fills_from_venue(
 
     exec_engine._reconcile_order_report = capture_reconcile
 
-    # Act - run consistency check
+    # Act
     await exec_engine._check_orders_consistency()
 
-    # Assert - no reconciliation needed (both have zero fills)
+    # Assert
     assert order.client_order_id not in reconciled_orders
     assert order.filled_qty == Quantity.from_int(0)

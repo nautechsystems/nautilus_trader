@@ -207,6 +207,14 @@ If an order's status cannot be reconciled after exhausting all retries, the engi
 
 :::
 
+#### Retry coordination and lookback behavior
+
+The execution engine reuses a single retry counter (`_recon_check_retries`) for both the inflight loop (bounded by `inflight_check_retries`) and the open-order loop (bounded by `open_check_missing_retries`). This shared budget ensures the stricter limit wins and prevents duplicate venue queries for the same order state.
+
+When the open-order loop exhausts its retries, the engine issues one targeted `GenerateOrderStatusReport` probe before applying a terminal state. If the venue returns the order, reconciliation proceeds and the retry counter resets automatically.
+
+Orders that age beyond `open_check_lookback_mins` rely on this targeted probe. Keep the lookback generous for venues with short history windows, and consider increasing `open_check_threshold_ms` if venue timestamps lag the local clock so recently updated orders are not marked missing prematurely.
+
 This ensures the trading node maintains a consistent execution state even under unreliable conditions.
 
 | Setting                             | Default   | Description                                                                                                                         |
