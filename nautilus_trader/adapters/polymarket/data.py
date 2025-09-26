@@ -565,11 +565,17 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketTickSizeChange,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
+
         old_book = self._local_books.pop(instrument.id, None)
         if old_book is not None:
             self._last_quotes.pop(instrument.id, None)
 
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
+
+        # Update local sources immediately so subsequent quotes use the correct precision
+        self._instrument_provider.add(instrument)
+        self._cache.add_instrument(instrument)
+
         self._log.warning(f"Instrument tick size changed: {instrument}")
         self._handle_data(instrument)
 

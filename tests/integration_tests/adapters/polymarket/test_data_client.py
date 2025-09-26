@@ -146,6 +146,12 @@ def test_tick_size_change_rebuilds_local_book_precision() -> None:
 
         # Assert
         instrument_id = instrument_old.id
+        provider.add.assert_called_once()
+
+        cached_instrument = client._cache.instrument(instrument_id)
+        assert cached_instrument is not None
+        assert cached_instrument.price_precision == 3
+
         rebuilt_book = client._local_books[instrument_id]
         bid_price = rebuilt_book.best_bid_price()
         ask_price = rebuilt_book.best_ask_price()
