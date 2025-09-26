@@ -40,7 +40,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     RECONNECTED,
-    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use reqwest::header::USER_AGENT;
 use tokio::{sync::RwLock, time::Duration};
@@ -377,13 +377,33 @@ impl BitmexWebSocketClient {
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<Message>, BitmexWsError> {
         let (message_handler, rx) = channel_message_handler();
 
+        let inner_for_ping = self.inner.clone();
+        let ping_handler: PingHandler = Arc::new(move |payload: Vec<u8>| {
+            let inner = inner_for_ping.clone();
+
+            get_runtime().spawn(async move {
+                let len = payload.len();
+                let guard = inner.read().await;
+
+                if let Some(client) = guard.as_ref() {
+                    if let Err(err) = client.send_pong(payload).await {
+                        tracing::warn!(error = %err, "Failed to send pong frame");
+                    } else {
+                        tracing::trace!("Sent pong frame ({len} bytes)");
+                    }
+                } else {
+                    tracing::debug!("Ping received with no active websocket client");
+                }
+            });
+        });
+
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
             message_handler: Some(message_handler),
-            ping_handler: None,
+            ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default
@@ -1195,6 +1215,12 @@ impl BitmexFeedHandler {
                                     _ => return Some(msg),
                                 },
                                 Err(e) => {
+                                    // Handle here instead of adding message variant to main flow
+                                    if Self::is_heartbeat_message(&text) {
+                                        tracing::trace!("Ignoring heartbeat control message: {text}");
+                                        continue;
+                                    }
+
                                     tracing::error!("Failed to parse WebSocket message: {e}: {text}");
                                 }
                             }
@@ -1233,6 +1259,16 @@ impl BitmexFeedHandler {
                     }
                 }
             }
+        }
+    }
+
+    fn is_heartbeat_message(text: &str) -> bool {
+        match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) => matches!(
+                value.get("op").and_then(|op| op.as_str()),
+                Some("ping") | Some("pong")
+            ),
+            Err(_) => false,
         }
     }
 }

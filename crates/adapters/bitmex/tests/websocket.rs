@@ -39,6 +39,8 @@ use rstest::rstest;
 use serde_json::json;
 use tokio::sync::Mutex;
 
+const TEST_PING_PAYLOAD: &[u8] = b"test-server-ping";
+
 // Test server state for tracking WebSocket connections
 #[derive(Clone)]
 struct TestServerState {
@@ -48,6 +50,9 @@ struct TestServerState {
     drop_connections: Arc<AtomicBool>,
     silent_drop: Arc<AtomicBool>,
     auth_calls: Arc<Mutex<usize>>,
+    send_initial_ping: Arc<AtomicBool>,
+    received_pong: Arc<AtomicBool>,
+    last_pong: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 impl Default for TestServerState {
@@ -59,6 +64,9 @@ impl Default for TestServerState {
             drop_connections: Arc::new(AtomicBool::new(false)),
             silent_drop: Arc::new(AtomicBool::new(false)),
             auth_calls: Arc::new(Mutex::new(0)),
+            send_initial_ping: Arc::new(AtomicBool::new(false)),
+            received_pong: Arc::new(AtomicBool::new(false)),
+            last_pong: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -103,6 +111,16 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         .is_err()
     {
         return;
+    }
+
+    if state.send_initial_ping.load(Ordering::Relaxed) {
+        if socket
+            .send(Message::Ping(TEST_PING_PAYLOAD.to_vec().into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
     }
 
     // Handle incoming messages
@@ -408,6 +426,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                 }
             }
+            Message::Pong(data) => {
+                state.received_pong.store(true, Ordering::Relaxed);
+                let mut last_pong = state.last_pong.lock().await;
+                *last_pong = Some(data.to_vec());
+            }
             Message::Ping(data) => {
                 // Respond with pong
                 if socket.send(Message::Pong(data)).await.is_err() {
@@ -482,6 +505,41 @@ async fn test_websocket_connection() {
     // Check connection count after disconnect
     let count = *state.connection_count.lock().await;
     assert_eq!(count, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_replies_to_server_ping() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.send_initial_ping.store(true, Ordering::Relaxed);
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url),
+        None,
+        None,
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if state.received_pong.load(Ordering::Relaxed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expected pong response from client");
+
+    let pong_payload = state.last_pong.lock().await.clone();
+    assert_eq!(pong_payload.as_deref(), Some(TEST_PING_PAYLOAD));
+
+    client.close().await.unwrap();
 }
 
 #[rstest]
