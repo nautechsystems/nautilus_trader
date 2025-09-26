@@ -843,7 +843,7 @@ impl WebSocketClient {
         &self,
         data: String,
         keys: Option<Vec<String>>,
-    ) -> std::result::Result<(), SendError> {
+    ) -> Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
@@ -853,6 +853,24 @@ impl WebSocketClient {
         tracing::trace!("Sending text: {data:?}");
 
         let msg = Message::Text(data.into());
+        self.writer_tx
+            .send(WriterCommand::Send(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+    }
+
+    /// Sends a pong frame back to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
+    pub async fn send_pong(&self, data: Vec<u8>) -> Result<(), SendError> {
+        if !self.is_active() {
+            return Err(SendError::Closed);
+        }
+
+        tracing::trace!("Sending pong frame ({} bytes)", data.len());
+
+        let msg = Message::Pong(data.into());
         self.writer_tx
             .send(WriterCommand::Send(msg))
             .map_err(|e| SendError::BrokenPipe(e.to_string()))
@@ -868,7 +886,7 @@ impl WebSocketClient {
         &self,
         data: Vec<u8>,
         keys: Option<Vec<String>>,
-    ) -> std::result::Result<(), SendError> {
+    ) -> Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
@@ -888,7 +906,7 @@ impl WebSocketClient {
     /// # Errors
     ///
     /// Returns a websocket error if unable to send.
-    pub async fn send_close_message(&self) -> std::result::Result<(), SendError> {
+    pub async fn send_close_message(&self) -> Result<(), SendError> {
         if !self.is_active() {
             return Err(SendError::Closed);
         }
