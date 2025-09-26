@@ -75,6 +75,17 @@ def get_cached_hyperliquid_http_client(
         def __init__(self, **kwargs):
             self.params = kwargs
 
+        async def load_instrument_definitions(
+            self,
+            *,
+            include_perp: bool = True,
+            include_spot: bool = True,
+        ) -> list[Any]:
+            # Placeholder implementation used in documentation/tests until the real
+            # PyO3 HTTP client is wired in. Returning an empty list mirrors the
+            # behaviour of a venue with no available instruments.
+            return []
+
     return MockHyperliquidHttpClient(
         private_key=private_key,
         vault_address=vault_address,

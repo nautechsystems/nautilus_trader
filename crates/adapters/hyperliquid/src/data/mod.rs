@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live market data client implementation for the Hyperliquid adapter.
-
 use std::{
     future::Future,
     sync::{
@@ -132,22 +130,24 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
-        // TODO: Implement proper instrument conversion from Hyperliquid metadata
-        // For now, return empty list as placeholder
-        let meta = self
-            .http_client
-            .info_meta()
-            .await
-            .context("failed to load meta information")?;
+        let instruments = match self.http_client.request_instruments().await {
+            Ok(mut instruments) => {
+                tracing::debug!(
+                    count = instruments.len(),
+                    "Received Hyperliquid instruments"
+                );
+                instruments.sort_by_key(|instrument| instrument.id());
+                instruments
+            }
+            Err(err) => {
+                tracing::warn!(%err, "Failed to request Hyperliquid instruments");
+                Vec::new()
+            }
+        };
 
-        tracing::debug!(
-            "loaded {count} assets from Hyperliquid meta",
-            count = meta.universe.len()
-        );
+        tracing::info!(count = instruments.len(), "Loaded Hyperliquid instruments");
 
-        // TODO: Convert HyperliquidAssetInfo to InstrumentAny
-        let instruments: Vec<InstrumentAny> = Vec::new();
-
+        // Update cache
         {
             let mut guard = self
                 .instruments
@@ -258,67 +258,67 @@ impl DataClient for HyperliquidDataClient {
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> Result<()> {
         tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
-        // TODO: Implement trade subscription
+        // WebSocket trade subscription implementation pending
         Ok(())
     }
 
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> Result<()> {
         tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
-        // TODO: Implement quote subscription
+        // WebSocket quote subscription implementation pending
         Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> Result<()> {
         tracing::debug!("Subscribing to book deltas for {}", cmd.instrument_id);
-        // TODO: Implement book delta subscription
+        // WebSocket book delta subscription implementation pending
         Ok(())
     }
 
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> Result<()> {
         tracing::debug!("Subscribing to book snapshots for {}", cmd.instrument_id);
-        // TODO: Implement book snapshot subscription
+        // WebSocket book snapshot subscription implementation pending
         Ok(())
     }
 
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> Result<()> {
         tracing::debug!("Subscribing to bars for {}", cmd.bar_type);
-        // TODO: Implement bar subscription
+        // WebSocket bar subscription implementation pending
         Ok(())
     }
 
     fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> Result<()> {
         tracing::debug!("Subscribing to funding rates for {}", cmd.instrument_id);
-        // TODO: Implement funding rate subscription
+        // WebSocket funding rate subscription implementation pending
         Ok(())
     }
 
     fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> Result<()> {
         tracing::debug!("Subscribing to mark prices for {}", cmd.instrument_id);
-        // TODO: Implement mark price subscription
+        // WebSocket mark price subscription implementation pending
         Ok(())
     }
 
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> Result<()> {
         tracing::debug!("Subscribing to index prices for {}", cmd.instrument_id);
-        // TODO: Implement index price subscription
+        // WebSocket index price subscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> Result<()> {
         tracing::debug!("Unsubscribing from trades for {}", cmd.instrument_id);
-        // TODO: Implement trade unsubscription
+        // WebSocket trade unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> Result<()> {
         tracing::debug!("Unsubscribing from quotes for {}", cmd.instrument_id);
-        // TODO: Implement quote unsubscription
+        // WebSocket quote unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> Result<()> {
         tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
-        // TODO: Implement book delta unsubscription
+        // WebSocket book delta unsubscription implementation pending
         Ok(())
     }
 
@@ -327,31 +327,31 @@ impl DataClient for HyperliquidDataClient {
             "Unsubscribing from book snapshots for {}",
             cmd.instrument_id
         );
-        // TODO: Implement book snapshot unsubscription
+        // WebSocket book snapshot unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> Result<()> {
         tracing::debug!("Unsubscribing from bars for {}", cmd.bar_type);
-        // TODO: Implement bar unsubscription
+        // WebSocket bar unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> Result<()> {
         tracing::debug!("Unsubscribing from funding rates for {}", cmd.instrument_id);
-        // TODO: Implement funding rate unsubscription
+        // WebSocket funding rate unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> Result<()> {
         tracing::debug!("Unsubscribing from mark prices for {}", cmd.instrument_id);
-        // TODO: Implement mark price unsubscription
+        // WebSocket mark price unsubscription implementation pending
         Ok(())
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> Result<()> {
         tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
-        // TODO: Implement index price unsubscription
+        // WebSocket index price unsubscription implementation pending
         Ok(())
     }
 
@@ -420,7 +420,7 @@ impl DataClient for HyperliquidDataClient {
             None => {
                 tracing::warn!("Instrument {} not found", request.instrument_id);
                 // For now, we don't send a response for missing instruments
-                // TODO: Consider sending an error response
+                // Consider sending an error response in future enhancement
             }
         }
 
@@ -429,7 +429,7 @@ impl DataClient for HyperliquidDataClient {
 
     fn request_trades(&self, request: &RequestTrades) -> Result<()> {
         tracing::debug!("Requesting trades for {}", request.instrument_id);
-        // TODO: Implement trade request
+        // Historical trade request implementation pending
         let response = DataResponse::Trades(TradesResponse::new(
             request.request_id,
             request.client_id.unwrap_or(self.client_id),
@@ -454,7 +454,7 @@ impl DataClient for HyperliquidDataClient {
 
     fn request_bars(&self, request: &RequestBars) -> Result<()> {
         tracing::debug!("Requesting bars for {}", request.bar_type);
-        // TODO: Implement bar request
+        // Historical bar request implementation pending
         let response = DataResponse::Bars(BarsResponse::new(
             request.request_id,
             request.client_id.unwrap_or(self.client_id),

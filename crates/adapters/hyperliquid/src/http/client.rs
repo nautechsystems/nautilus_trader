@@ -29,6 +29,7 @@ use std::{
 
 use anyhow::Context;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, header::USER_AGENT};
 use serde_json::Value;
@@ -40,11 +41,14 @@ use crate::{
         credential::{Secrets, VaultAddress},
     },
     http::{
+        conversion::instruments_from_defs_owned,
         error::{Error, Result},
         models::{
             HyperliquidExchangeRequest, HyperliquidExchangeResponse, HyperliquidFills,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs,
+            SpotMeta, SpotMetaAndCtxs,
         },
+        parse::{HyperliquidInstrumentDef, parse_perp_instruments, parse_spot_instruments},
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
             RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,
@@ -65,7 +69,11 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
 /// This client wraps the underlying `HttpClient` to handle functionality
 /// specific to Hyperliquid, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into specific data models.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct HyperliquidHttpClient {
     client: HttpClient,
     is_testnet: bool,
@@ -182,6 +190,76 @@ impl HyperliquidHttpClient {
 
     /// Get metadata about available markets.
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
+        let request = InfoRequest::meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get complete spot metadata (tokens and pairs).
+    pub async fn get_spot_meta(&self) -> Result<SpotMeta> {
+        let request = InfoRequest::spot_meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get perpetuals metadata with asset contexts (for price precision refinement).
+    pub async fn get_perp_meta_and_ctxs(&self) -> Result<PerpMetaAndCtxs> {
+        let request = InfoRequest::meta_and_asset_ctxs();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get spot metadata with asset contexts (for price precision refinement).
+    pub async fn get_spot_meta_and_ctxs(&self) -> Result<SpotMetaAndCtxs> {
+        let request = InfoRequest::spot_meta_and_asset_ctxs();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Fetch and parse all available instrument definitions from Hyperliquid.
+    pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
+        let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+
+        match self.load_perp_meta().await {
+            Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
+                Ok(perp_defs) => {
+                    tracing::debug!(
+                        count = perp_defs.len(),
+                        "Loaded Hyperliquid perp definitions"
+                    );
+                    defs.extend(perp_defs);
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "Failed to parse Hyperliquid perp instruments");
+                }
+            },
+            Err(err) => {
+                tracing::warn!(%err, "Failed to load Hyperliquid perp metadata");
+            }
+        }
+
+        match self.get_spot_meta().await {
+            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
+                Ok(spot_defs) => {
+                    tracing::debug!(
+                        count = spot_defs.len(),
+                        "Loaded Hyperliquid spot definitions"
+                    );
+                    defs.extend(spot_defs);
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "Failed to parse Hyperliquid spot instruments");
+                }
+            },
+            Err(err) => {
+                tracing::warn!(%err, "Failed to load Hyperliquid spot metadata");
+            }
+        }
+
+        Ok(instruments_from_defs_owned(defs))
+    }
+
+    pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
         let request = InfoRequest::meta();
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)

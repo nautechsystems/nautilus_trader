@@ -28,12 +28,179 @@ pub struct HyperliquidMeta {
 
 /// Represents asset information from the meta endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HyperliquidAssetInfo {
     /// Asset name (e.g., "BTC").
     pub name: Ustr,
     /// Number of decimal places for size.
-    #[serde(rename = "szDecimals")]
     pub sz_decimals: u32,
+    /// Maximum leverage allowed for this asset.
+    #[serde(default)]
+    pub max_leverage: Option<u32>,
+    /// Whether this asset requires isolated margin only.
+    #[serde(default)]
+    pub only_isolated: Option<bool>,
+    /// Whether this asset is delisted/inactive.
+    #[serde(default)]
+    pub is_delisted: Option<bool>,
+}
+
+// -------------------------------------------------------------------------------------------------
+// === Extended Instrument Metadata Models ===
+// -------------------------------------------------------------------------------------------------
+
+/// Complete perpetuals metadata response from `POST /info` with `{ "type": "meta" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerpMeta {
+    /// Perpetual assets universe.
+    pub universe: Vec<PerpAsset>,
+    /// Margin tables for leverage tiers.
+    #[serde(default)]
+    pub margin_tables: Vec<(u32, MarginTable)>,
+}
+
+/// A single perpetual asset from the universe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerpAsset {
+    /// Asset name (e.g., "BTC").
+    pub name: String,
+    /// Number of decimal places for size.
+    pub sz_decimals: u32,
+    /// Maximum leverage allowed for this asset.
+    #[serde(default)]
+    pub max_leverage: Option<u32>,
+    /// Whether this asset requires isolated margin only.
+    #[serde(default)]
+    pub only_isolated: Option<bool>,
+    /// Whether this asset is delisted/inactive.
+    #[serde(default)]
+    pub is_delisted: Option<bool>,
+}
+
+/// Margin table with leverage tiers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarginTable {
+    /// Description of the margin table.
+    pub description: String,
+    /// Margin tiers for different position sizes.
+    #[serde(default)]
+    pub margin_tiers: Vec<MarginTier>,
+}
+
+/// Individual margin tier.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarginTier {
+    /// Lower bound for this tier (as string to preserve precision).
+    pub lower_bound: String,
+    /// Maximum leverage for this tier.
+    pub max_leverage: u32,
+}
+
+/// Complete spot metadata response from `POST /info` with `{ "type": "spotMeta" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotMeta {
+    /// Spot tokens available.
+    pub tokens: Vec<SpotToken>,
+    /// Spot pairs universe.
+    pub universe: Vec<SpotPair>,
+}
+
+/// A single spot token from the tokens list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotToken {
+    /// Token name (e.g., "USDC").
+    pub name: String,
+    /// Number of decimal places for size.
+    pub sz_decimals: u32,
+    /// Wei decimals (on-chain precision).
+    pub wei_decimals: u32,
+    /// Token index used for pair references.
+    pub index: u32,
+    /// Token contract ID/address.
+    pub token_id: String,
+    /// Whether this is the canonical token.
+    pub is_canonical: bool,
+    /// Optional EVM contract address.
+    #[serde(default)]
+    pub evm_contract: Option<String>,
+    /// Optional full name.
+    #[serde(default)]
+    pub full_name: Option<String>,
+}
+
+/// A single spot pair from the universe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotPair {
+    /// Pair display name (e.g., "PURR/USDC").
+    pub name: String,
+    /// Token indices [base_token_index, quote_token_index].
+    pub tokens: [u32; 2],
+    /// Pair index.
+    pub index: u32,
+    /// Whether this is the canonical pair.
+    pub is_canonical: bool,
+}
+
+// -------------------------------------------------------------------------------------------------
+// === Optional Context Payloads (for price precision refinement) ===
+// -------------------------------------------------------------------------------------------------
+
+/// Optional perpetuals metadata with asset contexts from `{ "type": "metaAndAssetCtxs" }`.
+/// Returns a tuple: `[PerpMeta, Vec<PerpAssetCtx>]`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PerpMetaAndCtxs {
+    /// Tuple format: [meta, contexts]
+    Payload(Box<(PerpMeta, Vec<PerpAssetCtx>)>),
+}
+
+/// Runtime context for a perpetual asset (mark prices, funding, etc).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerpAssetCtx {
+    /// Mark price as string.
+    #[serde(default)]
+    pub mark_px: Option<String>,
+    /// Mid price as string.
+    #[serde(default)]
+    pub mid_px: Option<String>,
+    /// Funding rate as string.
+    #[serde(default)]
+    pub funding: Option<String>,
+    /// Open interest as string.
+    #[serde(default)]
+    pub open_interest: Option<String>,
+}
+
+/// Optional spot metadata with asset contexts from `{ "type": "spotMetaAndAssetCtxs" }`.
+/// Returns a tuple: `[SpotMeta, Vec<SpotAssetCtx>]`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SpotMetaAndCtxs {
+    /// Tuple format: [meta, contexts]
+    Payload(Box<(SpotMeta, Vec<SpotAssetCtx>)>),
+}
+
+/// Runtime context for a spot pair (prices, volumes, etc).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotAssetCtx {
+    /// Mark price as string.
+    #[serde(default)]
+    pub mark_px: Option<String>,
+    /// Mid price as string.
+    #[serde(default)]
+    pub mid_px: Option<String>,
+    /// 24h volume as string.
+    #[serde(default)]
+    pub day_volume: Option<String>,
 }
 
 /// Represents an L2 order book snapshot from `POST /info`.

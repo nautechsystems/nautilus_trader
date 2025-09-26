@@ -34,6 +34,30 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get spot metadata (tokens and pairs).
+    pub fn spot_meta() -> Self {
+        Self {
+            request_type: "spotMeta".to_string(),
+            params: Value::Null,
+        }
+    }
+
+    /// Creates a request to get metadata with asset contexts (for price precision).
+    pub fn meta_and_asset_ctxs() -> Self {
+        Self {
+            request_type: "metaAndAssetCtxs".to_string(),
+            params: Value::Null,
+        }
+    }
+
+    /// Creates a request to get spot metadata with asset contexts.
+    pub fn spot_meta_and_asset_ctxs() -> Self {
+        Self {
+            request_type: "spotMetaAndAssetCtxs".to_string(),
+            params: Value::Null,
+        }
+    }
+
     /// Creates a request to get L2 order book for a coin.
     pub fn l2_book(coin: &str) -> Self {
         Self {

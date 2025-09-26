@@ -33,7 +33,7 @@ pub struct SignatureBundle {
 }
 
 /// EIP-712 signer for Hyperliquid.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HyperliquidEip712Signer {
     private_key: EvmPrivateKey,
 }
