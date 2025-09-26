@@ -159,8 +159,9 @@ clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-cr
 #== Dependencies
 
 .PHONY: outdated
-outdated:  #-- Check for outdated Rust dependencies
-	cargo outdated
+outdated:  #-- Check for outdated dependencies
+	cargo outdated --workspace --root-deps-only
+	uv tree --outdated --depth 1 --all-groups
 
 .PHONY: update cargo-update
 update: cargo-update  #-- Update all dependencies (uv and cargo)

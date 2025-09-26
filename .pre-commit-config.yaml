@@ -74,7 +74,6 @@ repos:
         pass_filenames: false
         args: ["--no-online-audits", "--min-severity", "medium", ".github/workflows"]
 
-
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################

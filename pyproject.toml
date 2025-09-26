@@ -112,17 +112,17 @@ dev = [
     "types-pytz>=2025.2,<2026.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",
-    "zizmor>=1.13.0",
+    "zizmor>=1.14.1",
 ]
 test = [
     "aiohttp==3.11.18,<4.0.0",  # Pinned to 3.11.8 for wheel compatibility on supported platforms
     "coverage>=7.10.7,<8.0.0",
-    "pytest>=7.4.4,<8.0.0",
+    "pytest>=7.4.4,<8.0.0",  # Intentionally held at 7.x
     "pytest-aiohttp>=1.1.0,<2.0.0",
-    "pytest-asyncio==0.21.1",
-    "pytest-benchmark>=4.0.0,<5.0.0",
-    "pytest-codspeed>=3.2.0,<4.0.0",
-    "pytest-cov>=4.1.0,<5.0.0",
+    "pytest-asyncio==0.21.1",  # Pinned to 0.21.1 for stability
+    "pytest-benchmark==5.0.1",  # Pinned to 5.0.1 due pytest 8.x requirement
+    "pytest-codspeed>=4.0.0,<5.0.0",
+    "pytest-cov==6.3.0",  # Pinned to 6.3.0 due pytest 8.x requirement
     "pytest-mock>=3.15.1,<4.0.0",
     "pytest-xdist[psutil]>=3.8.0,<4.0.0",
 ]
@@ -148,7 +148,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py311", "py312"]
+target_version = ["py311", "py312", "py313"]
 line_length = 100
 
 [tool.docformatter]
