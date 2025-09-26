@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Minimal HTTP client scaffold for the Bybit REST API.
+//! Provides the HTTP client integration for the [Bybit](https://bybit.com) REST API.
 //!
-//! The client currently focuses on handling request signing so that higher level
-//! components can authenticate requests against Bybit's v5 REST endpoints.
+//! Bybit API reference <https://bybit-exchange.github.io/docs/>.
 
 use std::collections::HashMap;
 
@@ -39,7 +38,7 @@ pub enum BybitHttpError {
     MissingCredentials,
 }
 
-/// Lightweight Bybit HTTP client that encapsulates default headers and signing.
+/// Bybit HTTP client that encapsulates default headers, signing, and requests.
 #[derive(Clone, Debug)]
 pub struct BybitHttpClient {
     base_url: String,
@@ -147,6 +146,8 @@ impl BybitHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     const API_KEY: &str = "test_api_key";
@@ -154,7 +155,7 @@ mod tests {
     const TIMESTAMP: &str = "1700000000000";
     const RECV_WINDOW: u64 = 5_000;
 
-    #[test]
+    #[rstest]
     fn sign_get_matches_reference() {
         let client =
             BybitHttpClient::with_credential(API_KEY, API_SECRET, None, None, Some(RECV_WINDOW));
@@ -168,7 +169,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn sign_post_matches_reference() {
         let client =
             BybitHttpClient::with_credential(API_KEY, API_SECRET, None, None, Some(RECV_WINDOW));
@@ -182,7 +183,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn sign_without_credential_errors() {
         let client = BybitHttpClient::new(None, None);
         let err = client.sign_get(TIMESTAMP, Some("foo=bar")).unwrap_err();

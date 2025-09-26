@@ -97,6 +97,8 @@ impl Credential {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     const API_KEY: &str = "test_api_key";
@@ -104,7 +106,7 @@ mod tests {
     const RECV_WINDOW: u64 = 5_000;
     const TIMESTAMP: &str = "1700000000000";
 
-    #[test]
+    #[rstest]
     fn sign_with_payload_matches_reference_get() {
         let credential = Credential::new(API_KEY, API_SECRET);
         let query = "category=linear&symbol=BTCUSDT";
@@ -117,7 +119,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn sign_with_payload_matches_reference_post() {
         let credential = Credential::new(API_KEY, API_SECRET);
         let body = "{\"category\": \"linear\", \"symbol\": \"BTCUSDT\", \"orderLinkId\": \"test-order-1\"}";
@@ -130,7 +132,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn sign_with_empty_payload_omits_tail() {
         let credential = Credential::new(API_KEY, API_SECRET);
 

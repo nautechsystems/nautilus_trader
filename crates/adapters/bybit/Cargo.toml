@@ -51,10 +51,13 @@ nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
 hex = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -68,3 +71,11 @@ zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+criterion = { workspace = true }
+rstest = { workspace = true }
+tracing-test = { workspace = true }
+url = { workspace = true }
+axum = { workspace = true }

@@ -372,10 +372,12 @@ pub struct BybitWsAccountWalletMsg {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::common::testing::load_test_json;
 
-    #[test]
+    #[rstest]
     fn deserialize_account_order_frame_uses_enums() {
         let json = load_test_json("ws_account_order.json");
         let frame: BybitWsAccountOrderMsg = serde_json::from_str(&json).unwrap();

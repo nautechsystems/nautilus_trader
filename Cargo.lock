@@ -4658,10 +4658,15 @@ dependencies = [
 name = "nautilus-bybit"
 version = "0.51.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "async-trait",
  "aws-lc-rs",
+ "axum",
  "chrono",
+ "criterion",
+ "dashmap",
+ "derive_builder",
  "hex",
  "nautilus-common",
  "nautilus-core",
@@ -4669,8 +4674,10 @@ dependencies = [
  "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
+ "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -4678,6 +4685,8 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tracing",
+ "tracing-test",
+ "url",
  "ustr",
  "zeroize",
 ]

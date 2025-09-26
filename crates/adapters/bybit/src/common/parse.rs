@@ -733,6 +733,8 @@ fn extract_strike_from_symbol(symbol: &str) -> Result<Price> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         common::testing::load_test_json,
@@ -773,7 +775,7 @@ mod tests {
         parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
     }
 
-    #[test]
+    #[rstest]
     fn parse_spot_instrument_builds_currency_pair() {
         let json = load_test_json("http_get_instruments_spot.json");
         let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
@@ -793,7 +795,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn parse_linear_perpetual_instrument_builds_crypto_perpetual() {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
@@ -812,7 +814,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn parse_inverse_perpetual_instrument_builds_inverse_perpetual() {
         let json = load_test_json("http_get_instruments_inverse.json");
         let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
@@ -831,7 +833,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn parse_option_instrument_builds_option_contract() {
         let json = load_test_json("http_get_instruments_option.json");
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
@@ -849,7 +851,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn parse_http_trade_into_trade_tick() {
         let instrument = linear_instrument();
         let json = load_test_json("http_get_trades_recent.json");
@@ -869,7 +871,7 @@ mod tests {
         assert_eq!(tick.ts_event, UnixNanos::new(1_709_891_679_000_000_000));
     }
 
-    #[test]
+    #[rstest]
     fn parse_ws_trade_into_trade_tick() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_public_trade.json");
@@ -889,7 +891,7 @@ mod tests {
         assert_eq!(tick.ts_event, UnixNanos::new(1_709_891_679_000_000_000));
     }
 
-    #[test]
+    #[rstest]
     fn parse_orderbook_snapshot_into_deltas() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_orderbook_snapshot.json");
@@ -917,7 +919,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn parse_orderbook_delta_marks_actions() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_orderbook_delta.json");
@@ -941,7 +943,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn parse_orderbook_quote_produces_top_of_book() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_orderbook_snapshot.json");
@@ -956,7 +958,7 @@ mod tests {
         assert_eq!(quote.ask_size, instrument.make_qty(0.750, None));
     }
 
-    #[test]
+    #[rstest]
     fn parse_orderbook_quote_with_delta_updates_sizes() {
         let instrument = linear_instrument();
         let snapshot: BybitWsOrderbookDepthMsg =
@@ -973,7 +975,7 @@ mod tests {
         assert_eq!(updated.ask_size, instrument.make_qty(0.0, None));
     }
 
-    #[test]
+    #[rstest]
     fn parse_kline_into_bar() {
         let instrument = linear_instrument();
         let json = load_test_json("http_get_klines_linear.json");

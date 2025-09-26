@@ -118,27 +118,29 @@ impl TryFrom<String> for BybitSymbol {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn new_valid_symbol_is_uppercased() {
         let symbol = BybitSymbol::new("btcusdt-linear").unwrap();
         assert_eq!(symbol.to_string(), "BTCUSDT-LINEAR");
     }
 
-    #[test]
+    #[rstest]
     fn new_invalid_symbol_errors() {
         let err = BybitSymbol::new("BTCUSDT").unwrap_err();
         assert!(format!("{err}").contains("expected suffix"));
     }
 
-    #[test]
+    #[rstest]
     fn raw_symbol_strips_suffix() {
         let symbol = BybitSymbol::new("ETH-26JUN26-16000-P-OPTION").unwrap();
         assert_eq!(symbol.raw_symbol(), "ETH-26JUN26-16000-P");
     }
 
-    #[test]
+    #[rstest]
     fn product_type_detection_matches_suffix() {
         let linear = BybitSymbol::new("BTCUSDT-LINEAR").unwrap();
         assert!(linear.product_type().is_linear());
@@ -153,7 +155,7 @@ mod tests {
         assert!(option.product_type().is_option());
     }
 
-    #[test]
+    #[rstest]
     fn instrument_id_uses_bybit_venue() {
         let symbol = BybitSymbol::new("BTCUSDT-LINEAR").unwrap();
         let instrument_id = symbol.to_instrument_id();
