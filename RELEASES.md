@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added BitMEX historical data requests (trades and bars)
 - Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
+- Added Databento CME sandbox example
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
 - Added Interactive Brokers order conditions (#2988), thanks @faysou

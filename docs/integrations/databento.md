@@ -127,6 +127,7 @@ The examples below assume you're within a `Strategy` or `Actor` class context wh
 Remember to import the necessary types:
 
 ```python
+from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.model import BarType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -138,30 +139,34 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 ```python
 # Default MBP-1 quotes (may include trades)
-self.subscribe_quote_ticks(instrument_id)
+self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
 # Explicit MBP-1 schema
 self.subscribe_quote_ticks(
     instrument_id=instrument_id,
-    params={"schema": "mbp-1"}
+    params={"schema": "mbp-1"},
+    client_id=DATABENTO_CLIENT_ID,
 )
 
 # 1-second BBO snapshots (quotes only, no trades)
 self.subscribe_quote_ticks(
     instrument_id=instrument_id,
-    params={"schema": "bbo-1s"}
+    params={"schema": "bbo-1s"},
+    client_id=DATABENTO_CLIENT_ID,
 )
 
 # Consolidated quotes across venues
 self.subscribe_quote_ticks(
     instrument_id=instrument_id,
-    params={"schema": "cbbo-1s"}  # or "cmbp-1" for consolidated MBP
+    params={"schema": "cbbo-1s"},  # or "cmbp-1" for consolidated MBP
+    client_id=DATABENTO_CLIENT_ID,
 )
 
 # Trade-sampled BBO (includes both quotes AND trades)
 self.subscribe_quote_ticks(
     instrument_id=instrument_id,
-    params={"schema": "tbbo"}  # Will receive both QuoteTick and TradeTick onto the message bus
+    params={"schema": "tbbo"},  # Will receive both QuoteTick and TradeTick onto the message bus
+    client_id=DATABENTO_CLIENT_ID,
 )
 ```
 
@@ -169,18 +174,20 @@ self.subscribe_quote_ticks(
 
 ```python
 # Trade ticks only
-self.subscribe_trade_ticks(instrument_id)
+self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
 # Trades from MBP-1 feed (only when trade events occur)
 self.subscribe_trade_ticks(
     instrument_id=instrument_id,
-    params={"schema": "mbp-1"}
+    params={"schema": "mbp-1"},
+    client_id=DATABENTO_CLIENT_ID,
 )
 
 # Trade-sampled data (includes quotes at trade time)
 self.subscribe_trade_ticks(
     instrument_id=instrument_id,
-    params={"schema": "tbbo"}  # Also provides quotes at trade events
+    params={"schema": "tbbo"},  # Also provides quotes at trade events
+    client_id=DATABENTO_CLIENT_ID,
 )
 ```
 
