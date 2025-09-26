@@ -17,16 +17,16 @@
 //! with exponential backoff and state management.
 
 //! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED)
-//! - Synchronized reconnection with backoff
-//! - Split read/write architecture
-//! - Python callback integration
+//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
+//! - Synchronized reconnection with backoff.
+//! - Split read/write architecture.
+//! - Python callback integration.
 //!
 //! **Design**:
-//! - Single reader, multiple writer model
-//! - Read half runs in dedicated task
-//! - Write half runs in dedicated task connected with channel
-//! - Controller task manages lifecycle
+//! - Single reader, multiple writer model.
+//! - Read half runs in dedicated task.
+//! - Write half runs in dedicated task connected with channel.
+//! - Controller task manages lifecycle.
 
 use std::{
     fmt::Debug,
@@ -693,9 +693,9 @@ impl WebSocketClient {
     ) -> Result<(MessageReader, Self), Error> {
         install_cryptographic_provider();
 
-        // Create a single connection and split it
-        let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
-        let (writer, reader) = ws_stream.split();
+        // Create a single connection and split it, respecting configured headers
+        let (writer, reader) =
+            WebSocketClientInner::connect_with_server(&config.url, config.headers.clone()).await?;
 
         // Create inner without connecting (we'll provide the writer)
         let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
@@ -911,7 +911,7 @@ impl WebSocketClient {
 
             loop {
                 tokio::time::sleep(check_interval).await;
-                let mode = ConnectionMode::from_atomic(&connection_mode);
+                let mut mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
@@ -945,7 +945,22 @@ impl WebSocketClient {
                     break; // Controller finished
                 }
 
-                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
+                if mode.is_active() && !inner.is_alive() {
+                    if connection_mode
+                        .compare_exchange(
+                            ConnectionMode::Active.as_u8(),
+                            ConnectionMode::Reconnect.as_u8(),
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        )
+                        .is_ok()
+                    {
+                        tracing::debug!("Detected dead read task, transitioning to RECONNECT");
+                    }
+                    mode = ConnectionMode::from_atomic(&connection_mode);
+                }
+
+                if mode.is_reconnect() {
                     match inner.reconnect().await {
                         Ok(()) => {
                             inner.backoff.reset();
@@ -1318,6 +1333,56 @@ mod rust_tests {
         // Now immediately disconnect the client
         client.disconnect().await;
         assert!(client.is_disconnected());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_state_flips_when_reader_stops() {
+        // Bind an ephemeral port and accept a single websocket connection which we drop.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+            sleep(Duration::from_millis(50)).await;
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            message_handler: Some(handler),
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if client.is_reconnecting() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("client did not enter RECONNECT state");
+
+        client.disconnect().await;
         server.abort();
     }
 }

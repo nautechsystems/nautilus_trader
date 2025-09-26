@@ -478,6 +478,38 @@ mod tests {
 
     use super::{test_utils::*, *};
 
+    const MAX_WAIT_ITERS: usize = 10_000;
+    const MAX_ADVANCE_ITERS: usize = 10_000;
+
+    pub(crate) async fn yield_until<F>(mut condition: F)
+    where
+        F: FnMut() -> bool,
+    {
+        for _ in 0..MAX_WAIT_ITERS {
+            if condition() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        panic!("yield_until timed out waiting for condition");
+    }
+
+    pub(crate) async fn advance_until<F>(mut condition: F)
+    where
+        F: FnMut() -> bool,
+    {
+        for _ in 0..MAX_ADVANCE_ITERS {
+            if condition() {
+                return;
+            }
+            tokio::time::advance(Duration::from_millis(1)).await;
+            tokio::task::yield_now().await;
+        }
+
+        panic!("advance_until timed out waiting for condition");
+    }
+
     #[rstest]
     fn test_retry_config_default() {
         let config = RetryConfig::default();
@@ -741,8 +773,7 @@ mod tests {
         assert_eq!(attempt_counter.load(Ordering::SeqCst), 3);
     }
 
-    #[tokio::test]
-    #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
+    #[tokio::test(start_paused = true)]
     async fn test_immediate_first_retry() {
         let config = RetryConfig {
             max_retries: 2,
@@ -760,28 +791,46 @@ mod tests {
         let times_clone = attempt_times.clone();
         let start = tokio::time::Instant::now();
 
-        let _result = manager
-            .execute_with_retry(
-                "test_immediate",
-                move || {
-                    let times = times_clone.clone();
-                    async move {
-                        times.lock().unwrap().push(start.elapsed());
-                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
-                    }
-                },
-                should_retry_test_error,
-                create_test_error,
-            )
-            .await;
+        let handle = tokio::spawn({
+            let times_clone = times_clone.clone();
+            async move {
+                let _ = manager
+                    .execute_with_retry(
+                        "test_immediate",
+                        move || {
+                            let times = times_clone.clone();
+                            async move {
+                                times.lock().unwrap().push(start.elapsed());
+                                Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                            }
+                        },
+                        should_retry_test_error,
+                        create_test_error,
+                    )
+                    .await;
+            }
+        });
+
+        // Allow initial attempt and immediate retry to run without advancing time
+        yield_until(|| attempt_times.lock().unwrap().len() >= 2).await;
+
+        // Advance time for the next backoff interval
+        tokio::time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // Wait for the final retry to be recorded
+        yield_until(|| attempt_times.lock().unwrap().len() >= 3).await;
+
+        handle.await.unwrap();
 
         let times = attempt_times.lock().unwrap();
         assert_eq!(times.len(), 3); // Initial + 2 retries
 
-        // First retry should be immediate (within 10ms)
-        assert!(times[1].as_millis() < 10);
-        // Second retry should have delay (at least 100ms from first retry)
-        assert!(times[2].as_millis() >= 100);
+        // First retry should be immediate (within 1ms tolerance)
+        assert!(times[1] <= Duration::from_millis(1));
+        // Second retry should have backoff delay (at least 100ms from start)
+        assert!(times[2] >= Duration::from_millis(100));
+        assert!(times[2] <= Duration::from_millis(110));
     }
 
     #[tokio::test]
@@ -855,8 +904,7 @@ mod tests {
         assert_eq!(attempt_counter.load(Ordering::SeqCst), 1);
     }
 
-    #[tokio::test]
-    #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
+    #[tokio::test(start_paused = true)]
     async fn test_jitter_applied() {
         let config = RetryConfig {
             max_retries: 2,
@@ -875,36 +923,47 @@ mod tests {
         let last_time = Arc::new(std::sync::Mutex::new(tokio::time::Instant::now()));
         let last_time_clone = last_time.clone();
 
-        let _result = manager
-            .execute_with_retry(
-                "test_jitter",
-                move || {
-                    let delays = delays_clone.clone();
-                    let last_time = last_time_clone.clone();
-                    async move {
-                        let now = tokio::time::Instant::now();
-                        let delay = {
-                            let mut last = last_time.lock().unwrap();
-                            let d = now.duration_since(*last);
-                            *last = now;
-                            d
-                        };
-                        delays.lock().unwrap().push(delay);
-                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
-                    }
-                },
-                should_retry_test_error,
-                create_test_error,
-            )
-            .await;
+        let handle = tokio::spawn({
+            let delays_clone = delays_clone.clone();
+            async move {
+                let _ = manager
+                    .execute_with_retry(
+                        "test_jitter",
+                        move || {
+                            let delays = delays_clone.clone();
+                            let last_time = last_time_clone.clone();
+                            async move {
+                                let now = tokio::time::Instant::now();
+                                let delay = {
+                                    let mut last = last_time.lock().unwrap();
+                                    let d = now.duration_since(*last);
+                                    *last = now;
+                                    d
+                                };
+                                delays.lock().unwrap().push(delay);
+                                Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                            }
+                        },
+                        should_retry_test_error,
+                        create_test_error,
+                    )
+                    .await;
+            }
+        });
+
+        yield_until(|| !delays.lock().unwrap().is_empty()).await;
+        advance_until(|| delays.lock().unwrap().len() >= 2).await;
+        advance_until(|| delays.lock().unwrap().len() >= 3).await;
+
+        handle.await.unwrap();
 
         let delays = delays.lock().unwrap();
         // Skip the first delay (initial attempt)
         for delay in delays.iter().skip(1) {
             // Each delay should be at least the base delay (50ms for first retry)
             assert!(delay.as_millis() >= 50);
-            // But no more than base + jitter (100ms for first retry)
-            assert!(delay.as_millis() <= 150);
+            // But no more than base + jitter (allow small tolerance for step advance)
+            assert!(delay.as_millis() <= 151);
         }
     }
 
@@ -1142,7 +1201,11 @@ mod proptest_tests {
     // Import rstest attribute macro used within proptest! tests
     use rstest::rstest;
 
-    use super::{test_utils::*, *};
+    use super::{
+        test_utils::*,
+        tests::{advance_until, yield_until},
+        *,
+    };
 
     proptest! {
         #[rstest]
@@ -1322,13 +1385,13 @@ mod proptest_tests {
         }
 
         #[rstest]
-        #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
         fn test_jitter_bounds(
             jitter_ms in 0u64..20,
             base_delay_ms in 10u64..30,
         ) {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
+                .start_paused(true)
                 .build()
                 .unwrap();
 
@@ -1345,21 +1408,41 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config).unwrap();
             let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
-            let times_clone = attempt_times.clone();
-            let start_time = std::time::Instant::now();
+            let attempt_times_for_block = attempt_times.clone();
 
-            let _result = rt.block_on(manager.execute_with_retry(
-                "jitter_test",
-                move || {
-                    let times = times_clone.clone();
+            rt.block_on(async move {
+                let attempt_times_for_wait = attempt_times_for_block.clone();
+                let handle = tokio::spawn({
+                    let attempt_times_for_task = attempt_times_for_block.clone();
+                    let manager = manager;
                     async move {
-                        times.lock().unwrap().push(start_time.elapsed());
-                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                        let start_time = tokio::time::Instant::now();
+                        let _ = manager
+                            .execute_with_retry(
+                                "jitter_test",
+                                move || {
+                                    let attempt_times_inner = attempt_times_for_task.clone();
+                                    async move {
+                                        attempt_times_inner
+                                            .lock()
+                                            .unwrap()
+                                            .push(start_time.elapsed());
+                                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                                    }
+                                },
+                                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                                TestError::Timeout,
+                            )
+                            .await;
                     }
-                },
-                |e: &TestError| matches!(e, TestError::Retryable(_)),
-                TestError::Timeout,
-            ));
+                });
+
+                yield_until(|| !attempt_times_for_wait.lock().unwrap().is_empty()).await;
+                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 2).await;
+                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 3).await;
+
+                handle.await.unwrap();
+            });
 
             let times = attempt_times.lock().unwrap();
 
@@ -1386,7 +1469,7 @@ mod proptest_tests {
 
                 // Delay should be at most base_delay + jitter
                 prop_assert!(
-                    delay_from_previous.as_millis() <= (base_delay_ms + jitter_ms + 5) as u128,
+                    delay_from_previous.as_millis() <= (base_delay_ms + jitter_ms + 1) as u128,
                     "Retry {} delay {}ms exceeds base {} + jitter {}",
                     i, delay_from_previous.as_millis(), base_delay_ms, jitter_ms
                 );
@@ -1394,13 +1477,13 @@ mod proptest_tests {
         }
 
         #[rstest]
-        #[ignore = "Non-deterministic timing test - TODO: Convert to use deterministic tokio time"]
         fn test_immediate_first_property(
             immediate_first in any::<bool>(),
             initial_delay_ms in 10u64..30,
         ) {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
+                .start_paused(true)
                 .build()
                 .unwrap();
 
@@ -1417,22 +1500,39 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config).unwrap();
             let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
-            let times_clone = attempt_times.clone();
+            let attempt_times_for_block = attempt_times.clone();
 
-            let start = std::time::Instant::now();
-            let _result = rt.block_on(manager.execute_with_retry(
-                "immediate_test",
-                move || {
-                    let times = times_clone.clone();
+            rt.block_on(async move {
+                let attempt_times_for_wait = attempt_times_for_block.clone();
+                let handle = tokio::spawn({
+                    let attempt_times_for_task = attempt_times_for_block.clone();
+                    let manager = manager;
                     async move {
-                        let elapsed = start.elapsed();
-                        times.lock().unwrap().push(elapsed);
-                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                        let start = tokio::time::Instant::now();
+                        let _ = manager
+                            .execute_with_retry(
+                                "immediate_test",
+                                move || {
+                                    let attempt_times_inner = attempt_times_for_task.clone();
+                                    async move {
+                                        let elapsed = start.elapsed();
+                                        attempt_times_inner.lock().unwrap().push(elapsed);
+                                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                                    }
+                                },
+                                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                                TestError::Timeout,
+                            )
+                            .await;
                     }
-                },
-                |e: &TestError| matches!(e, TestError::Retryable(_)),
-                TestError::Timeout,
-            ));
+                });
+
+                yield_until(|| !attempt_times_for_wait.lock().unwrap().is_empty()).await;
+                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 2).await;
+                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 3).await;
+
+                handle.await.unwrap();
+            });
 
             let times = attempt_times.lock().unwrap();
             prop_assert!(times.len() >= 2);
@@ -1444,7 +1544,7 @@ mod proptest_tests {
                     times[1].as_millis());
             } else {
                 // First retry should have delay
-                prop_assert!(times[1].as_millis() >= (initial_delay_ms - 10) as u128,
+                prop_assert!(times[1].as_millis() >= (initial_delay_ms - 1) as u128,
                     "With immediate_first=false, first retry was too fast: {}ms",
                     times[1].as_millis());
             }
