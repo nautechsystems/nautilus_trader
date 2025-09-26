@@ -351,6 +351,312 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_engine.command_count == 1  # <-- Initial account event
         assert self.exec_client.calls == ["_start", "submit_order"]
 
+    def test_submit_reduce_only_order_when_closing_full_cash_position_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        exit_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-None-1"),
+            order=exit_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+        self.exec_engine.process(TestEventStubs.order_submitted(exit_order))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(exit_order, venue_order_id=VenueOrderId("2")),
+        )
+        self.exec_engine.process(TestEventStubs.order_filled(exit_order, _AUDUSD_SIM))
+
+        # Assert
+        assert entry_order.status == OrderStatus.FILLED
+        assert exit_order.status == OrderStatus.FILLED
+        assert self.exec_engine.command_count == 2
+        assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
+
+    def test_submit_reduce_only_order_with_missing_position_denies_cash(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        exit_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("INVALID-POS"),
+            order=exit_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+
+        # Assert
+        assert exit_order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 1  # Only the entry was forwarded
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_reduce_only_order_when_quantity_exceeds_position_denies_cash(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        oversize_exit = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_001),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-None-1"),
+            order=oversize_exit,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+
+        # Assert
+        assert oversize_exit.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 1  # Only the entry was forwarded
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
     def test_submit_reduce_only_order_when_position_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
