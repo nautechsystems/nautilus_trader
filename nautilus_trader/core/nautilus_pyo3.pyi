@@ -6147,6 +6147,22 @@ class OKXHttpClient:
         open_only: bool = False,
         limit: int | None = None,
     ) -> list[OrderStatusReport]: ...
+    async def request_algo_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: InstrumentId | None = None,
+        algo_id: str | None = None,
+        algo_client_order_id: ClientOrderId | None = None,
+        state: OKXOrderStatus | None = None,
+        limit: int | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def request_algo_order_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> OrderStatusReport | None: ...
     async def request_fill_reports(
         self,
         account_id: AccountId,
@@ -6352,6 +6368,15 @@ class OKXTradeMode(Enum):
 class OKXPositionMode(Enum):
     NET_MODE = "NET_MODE"
     LONG_SHORT_MODE = "LONG_SHORT_MODE"
+
+class OKXOrderStatus(Enum):
+    CANCELED = ...
+    LIVE = ...
+    EFFECTIVE = ...
+    PARTIALLY_FILLED = ...
+    FILLED = ...
+    MMP_CANCELED = ...
+    ORDER_PLACED = ...
 
 class OKXVipLevel(Enum):
     VIP0 = "VIP0"

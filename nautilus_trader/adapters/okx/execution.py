@@ -29,6 +29,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -50,6 +51,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
@@ -57,6 +59,7 @@ from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orders import Order
 
 
@@ -149,6 +152,9 @@ class OKXExecutionClient(LiveExecutionClient):
 
         # Track algo order IDs for cancellation
         self._algo_order_ids: dict[ClientOrderId, str] = {}
+        self._algo_order_instruments: dict[ClientOrderId, InstrumentId] = {}
+        self._client_id_aliases: dict[ClientOrderId, ClientOrderId] = {}
+        self._client_id_children: dict[ClientOrderId, ClientOrderId] = {}
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
@@ -218,8 +224,6 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_account()
 
     async def _disconnect(self) -> None:
-        self._http_client.cancel_all_requests()
-
         # Shutdown websocket
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
@@ -233,6 +237,8 @@ class OKXExecutionClient(LiveExecutionClient):
             await self._ws_business_client.close()
 
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
+
+        self._http_client.cancel_all_requests()
 
         # Cancel any pending futures
         all_futures = self._ws_client_futures | self._ws_business_client_futures
@@ -321,8 +327,14 @@ class OKXExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._apply_client_order_alias(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
+        except ValueError as exc:
+            if "request canceled" in str(exc).lower():
+                self._log.debug("OrderStatusReports request cancelled during shutdown")
+            else:
+                self._log.exception("Failed to generate OrderStatusReports", exc)
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReports", e)
 
@@ -359,8 +371,11 @@ class OKXExecutionClient(LiveExecutionClient):
             + " ...",
         )
 
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        canonical_requested_id: ClientOrderId | None = None
+
         try:
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
             pyo3_reports: list[nautilus_pyo3.OrderStatusReport] = (
                 await self._http_client.request_order_status_reports(
                     account_id=self.pyo3_account_id,
@@ -372,17 +387,146 @@ class OKXExecutionClient(LiveExecutionClient):
                 return None
 
             # Filter for the specific order we're looking for
+            canonical_requested_id = self._canonical_client_order_id(command.client_order_id)
+            self._log.warning(
+                f"Resolving order status lookup for requested {command.client_order_id!r} -> canonical {canonical_requested_id!r}",
+            )
+
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._apply_client_order_alias(report)
+                canonical_report_id = self._canonical_client_order_id(report.client_order_id)
                 if (
-                    command.client_order_id
-                    and report.client_order_id is not None
-                    and report.client_order_id == command.client_order_id
+                    canonical_requested_id
+                    and canonical_report_id is not None
+                    and canonical_report_id == canonical_requested_id
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
+        except ValueError as exc:
+            if "request canceled" in str(exc).lower():
+                self._log.debug("OrderStatusReport request cancelled during shutdown")
+            else:
+                self._log.exception("Failed to generate OrderStatusReport", exc)
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReport", e)
+
+        if canonical_requested_id is not None:
+            return await self._resolve_algo_fallback(
+                canonical_requested_id,
+                command,
+                pyo3_instrument_id,
+            )
+
+        return None
+
+    async def _resolve_algo_fallback(
+        self,
+        canonical_requested_id: ClientOrderId,
+        command: GenerateOrderStatusReport,
+        pyo3_instrument_id: nautilus_pyo3.InstrumentId,
+    ) -> OrderStatusReport | None:
+        fallback_ids: list[ClientOrderId] = []
+        for candidate in (
+            canonical_requested_id,
+            self._exchange_client_order_id(command.client_order_id),
+            command.client_order_id,
+        ):
+            if candidate is not None and candidate not in fallback_ids:
+                fallback_ids.append(candidate)
+
+        algo_ids: set[str] = set()
+        for candidate in fallback_ids:
+            candidate_report = await self._fetch_algo_order_status_report(
+                candidate,
+                pyo3_instrument_id,
+            )
+            if candidate_report is not None:
+                return candidate_report
+            algo_id = self._algo_order_ids.get(candidate)
+            if algo_id is not None:
+                algo_ids.add(algo_id)
+
+        for algo_id in algo_ids:
+            candidate_report = await self._fetch_algo_order_status_report_by_algo_id(
+                algo_id,
+                pyo3_instrument_id,
+            )
+            if candidate_report is not None:
+                return candidate_report
+
+        exchange_client_order_id = self._exchange_client_order_id(command.client_order_id)
+        algo_ids_repr = sorted(algo_ids) if algo_ids else None
+        self._log.debug(
+            f"Did not receive OrderStatusReport for client_id={command.client_order_id!r} "
+            f"(exchange={exchange_client_order_id!r}, venue_order_id={command.venue_order_id!r}, "
+            f"algo_ids={algo_ids_repr})",
+        )
+
+        return None
+
+    async def _fetch_algo_order_status_report(
+        self,
+        query_client_order_id: ClientOrderId,
+        pyo3_instrument_id: nautilus_pyo3.InstrumentId,
+    ) -> OrderStatusReport | None:
+        try:
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(
+                query_client_order_id.value,
+            )
+            algo_report = await self._http_client.request_algo_order_status_report(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+            )
+            if algo_report is None:
+                return None
+
+            report = OrderStatusReport.from_pyo3(algo_report)
+            self._apply_client_order_alias(report)
+            self._log.debug(
+                f"Resolved OKX algo order status via fallback for {query_client_order_id!r}",
+            )
+            return report
+        except ValueError as exc:
+            if "404" in str(exc) or "Not Found" in str(exc):
+                self._log.debug(
+                    f"OKX algo order status not found for {query_client_order_id!r} (404)",
+                )
+            else:
+                self._log.exception("Failed to generate OKX algo OrderStatusReport", exc)
+        except Exception as exc:
+            self._log.exception("Failed to generate OKX algo OrderStatusReport", exc)
+
+        return None
+
+    async def _fetch_algo_order_status_report_by_algo_id(
+        self,
+        algo_id: str,
+        pyo3_instrument_id: nautilus_pyo3.InstrumentId,
+    ) -> OrderStatusReport | None:
+        try:
+            algo_reports = await self._http_client.request_algo_order_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
+                algo_id=algo_id,
+            )
+            for algo_report in algo_reports:
+                report = OrderStatusReport.from_pyo3(algo_report)
+                self._apply_client_order_alias(report)
+                self._log.debug(
+                    f"Resolved OKX algo order status via algo_id={algo_id}",
+                )
+                return report
+        except ValueError as exc:
+            if "404" in str(exc) or "Not Found" in str(exc):
+                self._log.debug(
+                    f"OKX algo order status not found for algo_id={algo_id} (404)",
+                )
+            else:
+                self._log.exception("Failed to query OKX algo order by algo_id", exc)
+        except Exception as exc:
+            self._log.exception("Failed to query OKX algo order by algo_id", exc)
 
         return None
 
@@ -434,7 +578,15 @@ class OKXExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = FillReport.from_pyo3(pyo3_report)
+                canonical_id = self._canonical_client_order_id(report.client_order_id)
+                if canonical_id is not None:
+                    report.client_order_id = canonical_id
                 reports.append(report)
+        except ValueError as exc:
+            if "request canceled" in str(exc).lower():
+                self._log.debug("FillReports request cancelled during shutdown")
+            else:
+                self._log.exception("Failed to generate FillReports", exc)
         except Exception as e:
             self._log.exception("Failed to generate FillReports", e)
 
@@ -499,6 +651,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
+        except ValueError as exc:
+            if "request canceled" in str(exc).lower():
+                self._log.debug("PositionReports request cancelled during shutdown")
+            else:
+                self._log.exception("Failed to generate PositionReports", exc)
         except Exception as e:
             self._log.exception("Failed to generate PositionReports", e)
 
@@ -653,6 +810,7 @@ class OKXExecutionClient(LiveExecutionClient):
             algo_id = response.get("algo_id")
             if algo_id:
                 self._algo_order_ids[order.client_order_id] = algo_id
+                self._algo_order_instruments[order.client_order_id] = order.instrument_id
         except Exception as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -678,9 +836,16 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        resolved_client_order_id = self._exchange_client_order_id(command.client_order_id)
+        self._log.debug(
+            "Modifying OKX order using exchange id "
+            f"{resolved_client_order_id!r} (canonical "
+            f"{self._canonical_client_order_id(command.client_order_id)!r}, "
+            f"requested {command.client_order_id!r})",
+        )
         pyo3_client_order_id = (
-            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-            if command.client_order_id is not None
+            nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
+            if resolved_client_order_id is not None
             else None
         )
         pyo3_venue_order_id = (
@@ -727,26 +892,55 @@ class OKXExecutionClient(LiveExecutionClient):
             return
 
         try:
-            algo_id = self._algo_order_ids.get(command.client_order_id)
+            canonical_client_order_id = self._canonical_client_order_id(
+                command.client_order_id,
+            )
+            alias_lookup_key = canonical_client_order_id or command.client_order_id
+            algo_id = self._algo_order_ids.get(alias_lookup_key)
             if algo_id:
+                self._log.debug(
+                    f"Cancelling OKX algo order using algo_id {algo_id} "
+                    f"for canonical {alias_lookup_key!r} (requested {command.client_order_id!r})",
+                )
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
                 )
-                await self._http_client.cancel_algo_order(
-                    instrument_id=pyo3_instrument_id,
-                    algo_id=algo_id,
-                )
-
-                del self._algo_order_ids[command.client_order_id]
+                try:
+                    await self._http_client.cancel_algo_order(
+                        instrument_id=pyo3_instrument_id,
+                        algo_id=algo_id,
+                    )
+                except ValueError as exc:
+                    message = str(exc)
+                    alias_text = str(alias_lookup_key) if alias_lookup_key is not None else ""
+                    client_text = str(command.client_order_id) if command.client_order_id else ""
+                    if (
+                        "already canceled" not in message
+                        and algo_id not in message
+                        and alias_text not in message
+                        and client_text not in message
+                    ):
+                        raise
+                if alias_lookup_key is not None:
+                    del self._algo_order_ids[alias_lookup_key]
+                    self._algo_order_instruments.pop(alias_lookup_key, None)
             else:
                 pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
                 pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
                 )
+                resolved_client_order_id = self._exchange_client_order_id(
+                    command.client_order_id,
+                )
+                self._log.debug(
+                    "Cancelling OKX order over websocket using exchange id "
+                    f"{resolved_client_order_id!r} (canonical {canonical_client_order_id!r}, "
+                    f"requested {command.client_order_id!r})",
+                )
                 pyo3_client_order_id = (
-                    nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-                    if command.client_order_id is not None
+                    nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
+                    if resolved_client_order_id is not None
                     else None
                 )
                 pyo3_venue_order_id = (
@@ -778,6 +972,32 @@ class OKXExecutionClient(LiveExecutionClient):
         else:
             await self._cancel_all_orders_individually(command)
 
+    async def _cancel_algo_order_fallback(
+        self,
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        algo_id: str,
+    ) -> None:
+        self._log.debug(
+            f"Fallback cancel for OKX algo order {client_order_id!r} using algo_id {algo_id}",
+        )
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+            await self._http_client.cancel_algo_order(
+                instrument_id=pyo3_instrument_id,
+                algo_id=algo_id,
+            )
+            self._log.debug(
+                f"Successfully cancelled OKX algo order {client_order_id!r} via fallback",
+            )
+        except Exception as e:
+            self._log.warning(
+                f"Failed fallback cancel for OKX algo order {client_order_id!r} (algo_id={algo_id}): {e}",
+            )
+        finally:
+            self._algo_order_ids.pop(client_order_id, None)
+            self._algo_order_instruments.pop(client_order_id, None)
+
     async def _cancel_all_orders_mass_cancel(self, command: CancelAllOrders) -> None:
         # Use OKX's mass-cancel WebSocket endpoint for market makers
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -802,6 +1022,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders_individually(self, command: CancelAllOrders) -> None:
         orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
+        processed: set[ClientOrderId] = set()
         for order in orders_open:
             if order.is_closed:
                 continue
@@ -816,6 +1037,20 @@ class OKXExecutionClient(LiveExecutionClient):
                 ts_init=command.ts_init,
             )
             await self._cancel_order(cancel_command)
+            processed.add(order.client_order_id)
+
+        for client_order_id, algo_id in list(self._algo_order_ids.items()):
+            if client_order_id in processed:
+                continue
+            instrument_id = self._algo_order_instruments.get(client_order_id)
+            if instrument_id is None or instrument_id != command.instrument_id:
+                continue
+
+            await self._cancel_algo_order_fallback(
+                client_order_id=client_order_id,
+                instrument_id=instrument_id,
+                algo_id=algo_id,
+            )
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -863,6 +1098,17 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_event: nautilus_pyo3.OrderCancelRejected,
     ) -> None:
         event = OrderCancelRejected.from_dict(pyo3_event.to_dict())
+        reason = event.reason or ""
+        canonical = self._canonical_client_order_id(event.client_order_id)
+        canonical_repr = repr(canonical) if canonical is not None else ""
+        duplicate_reason = reason.endswith(repr(event.client_order_id)) or (
+            canonical_repr and reason.endswith(canonical_repr)
+        )
+        if duplicate_reason:
+            return
+        order = self._cache.order(event.client_order_id)
+        if order is None or order.is_closed:
+            return
         self._send_order_event(event)
 
     def _handle_order_modify_rejected_pyo3(
@@ -885,23 +1131,43 @@ class OKXExecutionClient(LiveExecutionClient):
             return
 
         report = OrderStatusReport.from_pyo3(pyo3_report)
+        self._apply_client_order_alias(report)
 
         if self._is_external_order(report.client_order_id):
             self._send_order_status_report(report)
             return
 
         order = self._cache.order(report.client_order_id)
+        canonical_client_order_id = (
+            self._canonical_client_order_id(report.client_order_id) or report.client_order_id
+        )
+        algo_id_for_client = self._algo_order_ids.get(canonical_client_order_id)
         if order is None:
             self._log.error(
                 f"Cannot process order status report - order for {report.client_order_id!r} not found",
             )
             return
 
+        if order.is_closed:
+            return
+
         # For algo orders (stop orders), store the algo_id mapping
         # The venue_order_id is actually the algo_id for algo orders
         if order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT):
-            if report.venue_order_id and report.client_order_id:
-                self._algo_order_ids[report.client_order_id] = str(report.venue_order_id)
+            child = self._client_id_children.get(report.client_order_id)
+            venue_changed = (
+                order.venue_order_id is not None
+                and report.venue_order_id is not None
+                and order.venue_order_id != report.venue_order_id
+            )
+            if (
+                (child is None or child == report.client_order_id)
+                and report.venue_order_id
+                and report.client_order_id
+                and not venue_changed
+            ):
+                self._algo_order_ids[canonical_client_order_id] = str(report.venue_order_id)
+                self._algo_order_instruments[canonical_client_order_id] = order.instrument_id
 
         if report.order_status == OrderStatus.REJECTED:
             self.generate_order_rejected(
@@ -911,26 +1177,65 @@ class OKXExecutionClient(LiveExecutionClient):
                 reason=report.reason,
                 ts_event=report.ts_last,
             )
+            self._clear_client_order_aliases(report)
+            self._algo_order_ids.pop(canonical_client_order_id, None)
+            self._algo_order_instruments.pop(canonical_client_order_id, None)
         elif report.order_status == OrderStatus.ACCEPTED:
+            if order.status in (OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.EXPIRED):
+                return
+            venue_changed = (
+                order.venue_order_id is not None
+                and report.venue_order_id is not None
+                and order.venue_order_id != report.venue_order_id
+            )
+            venue_is_original_algo = bool(
+                venue_changed
+                and algo_id_for_client
+                and report.venue_order_id is not None
+                and str(report.venue_order_id) == str(algo_id_for_client),
+            )
+            if venue_changed and not venue_is_original_algo:
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity or order.quantity,
+                    price=(
+                        report.price if report.price is not None else getattr(order, "price", None)
+                    ),
+                    trigger_price=report.trigger_price or getattr(order, "trigger_price", None),
+                    ts_event=report.ts_last,
+                    venue_order_id_modified=True,
+                )
+                self._algo_order_ids.pop(canonical_client_order_id, None)
+                self._algo_order_instruments.pop(canonical_client_order_id, None)
+                return
+            if venue_is_original_algo:
+                return
             if is_order_updated(order, report):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
-                    quantity=report.quantity,
-                    price=report.price,
-                    trigger_price=report.trigger_price,
+                    quantity=report.quantity or order.quantity,
+                    price=(
+                        report.price if report.price is not None else getattr(order, "price", None)
+                    ),
+                    trigger_price=report.trigger_price or getattr(order, "trigger_price", None),
                     ts_event=report.ts_last,
                 )
-            else:
-                self.generate_order_accepted(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    ts_event=report.ts_last,
-                )
+                return
+            if order.status == OrderStatus.ACCEPTED:
+                return
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
         elif report.order_status == OrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=order.strategy_id,
@@ -939,6 +1244,10 @@ class OKXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+            self._clear_client_order_aliases(report)
+            self._algo_order_ids.pop(canonical_client_order_id, None)
+            self._algo_order_instruments.pop(canonical_client_order_id, None)
+            return
         elif report.order_status == OrderStatus.EXPIRED:
             self.generate_order_expired(
                 strategy_id=order.strategy_id,
@@ -947,14 +1256,43 @@ class OKXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+            self._clear_client_order_aliases(report)
+            self._algo_order_ids.pop(canonical_client_order_id, None)
+            self._algo_order_instruments.pop(canonical_client_order_id, None)
         elif report.order_status == OrderStatus.TRIGGERED:
-            self.generate_order_triggered(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
+            if (
+                order.venue_order_id is not None
+                and report.venue_order_id is not None
+                and order.venue_order_id != report.venue_order_id
+            ):
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity or order.quantity,
+                    price=(
+                        report.price if report.price is not None else getattr(order, "price", None)
+                    ),
+                    trigger_price=report.trigger_price or getattr(order, "trigger_price", None),
+                    ts_event=report.ts_last,
+                    venue_order_id_modified=True,
+                )
+
+            if order.order_type in (
+                OrderType.STOP_LIMIT,
+                OrderType.TRAILING_STOP_LIMIT,
+                OrderType.LIMIT_IF_TOUCHED,
+            ):
+                self.generate_order_triggered(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+        elif report.order_status == OrderStatus.FILLED:
+            self._clear_client_order_aliases(report)
         else:
             # Fills should be handled from FillReports
             self._log.warning(f"Received unhandled OrderStatusReport: {report}")
@@ -992,6 +1330,34 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        updated_event = None
+        if (
+            order.venue_order_id is not None
+            and report.venue_order_id is not None
+            and order.venue_order_id != report.venue_order_id
+        ):
+            updated_event = OrderUpdated(
+                trader_id=self.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=report.venue_order_id,
+                account_id=self.account_id,
+                quantity=order.quantity,
+                price=getattr(order, "price", None),
+                trigger_price=getattr(order, "trigger_price", None),
+                event_id=UUID4(),
+                ts_event=report.ts_event,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            order.apply(updated_event)
+            self._cache.add_venue_order_id(
+                order.client_order_id,
+                report.venue_order_id,
+                overwrite=True,
+            )
+            self._send_order_event(updated_event)
+
         self.generate_order_filled(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -1008,6 +1374,136 @@ class OKXExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
+        canonical_client_order_id = (
+            self._canonical_client_order_id(order.client_order_id) or order.client_order_id
+        )
+        self._algo_order_ids.pop(canonical_client_order_id, None)
+        self._algo_order_instruments.pop(canonical_client_order_id, None)
+
+    def _resolve_client_order_ids(
+        self,
+        client_order_id: ClientOrderId | None,
+    ) -> tuple[ClientOrderId | None, ClientOrderId | None]:
+        if client_order_id is None:
+            return None, None
+
+        canonical = self._client_id_aliases.get(client_order_id, client_order_id)
+        exchange = self._client_id_children.get(canonical)
+
+        if exchange and exchange != canonical:
+            self._log.debug(
+                f"Resolved client order alias {client_order_id!r} -> canonical {canonical!r}, exchange {exchange!r}",
+            )
+            return canonical, exchange
+
+        if canonical != client_order_id:
+            self._log.debug(
+                f"Resolved client order alias {client_order_id!r} -> canonical {canonical!r}",
+            )
+            return canonical, client_order_id
+
+        return canonical, canonical
+
+    def _canonical_client_order_id(
+        self,
+        client_order_id: ClientOrderId | None,
+    ) -> ClientOrderId | None:
+        canonical, _ = self._resolve_client_order_ids(client_order_id)
+        return canonical
+
+    def _exchange_client_order_id(
+        self,
+        client_order_id: ClientOrderId | None,
+    ) -> ClientOrderId | None:
+        _, exchange = self._resolve_client_order_ids(client_order_id)
+        return exchange
+
+    def _register_client_order_aliases(
+        self,
+        parent_id: ClientOrderId | None,
+        linked_order_ids: list[ClientOrderId] | None,
+    ) -> None:
+        if parent_id is None:
+            return
+
+        canonical_parent, _ = self._resolve_client_order_ids(parent_id)
+        if canonical_parent is None:
+            canonical_parent = parent_id
+
+        self._client_id_aliases[parent_id] = canonical_parent
+        self._client_id_children.setdefault(canonical_parent, canonical_parent)
+        canonical_parent_ref = canonical_parent
+
+        if not linked_order_ids:
+            return
+
+        for linked_id in linked_order_ids:
+            if linked_id is None:
+                continue
+
+            self._client_id_aliases[linked_id] = canonical_parent_ref
+
+            if linked_id != canonical_parent_ref:
+                self._client_id_children[canonical_parent_ref] = linked_id
+
+            self._log.debug(
+                f"Registered OKX alias parent {canonical_parent_ref!r} <-> child {linked_id!r}",
+            )
+
+    def _apply_client_order_alias(self, report: OrderStatusReport) -> None:
+        parent_id = report.client_order_id
+        linked_ids = getattr(report, "linked_order_ids", None)
+
+        if linked_ids:
+            linked_ids = list(linked_ids)
+            report.linked_order_ids = linked_ids
+
+        self._register_client_order_aliases(parent_id, linked_ids)
+
+        canonical_id = self._canonical_client_order_id(parent_id)
+        if canonical_id is None or parent_id == canonical_id:
+            return
+
+        if not report.linked_order_ids:
+            report.linked_order_ids = []
+
+        if parent_id not in report.linked_order_ids:
+            report.linked_order_ids.append(parent_id)
+
+        report.client_order_id = canonical_id
+        self._log.debug(
+            f"Applied OKX alias: parent {parent_id!r} -> canonical {canonical_id!r} with linked {report.linked_order_ids}",
+        )
+
+    def _clear_client_order_aliases(self, report: OrderStatusReport) -> None:
+        client_order_ids: list[ClientOrderId] = []
+
+        if report.client_order_id:
+            client_order_ids.append(report.client_order_id)
+        if report.linked_order_ids:
+            client_order_ids.extend(report.linked_order_ids)
+
+        self._clear_client_order_aliases_from_ids(client_order_ids)
+
+    def _clear_client_order_aliases_from_ids(
+        self,
+        ids: list[ClientOrderId | None],
+    ) -> None:
+        for identifier in ids:
+            if identifier is None:
+                continue
+            self._client_id_aliases.pop(identifier, None)
+
+            for key, value in list(self._client_id_aliases.items()):
+                if value == identifier:
+                    self._client_id_aliases.pop(key, None)
+
+            canonical = self._client_id_children.pop(identifier, None)
+            if canonical is not None and canonical != identifier:
+                self._client_id_aliases.pop(canonical, None)
+
+            self._algo_order_ids.pop(identifier, None)
+            self._algo_order_instruments.pop(identifier, None)
 
 
 def is_order_updated(order: Order, report: OrderStatusReport) -> bool:

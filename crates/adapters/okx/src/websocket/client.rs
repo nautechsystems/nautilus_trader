@@ -15,10 +15,12 @@
 
 //! Provides the WebSocket client integration for the [OKX](https://okx.com) WebSocket API.
 //!
-//! This module defines and implements an [`OKXWebSocketClient`] for connecting to
-//! OKX WebSocket streams. It handles authentication (when credentials are provided),
-//! manages subscriptions to market data and account update channels,
-//! and parses incoming messages into structured Nautilus domain objects.
+//! The [`OKXWebSocketClient`] ties together several recurring patterns:
+//! - Heartbeats use `OKX_PING_TEXT`/`OKX_PONG_TEXT`, responding to both text and control-frame pings.
+//! - Authentication honours `OKX_AUTH_TIMEOUT_SECS`, re-authenticating on reconnect before resubscribing
+//!   and skipping private channels when credentials are unavailable.
+//! - Subscriptions cache instrument type/family/ID groupings so reconnects rebuild the same set of
+//!   channels while respecting the authentication guard described above.
 
 use std::{
     collections::VecDeque,
@@ -51,7 +53,7 @@ use nautilus_network::{
     RECONNECTED,
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_websocket_retry_manager},
-    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use reqwest::header::USER_AGENT;
 use serde_json::Value;
@@ -65,8 +67,8 @@ use super::{
     error::OKXWsError,
     messages::{
         ExecutionReport, NautilusWsMessage, OKXAuthentication, OKXAuthenticationArg,
-        OKXSubscription, OKXSubscriptionArg, OKXWebSocketError, OKXWebSocketEvent, OKXWsRequest,
-        WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelAlgoOrderParams,
+        OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError, OKXWebSocketEvent,
+        OKXWsRequest, WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelAlgoOrderParams,
         WsCancelAlgoOrderParamsBuilder, WsCancelOrderParams, WsCancelOrderParamsBuilder,
         WsMassCancelParams, WsPostAlgoOrderParams, WsPostAlgoOrderParamsBuilder, WsPostOrderParams,
         WsPostOrderParamsBuilder,
@@ -93,7 +95,7 @@ use crate::{
     http::models::OKXAccount,
     websocket::{
         messages::{OKXAlgoOrderMsg, OKXOrderMsg},
-        parse::{parse_algo_order_msg, parse_order_msg_vec},
+        parse::{parse_algo_order_msg, parse_order_msg},
     },
 };
 
@@ -131,6 +133,10 @@ pub static OKX_WS_QUOTA: LazyLock<Quota> =
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
+const OKX_PING_TEXT: &str = "ping";
+const OKX_PONG_TEXT: &str = "pong";
+const OKX_AUTH_TIMEOUT_SECS: u64 = 10;
+
 /// Determines if an OKX WebSocket error should trigger a retry.
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
@@ -151,6 +157,16 @@ fn should_retry_okx_error(error: &OKXWsError) -> bool {
 /// Creates a timeout error for OKX operations.
 fn create_okx_timeout_error(msg: String) -> OKXWsError {
     OKXWsError::ClientError(msg)
+}
+
+fn channel_requires_auth(channel: &OKXWsChannel) -> bool {
+    matches!(
+        channel,
+        OKXWsChannel::Account
+            | OKXWsChannel::Orders
+            | OKXWsChannel::Fills
+            | OKXWsChannel::OrdersAlgo
+    )
 }
 
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
@@ -180,6 +196,7 @@ pub struct OKXWebSocketClient {
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
+    client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
     cancellation_token: CancellationToken,
@@ -255,6 +272,7 @@ impl OKXWebSocketClient {
             pending_amend_requests: Arc::new(DashMap::new()),
             pending_mass_cancel_requests: Arc::new(DashMap::new()),
             active_client_orders: Arc::new(DashMap::new()),
+            client_id_aliases: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
             cancellation_token: CancellationToken::new(),
@@ -365,13 +383,33 @@ impl OKXWebSocketClient {
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let (message_handler, reader) = channel_message_handler();
 
+        let inner_for_ping = self.inner.clone();
+        let ping_handler: PingHandler = Arc::new(move |payload: Vec<u8>| {
+            let inner = inner_for_ping.clone();
+
+            get_runtime().spawn(async move {
+                let len = payload.len();
+                let guard = inner.read().await;
+
+                if let Some(client) = guard.as_ref() {
+                    if let Err(err) = client.send_pong(payload).await {
+                        tracing::warn!(error = %err, "Failed to send pong frame");
+                    } else {
+                        tracing::trace!("Sent pong frame ({len} bytes)");
+                    }
+                } else {
+                    tracing::debug!("Ping received with no active websocket client");
+                }
+            });
+        });
+
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
-            heartbeat_msg: None,
+            heartbeat_msg: Some(OKX_PING_TEXT.to_string()),
             message_handler: Some(message_handler),
-            ping_handler: None,
+            ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default
@@ -420,18 +458,21 @@ impl OKXWebSocketClient {
         let subscriptions_inst_id = self.subscriptions_inst_id.clone();
         let subscriptions_bare = self.subscriptions_bare.clone();
         let auth_state_clone = auth_state.clone();
+        let client_id_aliases = self.client_id_aliases.clone();
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = OKXWsMessageHandler::new(
                 account_id,
                 instruments_cache,
                 reader,
                 signal,
+                inner_client.clone(),
                 tx,
                 pending_place_requests,
                 pending_cancel_requests,
                 pending_amend_requests,
                 pending_mass_cancel_requests,
                 active_client_orders,
+                client_id_aliases,
                 auth_state,
             );
 
@@ -441,10 +482,12 @@ impl OKXWebSocketClient {
                     Some(NautilusWsMessage::Reconnected) => {
                         tracing::info!("Handling WebSocket reconnection");
 
+                        let mut auth_succeeded = credential_clone.is_none();
+
                         // Re-authenticate if we have credentials
-                        let inner_guard = inner_client.read().await;
-                        if let Some(cred) = &credential_clone
-                            && let Some(client) = &*inner_guard {
+                        if let Some(cred) = &credential_clone {
+                            let inner_guard = inner_client.read().await;
+                            if let Some(client) = &*inner_guard {
                                 let timestamp = SystemTime::now()
                                     .duration_since(SystemTime::UNIX_EPOCH)
                                     .expect("System time should be after UNIX epoch")
@@ -462,40 +505,67 @@ impl OKXWebSocketClient {
                                     }],
                                 };
 
-                                if let Err(e) = client.send_text(serde_json::to_string(&auth_message).unwrap(), None).await {
+                                if let Err(e) = client
+                                    .send_text(serde_json::to_string(&auth_message).unwrap(), None)
+                                    .await
+                                {
                                     tracing::error!("Failed to send re-authentication request: {e}");
-                                    // Even if auth fails, try to resubscribe public channels
                                 } else {
-                                    tracing::info!("Sent re-authentication request, waiting for response before resubscribing");
+                                    tracing::info!(
+                                        "Sent re-authentication request, waiting for response before resubscribing",
+                                    );
 
-                                    // Wait for authentication to complete (with timeout)
                                     let mut auth_rx = auth_state_clone.subscribe();
-                                    match tokio::time::timeout(Duration::from_secs(5), auth_rx.wait_for(|&auth| auth)).await {
+                                    match tokio::time::timeout(
+                                        Duration::from_secs(OKX_AUTH_TIMEOUT_SECS),
+                                        auth_rx.wait_for(|&auth| auth),
+                                    )
+                                    .await
+                                    {
                                         Ok(Ok(_)) => {
-                                            tracing::info!("Authentication successful after reconnect, proceeding with resubscription");
-                                            // Now we resubscribe after successful auth
-                                            // Fall through to resubscription logic below
+                                            tracing::info!(
+                                                "Authentication successful after reconnect, proceeding with resubscription",
+                                            );
+                                            auth_succeeded = true;
                                         }
                                         Ok(Err(e)) => {
-                                            tracing::error!("Auth watch channel error after reconnect: {e}");
-                                            // Fall through to resubscribe public channels anyway
+                                            tracing::error!(
+                                                "Auth watch channel error after reconnect: {e}",
+                                            );
                                         }
                                         Err(_) => {
-                                            tracing::error!("Timeout waiting for authentication after reconnect");
-                                            // Fall through to resubscribe public channels anyway
+                                            tracing::error!(
+                                                "Timeout waiting for authentication after reconnect",
+                                            );
                                         }
                                     }
                                 }
+                            }
+                            drop(inner_guard);
                         }
 
                         // Re-subscribe to all channels
                         // TODO: Extract common resubscription logic to avoid duplication with the auth success path
                         let inner_guard = inner_client.read().await;
                         if let Some(client) = &*inner_guard {
+                            let should_resubscribe = |channel: &OKXWsChannel| {
+                                if channel_requires_auth(channel) && !auth_succeeded {
+                                    tracing::warn!(
+                                        ?channel,
+                                        "Skipping private channel resubscription due to missing authentication",
+                                    );
+                                    return false;
+                                }
+                                true
+                            };
+
                             // Batch subscribe by instrument type
                             let mut inst_type_args = Vec::new();
                             for entry in subscriptions_inst_type.iter() {
                                 let (channel, inst_types) = entry.pair();
+                                if !should_resubscribe(channel) {
+                                    continue;
+                                }
                                 for inst_type in inst_types.iter() {
                                     inst_type_args.push(OKXSubscriptionArg {
                                         channel: channel.clone(),
@@ -519,6 +589,9 @@ impl OKXWebSocketClient {
                             let mut inst_family_args = Vec::new();
                             for entry in subscriptions_inst_family.iter() {
                                 let (channel, inst_families) = entry.pair();
+                                if !should_resubscribe(channel) {
+                                    continue;
+                                }
                                 for inst_family in inst_families.iter() {
                                     inst_family_args.push(OKXSubscriptionArg {
                                         channel: channel.clone(),
@@ -542,6 +615,9 @@ impl OKXWebSocketClient {
                             let mut inst_id_args = Vec::new();
                             for entry in subscriptions_inst_id.iter() {
                                 let (channel, inst_ids) = entry.pair();
+                                if !should_resubscribe(channel) {
+                                    continue;
+                                }
                                 for inst_id in inst_ids.iter() {
                                     inst_id_args.push(OKXSubscriptionArg {
                                         channel: channel.clone(),
@@ -565,6 +641,9 @@ impl OKXWebSocketClient {
                             let mut bare_args = Vec::new();
                             for entry in subscriptions_bare.iter() {
                                 let channel = entry.key();
+                                if !should_resubscribe(channel) {
+                                    continue;
+                                }
                                 bare_args.push(OKXSubscriptionArg {
                                     channel: channel.clone(),
                                     inst_type: None,
@@ -662,7 +741,12 @@ impl OKXWebSocketClient {
 
         // Wait for authentication to complete
         let mut rx = self.auth_state_rx.clone();
-        match tokio::time::timeout(Duration::from_secs(10), rx.wait_for(|&auth| auth)).await {
+        match tokio::time::timeout(
+            Duration::from_secs(OKX_AUTH_TIMEOUT_SECS),
+            rx.wait_for(|&auth| auth),
+        )
+        .await
+        {
             Ok(Ok(_)) => {
                 tracing::info!("Authentication confirmed by client");
                 Ok(())
@@ -2587,6 +2671,16 @@ impl OKXFeedHandler {
                 msg = self.receiver.recv() => match msg {
                     Some(msg) => match msg {
                         Message::Text(text) => {
+                            // Handle ping/pong messages
+                            if text == OKX_PONG_TEXT {
+                                tracing::trace!("Received pong from OKX");
+                                continue;
+                            }
+                            if text == OKX_PING_TEXT {
+                                tracing::trace!("Received ping from OKX (text)");
+                                return Some(OKXWebSocketEvent::Ping);
+                            }
+
                             // Check for reconnection signal
                             if text == RECONNECTED {
                                 tracing::info!("Received WebSocket reconnection signal");
@@ -2646,6 +2740,10 @@ impl OKXFeedHandler {
                                         );
                                         continue;
                                     }
+                                    OKXWebSocketEvent::Ping => {
+                                        tracing::trace!("Ignoring ping event parsed from text payload");
+                                        continue;
+                                    }
                                     OKXWebSocketEvent::Data { .. } => return Some(ws_event),
                                     OKXWebSocketEvent::BookData { .. } => return Some(ws_event),
                                     OKXWebSocketEvent::OrderResponse {
@@ -2694,6 +2792,14 @@ impl OKXFeedHandler {
                                 }
                             }
                         }
+                        Message::Ping(payload) => {
+                            tracing::trace!("Received ping frame from OKX ({} bytes)", payload.len());
+                            continue;
+                        }
+                        Message::Pong(payload) => {
+                            tracing::trace!("Received pong frame from OKX ({} bytes)", payload.len());
+                            continue;
+                        }
                         Message::Binary(msg) => {
                             tracing::debug!("Raw binary: {msg:?}");
                         }
@@ -2723,6 +2829,7 @@ impl OKXFeedHandler {
 
 struct OKXWsMessageHandler {
     account_id: AccountId,
+    inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
     handler: OKXFeedHandler,
     #[allow(dead_code)]
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
@@ -2731,6 +2838,7 @@ struct OKXWsMessageHandler {
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
+    client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
@@ -2740,6 +2848,23 @@ struct OKXWsMessageHandler {
 }
 
 impl OKXWsMessageHandler {
+    fn schedule_text_pong(&self) {
+        let inner = self.inner.clone();
+        get_runtime().spawn(async move {
+            let guard = inner.read().await;
+
+            if let Some(client) = guard.as_ref() {
+                if let Err(err) = client.send_text(OKX_PONG_TEXT.to_string(), None).await {
+                    tracing::warn!(error = %err, "Failed to send pong response to OKX text ping");
+                } else {
+                    tracing::trace!("Sent pong response to OKX text ping");
+                }
+            } else {
+                tracing::debug!("Received text ping with no active websocket client");
+            }
+        });
+    }
+
     fn try_handle_post_only_auto_cancel(
         &mut self,
         msg: &OKXOrderMsg,
@@ -2759,6 +2884,8 @@ impl OKXWsMessageHandler {
         else {
             return false;
         };
+
+        self.client_id_aliases.remove(&client_order_id);
 
         if !exec_reports.is_empty() {
             let reports = std::mem::take(exec_reports);
@@ -2819,6 +2946,128 @@ impl OKXWsMessageHandler {
             .unwrap_or(true)
     }
 
+    fn register_client_order_aliases(
+        &self,
+        raw_child: &Option<ClientOrderId>,
+        parent_from_msg: &Option<ClientOrderId>,
+    ) -> Option<ClientOrderId> {
+        if let Some(parent) = parent_from_msg {
+            self.client_id_aliases.insert(*parent, *parent);
+            if let Some(child) = raw_child.as_ref().filter(|child| **child != *parent) {
+                self.client_id_aliases.insert(*child, *parent);
+            }
+            Some(*parent)
+        } else if let Some(child) = raw_child.as_ref() {
+            if let Some(mapped) = self.client_id_aliases.get(child) {
+                Some(*mapped.value())
+            } else {
+                self.client_id_aliases.insert(*child, *child);
+                Some(*child)
+            }
+        } else {
+            None
+        }
+    }
+
+    fn adjust_execution_report(
+        &self,
+        report: ExecutionReport,
+        effective_client_id: &Option<ClientOrderId>,
+        raw_child: &Option<ClientOrderId>,
+    ) -> ExecutionReport {
+        match report {
+            ExecutionReport::Order(status_report) => {
+                let mut adjusted = status_report;
+                let mut final_id = *effective_client_id;
+
+                if final_id.is_none() {
+                    final_id = adjusted.client_order_id;
+                }
+
+                if final_id.is_none()
+                    && let Some(child) = raw_child.as_ref()
+                    && let Some(mapped) = self.client_id_aliases.get(child)
+                {
+                    final_id = Some(*mapped.value());
+                }
+
+                if let Some(final_id_value) = final_id {
+                    if adjusted.client_order_id != Some(final_id_value) {
+                        adjusted = adjusted.with_client_order_id(final_id_value);
+                    }
+                    self.client_id_aliases
+                        .insert(final_id_value, final_id_value);
+
+                    if let Some(child) =
+                        raw_child.as_ref().filter(|child| **child != final_id_value)
+                    {
+                        adjusted = adjusted.with_linked_order_ids(vec![*child]);
+                    }
+                }
+
+                ExecutionReport::Order(adjusted)
+            }
+            ExecutionReport::Fill(mut fill_report) => {
+                let mut final_id = *effective_client_id;
+                if final_id.is_none() {
+                    final_id = fill_report.client_order_id;
+                }
+                if final_id.is_none()
+                    && let Some(child) = raw_child.as_ref()
+                    && let Some(mapped) = self.client_id_aliases.get(child)
+                {
+                    final_id = Some(*mapped.value());
+                }
+
+                if let Some(final_id_value) = final_id {
+                    fill_report.client_order_id = Some(final_id_value);
+                    self.client_id_aliases
+                        .insert(final_id_value, final_id_value);
+                }
+
+                ExecutionReport::Fill(fill_report)
+            }
+        }
+    }
+
+    fn update_caches_with_report(&mut self, report: &ExecutionReport) {
+        match report {
+            ExecutionReport::Fill(fill_report) => {
+                let order_id = fill_report.venue_order_id.inner();
+                let current_fee = self
+                    .fee_cache
+                    .get(&order_id)
+                    .copied()
+                    .unwrap_or_else(|| Money::new(0.0, fill_report.commission.currency));
+                let total_fee = current_fee + fill_report.commission;
+                self.fee_cache.insert(order_id, total_fee);
+            }
+            ExecutionReport::Order(status_report) => {
+                if matches!(status_report.order_status, OrderStatus::Filled) {
+                    self.fee_cache.remove(&status_report.venue_order_id.inner());
+                }
+
+                if matches!(
+                    status_report.order_status,
+                    OrderStatus::Canceled
+                        | OrderStatus::Expired
+                        | OrderStatus::Filled
+                        | OrderStatus::Rejected,
+                ) {
+                    if let Some(client_order_id) = status_report.client_order_id {
+                        self.active_client_orders.remove(&client_order_id);
+                        self.client_id_aliases.remove(&client_order_id);
+                    }
+                    if let Some(linked) = &status_report.linked_order_ids {
+                        for child in linked {
+                            self.client_id_aliases.remove(child);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Creates a new [`OKXFeedHandler`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -2826,16 +3075,19 @@ impl OKXWsMessageHandler {
         instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
         reader: UnboundedReceiver<Message>,
         signal: Arc<AtomicBool>,
+        inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
         pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
         pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
         pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
+        client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
         auth_state: Arc<tokio::sync::watch::Sender<bool>>,
     ) -> Self {
         Self {
             account_id,
+            inner,
             handler: OKXFeedHandler::new(reader, signal),
             tx,
             pending_place_requests,
@@ -2843,6 +3095,7 @@ impl OKXWsMessageHandler {
             pending_amend_requests,
             pending_mass_cancel_requests,
             active_client_orders,
+            client_id_aliases,
             instruments_cache,
             last_account_state: None,
             fee_cache: AHashMap::new(),
@@ -2878,124 +3131,128 @@ impl OKXWsMessageHandler {
         while let Some(event) = self.handler.next().await {
             let ts_init = clock.get_time_ns();
 
-            if let OKXWebSocketEvent::Login { code, msg, .. } = event {
-                if code == "0" {
-                    if self.auth_state.send(true).is_err() {
-                        tracing::error!(
-                            "Failed to send authentication success signal: receiver dropped"
-                        );
+            match event {
+                OKXWebSocketEvent::Ping => {
+                    self.schedule_text_pong();
+                    continue;
+                }
+                OKXWebSocketEvent::Login {
+                    code, msg, conn_id, ..
+                } => {
+                    if code == "0" {
+                        if self.auth_state.send(true).is_err() {
+                            tracing::error!(
+                                "Failed to send authentication success signal: receiver dropped"
+                            );
+                        }
+                        continue;
                     }
-                } else {
+
                     tracing::error!("Authentication failed: {msg}");
                     if self.auth_state.send(false).is_err() {
                         tracing::error!(
                             "Failed to send authentication failure signal: receiver dropped"
                         );
                     }
-                }
-                continue; // Don't forward login events as Nautilus messages
-            }
 
-            if let OKXWebSocketEvent::BookData { arg, action, data } = event {
-                let inst = match arg.inst_id {
-                    Some(inst_id) => match self.instruments_cache.get(&inst_id) {
-                        Some(inst_ref) => inst_ref.clone(),
-                        None => continue,
-                    },
-                    None => {
+                    let error = OKXWebSocketError {
+                        code,
+                        message: msg,
+                        conn_id: Some(conn_id),
+                        timestamp: clock.get_time_ns().as_u64(),
+                    };
+                    self.pending_messages
+                        .push_back(NautilusWsMessage::Error(error));
+                    continue;
+                }
+                OKXWebSocketEvent::BookData { arg, action, data } => {
+                    let Some(inst_id) = arg.inst_id else {
                         tracing::error!("Instrument ID missing for book data event");
                         continue;
-                    }
-                };
+                    };
 
-                let instrument_id = inst.id();
-                let price_precision = inst.price_precision();
-                let size_precision = inst.size_precision();
-
-                match parse_book_msg_vec(
-                    data,
-                    &instrument_id,
-                    price_precision,
-                    size_precision,
-                    action,
-                    ts_init,
-                ) {
-                    Ok(data) => return Some(NautilusWsMessage::Data(data)),
-                    Err(e) => {
-                        tracing::error!("Failed to parse book message: {e}");
+                    let Some(inst) = self.instruments_cache.get(&inst_id) else {
                         continue;
+                    };
+
+                    let instrument_id = inst.id();
+                    let price_precision = inst.price_precision();
+                    let size_precision = inst.size_precision();
+
+                    match parse_book_msg_vec(
+                        data,
+                        &instrument_id,
+                        price_precision,
+                        size_precision,
+                        action,
+                        ts_init,
+                    ) {
+                        Ok(payloads) => return Some(NautilusWsMessage::Data(payloads)),
+                        Err(e) => {
+                            tracing::error!("Failed to parse book message: {e}");
+                            continue;
+                        }
                     }
                 }
-            }
-
-            if let OKXWebSocketEvent::OrderResponse {
-                id,
-                op,
-                code,
-                msg,
-                data,
-            } = event
-            {
-                if code == "0" {
-                    tracing::debug!(
-                        "Order operation successful: id={:?} op={op} code={code}",
-                        id
-                    );
-
-                    // Handle successful mass cancel operations
-                    if op == OKXWsOperation::MassCancel
-                        && let Some(id) = &id
-                        && let Some((_, instrument_id)) =
-                            self.pending_mass_cancel_requests.remove(id)
-                    {
-                        tracing::info!(
-                            "Mass cancel operation successful for instrument: {}",
-                            instrument_id
+                OKXWebSocketEvent::OrderResponse {
+                    id,
+                    op,
+                    code,
+                    msg,
+                    data,
+                } => {
+                    if code == "0" {
+                        tracing::debug!(
+                            "Order operation successful: id={id:?} op={op} code={code}"
                         );
-                        // The actual order cancellations will be reported via the orders channel
+
+                        if op == OKXWsOperation::MassCancel
+                            && let Some(request_id) = &id
+                            && let Some((_, instrument_id)) =
+                                self.pending_mass_cancel_requests.remove(request_id)
+                        {
+                            tracing::info!(
+                                "Mass cancel operation successful for instrument: {}",
+                                instrument_id
+                            );
+                        }
+
+                        if let Some(first) = data.first()
+                            && let Some(success_msg) =
+                                first.get("sMsg").and_then(|value| value.as_str())
+                        {
+                            tracing::debug!("Order details: {success_msg}");
+                        }
+
+                        continue;
                     }
 
-                    if let Some(data) = data.first() {
-                        let success_msg = data
-                            .get("sMsg")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("Order operation successful");
-                        tracing::debug!("Order details: {success_msg}");
-
-                        // Note: We rely on the orders channel subscription to provide the proper
-                        // OrderStatusReport with correct instrument ID and full order details.
-                        // The placement response has limited information.
-                    }
-                } else {
-                    // Extract actual error message from data array, same as in the handler
                     let error_msg = data
                         .first()
                         .and_then(|d| d.get("sMsg"))
                         .and_then(|s| s.as_str())
-                        .unwrap_or(&msg);
+                        .unwrap_or(&msg)
+                        .to_string();
 
-                    // Debug: Check what fields are available in error data
-                    if let Some(data_obj) = data.first() {
+                    if let Some(first) = data.first() {
                         tracing::debug!(
                             "Error data fields: {}",
-                            serde_json::to_string_pretty(data_obj)
+                            serde_json::to_string_pretty(first)
                                 .unwrap_or_else(|_| "unable to serialize".to_string())
                         );
                     }
 
                     tracing::error!(
-                        "Order operation failed: id={:?} op={op} code={code} msg={msg}",
-                        id
+                        "Order operation failed: id={id:?} op={op} code={code} msg={msg}"
                     );
 
-                    // Fetch pending request mapping for rejection based on operation type
-                    if let Some(id) = &id {
+                    if let Some(request_id) = &id {
                         match op {
                             OKXWsOperation::Order => {
                                 if let Some((
                                     _,
                                     (client_order_id, trader_id, strategy_id, instrument_id),
-                                )) = self.pending_place_requests.remove(id)
+                                )) = self.pending_place_requests.remove(request_id)
                                 {
                                     let ts_event = clock.get_time_ns();
                                     let due_post_only =
@@ -3006,7 +3263,7 @@ impl OKXWsMessageHandler {
                                         instrument_id,
                                         client_order_id,
                                         self.account_id,
-                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        Ustr::from(error_msg.as_str()),
                                         UUID4::new(),
                                         ts_event,
                                         ts_init,
@@ -3027,7 +3284,7 @@ impl OKXWsMessageHandler {
                                         instrument_id,
                                         venue_order_id,
                                     ),
-                                )) = self.pending_cancel_requests.remove(id)
+                                )) = self.pending_cancel_requests.remove(request_id)
                                 {
                                     let ts_event = clock.get_time_ns();
                                     let rejected = OrderCancelRejected::new(
@@ -3035,7 +3292,7 @@ impl OKXWsMessageHandler {
                                         strategy_id,
                                         instrument_id,
                                         client_order_id,
-                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        Ustr::from(error_msg.as_str()),
                                         UUID4::new(),
                                         ts_event,
                                         ts_init,
@@ -3057,7 +3314,7 @@ impl OKXWsMessageHandler {
                                         instrument_id,
                                         venue_order_id,
                                     ),
-                                )) = self.pending_amend_requests.remove(id)
+                                )) = self.pending_amend_requests.remove(request_id)
                                 {
                                     let ts_event = clock.get_time_ns();
                                     let rejected = OrderModifyRejected::new(
@@ -3065,7 +3322,7 @@ impl OKXWsMessageHandler {
                                         strategy_id,
                                         instrument_id,
                                         client_order_id,
-                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        Ustr::from(error_msg.as_str()),
                                         UUID4::new(),
                                         ts_event,
                                         ts_init,
@@ -3079,15 +3336,14 @@ impl OKXWsMessageHandler {
                             }
                             OKXWsOperation::MassCancel => {
                                 if let Some((_, instrument_id)) =
-                                    self.pending_mass_cancel_requests.remove(id)
+                                    self.pending_mass_cancel_requests.remove(request_id)
                                 {
                                     tracing::error!(
                                         "Mass cancel operation failed for {}: code={code} msg={error_msg}",
                                         instrument_id
                                     );
-                                    // Create a mass cancel error message that Python can handle
                                     let error = OKXWebSocketError {
-                                        code: code.clone(),
+                                        code,
                                         message: format!(
                                             "Mass cancel failed for {}: {}",
                                             instrument_id, error_msg
@@ -3102,255 +3358,224 @@ impl OKXWsMessageHandler {
                                     );
                                 }
                             }
-                            _ => {
-                                tracing::warn!("Unhandled operation type for rejection: {op}");
-                            }
+                            _ => tracing::warn!("Unhandled operation type for rejection: {op}"),
                         }
                     }
 
-                    // Fallback to error if no mapping found
                     let error = OKXWebSocketError {
-                        code: code.clone(),
-                        message: error_msg.to_string(),
-                        conn_id: None, // Order responses don't have connection IDs
+                        code,
+                        message: error_msg,
+                        conn_id: None,
                         timestamp: clock.get_time_ns().as_u64(),
                     };
                     return Some(NautilusWsMessage::Error(error));
                 }
-                continue;
-            }
+                OKXWebSocketEvent::Data { arg, data } => {
+                    let OKXWebSocketArg {
+                        channel, inst_id, ..
+                    } = arg;
 
-            if let OKXWebSocketEvent::Data { ref arg, ref data } = event {
-                if arg.channel == OKXWsChannel::Account {
-                    match serde_json::from_value::<Vec<OKXAccount>>(data.clone()) {
-                        Ok(accounts) => {
-                            if let Some(account) = accounts.first() {
-                                // Account ID is provided from client configuration
-                                match parse_account_state(account, self.account_id, ts_init) {
-                                    Ok(account_state) => {
-                                        // TODO: Optimize this account state comparison
-                                        if let Some(last_account_state) = &self.last_account_state
-                                            && account_state
-                                                .has_same_balances_and_margins(last_account_state)
+                    match channel {
+                        OKXWsChannel::Account => {
+                            match serde_json::from_value::<Vec<OKXAccount>>(data) {
+                                Ok(accounts) => {
+                                    if let Some(account) = accounts.first() {
+                                        match parse_account_state(account, self.account_id, ts_init)
                                         {
-                                            continue; // Nothing to update
+                                            Ok(account_state) => {
+                                                if let Some(last_account_state) =
+                                                    &self.last_account_state
+                                                    && account_state.has_same_balances_and_margins(
+                                                        last_account_state,
+                                                    )
+                                                {
+                                                    continue;
+                                                }
+                                                self.last_account_state =
+                                                    Some(account_state.clone());
+                                                return Some(NautilusWsMessage::AccountUpdate(
+                                                    account_state,
+                                                ));
+                                            }
+                                            Err(e) => tracing::error!(
+                                                "Failed to parse account state: {e}"
+                                            ),
                                         }
-                                        self.last_account_state = Some(account_state.clone());
-                                        return Some(NautilusWsMessage::AccountUpdate(
-                                            account_state,
-                                        ));
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to parse account state: {e}");
                                     }
                                 }
+                                Err(e) => tracing::error!("Failed to parse account data: {e}"),
                             }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to parse account data: {e}, raw data: {}",
-                                data
-                            );
-                        }
-                    }
-                    continue;
-                }
-
-                if arg.channel == OKXWsChannel::Orders {
-                    tracing::debug!("Received orders channel message: {data}");
-
-                    let data: Vec<OKXOrderMsg> = serde_json::from_value(data.clone()).unwrap();
-
-                    let mut exec_reports = Vec::with_capacity(data.len());
-
-                    for msg in data {
-                        if self.try_handle_post_only_auto_cancel(&msg, ts_init, &mut exec_reports) {
                             continue;
                         }
+                        OKXWsChannel::Orders => {
+                            let orders: Vec<OKXOrderMsg> = match serde_json::from_value(data) {
+                                Ok(orders) => orders,
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to deserialize orders channel payload: {e}"
+                                    );
+                                    continue;
+                                }
+                            };
 
-                        match parse_order_msg_vec(
-                            vec![msg],
-                            self.account_id,
-                            &self.instruments_cache,
-                            &self.fee_cache,
-                            ts_init,
-                        ) {
-                            Ok(mut reports) => {
-                                // Update fee cache based on the new reports
-                                for report in &reports {
-                                    match report {
-                                        ExecutionReport::Fill(fill_report) => {
-                                            let order_id = fill_report.venue_order_id.inner();
-                                            let current_fee = self
-                                                .fee_cache
-                                                .get(&order_id)
-                                                .copied()
-                                                .unwrap_or_else(|| {
-                                                    Money::new(0.0, fill_report.commission.currency)
-                                                });
-                                            let total_fee = current_fee + fill_report.commission;
-                                            self.fee_cache.insert(order_id, total_fee);
-                                        }
-                                        ExecutionReport::Order(status_report) => {
-                                            if matches!(
-                                                status_report.order_status,
-                                                OrderStatus::Filled,
-                                            ) {
-                                                self.fee_cache
-                                                    .remove(&status_report.venue_order_id.inner());
-                                            }
+                            let mut exec_reports: Vec<ExecutionReport> =
+                                Vec::with_capacity(orders.len());
 
-                                            if matches!(
-                                                status_report.order_status,
-                                                OrderStatus::Canceled
-                                                    | OrderStatus::Expired
-                                                    | OrderStatus::Filled
-                                                    | OrderStatus::Rejected,
-                                            ) && let Some(client_order_id) =
-                                                status_report.client_order_id
-                                            {
-                                                self.active_client_orders.remove(&client_order_id);
-                                            }
-                                        }
+                            for msg in orders {
+                                if self.try_handle_post_only_auto_cancel(
+                                    &msg,
+                                    ts_init,
+                                    &mut exec_reports,
+                                ) {
+                                    continue;
+                                }
+
+                                let raw_child = parse_client_order_id(&msg.cl_ord_id);
+                                let parent_from_msg = msg
+                                    .algo_cl_ord_id
+                                    .as_ref()
+                                    .filter(|value| !value.is_empty())
+                                    .map(ClientOrderId::new);
+                                let effective_client_id = self
+                                    .register_client_order_aliases(&raw_child, &parent_from_msg);
+
+                                match parse_order_msg(
+                                    &msg,
+                                    self.account_id,
+                                    &self.instruments_cache,
+                                    &self.fee_cache,
+                                    ts_init,
+                                ) {
+                                    Ok(report) => {
+                                        let adjusted = self.adjust_execution_report(
+                                            report,
+                                            &effective_client_id,
+                                            &raw_child,
+                                        );
+                                        self.update_caches_with_report(&adjusted);
+                                        exec_reports.push(adjusted);
+                                    }
+                                    Err(e) => tracing::error!("Failed to parse order message: {e}"),
+                                }
+                            }
+
+                            if !exec_reports.is_empty() {
+                                self.pending_messages
+                                    .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
+                            }
+
+                            if let Some(message) = self.pending_messages.pop_front() {
+                                return Some(message);
+                            }
+
+                            continue;
+                        }
+                        OKXWsChannel::OrdersAlgo => {
+                            let orders: Vec<OKXAlgoOrderMsg> = match serde_json::from_value(data) {
+                                Ok(orders) => orders,
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to deserialize algo orders payload: {e}"
+                                    );
+                                    continue;
+                                }
+                            };
+
+                            let mut exec_reports: Vec<ExecutionReport> =
+                                Vec::with_capacity(orders.len());
+
+                            for msg in orders {
+                                let raw_child = parse_client_order_id(&msg.cl_ord_id);
+                                let parent_from_msg = parse_client_order_id(&msg.algo_cl_ord_id);
+                                let effective_client_id = self
+                                    .register_client_order_aliases(&raw_child, &parent_from_msg);
+
+                                match parse_algo_order_msg(
+                                    msg,
+                                    self.account_id,
+                                    &self.instruments_cache,
+                                    ts_init,
+                                ) {
+                                    Ok(report) => {
+                                        let adjusted = self.adjust_execution_report(
+                                            report,
+                                            &effective_client_id,
+                                            &raw_child,
+                                        );
+                                        self.update_caches_with_report(&adjusted);
+                                        exec_reports.push(adjusted);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to parse algo order message: {e}")
                                     }
                                 }
-                                exec_reports.append(&mut reports);
                             }
-                            Err(e) => {
-                                tracing::error!("Failed to parse order message: {e}");
+
+                            if !exec_reports.is_empty() {
+                                return Some(NautilusWsMessage::ExecutionReports(exec_reports));
+                            }
+
+                            continue;
+                        }
+                        _ => {
+                            let Some(inst_id) = inst_id else {
+                                tracing::error!("No instrument for channel {:?}", channel);
                                 continue;
+                            };
+
+                            let Some(instrument) = self.instruments_cache.get(&inst_id) else {
+                                tracing::error!(
+                                    "No instrument for channel {:?}, inst_id {:?}",
+                                    channel,
+                                    inst_id
+                                );
+                                continue;
+                            };
+
+                            let instrument_id = instrument.id();
+                            let price_precision = instrument.price_precision();
+                            let size_precision = instrument.size_precision();
+
+                            match parse_ws_message_data(
+                                &channel,
+                                data,
+                                &instrument_id,
+                                price_precision,
+                                size_precision,
+                                ts_init,
+                                &mut self.funding_rate_cache,
+                            ) {
+                                Ok(Some(msg)) => return Some(msg),
+                                Ok(None) => continue,
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Error parsing message for channel {:?}: {e}",
+                                        channel
+                                    );
+                                    continue;
+                                }
                             }
                         }
                     }
-
-                    if !exec_reports.is_empty() {
-                        let reports = std::mem::take(&mut exec_reports);
-                        self.pending_messages
-                            .push_back(NautilusWsMessage::ExecutionReports(reports));
-                    }
-
-                    if let Some(message) = self.pending_messages.pop_front() {
-                        return Some(message);
-                    }
-
-                    continue;
                 }
-
-                if arg.channel == OKXWsChannel::OrdersAlgo {
-                    tracing::debug!("Received orders-algo channel message: {data}");
-
-                    let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(data.clone()).unwrap();
-
-                    let mut exec_reports = Vec::with_capacity(data.len());
-
-                    for msg in data {
-                        match parse_algo_order_msg(
-                            msg,
-                            self.account_id,
-                            &self.instruments_cache,
-                            ts_init,
-                        ) {
-                            Ok(report) => {
-                                // Update fee cache based on the new report
-                                match &report {
-                                    ExecutionReport::Fill(fill_report) => {
-                                        let order_id = fill_report.venue_order_id.inner();
-                                        let current_fee =
-                                            self.fee_cache.get(&order_id).copied().unwrap_or_else(
-                                                || Money::new(0.0, fill_report.commission.currency),
-                                            );
-                                        let total_fee = current_fee + fill_report.commission;
-                                        self.fee_cache.insert(order_id, total_fee);
-                                    }
-                                    ExecutionReport::Order(status_report) => {
-                                        if matches!(status_report.order_status, OrderStatus::Filled,)
-                                        {
-                                            self.fee_cache
-                                                .remove(&status_report.venue_order_id.inner());
-                                        }
-                                    }
-                                }
-                                exec_reports.push(report);
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to parse algo order message: {e}");
-                                continue;
-                            }
-                        }
-                    }
-
-                    if !exec_reports.is_empty() {
-                        return Some(NautilusWsMessage::ExecutionReports(exec_reports));
-                    }
+                OKXWebSocketEvent::Error { code, msg } => {
+                    let error = OKXWebSocketError {
+                        code,
+                        message: msg,
+                        conn_id: None,
+                        timestamp: clock.get_time_ns().as_u64(),
+                    };
+                    return Some(NautilusWsMessage::Error(error));
                 }
-
-                let inst = match arg.inst_id.and_then(|id| self.instruments_cache.get(&id)) {
-                    Some(inst) => inst,
-                    None => {
-                        tracing::error!(
-                            "No instrument for channel {:?}, inst_id {:?}",
-                            arg.channel,
-                            arg.inst_id
-                        );
-                        continue;
-                    }
-                };
-                let instrument_id = inst.id();
-                let price_precision = inst.price_precision();
-                let size_precision = inst.size_precision();
-
-                match parse_ws_message_data(
-                    &arg.channel,
-                    data.clone(),
-                    &instrument_id,
-                    price_precision,
-                    size_precision,
-                    ts_init,
-                    &mut self.funding_rate_cache,
-                ) {
-                    Ok(Some(msg)) => return Some(msg),
-                    Ok(None) => {
-                        // No message to return (e.g., empty instrument payload)
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::error!("Error parsing message for channel {:?}: {e}", arg.channel)
-                    }
+                OKXWebSocketEvent::Reconnected => {
+                    return Some(NautilusWsMessage::Reconnected);
                 }
-            }
-
-            // Handle login events (authentication failures)
-            if let OKXWebSocketEvent::Login {
-                code, msg, conn_id, ..
-            } = &event
-                && code != "0"
-            {
-                let error = OKXWebSocketError {
-                    code: code.clone(),
-                    message: msg.clone(),
-                    conn_id: Some(conn_id.clone()),
-                    timestamp: clock.get_time_ns().as_u64(),
-                };
-                return Some(NautilusWsMessage::Error(error));
-            }
-
-            // Handle general error events
-            if let OKXWebSocketEvent::Error { code, msg } = &event {
-                let error = OKXWebSocketError {
-                    code: code.clone(),
-                    message: msg.clone(),
-                    conn_id: None,
-                    timestamp: clock.get_time_ns().as_u64(),
-                };
-                return Some(NautilusWsMessage::Error(error));
-            }
-
-            // Handle reconnection signal
-            if matches!(&event, OKXWebSocketEvent::Reconnected) {
-                return Some(NautilusWsMessage::Reconnected);
+                OKXWebSocketEvent::Subscription { .. }
+                | OKXWebSocketEvent::ChannelConnCount { .. } => continue,
             }
         }
-        None // Connection closed
+
+        None
     }
 }
 
@@ -3686,7 +3911,7 @@ mod tests {
         let mut handler = OKXFeedHandler::new(rx, signal.clone());
 
         // Send a ping message (OKX sends pings)
-        let ping_msg = "ping";
+        let ping_msg = OKX_PING_TEXT;
         tx.send(Message::Text(ping_msg.to_string().into())).unwrap();
 
         // Send a valid subscription response
@@ -3701,10 +3926,12 @@ mod tests {
 
         tx.send(Message::Text(sub_msg.to_string().into())).unwrap();
 
-        // Set signal to stop the handler
+        let first = handler.next().await;
+        assert!(matches!(first, Some(OKXWebSocketEvent::Ping)));
+
+        // Now ensure we can still shut down cleanly even with a pending subscription message.
         signal.store(true, std::sync::atomic::Ordering::Relaxed);
 
-        // Handler should process messages and then stop on signal
         let result = handler.next().await;
         assert!(result.is_none());
     }
@@ -3782,6 +4009,7 @@ mod tests {
             category: ustr::Ustr::from("normal"),
             ccy: ustr::Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
+            algo_cl_ord_id: None,
             fee: None,
             fee_ccy: ustr::Ustr::from("USDT"),
             fill_px: "0".to_string(),

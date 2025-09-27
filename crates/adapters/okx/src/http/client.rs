@@ -39,7 +39,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
@@ -67,18 +67,19 @@ use super::{
     error::OKXHttpError,
     models::{
         OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXIndexTicker,
-        OKXMarkPrice, OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse,
-        OKXPosition, OKXPositionHistory, OKXPositionTier, OKXTransactionDetail,
+        OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
+        OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier,
+        OKXTransactionDetail,
     },
     query::{
-        GetCandlesticksParams, GetCandlesticksParamsBuilder, GetIndexTickerParams,
-        GetIndexTickerParamsBuilder, GetInstrumentsParams, GetInstrumentsParamsBuilder,
-        GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOrderHistoryParams,
-        GetOrderHistoryParamsBuilder, GetOrderListParams, GetOrderListParamsBuilder,
-        GetPositionTiersParams, GetPositionsHistoryParams, GetPositionsParams,
-        GetPositionsParamsBuilder, GetTradesParams, GetTradesParamsBuilder,
-        GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder, SetPositionModeParams,
-        SetPositionModeParamsBuilder,
+        GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
+        GetCandlesticksParamsBuilder, GetIndexTickerParams, GetIndexTickerParamsBuilder,
+        GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
+        GetMarkPriceParamsBuilder, GetOrderHistoryParams, GetOrderHistoryParamsBuilder,
+        GetOrderListParams, GetOrderListParamsBuilder, GetPositionTiersParams,
+        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder, GetTradesParams,
+        GetTradesParamsBuilder, GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder,
+        SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -86,8 +87,8 @@ use crate::{
         consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
         enums::{
-            OKXAlgoOrderType, OKXInstrumentType, OKXPositionMode, OKXSide, OKXTradeMode,
-            OKXTriggerType,
+            OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXSide,
+            OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -100,6 +101,7 @@ use crate::{
         models::{OKXCandlestick, OKXTrade},
         query::{GetOrderParams, GetPendingOrdersParams},
     },
+    websocket::{messages::OKXAlgoOrderMsg, parse::parse_algo_order_status_report},
 };
 
 const OKX_SUCCESS_CODE: &str = "0";
@@ -383,10 +385,14 @@ impl OKXHttpInnerClient {
                     Ok(okx_response.data)
                 } else {
                     let error_body = String::from_utf8_lossy(&resp.body);
-                    tracing::error!(
-                        "HTTP error {} with body: {error_body}",
-                        resp.status.as_str()
-                    );
+                    if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
+                        tracing::debug!("HTTP 404 with body: {error_body}");
+                    } else {
+                        tracing::error!(
+                            "HTTP error {} with body: {error_body}",
+                            resp.status.as_str()
+                        );
+                    }
 
                     if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
                         return Err(OKXHttpError::OkxError {
@@ -630,6 +636,24 @@ impl OKXHttpInnerClient {
         params: GetOrderListParams,
     ) -> Result<Vec<OKXOrderHistory>, OKXHttpError> {
         let path = Self::build_path("/api/v5/trade/orders-pending", &params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Requests pending algo orders.
+    pub async fn http_get_order_algo_pending(
+        &self,
+        params: GetAlgoOrdersParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        let path = Self::build_path("/api/v5/trade/order-algo-pending", &params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Requests historical algo orders.
+    pub async fn http_get_order_algo_history(
+        &self,
+        params: GetAlgoOrdersParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        let path = Self::build_path("/api/v5/trade/order-algo-history", &params)?;
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -1065,13 +1089,19 @@ impl OKXHttpClient {
 
         params.inst_id(instrument_id.symbol.inner());
         if let Some(s) = start {
-            params.before(s.timestamp_millis().to_string());
+            params.after(s.timestamp_millis().to_string());
         }
         if let Some(e) = end {
-            params.after(e.timestamp_millis().to_string());
+            params.before(e.timestamp_millis().to_string());
         }
-        if let Some(l) = limit {
-            params.limit(l);
+        // OKX expects the optional `limit` parameter to be between 1 and 100 (default 100).
+        // The request layer uses 0 to express "no explicit limit", so we omit the field in that case
+        // and clamp any larger value to the documented maximum to avoid 51000 parameter errors.
+        const OKX_TRADES_MAX_LIMIT: u32 = 100;
+        if let Some(l) = limit
+            && l > 0
+        {
+            params.limit(l.min(OKX_TRADES_MAX_LIMIT));
         }
 
         let params = params.build().map_err(anyhow::Error::new)?;
@@ -1820,13 +1850,30 @@ impl OKXHttpClient {
         let mut reports = Vec::with_capacity(combined_resp.len());
 
         // Use a seen filter in case pending orders are within the histories "2hr reserve window"
-        let mut seen = AHashSet::new();
+        let mut seen: AHashSet<String> = AHashSet::new();
 
         for order in combined_resp {
-            if seen.contains(&order.cl_ord_id) {
+            let seen_key = if !order.cl_ord_id.is_empty() {
+                order.cl_ord_id.as_str().to_string()
+            } else if let Some(algo_cl_ord_id) = order
+                .algo_cl_ord_id
+                .as_ref()
+                .filter(|value| !value.as_str().is_empty())
+            {
+                algo_cl_ord_id.as_str().to_string()
+            } else if let Some(algo_id) = order
+                .algo_id
+                .as_ref()
+                .filter(|value| !value.as_str().is_empty())
+            {
+                algo_id.as_str().to_string()
+            } else {
+                order.ord_id.as_str().to_string()
+            };
+
+            if !seen.insert(seen_key) {
                 continue; // Reserved pending already reported
             }
-            seen.insert(order.cl_ord_id);
 
             let inst = self.instrument_or_fetch(order.inst_id).await?;
 
@@ -2121,4 +2168,195 @@ impl OKXHttpClient {
 
         self.cancel_algo_order(request).await
     }
+
+    /// Requests algo order status reports.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_algo_order_status_reports(
+        &self,
+        account_id: AccountId,
+        instrument_type: Option<OKXInstrumentType>,
+        instrument_id: Option<InstrumentId>,
+        algo_id: Option<String>,
+        algo_client_order_id: Option<ClientOrderId>,
+        state: Option<OKXOrderStatus>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+
+        let inst_type = if let Some(inst_type) = instrument_type {
+            inst_type
+        } else if let Some(inst_id) = instrument_id {
+            let instrument = self.instrument_or_fetch(inst_id.symbol.inner()).await?;
+            let inst_type = okx_instrument_type(&instrument)?;
+            instruments_cache.insert(inst_id.symbol.inner(), instrument);
+            inst_type
+        } else {
+            anyhow::bail!("instrument_type or instrument_id required for algo order query")
+        };
+
+        let mut params_builder = GetAlgoOrdersParamsBuilder::default();
+        params_builder.inst_type(inst_type);
+        if let Some(inst_id) = instrument_id {
+            params_builder.inst_id(inst_id.symbol.inner().to_string());
+        }
+        if let Some(algo_id) = algo_id.as_ref() {
+            params_builder.algo_id(algo_id.clone());
+        }
+        if let Some(client_order_id) = algo_client_order_id.as_ref() {
+            params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
+        }
+        if let Some(state) = state {
+            params_builder.state(state);
+        }
+        if let Some(limit) = limit {
+            params_builder.limit(limit);
+        }
+
+        let params = params_builder
+            .build()
+            .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+        let mut seen: AHashSet<(String, String)> = AHashSet::new();
+
+        let pending = match self.inner.http_get_order_algo_pending(params.clone()).await {
+            Ok(result) => result,
+            Err(OKXHttpError::UnexpectedStatus { status, .. })
+                if status == StatusCode::NOT_FOUND =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        self.collect_algo_reports(
+            account_id,
+            &pending,
+            &mut instruments_cache,
+            ts_init,
+            &mut seen,
+            &mut reports,
+        )
+        .await?;
+
+        let history = match self.inner.http_get_order_algo_history(params).await {
+            Ok(result) => result,
+            Err(OKXHttpError::UnexpectedStatus { status, .. })
+                if status == StatusCode::NOT_FOUND =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        self.collect_algo_reports(
+            account_id,
+            &history,
+            &mut instruments_cache,
+            ts_init,
+            &mut seen,
+            &mut reports,
+        )
+        .await?;
+
+        Ok(reports)
+    }
+
+    /// Requests an algo order status report by client order identifier.
+    pub async fn request_algo_order_status_report(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        algo_client_order_id: ClientOrderId,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let reports = self
+            .request_algo_order_status_reports(
+                account_id,
+                None,
+                Some(instrument_id),
+                None,
+                Some(algo_client_order_id),
+                None,
+                Some(50_u32),
+            )
+            .await?;
+
+        Ok(reports.into_iter().next())
+    }
+    async fn collect_algo_reports(
+        &self,
+        account_id: AccountId,
+        orders: &[OKXOrderAlgo],
+        instruments_cache: &mut AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+        seen: &mut AHashSet<(String, String)>,
+        reports: &mut Vec<OrderStatusReport>,
+    ) -> anyhow::Result<()> {
+        for order in orders {
+            let key = (order.algo_id.clone(), order.algo_cl_ord_id.clone());
+            if !seen.insert(key) {
+                continue;
+            }
+
+            let instrument = if let Some(instrument) = instruments_cache.get(&order.inst_id) {
+                instrument.clone()
+            } else {
+                let instrument = self.instrument_or_fetch(order.inst_id).await?;
+                instruments_cache.insert(order.inst_id, instrument.clone());
+                instrument
+            };
+
+            let report = parse_http_algo_order(order, account_id, &instrument, ts_init)?;
+            reports.push(report);
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_http_algo_order(
+    order: &OKXOrderAlgo,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let ord_px = if order.ord_px.is_empty() {
+        "-1".to_string()
+    } else {
+        order.ord_px.clone()
+    };
+
+    let reduce_only = if order.reduce_only.is_empty() {
+        "false".to_string()
+    } else {
+        order.reduce_only.clone()
+    };
+
+    let msg = OKXAlgoOrderMsg {
+        algo_id: order.algo_id.clone(),
+        algo_cl_ord_id: order.algo_cl_ord_id.clone(),
+        cl_ord_id: order.cl_ord_id.clone(),
+        ord_id: order.ord_id.clone(),
+        inst_id: order.inst_id,
+        inst_type: order.inst_type,
+        ord_type: order.ord_type,
+        state: order.state,
+        side: order.side,
+        pos_side: order.pos_side,
+        sz: order.sz.clone(),
+        trigger_px: order.trigger_px.clone(),
+        trigger_px_type: order.trigger_px_type.unwrap_or(OKXTriggerType::None),
+        ord_px,
+        td_mode: order.td_mode,
+        lever: order.lever.clone(),
+        reduce_only,
+        actual_px: order.actual_px.clone(),
+        actual_sz: order.actual_sz.clone(),
+        notional_usd: order.notional_usd.clone(),
+        c_time: order.c_time,
+        u_time: order.u_time,
+        trigger_time: order.trigger_time.clone(),
+        tag: order.tag.clone(),
+    };
+
+    parse_algo_order_status_report(&msg, instrument, account_id, ts_init)
 }

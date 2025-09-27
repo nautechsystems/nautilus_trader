@@ -159,9 +159,14 @@ pub enum OKXOrderType {
     Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.okx")
+)]
 pub enum OKXOrderStatus {
     Canceled,
     Live,
+    Effective,
     PartiallyFilled,
     Filled,
     MmpCanceled,
@@ -688,6 +693,7 @@ impl From<OKXOrderStatus> for OrderStatus {
     fn from(status: OKXOrderStatus) -> Self {
         match status {
             OKXOrderStatus::Live => Self::Accepted,
+            OKXOrderStatus::Effective => Self::Triggered,
             OKXOrderStatus::PartiallyFilled => Self::PartiallyFilled,
             OKXOrderStatus::Filled => Self::Filled,
             OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled => Self::Canceled,

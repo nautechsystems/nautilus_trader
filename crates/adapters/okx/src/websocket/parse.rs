@@ -544,28 +544,37 @@ pub fn parse_order_msg_vec(
     let mut order_reports = Vec::with_capacity(data.len());
 
     for msg in data {
-        let inst = instruments
-            .get(&msg.inst_id)
-            .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
-
-        let previous_fee = fee_cache.get(&msg.ord_id).copied();
-
-        let result = match &msg.state {
-            OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
-                parse_fill_report(&msg, inst, account_id, previous_fee, ts_init)
-                    .map(ExecutionReport::Fill)
-            }
-            _ => parse_order_status_report(&msg, inst, account_id, ts_init)
-                .map(ExecutionReport::Order),
-        };
-
-        match result {
+        match parse_order_msg(&msg, account_id, instruments, fee_cache, ts_init) {
             Ok(report) => order_reports.push(report),
             Err(e) => tracing::error!("Failed to parse execution report from message: {e}"),
         }
     }
 
     Ok(order_reports)
+}
+
+/// Parses a single OKX order message into an [`ExecutionReport`].
+pub fn parse_order_msg(
+    msg: &OKXOrderMsg,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    fee_cache: &AHashMap<Ustr, Money>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<ExecutionReport> {
+    let instrument = instruments
+        .get(&msg.inst_id)
+        .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
+
+    let previous_fee = fee_cache.get(&msg.ord_id).copied();
+
+    match msg.state {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
+            parse_fill_report(msg, instrument, account_id, previous_fee, ts_init)
+                .map(ExecutionReport::Fill)
+        }
+        _ => parse_order_status_report(msg, instrument, account_id, ts_init)
+            .map(ExecutionReport::Order),
+    }
 }
 
 /// Parses an OKX algo order message into a Nautilus execution report.
@@ -1673,6 +1682,7 @@ mod tests {
             category: Ustr::from("normal"),
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
+            algo_cl_ord_id: None,
             fee: Some("-1.0".to_string()), // Total fee so far
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -1718,6 +1728,7 @@ mod tests {
             category: Ustr::from("normal"),
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
+            algo_cl_ord_id: None,
             fee: Some("-3.0".to_string()), // Same total fee
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),

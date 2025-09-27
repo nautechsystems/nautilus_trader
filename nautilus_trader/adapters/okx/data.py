@@ -50,6 +50,7 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
@@ -413,14 +414,23 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
-        trades = await self._http_client.request_trades(
+
+        pyo3_trades = await self._http_client.request_trades(
             instrument_id=pyo3_instrument_id,
             start=ensure_pydatetime_utc(request.start),
             end=ensure_pydatetime_utc(request.end),
             limit=request.limit,
         )
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(trades, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         self._log.debug(

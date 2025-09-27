@@ -5130,6 +5130,7 @@ dependencies = [
  "dashmap",
  "derive_builder",
  "futures-util",
+ "iai",
  "indexmap 2.11.4",
  "log",
  "nautilus-common",

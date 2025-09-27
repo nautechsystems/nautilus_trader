@@ -360,6 +360,40 @@ pub struct GetOrderListParams {
     pub limit: Option<u32>,
 }
 
+/// Parameters for the GET /api/v5/trade/order-algo-* endpoints.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetAlgoOrdersParams {
+    /// Algo order identifier assigned by OKX (optional).
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<String>,
+    /// Client supplied algo order identifier (optional).
+    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
+    pub inst_type: OKXInstrumentType,
+    /// Specific instrument identifier (optional).
+    #[serde(rename = "instId", skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Order type filter (optional).
+    #[serde(rename = "ordType", skip_serializing_if = "Option::is_none")]
+    pub ord_type: Option<OKXOrderType>,
+    /// State filter (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<OKXOrderStatus>,
+    /// Pagination cursor – fetch records after this value (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Pagination cursor – fetch records before this value (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Maximum number of records to return (optional, default 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 /// Parameters for the GET /api/v5/trade/fills endpoint (transaction details).
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
 #[builder(default)]

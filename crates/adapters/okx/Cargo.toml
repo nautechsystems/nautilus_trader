@@ -84,6 +84,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
+iai = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
@@ -104,3 +105,18 @@ path = "bin/ws_data.rs"
 [[bin]]
 name = "okx-ws-exec"
 path = "bin/ws_exec.rs"
+
+[[bench]]
+name = "ws_book_parsing"
+path = "benches/ws_book_parsing.rs"
+harness = false
+
+[[bench]]
+name = "ws_trade_parsing"
+path = "benches/ws_trade_parsing.rs"
+harness = false
+
+[[bench]]
+name = "ws_orders_iai"
+path = "benches/ws_orders_iai.rs"
+harness = false

@@ -20,7 +20,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
 - Added Interactive Brokers order conditions (#2988), thanks @faysou
 - Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
-- Added OKX conditional orders support
+- Added OKX conditional trigger orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
 
 ### Breaking Changes
@@ -70,6 +70,7 @@ None
 ### Documentation Updates
 - Improved dark and light themes for readability
 - Improved clarity of implemented bar aggregations
+- Standardized consistent styling per docs style guide
 - Fixed some broken links
 
 ### Deprecations

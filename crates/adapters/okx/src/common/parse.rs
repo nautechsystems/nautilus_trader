@@ -424,10 +424,42 @@ pub fn parse_order_status_report(
     let time_in_force = TimeInForce::Gtc;
 
     // Build report
-    let client_ord = if order.cl_ord_id.is_empty() {
+    let mut client_order_id = if order.cl_ord_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(order.cl_ord_id))
+        Some(ClientOrderId::new(order.cl_ord_id.as_str()))
+    };
+
+    let mut linked_ids = Vec::new();
+
+    if let Some(algo_cl_ord_id) = order
+        .algo_cl_ord_id
+        .as_ref()
+        .filter(|value| !value.as_str().is_empty())
+    {
+        let algo_client_id = ClientOrderId::new(algo_cl_ord_id.as_str());
+        match &client_order_id {
+            Some(existing) if existing == &algo_client_id => {}
+            Some(_) => linked_ids.push(algo_client_id),
+            None => client_order_id = Some(algo_client_id),
+        }
+    }
+
+    let venue_order_id = if order.ord_id.is_empty() {
+        if let Some(algo_id) = order
+            .algo_id
+            .as_ref()
+            .filter(|value| !value.as_str().is_empty())
+        {
+            VenueOrderId::new(algo_id.as_str())
+        } else if !order.cl_ord_id.is_empty() {
+            VenueOrderId::new(order.cl_ord_id.as_str())
+        } else {
+            let synthetic_id = format!("{}:{}", account_id, order.c_time);
+            VenueOrderId::new(&synthetic_id)
+        }
+    } else {
+        VenueOrderId::new(order.ord_id.as_str())
     };
 
     let ts_accepted = parse_millisecond_timestamp(order.c_time);
@@ -436,8 +468,8 @@ pub fn parse_order_status_report(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        client_ord,
-        VenueOrderId::new(order.ord_id),
+        client_order_id,
+        venue_order_id,
         order_side,
         order_type,
         time_in_force,
@@ -467,6 +499,11 @@ pub fn parse_order_status_report(
     if order.reduce_only == "true" {
         report = report.with_reduce_only(true);
     }
+
+    if !linked_ids.is_empty() {
+        report = report.with_linked_order_ids(linked_ids);
+    }
+
     report
 }
 
@@ -589,11 +626,23 @@ where
     F: Fn(&T) -> anyhow::Result<R>,
     W: Fn(R) -> Data,
 {
-    let msgs: Vec<T> = serde_json::from_value(data)?;
-    let mut results = Vec::with_capacity(msgs.len());
+    let items = match data {
+        serde_json::Value::Array(items) => items,
+        other => {
+            let raw = serde_json::to_string(&other).unwrap_or_else(|_| other.to_string());
+            let mut snippet: String = raw.chars().take(512).collect();
+            if raw.len() > snippet.len() {
+                snippet.push_str("...");
+            }
+            anyhow::bail!("Expected array payload, received {snippet}");
+        }
+    };
 
-    for msg in msgs {
-        let parsed = parser(&msg)?;
+    let mut results = Vec::with_capacity(items.len());
+
+    for item in items {
+        let message: T = serde_json::from_value(item)?;
+        let parsed = parser(&message)?;
         results.push(wrapper(parsed));
     }
 
