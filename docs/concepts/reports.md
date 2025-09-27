@@ -1,5 +1,9 @@
 # Reports
 
+:::info
+We are currently working on this concept guide.
+:::
+
 This guide explains the portfolio analysis and reporting capabilities provided by the `ReportProvider`
 class, and how these reports are used for PnL accounting and backtest post-run analysis.
 
@@ -316,7 +320,7 @@ During live trading, generate reports periodically:
 ```python
 import pandas as pd
 
-class ReportingStrategy(Strategy):
+class ReportingActor(Actor):
     def on_start(self):
         # Schedule periodic reporting
         self.clock.set_timer(

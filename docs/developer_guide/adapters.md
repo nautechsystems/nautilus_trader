@@ -75,7 +75,7 @@ nautilus_trader/adapters/your_adapter/
 
 1. Create a new Python subpackage for your adapter.
 2. Implement the Instrument Provider by inheriting from `InstrumentProvider` and implementing the necessary methods to load instruments.
-3. Implement the Data Client by inheriting from either the `LiveDataClient` and `LiveMarketDataClient` class as applicable, providing implementations for the required methods.
+3. Implement the Data Client by inheriting from either the `LiveDataClient` or `LiveMarketDataClient` class as applicable, providing implementations for the required methods.
 4. Implement the Execution Client by inheriting from `LiveExecutionClient` and providing implementations for the required methods.
 5. Create configuration classes to hold your adapter’s settings.
 6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected (see the [Testing Guide](testing.md)).
@@ -182,7 +182,7 @@ Exercise the public API against Axum mock servers. At a minimum, mirror the BitM
 
 - Exercise the adapter’s Python surface (instrument providers, data/execution clients, factories) inside `tests/integration_tests/adapters/<adapter>/`.
 - Mock the PyO3 boundary (`nautilus_pyo3` shims, stubbed Rust clients) so tests stay fast while verifying that configuration, factory wiring, and error handling match the exported Rust API.
-- Mirror the Rust integration coverage: when the Rust suite adds a new behaviour (e.g., reconnnection replay, error
+- Mirror the Rust integration coverage: when the Rust suite adds a new behaviour (e.g., reconnection replay, error
   propagation), assert the Python layer performs the same sequence (connect/disconnect, submit/amend/cancel
   translations, venue ID hand-off, failure handling). BitMEX’s Python tests provide the target level of detail.
 
@@ -204,9 +204,7 @@ from nautilus_trader.model import InstrumentId
 
 
 class TemplateInstrumentProvider(InstrumentProvider):
-    """
-    An example template of an ``InstrumentProvider`` showing the minimal methods which must be implemented for an integration to be complete.
-    """
+    """Example `InstrumentProvider` showing the minimal overrides required for a complete integration."""
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         raise NotImplementedError("implement `load_all_async` in your adapter subclass")
@@ -239,9 +237,7 @@ from nautilus_trader.model import DataType
 
 
 class TemplateLiveDataClient(LiveDataClient):
-    """
-    An example of a ``LiveDataClient`` highlighting the overridable abstract methods.
-    """
+    """Example `LiveDataClient` showing the overridable abstract methods."""
 
     async def _connect(self) -> None:
         raise NotImplementedError("implement `_connect` in your adapter subclass")
@@ -309,9 +305,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
-    """
-    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract methods.
-    """
+    """Example `LiveMarketDataClient` showing the overridable abstract methods."""
 
     async def _connect(self) -> None:
         raise NotImplementedError("implement `_connect` in your adapter subclass")
@@ -421,8 +415,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
 **Key methods**:
 
-- `_connect`: Establishes a connection to the venues APIs.
-- `_disconnect`: Closes the connection to the venues APIs.
+- `_connect`: Establishes a connection to the venue APIs.
+- `_disconnect`: Closes the connection to the venue APIs.
 - `_subscribe`: Subscribes to generic data (base method for custom data types).
 - `_unsubscribe`: Unsubscribes from generic data (base method for custom data types).
 - `_request`: Requests generic data (base method for custom data types).
@@ -460,7 +454,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 ### ExecutionClient
 
 The `ExecutionClient` is responsible for order management, including submission, modification, and
-cancellation of orders. It is a crucial component of the adapter that interacts with the venues
+cancellation of orders. It is a crucial component of the adapter that interacts with the venue
 trading system to manage and execute trades.
 
 ```python
@@ -481,9 +475,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
-    """
-    An example of a ``LiveExecutionClient`` highlighting the method requirements.
-    """
+    """Example `LiveExecutionClient` outlining the required overrides."""
 
     async def _connect(self) -> None:
         raise NotImplementedError("implement `_connect` in your adapter subclass")
@@ -536,8 +528,8 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
 **Key methods**:
 
-- `_connect`: Establishes a connection to the venues APIs.
-- `_disconnect`: Closes the connection to the venues APIs.
+- `_connect`: Establishes a connection to the venue APIs.
+- `_disconnect`: Closes the connection to the venue APIs.
 - `_submit_order`: Submits a new order to the venue.
 - `_submit_order_list`: Submits a list of orders to the venue.
 - `_modify_order`: Modifies an existing order on the venue.
@@ -561,9 +553,7 @@ from nautilus_trader.config import LiveExecClientConfig
 
 
 class TemplateDataClientConfig(LiveDataClientConfig):
-    """
-    Configuration for ``TemplateDataClient`` instances.
-    """
+    """Configuration for `TemplateDataClient` instances."""
 
     api_key: str
     api_secret: str
@@ -571,17 +561,38 @@ class TemplateDataClientConfig(LiveDataClientConfig):
 
 
 class TemplateExecClientConfig(LiveExecClientConfig):
-    """
-    Configuration for ``TemplateExecClient`` instances.
-    """
+    """Configuration for `TemplateExecClient` instances."""
 
     api_key: str
     api_secret: str
     base_url: str
 ```
 
-**Key Attributes**:
+**Key attributes**:
 
 - `api_key`: The API key for authenticating with the data provider.
 - `api_secret`: The API secret for authenticating with the data provider.
 - `base_url`: The base URL for connecting to the data provider's API.
+
+## Common test scenarios
+
+Exercise adapters across every venue behaviour they claim to support. Incorporate these scenarios into the Rust and Python suites.
+
+### Product coverage
+
+Ensure each supported product family is tested.
+
+- Spot instruments
+- Derivatives (perpetuals, futures, swaps)
+- Options and structured products
+
+### Order flow
+
+- Cover each supported order type (limit, market, stop, conditional, etc.) under every venue time-in-force option, expiries, and rejection handling.
+- Submit buy and sell market orders and assert balance, position, and average-price updates align with venue responses.
+- Submit representative buy and sell limit orders, verifying acknowledgements, execution reports, full and partial fills, and cancel flows.
+
+### State management
+
+- Start sessions with existing open orders to ensure the adapter reconciles state on connect before issuing new commands.
+- Seed preloaded positions and confirm position snapshots, valuation, and PnL agree with the venue prior to trading.

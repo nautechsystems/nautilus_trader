@@ -2,11 +2,6 @@
 
 **This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading**.
 
-:::warning
-The Coinbase International integration is currently in a beta testing phase.
-Exercise caution and report any issues on GitHub.
-:::
-
 [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
 The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
 

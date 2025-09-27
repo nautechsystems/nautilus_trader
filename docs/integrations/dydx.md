@@ -1,9 +1,5 @@
 # dYdX
 
-:::info
-We are currently working on this integration guide.
-:::
-
 dYdX is one of the largest decentralized cryptocurrency exchanges in terms of daily trading volume
 for crypto derivative products. dYdX runs on smart contracts on the Ethereum blockchain, and allows
 users to trade with no intermediaries. This integration supports live market data ingestion and order

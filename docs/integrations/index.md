@@ -47,8 +47,7 @@ The implementation of each integration aims to meet the following criteria:
 
 - Low-level client components should match the exchange API as closely as possible.
 - The full range of an exchange's functionality (where applicable to NautilusTrader) should *eventually* be supported.
-- Exchange specific data types will be added to support the functionality and return
-  types which are reasonably expected by a user.
+- Exchange specific data types will be added to support the functionality and return types which are reasonably expected by a user.
 - Actions unsupported by an exchange or NautilusTrader will be logged as a warning or error when invoked.
 
 ## API unification

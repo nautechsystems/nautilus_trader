@@ -1,5 +1,9 @@
 # Positions
 
+:::info
+We are currently working on this concept guide.
+:::
+
 This guide explains how positions work in NautilusTrader, including their lifecycle, aggregation
 from order fills, profit and loss calculations, and the important concept of position snapshotting
 for netting OMS configurations.
