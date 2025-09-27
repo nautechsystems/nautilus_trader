@@ -63,6 +63,10 @@ pub struct OKXExecutionClient {
 
 impl OKXExecutionClient {
     /// Creates a new [`OKXExecutionClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: OKXExecClientConfig) -> anyhow::Result<Self> {
         let http_client = if config.has_api_credentials() {
             OKXHttpClient::with_credentials(

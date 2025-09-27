@@ -202,6 +202,10 @@ impl GetCandlesticksParamsBuilder {
     }
 
     /// Builds the parameters with embedded invariant validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters are invalid.
     pub fn build(&mut self) -> Result<GetCandlesticksParams, BuildError> {
         // Extract values from builder
         let inst_id = self.inst_id.clone().ok_or(BuildError::MissingInstId)?;

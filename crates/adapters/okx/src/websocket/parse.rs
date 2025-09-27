@@ -56,6 +56,10 @@ use crate::{
 };
 
 /// Parses vector of OKX book messages into Nautilus order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if any underlying book message cannot be parsed.
 pub fn parse_book_msg_vec(
     data: Vec<OKXBookMsg>,
     instrument_id: &InstrumentId,
@@ -82,6 +86,10 @@ pub fn parse_book_msg_vec(
 }
 
 /// Parses vector of OKX ticker messages into Nautilus quote ticks.
+///
+/// # Errors
+///
+/// Returns an error if any ticker message fails to parse.
 pub fn parse_ticker_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -105,6 +113,10 @@ pub fn parse_ticker_msg_vec(
 }
 
 /// Parses vector of OKX book messages into Nautilus quote ticks.
+///
+/// # Errors
+///
+/// Returns an error if any quote message fails to parse.
 pub fn parse_quote_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -128,6 +140,10 @@ pub fn parse_quote_msg_vec(
 }
 
 /// Parses vector of OKX trade messages into Nautilus trade ticks.
+///
+/// # Errors
+///
+/// Returns an error if any trade message fails to parse.
 pub fn parse_trade_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -151,6 +167,10 @@ pub fn parse_trade_msg_vec(
 }
 
 /// Parses vector of OKX mark price messages into Nautilus mark price updates.
+///
+/// # Errors
+///
+/// Returns an error if any mark price message fails to parse.
 pub fn parse_mark_price_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -165,6 +185,10 @@ pub fn parse_mark_price_msg_vec(
 }
 
 /// Parses vector of OKX index price messages into Nautilus index price updates.
+///
+/// # Errors
+///
+/// Returns an error if any index price message fails to parse.
 pub fn parse_index_price_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -180,6 +204,10 @@ pub fn parse_index_price_msg_vec(
 
 /// Parses vector of OKX funding rate messages into Nautilus funding rate updates.
 /// Includes caching to filter out duplicate funding rates.
+///
+/// # Errors
+///
+/// Returns an error if any funding rate message fails to parse.
 pub fn parse_funding_rate_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -208,6 +236,10 @@ pub fn parse_funding_rate_msg_vec(
 }
 
 /// Parses vector of OKX candle messages into Nautilus bars.
+///
+/// # Errors
+///
+/// Returns an error if candle messages cannot be deserialized or parsed.
 pub fn parse_candle_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -232,6 +264,10 @@ pub fn parse_candle_msg_vec(
 }
 
 /// Parses vector of OKX book messages into Nautilus depth10 updates.
+///
+/// # Errors
+///
+/// Returns an error if any book10 message fails to parse.
 pub fn parse_book10_msg_vec(
     data: Vec<OKXBookMsg>,
     instrument_id: &InstrumentId,
@@ -256,6 +292,10 @@ pub fn parse_book10_msg_vec(
 }
 
 /// Parses an OKX book message into Nautilus order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if bid or ask levels contain values that cannot be parsed.
 pub fn parse_book_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -325,6 +365,10 @@ pub fn parse_book_msg(
 }
 
 /// Parses an OKX book message into a Nautilus quote tick.
+///
+/// # Errors
+///
+/// Returns an error if any quote levels contain values that cannot be parsed.
 pub fn parse_quote_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -355,6 +399,10 @@ pub fn parse_quote_msg(
 /// Parses an OKX book message into a Nautilus [`OrderBookDepth10`].
 ///
 /// Converts order book data into a fixed-depth snapshot with top 10 levels for both sides.
+///
+/// # Errors
+///
+/// Returns an error if price or size fields cannot be parsed for any level.
 pub fn parse_book10_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -430,6 +478,10 @@ pub fn parse_book10_msg(
 }
 
 /// Parses an OKX ticker message into a Nautilus quote tick.
+///
+/// # Errors
+///
+/// Returns an error if bid or ask values cannot be parsed from the message.
 pub fn parse_ticker_msg(
     msg: &OKXTickerMsg,
     instrument_id: InstrumentId,
@@ -455,6 +507,10 @@ pub fn parse_ticker_msg(
 }
 
 /// Parses an OKX trade message into a Nautilus trade tick.
+///
+/// # Errors
+///
+/// Returns an error if trade prices or sizes cannot be parsed.
 pub fn parse_trade_msg(
     msg: &OKXTradeMsg,
     instrument_id: InstrumentId,
@@ -480,6 +536,10 @@ pub fn parse_trade_msg(
 }
 
 /// Parses an OKX mark price message into a Nautilus mark price update.
+///
+/// # Errors
+///
+/// Returns an error if the mark price fails to parse.
 pub fn parse_mark_price_msg(
     msg: &OKXMarkPriceMsg,
     instrument_id: InstrumentId,
@@ -498,6 +558,10 @@ pub fn parse_mark_price_msg(
 }
 
 /// Parses an OKX index price message into a Nautilus index price update.
+///
+/// # Errors
+///
+/// Returns an error if the index price fails to parse.
 pub fn parse_index_price_msg(
     msg: &OKXIndexPriceMsg,
     instrument_id: InstrumentId,
@@ -516,6 +580,10 @@ pub fn parse_index_price_msg(
 }
 
 /// Parses an OKX candle message into a Nautilus bar.
+///
+/// # Errors
+///
+/// Returns an error if candle price or volume fields cannot be parsed.
 pub fn parse_candle_msg(
     msg: &OKXCandleMsg,
     bar_type: BarType,
@@ -534,6 +602,10 @@ pub fn parse_candle_msg(
 }
 
 /// Parses vector of OKX order messages into Nautilus execution reports.
+///
+/// # Errors
+///
+/// Returns an error if any contained order messages cannot be parsed.
 pub fn parse_order_msg_vec(
     data: Vec<OKXOrderMsg>,
     account_id: AccountId,
@@ -554,6 +626,11 @@ pub fn parse_order_msg_vec(
 }
 
 /// Parses a single OKX order message into an [`ExecutionReport`].
+///
+/// # Errors
+///
+/// Returns an error if the instrument cannot be found or if parsing the
+/// underlying order payload fails.
 pub fn parse_order_msg(
     msg: &OKXOrderMsg,
     account_id: AccountId,
@@ -578,6 +655,11 @@ pub fn parse_order_msg(
 }
 
 /// Parses an OKX algo order message into a Nautilus execution report.
+///
+/// # Errors
+///
+/// Returns an error if the instrument cannot be found or if message fields
+/// fail to parse.
 pub fn parse_algo_order_msg(
     msg: OKXAlgoOrderMsg,
     account_id: AccountId,
@@ -593,6 +675,11 @@ pub fn parse_algo_order_msg(
 }
 
 /// Parses an OKX algo order message into a Nautilus order status report.
+///
+/// # Errors
+///
+/// Returns an error if any order identifiers or numeric fields cannot be
+/// parsed.
 pub fn parse_algo_order_status_report(
     msg: &OKXAlgoOrderMsg,
     instrument: &InstrumentAny,
@@ -680,6 +767,10 @@ pub fn parse_algo_order_status_report(
 }
 
 /// Parses an OKX order message into a Nautilus order status report.
+///
+/// # Errors
+///
+/// Returns an error if order metadata or numeric values cannot be parsed.
 pub fn parse_order_status_report(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
@@ -800,6 +891,10 @@ pub fn parse_order_status_report(
 }
 
 /// Parses an OKX order message into a Nautilus fill report.
+///
+/// # Errors
+///
+/// Returns an error if order quantities, prices, or fees cannot be parsed.
 pub fn parse_fill_report(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
@@ -849,6 +944,11 @@ pub fn parse_fill_report(
 }
 
 /// Parses OKX WebSocket message payloads into Nautilus data structures.
+///
+/// # Errors
+///
+/// Returns an error if the payload cannot be deserialized or if downstream
+/// parsing routines fail.
 ///
 /// # Panics
 ///

@@ -526,6 +526,10 @@ impl OKXHttpInnerClient {
 
     /// Requests the latest index price.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-index-tickers>
@@ -538,6 +542,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests trades history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -552,6 +560,10 @@ impl OKXHttpInnerClient {
 
     /// Requests recent candlestick data.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
@@ -564,6 +576,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests historical candlestick data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -578,6 +594,10 @@ impl OKXHttpInnerClient {
 
     /// Lists current open orders.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-orders-pending>
@@ -590,6 +610,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Retrieves a single order’s details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -605,6 +629,10 @@ impl OKXHttpInnerClient {
     /// Requests a list of assets (with non-zero balance), remaining balance, and available amount
     /// in the trading account.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance>
@@ -614,6 +642,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests historical order records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -628,6 +660,10 @@ impl OKXHttpInnerClient {
 
     /// Requests order list (pending orders).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-list>
@@ -640,6 +676,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests pending algo orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub async fn http_get_order_algo_pending(
         &self,
         params: GetAlgoOrdersParams,
@@ -649,6 +689,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests historical algo orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub async fn http_get_order_algo_history(
         &self,
         params: GetAlgoOrdersParams,
@@ -660,6 +704,10 @@ impl OKXHttpInnerClient {
     /// Requests information on your positions. When the account is in net mode, net positions will
     /// be displayed, and when the account is in long/short mode, long or short positions will be
     /// displayed. Returns in reverse chronological order using ctime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -674,6 +722,10 @@ impl OKXHttpInnerClient {
 
     /// Requests closed or historical position data.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions-history>
@@ -686,6 +738,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests transaction details (fills) for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -752,12 +808,20 @@ impl OKXHttpClient {
 
     /// Creates a new authenticated [`OKXHttpClient`] using environment variables and
     /// the default OKX HTTP base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::with_credentials(None, None, None, None, None, None, None, None)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
@@ -1139,6 +1203,10 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # Endpoint Selection
     ///
@@ -1766,6 +1834,10 @@ impl OKXHttpClient {
 
     /// Requests historical order status reports for the given parameters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-7-days>.
@@ -1905,6 +1977,10 @@ impl OKXHttpClient {
 
     /// Requests fill reports (transaction details) for the given parameters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-transaction-details-last-3-days>.
@@ -1993,6 +2069,10 @@ impl OKXHttpClient {
 
     /// Requests current position status reports for the given parameters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>.
@@ -2051,6 +2131,10 @@ impl OKXHttpClient {
 
     /// Places an algo order via HTTP.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
@@ -2072,6 +2156,10 @@ impl OKXHttpClient {
     }
 
     /// Cancels an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -2099,6 +2187,10 @@ impl OKXHttpClient {
     ///
     /// This is a convenience method that accepts Nautilus domain types
     /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn place_algo_order_with_domain_types(
         &self,
@@ -2155,6 +2247,10 @@ impl OKXHttpClient {
     ///
     /// This is a convenience method that accepts Nautilus domain types
     /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn cancel_algo_order_with_domain_types(
         &self,
         instrument_id: InstrumentId,
@@ -2170,6 +2266,10 @@ impl OKXHttpClient {
     }
 
     /// Requests algo order status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn request_algo_order_status_reports(
         &self,
@@ -2262,6 +2362,10 @@ impl OKXHttpClient {
     }
 
     /// Requests an algo order status report by client order identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn request_algo_order_status_report(
         &self,
         account_id: AccountId,

@@ -223,6 +223,10 @@ impl Debug for OKXWebSocketClient {
 
 impl OKXWebSocketClient {
     /// Creates a new [`OKXWebSocketClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub fn new(
         url: Option<String>,
         api_key: Option<String>,
@@ -280,6 +284,11 @@ impl OKXWebSocketClient {
     }
 
     /// Creates a new [`OKXWebSocketClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credential values cannot be loaded or if the
+    /// client fails to initialize.
     pub fn with_credentials(
         url: Option<String>,
         api_key: Option<String>,
@@ -304,6 +313,11 @@ impl OKXWebSocketClient {
     }
 
     /// Creates a new authenticated [`OKXWebSocketClient`] using environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or if
+    /// the client fails to initialize.
     pub fn from_env() -> anyhow::Result<Self> {
         let url = get_env_var("OKX_WS_URL")?;
         let api_key = get_env_var("OKX_API_KEY")?;
@@ -376,6 +390,10 @@ impl OKXWebSocketClient {
     }
 
     /// Connect to the OKX WebSocket server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection process fails.
     ///
     /// # Panics
     ///
@@ -810,6 +828,11 @@ impl OKXWebSocketClient {
     }
 
     /// Closes the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disconnecting the websocket or cleaning up the
+    /// client fails.
     pub async fn close(&mut self) -> Result<(), Error> {
         log::debug!("Starting close process");
 
@@ -1189,6 +1212,10 @@ impl OKXWebSocketClient {
     ///
     /// Provides updates when instrument specifications change.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-instruments-channel>.
@@ -1209,6 +1236,10 @@ impl OKXWebSocketClient {
     ///
     /// Provides updates when instrument specifications change.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-instruments-channel>.
@@ -1227,6 +1258,10 @@ impl OKXWebSocketClient {
 
     /// Subscribes to full order book data (400 depth levels) for an instrument.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-channel>.
@@ -1243,6 +1278,10 @@ impl OKXWebSocketClient {
     /// Subscribes to 5-level order book snapshot data for an instrument.
     ///
     /// Updates every 100ms when there are changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -1264,6 +1303,10 @@ impl OKXWebSocketClient {
     ///
     /// Provides real-time updates whenever order book changes.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-50-depth-tbt-channel>.
@@ -1283,6 +1326,10 @@ impl OKXWebSocketClient {
     /// Subscribes to tick-by-tick full depth (400 levels) order book data for an instrument.
     ///
     /// Provides real-time updates with all depth levels whenever order book changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -1304,6 +1351,10 @@ impl OKXWebSocketClient {
     ///
     /// Provides tick-by-tick updates of the best bid and ask prices.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-bbo-tbt-channel>.
@@ -1319,6 +1370,10 @@ impl OKXWebSocketClient {
     }
 
     /// Subscribes to trade data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -1347,6 +1402,10 @@ impl OKXWebSocketClient {
     ///
     /// Updates every 100ms with trading statistics.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-tickers-channel>.
@@ -1363,6 +1422,10 @@ impl OKXWebSocketClient {
     /// Subscribes to mark price data for derivatives instruments.
     ///
     /// Updates every 200ms for perpetual swaps, or at settlement for futures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -1384,6 +1447,10 @@ impl OKXWebSocketClient {
     ///
     /// Updates every second with the underlying index price.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-index-tickers-channel>.
@@ -1403,6 +1470,10 @@ impl OKXWebSocketClient {
     /// Subscribes to funding rate data for perpetual swap instruments.
     ///
     /// Updates when funding rate changes or at funding intervals.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -1424,6 +1495,10 @@ impl OKXWebSocketClient {
     ///
     /// Supports various time intervals from 1s to 3M.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-candlesticks-channel>.
@@ -1442,6 +1517,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribes from instrument updates for a specific instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_instruments(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1456,6 +1535,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from instrument updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_instrument(
         &self,
         instrument_id: InstrumentId,
@@ -1470,6 +1553,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from full order book data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Books,
@@ -1481,6 +1568,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from 5-level order book snapshot data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_book_depth5(
         &self,
         instrument_id: InstrumentId,
@@ -1495,6 +1586,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from 50-level tick-by-tick order book data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_book50_l2_tbt(
         &self,
         instrument_id: InstrumentId,
@@ -1509,6 +1604,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from tick-by-tick full depth order book data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_book_l2_tbt(
         &self,
         instrument_id: InstrumentId,
@@ -1523,6 +1622,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from best bid/ask quote data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::BboTbt,
@@ -1534,6 +1637,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from 24hr rolling ticker data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_ticker(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Tickers,
@@ -1545,6 +1652,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from mark price data for a derivatives instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_mark_prices(
         &self,
         instrument_id: InstrumentId,
@@ -1559,6 +1670,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from index price data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_index_prices(
         &self,
         instrument_id: InstrumentId,
@@ -1573,6 +1688,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from funding rate data for a perpetual swap instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_funding_rates(
         &self,
         instrument_id: InstrumentId,
@@ -1587,6 +1706,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from trade data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_trades(
         &self,
         instrument_id: InstrumentId,
@@ -1605,6 +1728,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from candlestick/bar data for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), OKXWsError> {
         // Use regular trade-price candlesticks which work for all instrument types
         let channel = bar_spec_as_okx_channel(bar_type.spec())
@@ -1620,6 +1747,10 @@ impl OKXWebSocketClient {
     }
 
     /// Subscribes to order updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn subscribe_orders(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1634,6 +1765,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribes from order updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_orders(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1648,6 +1783,10 @@ impl OKXWebSocketClient {
     }
 
     /// Subscribes to algo order updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn subscribe_orders_algo(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1662,6 +1801,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribes from algo order updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_orders_algo(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1676,6 +1819,10 @@ impl OKXWebSocketClient {
     }
 
     /// Subscribes to fill updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn subscribe_fills(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1690,6 +1837,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribes from fill updates for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_fills(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1704,6 +1855,10 @@ impl OKXWebSocketClient {
     }
 
     /// Subscribes to account balance updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn subscribe_account(&self) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Account,
@@ -1715,6 +1870,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribes from account balance updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_account(&self) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Account,
@@ -1917,6 +2076,11 @@ impl OKXWebSocketClient {
 
     /// Submits an order, automatically routing conditional orders to the algo endpoint.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the order parameters are invalid or if the request
+    /// cannot be sent to the websocket client.
+    ///
     /// # References
     ///
     /// - Regular orders: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
@@ -2077,6 +2241,11 @@ impl OKXWebSocketClient {
 
     /// Cancels an existing order.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the cancel parameters are invalid or if the
+    /// cancellation request fails to send.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
@@ -2175,6 +2344,11 @@ impl OKXWebSocketClient {
 
     /// Modifies an existing order.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the amend parameters are invalid or if the
+    /// websocket request fails to send.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>.
@@ -2250,6 +2424,11 @@ impl OKXWebSocketClient {
     }
 
     /// Submits multiple orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any batch order parameters are invalid or if the
+    /// batch request fails to send.
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_submit_orders(
@@ -2329,6 +2508,11 @@ impl OKXWebSocketClient {
     }
 
     /// Cancels multiple orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cancel parameters are invalid or if the batch
+    /// request fails to send.
     #[allow(clippy::type_complexity)]
     pub async fn batch_cancel_orders(
         &self,
@@ -2365,6 +2549,11 @@ impl OKXWebSocketClient {
     }
 
     /// Mass cancels all orders for a given instrument via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if instrument metadata cannot be resolved or if the
+    /// cancel request fails to send.
     ///
     /// # Parameters
     /// - `inst_id`: The instrument ID. The instrument type will be automatically determined from the symbol.
@@ -2405,6 +2594,11 @@ impl OKXWebSocketClient {
     }
 
     /// Modifies multiple orders via WebSocket using Nautilus domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if amend parameters are invalid or if the batch request
+    /// fails to send.
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_modify_orders(
@@ -2446,6 +2640,11 @@ impl OKXWebSocketClient {
     }
 
     /// Submits an algo order (conditional/stop order).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order parameters are invalid or if the request
+    /// cannot be sent.
     ///
     /// # References
     ///
@@ -2534,6 +2733,11 @@ impl OKXWebSocketClient {
     }
 
     /// Cancels an algo order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cancel parameters are invalid or if the request
+    /// fails to send.
     ///
     /// # References
     ///
