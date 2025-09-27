@@ -34,6 +34,7 @@ use axum::{
     routing::get,
 };
 use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
+use nautilus_common::testing::wait_until_async;
 use nautilus_model::identifiers::AccountId;
 use rstest::rstest;
 use serde_json::json;
@@ -53,6 +54,30 @@ struct TestServerState {
     send_initial_ping: Arc<AtomicBool>,
     received_pong: Arc<AtomicBool>,
     last_pong: Arc<Mutex<Option<Vec<u8>>>>,
+    fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
+    auth_response_delay_ms: Arc<Mutex<Option<u64>>>,
+    subscription_events: Arc<Mutex<Vec<(String, bool)>>>,
+}
+
+impl TestServerState {
+    async fn fail_next_subscription(&self, topic: &str) {
+        self.fail_next_subscriptions
+            .lock()
+            .await
+            .push(topic.to_string());
+    }
+
+    async fn set_auth_response_delay_ms(&self, delay_ms: Option<u64>) {
+        *self.auth_response_delay_ms.lock().await = delay_ms;
+    }
+
+    async fn clear_subscription_events(&self) {
+        self.subscription_events.lock().await.clear();
+    }
+
+    async fn subscription_events(&self) -> Vec<(String, bool)> {
+        self.subscription_events.lock().await.clone()
+    }
 }
 
 impl Default for TestServerState {
@@ -67,6 +92,9 @@ impl Default for TestServerState {
             send_initial_ping: Arc::new(AtomicBool::new(false)),
             received_pong: Arc::new(AtomicBool::new(false)),
             last_pong: Arc::new(Mutex::new(None)),
+            fail_next_subscriptions: Arc::new(Mutex::new(Vec::new())),
+            auth_response_delay_ms: Arc::new(Mutex::new(None)),
+            subscription_events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -124,19 +152,34 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
     }
 
     // Handle incoming messages
-    while let Some(msg) = socket.recv().await {
+    loop {
+        if state.drop_connections.load(Ordering::Relaxed) {
+            if state.silent_drop.load(Ordering::Relaxed) {
+                break;
+            } else {
+                let _ = socket.send(Message::Close(None)).await;
+                break;
+            }
+        }
+
+        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
+            Ok(opt) => opt,
+            Err(_) => continue,
+        };
+
+        let Some(msg) = msg_opt else {
+            break;
+        };
+
         let msg = match msg {
             Ok(m) => m,
             Err(_) => break,
         };
 
-        // Check if we should drop the connection
         if state.drop_connections.load(Ordering::Relaxed) {
             if state.silent_drop.load(Ordering::Relaxed) {
-                // Silent drop - just break without sending close frame
                 break;
             } else {
-                // Graceful close - send close frame then break
                 let _ = socket.send(Message::Close(None)).await;
                 break;
             }
@@ -150,11 +193,16 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                 if let Ok(data) = parsed {
                     // Handle authentication requests
                     if data.get("op") == Some(&json!("authKeyExpires")) {
-                        // Track auth calls and mark as authenticated
+                        // Track auth calls
                         {
                             let mut auth_calls = state.auth_calls.lock().await;
                             *auth_calls += 1;
                         }
+
+                        if let Some(delay) = *state.auth_response_delay_ms.lock().await {
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                        }
+
                         state.authenticated.store(true, Ordering::Relaxed);
 
                         // Send auth success response
@@ -219,12 +267,48 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     }
 
                                     // Track subscription
-                                    {
-                                        let mut subs = state.subscriptions.lock().await;
-                                        if !subs.contains(&topic.to_string()) {
-                                            subs.push(topic.to_string());
+                                    let mut pending = state.fail_next_subscriptions.lock().await;
+                                    if let Some(pos) = pending.iter().position(|p| p == topic) {
+                                        pending.remove(pos);
+                                        drop(pending);
+
+                                        let response = json!({
+                                            "success": false,
+                                            "error": "Subscription failed",
+                                            "request": {
+                                                "op": "subscribe",
+                                                "args": [topic]
+                                            }
+                                        });
+                                        state
+                                            .subscription_events
+                                            .lock()
+                                            .await
+                                            .push((topic.to_string(), false));
+                                        if socket
+                                            .send(Message::Text(
+                                                serde_json::to_string(&response).unwrap().into(),
+                                            ))
+                                            .await
+                                            .is_err()
+                                        {
+                                            break;
                                         }
+                                        continue;
                                     }
+                                    drop(pending);
+
+                                    let mut subs = state.subscriptions.lock().await;
+                                    if !subs.contains(&topic.to_string()) {
+                                        subs.push(topic.to_string());
+                                    }
+                                    drop(subs);
+
+                                    state
+                                        .subscription_events
+                                        .lock()
+                                        .await
+                                        .push((topic.to_string(), true));
 
                                     // Send subscription confirmation
                                     let response = json!({
@@ -453,6 +537,42 @@ fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/realtime", get(handle_websocket))
         .with_state(state)
+}
+
+async fn wait_for_subscription_events<F>(
+    state: &TestServerState,
+    timeout: Duration,
+    mut predicate: F,
+) -> Vec<(String, bool)>
+where
+    F: FnMut(&[(String, bool)]) -> bool,
+{
+    let state_clone = state.clone();
+    let poll = async {
+        loop {
+            let events = state_clone.subscription_events().await;
+            if predicate(&events) {
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+
+    match tokio::time::timeout(timeout, poll).await {
+        Ok(events) => events,
+        Err(_) => state.subscription_events().await,
+    }
+}
+
+async fn wait_for_connection_count(state: &TestServerState, expected: usize, timeout: Duration) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.connection_count.lock().await == expected }
+        },
+        timeout,
+    )
+    .await;
 }
 
 async fn start_test_server()
@@ -1059,6 +1179,204 @@ async fn test_subscription_restoration_tracking() {
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnection_retries_failed_subscriptions() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url.clone()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+    client.subscribe_positions().await.unwrap();
+
+    client.wait_until_active(2.0).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let initial_events = state.subscription_events().await;
+    assert!(
+        initial_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && *ok),
+        "initial subscription events missing expected position confirmation; events={initial_events:?}",
+    );
+
+    state.clear_subscription_events().await;
+    let initial_auth_calls = *state.auth_calls.lock().await;
+
+    state.fail_next_subscription("position").await;
+
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
+
+    let first_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        let instrument_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "instrument" && *ok);
+        let trade_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok);
+        let position_failed = events.iter().any(|(topic, ok)| topic == "position" && !*ok);
+        instrument_ok && trade_ok && position_failed
+    })
+    .await;
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && !*ok),
+        "position subscription should fail once to simulate server rejection; events={first_events:?}",
+    );
+
+    let state_for_auth = state.clone();
+    wait_until_async(
+        || {
+            let state = state_for_auth.clone();
+            let threshold = initial_auth_calls + 1;
+            async move { *state.auth_calls.lock().await >= threshold }
+        },
+        Duration::from_secs(8),
+    )
+    .await;
+
+    let auth_calls_after_first = *state.auth_calls.lock().await;
+    assert!(
+        auth_calls_after_first >= initial_auth_calls + 1,
+        "expected re-authentication before retrying subscriptions",
+    );
+
+    state.clear_subscription_events().await;
+
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
+
+    let second_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        events.iter().any(|(topic, ok)| topic == "position" && *ok)
+    })
+    .await;
+    assert!(
+        second_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && *ok),
+        "position subscription should be retried on subsequent reconnect; events={second_events:?}",
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnection_waits_for_delayed_auth_ack() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url.clone()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+    client.subscribe_positions().await.unwrap();
+
+    client.wait_until_active(2.0).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let initial_events = state.subscription_events().await;
+    assert!(
+        initial_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && *ok),
+        "initial subscription events missing expected position confirmation; events={initial_events:?}",
+    );
+
+    state.clear_subscription_events().await;
+    let baseline_auth_calls = *state.auth_calls.lock().await;
+    state.set_auth_response_delay_ms(Some(600)).await;
+
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
+
+    let state_for_auth = state.clone();
+    let expected_calls = baseline_auth_calls + 1;
+    wait_until_async(
+        || {
+            let state = state_for_auth.clone();
+            async move { *state.auth_calls.lock().await >= expected_calls }
+        },
+        Duration::from_secs(8),
+    )
+    .await;
+
+    {
+        let events = state.subscription_events().await;
+        assert!(
+            events.is_empty(),
+            "subscriptions should wait for the delayed auth acknowledgment; events={events:?}",
+        );
+    }
+
+    let events_after_ack = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        let instrument_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "instrument" && *ok);
+        let trade_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok);
+        let position_ok = events.iter().any(|(topic, ok)| topic == "position" && *ok);
+        instrument_ok && trade_ok && position_ok
+    })
+    .await;
+    assert!(
+        events_after_ack
+            .iter()
+            .any(|(topic, ok)| topic == "instrument" && *ok),
+        "instrument subscription should be restored after auth ack; events={events_after_ack:?}",
+    );
+    assert!(
+        events_after_ack
+            .iter()
+            .any(|(topic, ok)| topic == "position" && *ok),
+        "private subscription should wait for auth ack before restoring; events={events_after_ack:?}",
+    );
+    assert!(
+        events_after_ack
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok),
+        "public subscription should still be included after ack delay; events={events_after_ack:?}",
+    );
+
+    state.set_auth_response_delay_ms(None).await;
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_unauthenticated_private_channel_rejection() {
     // Test that private channels are rejected without authentication
     let (addr, _state) = start_test_server().await.unwrap();
@@ -1135,6 +1453,7 @@ fn get_test_account_id() -> AccountId {
     AccountId::new("BITMEX-001")
 }
 
+#[rstest]
 #[tokio::test]
 async fn test_bitmex_websocket_client_creation() {
     let client = BitmexWebSocketClient::new(

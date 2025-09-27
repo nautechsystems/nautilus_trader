@@ -72,61 +72,9 @@ nautilus_trader/adapters/your_adapter/
 5. Create configuration classes to hold your adapter’s settings.
 6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected (see the [Testing Guide](testing.md)).
 
-## Test organization for Rust adapters
-
-Rust adapter crates should maintain a clear separation between unit tests and integration tests.
-
-### Test structure
-
-- **Unit tests**: Located in the same module as the code being tested (`#[cfg(test)] mod tests`).
-  - Pure functions like parsing and utility functions.
-  - Private methods that require testing (e.g., authentication signature generation).
-- **Integration tests**: Located in `tests/` directory for testing client behavior with mock servers.
-- **Test data**: Real API response samples stored in `test_data/` directory.
-
-```
-crates/adapters/your_adapter/
-├── src/
-│   ├── http/
-│   │   ├── client.rs      # Unit tests for private methods only
-│   │   └── parse.rs       # Unit tests for parsing functions
-│   └── websocket/
-│       ├── client.rs      # Unit tests for private methods only
-│       └── parse.rs       # Unit tests for parsing functions
-├── tests/
-│   ├── http.rs            # Integration tests with mock HTTP server
-│   └── websocket.rs       # Integration tests with mock WebSocket server
-└── test_data/             # Real API response samples
-    ├── http_get_orders.json
-    └── ws_order_update.json
-```
-
 ---
 
-### Testing approach
-
-**Unit tests** should focus on:
-
-- Parsing functions that convert venue data to Nautilus domain models.
-- Private methods that handle critical logic (e.g., request signing).
-- Pure functions with complex business logic.
-- Avoid unit tests that duplicate integration test coverage.
-
-**Integration tests** should use mock servers to test:
-
-- Full request/response cycles.
-- Authentication flows.
-- Rate limiting behavior.
-- Error scenarios.
-- Public API methods of the client.
-
-### Python testing guidelines
-
-- Keep Python adapter tests focused on the layer boundary with the Rust crate: drive behaviour through the public client/instrument-provider APIs while mocking `nautilus_pyo3` objects (`from_pyo3` helpers, stub clients) instead of constructing real Rust types. This keeps coverage fast and deterministic, yet still validates that the Python glue integrates correctly with the exported Rust surface.
-
----
-
-## Common Rust adapter patterns
+## Rust adapter patterns
 
 - **Common code (`common/`)**: Group venue constants, credential helpers, enums, and reusable parsers under `src/common`. Adapters such as OKX keep submodules like `consts`, `credential`, `enums`, and `urls` alongside a `testing` module for fixtures, providing a single place for cross-cutting pieces.
 - **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
@@ -151,7 +99,56 @@ Use the following conventions when mirroring upstream schemas in Rust.
 - Apply the same naming guidance as REST models: rely on blanket casing renames and keep field names aligned with the venue unless syntax forces a change; consider serde helpers such as `#[serde(tag = "op")]` or `#[serde(flatten)]` and document the choice.
 - Note any intentional deviations from the upstream schema in code comments and module docs so other contributors can follow the mapping quickly.
 
-## Template for building a Python adapter
+---
+
+## Testing
+
+Adapters should ship two layers of coverage: the Rust crate that talks to the venue and the Python glue that exposes it to the wider platform.
+Keep the suites deterministic and colocated with the production code they protect.
+
+### Rust testing
+
+#### Layout
+
+```
+crates/adapters/your_adapter/
+├── src/
+│   ├── http/
+│   │   ├── client.rs      # HTTP client + unit tests
+│   │   └── parse.rs       # REST payload parsers + unit tests
+│   └── websocket/
+│       ├── client.rs      # WebSocket client + unit tests
+│       └── parse.rs       # Streaming parsers + unit tests
+├── tests/
+│   ├── http.rs            # Mock HTTP integration tests
+│   └── websocket.rs       # Mock WebSocket integration tests
+└── test_data/             # Canonical venue payloads used by the suites
+```
+
+- Place unit tests next to the module they exercise (`#[cfg(test)]` blocks). Use `src/common/testing.rs` (or an equivalent helper module) for shared fixtures so production files stay tidy.
+- Keep Axum-based integration suites under `crates/adapters/<adapter>/tests/`, mirroring the public APIs (HTTP client, WebSocket client, caches, reconnection flows).
+- Store upstream payload samples (snapshots, REST replies) under `test_data/` and reference them from both unit and integration tests.
+
+#### Unit tests
+
+- Focus on pure logic: parsers, signing helpers, canonicalisers, and any business rules that do not require a live transport.
+- Avoid duplicating coverage that the integration tests already provide.
+
+#### Integration tests
+
+- Drive full request/response cycles through mock servers: authentication, subscription replay, rate-limiting edges, and error branches.
+- Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track pending/confirmed topics, wait for `connection_count` transitions) instead of arbitrary `sleep` calls.
+- Use `wait_until_async` or adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so suites remain deterministic under load.
+
+### Python testing
+
+- Exercise the adapter’s Python surface (instrument providers, data/execution clients, factories) inside `tests/integration_tests/adapters/<adapter>/`.
+- Mock the PyO3 boundary (`nautilus_pyo3` shims, stubbed Rust clients) so tests stay fast while verifying that configuration, factory wiring, and error handling match the exported Rust API.
+- Align scenarios with the Rust integration coverage: when the Rust suite adds a new behaviour (e.g., subscription replay), mirror the high-level expectations in Python to ensure the full stack stays coherent.
+
+---
+
+## Python adapter layer
 
 Below is a step-by-step guide to building an adapter for a new data provider using the provided template.
 
@@ -419,8 +416,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 - `_request_trade_ticks`: Requests historical trade tick data.
 - `_request_bars`: Requests historical bar data.
 - `_request_order_book_snapshot`: Requests an order book snapshot.
-
----
 
 ### ExecutionClient
 

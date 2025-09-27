@@ -1762,7 +1762,7 @@ impl BitmexWsMessageHandler {
                 self.subscriptions.confirm(topic);
                 tracing::debug!(topic = topic, "Subscription confirmed");
             } else {
-                self.subscriptions.clear_pending(topic);
+                self.subscriptions.mark_failure(topic);
                 let reason = error.unwrap_or("Subscription rejected");
                 tracing::error!(topic = topic, error = reason, "Subscription failed");
             }

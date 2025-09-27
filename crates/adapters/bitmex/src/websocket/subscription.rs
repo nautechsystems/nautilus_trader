@@ -105,6 +105,12 @@ impl SubscriptionState {
         track_topic(&self.confirmed, channel, symbol);
     }
 
+    pub(crate) fn mark_failure(&self, topic: &str) {
+        let (channel, symbol) = split_topic(topic);
+        untrack_topic(&self.confirmed, channel, symbol);
+        track_topic(&self.pending, channel, symbol);
+    }
+
     pub(crate) fn clear_pending(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic);
         untrack_topic(&self.pending, channel, symbol);
