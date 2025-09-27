@@ -2,13 +2,21 @@
 
 ## Introduction
 
-This developer guide provides instructions on how to develop an integration adapter for the NautilusTrader platform.
+This developer guide provides specifications and instructions on how to develop an integration adapter for the NautilusTrader platform.
 Adapters provide connectivity to trading venues and data providers—translating raw venue APIs into Nautilus’s unified interface and normalized domain model.
 
 ## Structure of an adapter
 
-NautilusTrader adapters follow a layered architecture pattern with a **Rust core** for performance-critical operations
-and a **Python layer** for the integration interface. This pattern is consistently used across adapters like Databento, Hyperliquid, OKX, BitMEX, and others.
+NautilusTrader adapters follow a layered architecture pattern with:
+
+- **Rust core** for networking clients and performance-critical operations.
+- **Python layer** (optional) for integrating into the legacy system.
+
+Good references for consistent patterns are currently:
+
+- BitMEX
+- OKX
+- Databento
 
 ### Rust core (`crates/adapters/your_adapter/`)
 
@@ -54,13 +62,13 @@ Typical Python structure:
 
 ```
 nautilus_trader/adapters/your_adapter/
-├── config.py             # Configuration classes
-├── constants.py          # Adapter constants
-├── data.py               # LiveDataClient/LiveMarketDataClient
-├── execution.py          # LiveExecutionClient
-├── factories.py          # Instrument factories
-├── providers.py          # InstrumentProvider
-└── __init__.py           # Package initialization
+├── config.py     # Configuration classes
+├── constants.py  # Adapter constants
+├── data.py       # LiveDataClient/LiveMarketDataClient
+├── execution.py  # LiveExecutionClient
+├── factories.py  # Instrument factories
+├── providers.py  # InstrumentProvider
+└── __init__.py   # Package initialization
 ```
 
 ## Adapter implementation steps
@@ -136,15 +144,47 @@ crates/adapters/your_adapter/
 
 #### Integration tests
 
-- Drive full request/response cycles through mock servers: authentication, subscription replay, rate-limiting edges, and error branches.
-- Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track pending/confirmed topics, wait for `connection_count` transitions) instead of arbitrary `sleep` calls.
-- Use `wait_until_async` or adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so suites remain deterministic under load.
+Exercise the public API against Axum mock servers. At a minimum, mirror the BitMEX test surface (see
+`crates/adapters/bitmex/tests/`) so every adapter proves the same behaviours.
+
+##### HTTP client integration coverage
+
+- **Happy paths** – fetch a representative public resource (e.g., instruments or mark price) and ensure the
+  response is converted into Nautilus domain models.
+- **Credential guard** – call a private endpoint without credentials and assert a structured error; repeat with
+  credentials to prove success.
+- **Rate limiting / retry mapping** – surface venue-specific rate-limit responses and assert the adapter produces
+  the correct `OkxError`/`BitmexHttpError` variant so the retry policy can react.
+- **Query builders** – exercise builders for paginated/time-bounded endpoints (historical trades, candles) and
+  assert the emitted query string matches the venue specification (`after`, `before`, `limit`, etc.).
+- **Error translation** – verify non-2xx upstream responses map to adapter error enums with the original code/message attached.
+
+##### WebSocket client integration coverage
+
+- **Login handshake** – confirm a successful login flips the internal auth state and test failure cases where the
+  server returns a non-zero code; the client should surface an error and avoid marking itself as authenticated.
+- **Ping/Pong** – prove both text-based and control-frame pings trigger immediate pong responses.
+- **Subscription lifecycle** – assert subscription requests/acks are emitted for public and private channels, and that
+  unsubscribe calls remove entries from the cached subscription sets.
+- **Reconnect behaviour** – simulate a disconnect and ensure the client re-authenticates, restores public channels,
+  and skips private channels that were explicitly unsubscribed pre-disconnect.
+- **Message routing** – feed representative data/ack/error payloads through the socket and assert they arrive on the
+  public stream as the correct `NautilusWsMessage` variant.
+- **Quota tagging** – (optional but recommended) validate that order/cancel/amend operations are tagged with the
+  appropriate quota label so rate limiting can be enforced independently of subscription traffic.
+
+- Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track
+  pending/confirmed topics, wait for `connection_count` transitions) instead of arbitrary `sleep` calls.
+- Use adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so
+  suites remain deterministic under load.
 
 ### Python testing
 
 - Exercise the adapter’s Python surface (instrument providers, data/execution clients, factories) inside `tests/integration_tests/adapters/<adapter>/`.
 - Mock the PyO3 boundary (`nautilus_pyo3` shims, stubbed Rust clients) so tests stay fast while verifying that configuration, factory wiring, and error handling match the exported Rust API.
-- Align scenarios with the Rust integration coverage: when the Rust suite adds a new behaviour (e.g., subscription replay), mirror the high-level expectations in Python to ensure the full stack stays coherent.
+- Mirror the Rust integration coverage: when the Rust suite adds a new behaviour (e.g., reconnnection replay, error
+  propagation), assert the Python layer performs the same sequence (connect/disconnect, submit/amend/cancel
+  translations, venue ID hand-off, failure handling). BitMEX’s Python tests provide the target level of detail.
 
 ---
 
@@ -180,9 +220,9 @@ class TemplateInstrumentProvider(InstrumentProvider):
 
 **Key methods**:
 
-- `load_all_async`: Loads all instruments asynchronously, optionally applying filters
-- `load_ids_async`: Loads specific instruments by their IDs
-- `load_async`: Loads a single instrument by its ID
+- `load_all_async`: Loads all instruments asynchronously, optionally applying filters.
+- `load_ids_async`: Loads specific instruments by their IDs.
+- `load_async`: Loads a single instrument by its ID.
 
 ### DataClient
 
