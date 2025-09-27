@@ -182,7 +182,7 @@ rustls = { version = "0.23.32", default-features = false, features = ["aws-lc-rs
 rustls-pemfile = "2.2.0"
 ryu = "1.0.20"
 semver = "1.0.27"
-serde = { version = "1.0.227", default-features = false, features = ["derive", "std", "rc"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive", "std", "rc"] }
 serde_json = { version = "1.0.145", default-features = false, features = ["std"] }
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
