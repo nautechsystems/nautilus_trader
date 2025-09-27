@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,8 +25,17 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
@@ -80,13 +90,16 @@ def exec_client_builder(
 
 @pytest.mark.asyncio
 async def test_connect_success(exec_client_builder, monkeypatch):
+    # Arrange
     client, private_ws, business_ws, http_client, instrument_provider = exec_client_builder(
         monkeypatch,
     )
 
+    # Act
     await client._connect()
 
     try:
+        # Assert
         instrument_provider.initialize.assert_awaited_once()
         http_client.add_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
@@ -105,6 +118,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
     finally:
         await client._disconnect()
 
+    # Assert
     http_client.cancel_all_requests.assert_called_once()
     private_ws.close.assert_awaited_once()
     business_ws.close.assert_awaited_once()
@@ -112,6 +126,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_order_status_reports_converts_results(exec_client_builder, monkeypatch):
+    # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
 
     expected_report = MagicMock()
@@ -132,14 +147,17 @@ async def test_generate_order_status_reports_converts_results(exec_client_builde
         ts_init=0,
     )
 
+    # Act
     reports = await client.generate_order_status_reports(command)
 
+    # Assert
     http_client.request_order_status_reports.assert_awaited_once()
     assert reports == [expected_report]
 
 
 @pytest.mark.asyncio
 async def test_generate_order_status_reports_handles_failure(exec_client_builder, monkeypatch):
+    # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
     http_client.request_order_status_reports.side_effect = Exception("boom")
 
@@ -152,13 +170,16 @@ async def test_generate_order_status_reports_handles_failure(exec_client_builder
         ts_init=0,
     )
 
+    # Act
     reports = await client.generate_order_status_reports(command)
 
+    # Assert
     assert reports == []
 
 
 @pytest.mark.asyncio
 async def test_generate_fill_reports_converts_results(exec_client_builder, monkeypatch):
+    # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
 
     expected_report = MagicMock()
@@ -178,14 +199,17 @@ async def test_generate_fill_reports_converts_results(exec_client_builder, monke
         ts_init=0,
     )
 
+    # Act
     reports = await client.generate_fill_reports(command)
 
+    # Assert
     http_client.request_fill_reports.assert_awaited_once()
     assert reports == [expected_report]
 
 
 @pytest.mark.asyncio
 async def test_generate_position_status_reports_converts_results(exec_client_builder, monkeypatch):
+    # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
 
     expected_report = MagicMock()
@@ -204,14 +228,81 @@ async def test_generate_position_status_reports_converts_results(exec_client_bui
         ts_init=0,
     )
 
+    # Act
     reports = await client.generate_position_status_reports(command)
 
+    # Assert
     http_client.request_position_status_reports.assert_awaited_once()
     assert reports == [expected_report]
 
 
 @pytest.mark.asyncio
+async def test_handle_fill_report_updates_venue_id_before_fill(exec_client_builder, monkeypatch):
+    # Arrange
+    client, _, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    client._cache.add_instrument(instrument)
+
+    order_list = TestExecStubs.limit_with_stop_market(instrument=instrument)
+    stop_order = next(order for order in order_list.orders if isinstance(order, StopMarketOrder))
+
+    submitted = TestEventStubs.order_submitted(order=stop_order)
+    stop_order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=stop_order,
+        venue_order_id=VenueOrderId("algo-venue-id"),
+    )
+    stop_order.apply(accepted)
+
+    client._cache.add_order(stop_order, None, None)
+
+    canonical_id = stop_order.client_order_id
+    client._algo_order_ids[canonical_id] = "algo-venue-id"
+    client._algo_order_instruments[canonical_id] = stop_order.instrument_id
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    new_venue_id = VenueOrderId("child-venue-id")
+    fill_report = SimpleNamespace(
+        client_order_id=stop_order.client_order_id,
+        venue_order_id=new_venue_id,
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=stop_order.quantity,
+        last_px=instrument.make_price(4018.5),
+        commission=Money(0, instrument.quote_currency),
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456789,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report,
+    )
+
+    # Act
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert
+    assert any(
+        isinstance(event, OrderUpdated) and event.venue_order_id == new_venue_id
+        for event in emitted_events
+    )
+    assert any(isinstance(event, OrderFilled) for event in emitted_events)
+    assert client._cache.venue_order_id(stop_order.client_order_id) == new_venue_id
+    assert canonical_id not in client._algo_order_ids
+
+    http_client.request_fill_reports.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_generate_position_status_reports_handles_failure(exec_client_builder, monkeypatch):
+    # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
     http_client.request_position_status_reports.side_effect = Exception("boom")
 
@@ -223,6 +314,8 @@ async def test_generate_position_status_reports_handles_failure(exec_client_buil
         ts_init=0,
     )
 
+    # Act
     reports = await client.generate_position_status_reports(command)
 
+    # Assert
     assert reports == []

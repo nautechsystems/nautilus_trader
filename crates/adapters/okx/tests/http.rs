@@ -15,18 +15,28 @@
 
 //! Integration tests for the OKX HTTP client using a mock Axum server.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use axum::{
     Router,
-    extract::State,
+    extract::Query,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Json, Response},
+    response::{IntoResponse, Json},
     routing::get,
 };
+use chrono::{Duration as ChronoDuration, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
 use nautilus_okx::{
-    common::enums::OKXInstrumentType,
-    http::{client::OKXHttpInnerClient, error::OKXHttpError, query::GetInstrumentsParamsBuilder},
+    common::enums::{OKXInstrumentType, OKXOrderStatus},
+    http::{
+        client::OKXHttpInnerClient,
+        error::OKXHttpError,
+        query::{
+            GetInstrumentsParamsBuilder, GetOrderHistoryParams, GetOrderParamsBuilder,
+            GetPendingOrdersParams,
+        },
+    },
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -34,7 +44,11 @@ use tokio::sync::Mutex;
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    request_count: std::sync::Arc<Mutex<usize>>,
+    request_count: Arc<Mutex<usize>>,
+    last_history_trades_query: Arc<Mutex<Option<HashMap<String, String>>>>,
+    last_pending_orders_query: Arc<Mutex<Option<HashMap<String, String>>>>,
+    last_order_history_query: Arc<Mutex<Option<HashMap<String, String>>>>,
+    last_order_detail_query: Arc<Mutex<Option<HashMap<String, String>>>>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -54,68 +68,165 @@ fn has_auth_headers(headers: &HeaderMap) -> bool {
         && headers.contains_key("ok-access-sign")
 }
 
-async fn handle_get_instruments() -> impl IntoResponse {
-    Json(load_test_data("http_get_instruments_spot.json"))
+fn load_instruments_any() -> Vec<InstrumentAny> {
+    let payload = load_test_data("http_get_instruments_spot.json");
+    let response: nautilus_okx::http::client::OKXResponse<
+        nautilus_okx::common::models::OKXInstrument,
+    > = serde_json::from_value(payload).expect("invalid instrument payload");
+    let ts_init = UnixNanos::default();
+    response
+        .data
+        .iter()
+        .filter_map(|raw| {
+            nautilus_okx::common::parse::parse_instrument_any(raw, ts_init)
+                .ok()
+                .flatten()
+        })
+        .collect()
 }
 
-async fn handle_get_instruments_with_state(State(state): State<TestServerState>) -> Response {
-    let mut count = state.request_count.lock().await;
-    *count += 1;
+fn create_router(state: Arc<TestServerState>) -> Router {
+    let instruments_state = state.clone();
+    let history_state = state.clone();
+    let pending_state = state.clone();
+    let order_history_state = state.clone();
+    let order_detail_state = state.clone();
+    Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(move || {
+                let state = instruments_state.clone();
+                async move {
+                    let mut count = state.request_count.lock().await;
+                    *count += 1;
 
-    if *count > 3 {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({
-                "code": "50116",
-                "msg": "Rate limit reached",
-                "data": [],
-            })),
+                    if *count > 3 {
+                        return (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            Json(json!({
+                                "code": "50116",
+                                "msg": "Rate limit reached",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                }
+            }),
         )
-            .into_response();
-    }
-
-    Json(load_test_data("http_get_instruments_spot.json")).into_response()
-}
-
-async fn handle_get_mark_price() -> impl IntoResponse {
-    Json(load_test_data("http_get_mark_price.json"))
-}
-
-async fn handle_get_balance(headers: HeaderMap) -> Response {
-    if !has_auth_headers(&headers) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({
-                "code": "401",
-                "msg": "Missing authentication headers",
-                "data": [],
-            })),
+        .route(
+            "/api/v5/public/mark-price",
+            get(|| async { Json(load_test_data("http_get_mark_price.json")) }),
         )
-            .into_response();
-    }
+        .route(
+            "/api/v5/market/history-trades",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = history_state.clone();
+                async move {
+                    *state.last_history_trades_query.lock().await = Some(params);
+                    Json(json!({
+                        "code": "0",
+                        "msg": "",
+                        "data": [],
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|headers: HeaderMap| async move {
+                if !has_auth_headers(&headers) {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({
+                            "code": "401",
+                            "msg": "Missing authentication headers",
+                            "data": [],
+                        })),
+                    )
+                        .into_response();
+                }
 
-    Json(load_test_data("http_get_account_balance.json")).into_response()
+                Json(load_test_data("http_get_account_balance.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = pending_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        *state.last_pending_orders_query.lock().await = Some(params);
+                        Json(load_test_data("http_get_orders_pending.json")).into_response()
+                    }
+                },
+            ),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = order_history_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        *state.last_order_history_query.lock().await = Some(params);
+                        Json(load_test_data("http_get_orders_history.json")).into_response()
+                    }
+                },
+            ),
+        )
+        .route(
+            "/api/v5/trade/order",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = order_detail_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        *state.last_order_detail_query.lock().await = Some(params);
+                        Json(load_test_data("http_get_orders_history.json")).into_response()
+                    }
+                },
+            ),
+        )
 }
 
-fn create_router(state: Option<TestServerState>) -> Router {
-    if let Some(state) = state {
-        Router::new()
-            .route(
-                "/api/v5/public/instruments",
-                get(handle_get_instruments_with_state),
-            )
-            .route("/api/v5/public/mark-price", get(handle_get_mark_price))
-            .route("/api/v5/account/balance", get(handle_get_balance))
-            .with_state(state)
-    } else {
-        Router::new()
-            .route("/api/v5/public/instruments", get(handle_get_instruments))
-            .route("/api/v5/public/mark-price", get(handle_get_mark_price))
-            .route("/api/v5/account/balance", get(handle_get_balance))
-    }
-}
-
-async fn start_test_server(state: Option<TestServerState>) -> SocketAddr {
+async fn start_test_server(state: Arc<TestServerState>) -> SocketAddr {
     let router = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -123,7 +234,7 @@ async fn start_test_server(state: Option<TestServerState>) -> SocketAddr {
     let addr = listener.local_addr().expect("missing local addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, router)
+        axum::serve(listener, router.into_make_service())
             .await
             .expect("test server failed");
     });
@@ -135,7 +246,7 @@ async fn start_test_server(state: Option<TestServerState>) -> SocketAddr {
 #[rstest]
 #[tokio::test]
 async fn test_http_get_instruments_returns_data() {
-    let addr = start_test_server(None).await;
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
     let params = GetInstrumentsParamsBuilder::default()
@@ -157,7 +268,7 @@ async fn test_http_get_instruments_returns_data() {
 #[rstest]
 #[tokio::test]
 async fn test_http_get_balance_requires_credentials() {
-    let addr = start_test_server(None).await;
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
     let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None)
@@ -174,7 +285,7 @@ async fn test_http_get_balance_requires_credentials() {
 #[rstest]
 #[tokio::test]
 async fn test_http_get_balance_with_credentials_succeeds() {
-    let addr = start_test_server(None).await;
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
     let client = OKXHttpInnerClient::with_credentials(
@@ -200,8 +311,8 @@ async fn test_http_get_balance_with_credentials_succeeds() {
 #[rstest]
 #[tokio::test]
 async fn test_http_get_instruments_handles_rate_limit_error() {
-    let state = TestServerState::default();
-    let addr = start_test_server(Some(state.clone())).await;
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
     let params = GetInstrumentsParamsBuilder::default()
@@ -226,4 +337,210 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
         OKXHttpError::OkxError { error_code, .. } => assert_eq!(error_code, "50116"),
         other => panic!("expected OkxError, got {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_pending_orders_requires_credentials() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{}", addr);
+
+    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None)
+        .expect("failed to create anonymous client");
+
+    let params = GetPendingOrdersParams {
+        inst_type: OKXInstrumentType::Swap,
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        pos_side: None,
+    };
+
+    match client.http_get_pending_orders(params).await {
+        Err(OKXHttpError::MissingCredentials) => {}
+        other => panic!("expected MissingCredentials error, got {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_pending_orders_returns_live_orders() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{}", addr);
+
+    let client = OKXHttpInnerClient::with_credentials(
+        "key".to_string(),
+        "secret".to_string(),
+        "pass".to_string(),
+        base_url.clone(),
+        Some(60),
+        None,
+        None,
+        None,
+    )
+    .expect("failed to create authenticated client");
+
+    let params = GetPendingOrdersParams {
+        inst_type: OKXInstrumentType::Swap,
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        pos_side: None,
+    };
+
+    let orders = client
+        .http_get_pending_orders(params)
+        .await
+        .expect("expected pending orders response");
+
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].state, OKXOrderStatus::Live);
+    assert_eq!(orders[0].inst_id.as_str(), "BTC-USDT-SWAP");
+
+    let query = state
+        .last_pending_orders_query
+        .lock()
+        .await
+        .clone()
+        .expect("pending orders query missing");
+    assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
+    assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_order_history_applies_filters() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{}", addr);
+
+    let client = OKXHttpInnerClient::with_credentials(
+        "key".to_string(),
+        "secret".to_string(),
+        "pass".to_string(),
+        base_url.clone(),
+        Some(60),
+        None,
+        None,
+        None,
+    )
+    .expect("failed to create authenticated client");
+
+    let params = GetOrderHistoryParams {
+        inst_type: OKXInstrumentType::Swap,
+        uly: None,
+        inst_family: None,
+        inst_id: Some("BTC-USDT-SWAP".to_string()),
+        ord_type: None,
+        state: Some("filled".to_string()),
+        after: None,
+        before: None,
+        limit: Some(50),
+    };
+
+    let orders = client
+        .http_get_order_history(params)
+        .await
+        .expect("expected order history response");
+    assert!(!orders.is_empty());
+
+    let query = state
+        .last_order_history_query
+        .lock()
+        .await
+        .clone()
+        .expect("order history query missing");
+    assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
+    assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
+    assert_eq!(query.get("state"), Some(&"filled".to_string()));
+    assert_eq!(query.get("limit"), Some(&"50".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_order_by_client_and_exchange_ids() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{}", addr);
+
+    let client = OKXHttpInnerClient::with_credentials(
+        "key".to_string(),
+        "secret".to_string(),
+        "pass".to_string(),
+        base_url.clone(),
+        Some(60),
+        None,
+        None,
+        None,
+    )
+    .expect("failed to create authenticated client");
+
+    let params = GetOrderParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Swap)
+        .inst_id("BTC-USDT-SWAP")
+        .ord_id("1234567890123456789")
+        .cl_ord_id("client-order-1")
+        .build()
+        .expect("failed to build order params");
+
+    let orders = client
+        .http_get_order(params)
+        .await
+        .expect("expected order detail response");
+    assert_eq!(orders.len(), 1);
+
+    let query = state
+        .last_order_detail_query
+        .lock()
+        .await
+        .clone()
+        .expect("order detail query missing");
+    assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
+    assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
+    assert_eq!(query.get("ordId"), Some(&"1234567890123456789".to_string()));
+    assert_eq!(query.get("clOrdId"), Some(&"client-order-1".to_string()));
+}
+
+#[tokio::test]
+async fn test_request_trades_uses_after_before() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{}", addr);
+
+    let mut client =
+        nautilus_okx::http::client::OKXHttpClient::new(Some(base_url), Some(60), None, None, None)
+            .expect("failed to create http client");
+
+    for instrument in load_instruments_any() {
+        client.add_instrument(instrument);
+    }
+
+    let start = Utc::now() - ChronoDuration::minutes(5);
+    let end = Utc::now();
+
+    let trades = client
+        .request_trades(
+            InstrumentId::from("BTC-USD.OKX"),
+            Some(start),
+            Some(end),
+            Some(150),
+        )
+        .await
+        .expect("request_trades should succeed");
+    assert!(trades.is_empty());
+
+    let query = state
+        .last_history_trades_query
+        .lock()
+        .await
+        .clone()
+        .expect("history trades query missing");
+
+    assert_eq!(query.get("instId"), Some(&"BTC-USD".to_string()));
+    assert_eq!(
+        query.get("after"),
+        Some(&start.timestamp_millis().to_string())
+    );
+    assert_eq!(
+        query.get("before"),
+        Some(&end.timestamp_millis().to_string())
+    );
+    assert_eq!(query.get("limit"), Some(&"100".to_string()));
 }

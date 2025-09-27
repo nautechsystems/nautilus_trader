@@ -29,6 +29,7 @@ from nautilus_trader.model.objects import Quantity
 
 @pytest.mark.asyncio
 async def test_load_all_async_populates_provider(monkeypatch, instrument):
+    # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_inst")]
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
@@ -43,8 +44,10 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
         lambda _values: [instrument],
     )
 
+    # Act
     await provider.load_all_async()
 
+    # Assert
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.OKXInstrumentType.SPOT,
     )
@@ -54,6 +57,7 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
 
 @pytest.mark.asyncio
 async def test_load_ids_async_filters_results(monkeypatch, instrument):
+    # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_a"), MagicMock(name="py_b")]
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
@@ -83,8 +87,10 @@ async def test_load_ids_async_filters_results(monkeypatch, instrument):
         lambda _values: [instrument, other_instrument],
     )
 
+    # Act
     await provider.load_ids_async([instrument.id])
 
+    # Assert
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.OKXInstrumentType.SPOT,
     )
