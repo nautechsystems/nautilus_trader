@@ -20,9 +20,12 @@
 //! are provided), manages subscriptions to market data and account update channels,
 //! and parses incoming messages into structured Nautilus domain objects.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -34,7 +37,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, bar::BarType},
-    enums::OrderType,
+    enums::{OrderStatus, OrderType},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
@@ -54,8 +57,8 @@ use super::{
     },
     error::BitmexWsError,
     messages::{
-        BitmexAuthentication, BitmexSubscription, BitmexTableMessage, BitmexWsMessage,
-        NautilusWsMessage, OrderData,
+        BitmexAuthentication, BitmexHttpRequest, BitmexSubscription, BitmexTableMessage,
+        BitmexWsMessage, NautilusWsMessage, OrderData,
     },
     parse::{
         is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_order_update_msg,
@@ -64,13 +67,23 @@ use super::{
 };
 use crate::{
     common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
-    websocket::parse::{
-        parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
-        parse_position_msg,
+    websocket::{
+        auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
+        parse::{
+            parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
+            parse_position_msg,
+        },
+        subscription::SubscriptionState,
     },
 };
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
+///
+/// Key runtime patterns:
+/// - Authentication handshakes are managed by the internal auth tracker, ensuring resubscriptions
+///   occur only after BitMEX acknowledges `authKey` messages.
+/// - The subscription state maintains pending and confirmed topics so reconnection replay is
+///   deterministic and per-topic errors are surfaced.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
@@ -85,7 +98,8 @@ pub struct BitmexWebSocketClient {
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     account_id: AccountId,
-    subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
+    auth_tracker: AuthTracker,
+    subscriptions: SubscriptionState,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
 }
@@ -120,7 +134,8 @@ impl BitmexWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             account_id,
-            subscriptions: Arc::new(DashMap::new()),
+            auth_tracker: AuthTracker::new(),
+            subscriptions: SubscriptionState::new(),
             instruments_cache: Arc::new(AHashMap::new()),
             order_type_cache: Arc::new(DashMap::new()),
         })
@@ -209,13 +224,22 @@ impl BitmexWebSocketClient {
         let account_id = self.account_id;
         let inner_client = self.inner.clone();
         let credential = self.credential.clone();
+        let auth_tracker = self.auth_tracker.clone();
         let subscriptions = self.subscriptions.clone();
         let instruments_cache = self.instruments_cache.clone();
         let order_type_cache = self.order_type_cache.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler =
-                BitmexWsMessageHandler::new(reader, signal, tx, account_id, instruments_cache, order_type_cache);
+            let mut handler = BitmexWsMessageHandler::new(
+                reader,
+                signal,
+                tx,
+                account_id,
+                auth_tracker.clone(),
+                subscriptions.clone(),
+                instruments_cache,
+                order_type_cache,
+            );
 
             // Run message processing with reconnection handling
             loop {
@@ -223,101 +247,104 @@ impl BitmexWebSocketClient {
                     Some(NautilusWsMessage::Reconnected) => {
                         log::info!("Reconnecting WebSocket");
 
-                        let inner_guard = inner_client.read().await;
-                        if let Some(inner) = &*inner_guard {
-                            // Re-authenticate if we have credentials
-                            if let Some(cred) = &credential {
-                                let expires = (chrono::Utc::now() + chrono::Duration::seconds(30))
-                                    .timestamp();
-                                let signature = cred.sign("GET", "/realtime", expires, "");
+                        let has_client = {
+                            let guard = inner_client.read().await;
+                            guard.is_some()
+                        };
 
-                                let auth_message = BitmexAuthentication {
-                                    op: BitmexWsAuthAction::AuthKeyExpires,
-                                    args: (cred.api_key.to_string(), expires, signature),
-                                };
+                        if !has_client {
+                            log::warn!("Reconnection signaled but WebSocket client unavailable");
+                            continue;
+                        }
 
-                                let auth_json = match serde_json::to_string(&auth_message) {
-                                    Ok(json) => json,
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "Failed to serialize auth message");
-                                        continue;
-                                    }
-                                };
-                                if let Err(e) = inner
-                                    .send_text(auth_json, None)
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to re-authenticate after reconnection: {e}"
-                                    );
-                                } else {
-                                    log::info!("Re-authenticated after reconnection");
-                                }
-                            }
+                        let confirmed = subscriptions.confirmed();
+                        let pending = subscriptions.pending();
+                        let mut restore_set: HashSet<String> = HashSet::new();
 
-                            // Always resubscribe to instruments
-                            let subscribe_msg = BitmexSubscription {
-                                op: BitmexWsOperation::Subscribe,
-                                args: vec![Ustr::from(BitmexWsTopic::Instrument.as_ref())],
-                            };
+                        let mut collect_topics = |map: &DashMap<String, AHashSet<Ustr>>| {
+                            for entry in map.iter() {
+                                let (channel, symbols) = entry.pair();
 
-                            let subscribe_json = match serde_json::to_string(&subscribe_msg) {
-                                Ok(json) => json,
-                                Err(e) => {
-                                    tracing::error!(error = %e, "Failed to serialize subscribe message");
+                                if channel == BitmexWsTopic::Instrument.as_ref() {
                                     continue;
                                 }
-                            };
-                            if let Err(e) = inner
-                                .send_text(subscribe_json, None)
-                                .await
-                            {
-                                log::error!(
-                                    "Failed to subscribe to instruments after reconnection: {e}"
-                                );
-                            }
 
-                            // Restore all tracked subscriptions
-                            let mut topics_to_restore = Vec::new();
-                            for entry in subscriptions.iter() {
-                                let (channel, symbols) = entry.pair();
                                 if symbols.is_empty() {
-                                        topics_to_restore.push(channel.clone());
+                                    restore_set.insert(channel.clone());
                                 } else {
                                     for symbol in symbols.iter() {
-                                        topics_to_restore.push(format!("{channel}:{symbol}"));
+                                        restore_set.insert(format!("{channel}:{symbol}"));
                                     }
                                 }
                             }
+                        };
 
-                            if !topics_to_restore.is_empty() {
-                                let message = BitmexSubscription {
-                                    op: BitmexWsOperation::Subscribe,
-                                    args: topics_to_restore.iter().map(|s| Ustr::from(s)).collect(),
-                                };
+                        collect_topics(&confirmed);
+                        collect_topics(&pending);
 
-                                let msg_json = match serde_json::to_string(&message) {
-                                    Ok(json) => json,
-                                    Err(e) => {
-                                        tracing::error!(error = %e, topics = ?topics_to_restore, "Failed to serialize message");
-                                        continue;
-                                    }
-                                };
-                                if let Err(e) = inner
-                                    .send_text(msg_json, None)
+                        let mut topics_to_restore: Vec<String> = restore_set.into_iter().collect();
+                        topics_to_restore.sort();
+
+                        if let Some(cred) = &credential
+                            && let Err(e) = BitmexWebSocketClient::issue_authentication_request(
+                                &inner_client,
+                                cred,
+                                &auth_tracker,
+                            )
+                            .await
+                        {
+                            log::error!(
+                                "Failed to send re-authentication request after reconnection: {e}"
+                            );
+                            continue;
+                        }
+
+                        let credential_for_task = credential.clone();
+                        let inner_for_task = inner_client.clone();
+                        let state_for_task = subscriptions.clone();
+                        let auth_tracker_for_task = auth_tracker.clone();
+                        let topics_to_restore_clone = topics_to_restore.clone();
+                        get_runtime().spawn(async move {
+                            if credential_for_task.is_some() {
+                                if let Err(e) = auth_tracker_for_task
+                                    .wait_for_result(Duration::from_secs(
+                                        AUTHENTICATION_TIMEOUT_SECS,
+                                    ))
                                     .await
                                 {
-                                    log::error!(
-                                        "Failed to restore subscriptions after reconnection: {e}"
-                                    );
-                                } else {
-                                    log::info!(
-                                        "Restored {} subscriptions after reconnection",
-                                        topics_to_restore.len()
-                                    );
+                                    log::error!("Authentication after reconnection failed: {e}");
+                                    return;
                                 }
+                                log::info!("Re-authenticated after reconnection");
                             }
-                        }
+
+                            let mut all_topics =
+                                Vec::with_capacity(1 + topics_to_restore_clone.len());
+                            all_topics.push(BitmexWsTopic::Instrument.as_ref().to_string());
+                            all_topics.extend(topics_to_restore_clone.iter().cloned());
+
+                            for topic in &all_topics {
+                                state_for_task.mark_subscribe(topic.as_str());
+                            }
+
+                            if let Err(e) = BitmexWebSocketClient::send_topics(
+                                &inner_for_task,
+                                BitmexWsOperation::Subscribe,
+                                all_topics.clone(),
+                            )
+                            .await
+                            {
+                                log::error!(
+                                    "Failed to restore subscriptions after reconnection: {e}"
+                                );
+                                // Leave topics pending so the next reconnect attempt retries them.
+                            } else {
+                                log::info!(
+                                    "Restored {} subscriptions after reconnection",
+                                    all_topics.len()
+                                );
+                            }
+                        });
                     }
                     Some(msg) => {
                         if let Err(e) = handler.tx.send(msg) {
@@ -341,9 +368,16 @@ impl BitmexWebSocketClient {
 
         self.task_handle = Some(Arc::new(stream_handle));
 
+        if self.credential.is_some() {
+            self.authenticate().await?;
+        }
+
         {
             let inner_guard = self.inner.read().await;
             if let Some(inner) = &*inner_guard {
+                self.subscriptions
+                    .mark_subscribe(BitmexWsTopic::Instrument.as_ref());
+
                 let subscribe_msg = BitmexSubscription {
                     op: BitmexWsOperation::Subscribe,
                     args: vec![Ustr::from(BitmexWsTopic::Instrument.as_ref())],
@@ -426,11 +460,45 @@ impl BitmexWebSocketClient {
             *inner_guard = Some(client);
         }
 
-        if self.credential.is_some() {
-            self.authenticate().await?;
+        Ok(rx)
+    }
+
+    async fn issue_authentication_request(
+        inner: &Arc<RwLock<Option<WebSocketClient>>>,
+        credential: &Credential,
+        tracker: &AuthTracker,
+    ) -> Result<(), BitmexWsError> {
+        tracker.begin();
+
+        let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+        let signature = credential.sign("GET", "/realtime", expires, "");
+
+        let auth_message = BitmexAuthentication {
+            op: BitmexWsAuthAction::AuthKeyExpires,
+            args: (credential.api_key.to_string(), expires, signature),
+        };
+
+        let auth_json = serde_json::to_string(&auth_message).map_err(|e| {
+            let msg = format!("Failed to serialize auth message: {e}");
+            tracker.fail(msg.clone());
+            BitmexWsError::AuthenticationError(msg)
+        })?;
+
+        {
+            let inner_guard = inner.read().await;
+            let client = inner_guard.as_ref().ok_or_else(|| {
+                tracker.fail("Cannot authenticate: not connected");
+                BitmexWsError::AuthenticationError("Cannot authenticate: not connected".to_string())
+            })?;
+
+            client.send_text(auth_json, None).await.map_err(|e| {
+                let error = e.to_string();
+                tracker.fail(error.clone());
+                BitmexWsError::AuthenticationError(error)
+            })?;
         }
 
-        Ok(rx)
+        Ok(())
     }
 
     /// Authenticate the WebSocket connection using the provided credentials.
@@ -449,31 +517,10 @@ impl BitmexWebSocketClient {
             }
         };
 
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
-        let signature = credential.sign("GET", "/realtime", expires, "");
-
-        let auth_message = BitmexAuthentication {
-            op: BitmexWsAuthAction::AuthKeyExpires,
-            args: (credential.api_key.to_string(), expires, signature),
-        };
-
-        {
-            let inner_guard = self.inner.read().await;
-            if let Some(inner) = &*inner_guard {
-                let auth_json = serde_json::to_string(&auth_message).map_err(|e| {
-                    BitmexWsError::AuthenticationError(format!(
-                        "Failed to serialize auth message: {e}"
-                    ))
-                })?;
-                inner
-                    .send_text(auth_json, None)
-                    .await
-                    .map_err(|e| BitmexWsError::AuthenticationError(e.to_string()))
-            } else {
-                log::error!("Cannot authenticate: not connected");
-                Ok(())
-            }
-        }
+        Self::issue_authentication_request(&self.inner, credential, &self.auth_tracker).await?;
+        self.auth_tracker
+            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS))
+            .await
     }
 
     /// Wait until the WebSocket connection is active.
@@ -583,6 +630,41 @@ impl BitmexWebSocketClient {
         Ok(())
     }
 
+    async fn send_topics(
+        inner: &Arc<RwLock<Option<WebSocketClient>>>,
+        op: BitmexWsOperation,
+        topics: Vec<String>,
+    ) -> Result<(), BitmexWsError> {
+        if topics.is_empty() {
+            return Ok(());
+        }
+
+        let message = BitmexSubscription {
+            op,
+            args: topics
+                .iter()
+                .map(|topic| Ustr::from(topic.as_str()))
+                .collect(),
+        };
+
+        let op_name = message.op.as_ref().to_string();
+        let payload = serde_json::to_string(&message).map_err(|e| {
+            BitmexWsError::SubscriptionError(format!("Failed to serialize {op_name} message: {e}"))
+        })?;
+
+        let inner_guard = inner.read().await;
+        if let Some(client) = &*inner_guard {
+            client
+                .send_text(payload, None)
+                .await
+                .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
+        } else {
+            log::error!("Cannot send {op_name} message: not connected");
+        }
+
+        Ok(())
+    }
+
     /// Subscribe to the specified topics.
     ///
     /// # Errors
@@ -595,42 +677,11 @@ impl BitmexWebSocketClient {
     pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         log::debug!("Subscribing to topics: {topics:?}");
 
-        // Track subscriptions
         for topic in &topics {
-            if let Some((channel, symbol)) = topic.split_once(':') {
-                self.subscriptions
-                    .entry(channel.to_string())
-                    .or_default()
-                    .insert(Ustr::from(symbol));
-            } else {
-                // Topic without symbol (e.g., "execution", "order")
-                self.subscriptions.entry(topic.clone()).or_default();
-            }
+            self.subscriptions.mark_subscribe(topic.as_str());
         }
 
-        let message = BitmexSubscription {
-            op: BitmexWsOperation::Subscribe,
-            args: topics.iter().map(|s| Ustr::from(s)).collect(),
-        };
-
-        {
-            let inner_guard = self.inner.read().await;
-            if let Some(inner) = &*inner_guard {
-                let msg_json = serde_json::to_string(&message).map_err(|e| {
-                    BitmexWsError::SubscriptionError(format!(
-                        "Failed to serialize subscribe message: {e}"
-                    ))
-                })?;
-                inner
-                    .send_text(msg_json, None)
-                    .await
-                    .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
-            } else {
-                log::error!("Cannot send message: not connected");
-            }
-        }
-
-        Ok(())
+        Self::send_topics(&self.inner, BitmexWsOperation::Subscribe, topics).await
     }
 
     /// Unsubscribe from the specified topics.
@@ -647,42 +698,13 @@ impl BitmexWebSocketClient {
         }
 
         for topic in &topics {
-            if let Some((channel, symbol)) = topic.split_once(':') {
-                if let Some(mut entry) = self.subscriptions.get_mut(channel) {
-                    entry.remove(&Ustr::from(symbol));
-                    if entry.is_empty() {
-                        drop(entry);
-                        self.subscriptions.remove(channel);
-                    }
-                }
-            } else {
-                self.subscriptions.remove(topic);
-            }
+            self.subscriptions.mark_unsubscribe(topic.as_str());
         }
 
-        let message = BitmexSubscription {
-            op: BitmexWsOperation::Unsubscribe,
-            args: topics.iter().map(|s| Ustr::from(s)).collect(),
-        };
-
-        {
-            let inner_guard = self.inner.read().await;
-            if let Some(inner) = &*inner_guard {
-                let msg_json = match serde_json::to_string(&message) {
-                    Ok(json) => json,
-                    Err(e) => {
-                        tracing::error!(error = %e, "Failed to serialize unsubscribe message");
-                        return Ok(());
-                    }
-                };
-                if let Err(e) = inner.send_text(msg_json, None).await {
-                    log::debug!("Error sending unsubscribe message: {e}");
-                }
-            } else {
-                log::debug!("Cannot send unsubscribe message: not connected");
-            }
+        let result = Self::send_topics(&self.inner, BitmexWsOperation::Unsubscribe, topics).await;
+        if let Err(e) = result {
+            tracing::debug!(error = %e, "Failed to send unsubscribe message");
         }
-
         Ok(())
     }
 
@@ -692,13 +714,12 @@ impl BitmexWebSocketClient {
         self.subscriptions.len()
     }
 
-    /// Get active subscriptions for a specific instrument.
-    #[must_use]
     pub fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
         let symbol = instrument_id.symbol.inner();
-        let mut channels = Vec::with_capacity(self.subscriptions.len());
+        let confirmed = self.subscriptions.confirmed();
+        let mut channels = Vec::with_capacity(confirmed.len());
 
-        for entry in self.subscriptions.iter() {
+        for entry in confirmed.iter() {
             let (channel, symbols) = entry.pair();
             if symbols.contains(&symbol) {
                 // Return the full topic string (e.g., "orderBookL2:XBTUSD")
@@ -1181,6 +1202,13 @@ impl BitmexFeedHandler {
 
                             tracing::trace!("Raw websocket message: {text}");
 
+                            if Self::is_heartbeat_message(&text) {
+                                tracing::trace!(
+                                    "Ignoring heartbeat control message: {text}"
+                                );
+                                continue;
+                            }
+
                             match serde_json::from_str(&text) {
                                 Ok(msg) => match &msg {
                                     BitmexWsMessage::Welcome {
@@ -1196,15 +1224,7 @@ impl BitmexFeedHandler {
                                             "Welcome to the BitMEX Realtime API:",
                                         );
                                     }
-                                    BitmexWsMessage::Subscription {
-                                        success: _,
-                                        subscribe: _,
-                                        error,
-                                    } => {
-                                        if let Some(error) = error {
-                                            tracing::error!("Subscription error: {error}");
-                                        }
-                                    }
+                                    BitmexWsMessage::Subscription { .. } => return Some(msg),
                                     BitmexWsMessage::Error { status, error, .. } => {
                                         tracing::error!(
                                             status = status,
@@ -1215,12 +1235,6 @@ impl BitmexFeedHandler {
                                     _ => return Some(msg),
                                 },
                                 Err(e) => {
-                                    // Handle here instead of adding message variant to main flow
-                                    if Self::is_heartbeat_message(&text) {
-                                        tracing::trace!("Ignoring heartbeat control message: {text}");
-                                        continue;
-                                    }
-
                                     tracing::error!("Failed to parse WebSocket message: {e}: {text}");
                                 }
                             }
@@ -1263,13 +1277,13 @@ impl BitmexFeedHandler {
     }
 
     fn is_heartbeat_message(text: &str) -> bool {
-        match serde_json::from_str::<serde_json::Value>(text) {
-            Ok(value) => matches!(
-                value.get("op").and_then(|op| op.as_str()),
-                Some("ping") | Some("pong")
-            ),
-            Err(_) => false,
+        let trimmed = text.trim();
+
+        if !trimmed.starts_with('{') || trimmed.len() > 64 {
+            return false;
         }
+
+        trimmed.contains("\"op\":\"ping\"") || trimmed.contains("\"op\":\"pong\"")
     }
 }
 
@@ -1281,6 +1295,8 @@ struct BitmexWsMessageHandler {
         reason = "May be needed for future account-specific processing"
     )]
     account_id: AccountId,
+    auth_tracker: AuthTracker,
+    subscriptions: SubscriptionState,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     quote_cache: QuoteCache,
@@ -1288,11 +1304,14 @@ struct BitmexWsMessageHandler {
 
 impl BitmexWsMessageHandler {
     /// Creates a new [`BitmexWsMessageHandler`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         receiver: tokio::sync::mpsc::UnboundedReceiver<Message>,
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: AccountId,
+        auth_tracker: AuthTracker,
+        subscriptions: SubscriptionState,
         instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
         order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     ) -> Self {
@@ -1301,6 +1320,8 @@ impl BitmexWsMessageHandler {
             handler,
             tx,
             account_id,
+            auth_tracker,
+            subscriptions,
             instruments_cache,
             order_type_cache,
             quote_cache: QuoteCache::new(),
@@ -1310,12 +1331,8 @@ impl BitmexWsMessageHandler {
     // Run is now handled inline in the connect() method where we have access to reconnection resources
 
     #[inline]
-    fn get_instrument(&self, symbol: &Ustr) -> InstrumentAny {
-        self.instruments_cache.get(symbol).cloned().unwrap_or_else(|| {
-            panic!(
-                "Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"
-            )
-        })
+    fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+        self.instruments_cache.get(symbol).cloned()
     }
 
     async fn next(&mut self) -> Option<NautilusWsMessage> {
@@ -1327,6 +1344,20 @@ impl BitmexWsMessageHandler {
                     // Return reconnection signal to outer loop
                     self.quote_cache.clear();
                     return Some(NautilusWsMessage::Reconnected);
+                }
+                BitmexWsMessage::Subscription {
+                    success,
+                    subscribe,
+                    request,
+                    error,
+                } => {
+                    self.handle_subscription_message(
+                        success,
+                        subscribe.as_ref(),
+                        request.as_ref(),
+                        error.as_deref(),
+                    );
+                    continue;
                 }
                 BitmexWsMessage::Table(table_msg) => {
                     let ts_init = clock.get_time_ns();
@@ -1377,7 +1408,13 @@ impl BitmexWsMessageHandler {
                             }
 
                             let msg = data.remove(0);
-                            let instrument = self.get_instrument(&msg.symbol);
+                            let Some(instrument) = self.get_instrument(&msg.symbol) else {
+                                tracing::error!(
+                                    symbol = %msg.symbol,
+                                    "Instrument not found for quote message"
+                                );
+                                continue;
+                            };
 
                             if let Some(quote) =
                                 self.quote_cache.process(&msg, &instrument, ts_init)
@@ -1458,7 +1495,15 @@ impl BitmexWsMessageHandler {
                             for order_data in data {
                                 match order_data {
                                     OrderData::Full(order_msg) => {
-                                        let instrument = self.get_instrument(&order_msg.symbol);
+                                        let Some(instrument) =
+                                            self.get_instrument(&order_msg.symbol)
+                                        else {
+                                            tracing::error!(
+                                                symbol = %order_msg.symbol,
+                                                "Instrument not found for order message"
+                                            );
+                                            continue;
+                                        };
 
                                         // Cache the order type if we have both client order ID and order type
                                         if let (Some(client_order_id), Some(ord_type)) =
@@ -1476,7 +1521,15 @@ impl BitmexWsMessageHandler {
                                             &instrument,
                                             &self.order_type_cache,
                                         ) {
-                                            Ok(report) => reports.push(report),
+                                            Ok(report) => {
+                                                if is_terminal_order_status(report.order_status)
+                                                    && let Some(client_id) = report.client_order_id
+                                                {
+                                                    self.order_type_cache.remove(&client_id);
+                                                }
+
+                                                reports.push(report);
+                                            }
                                             Err(e) => {
                                                 tracing::error!(
                                                     error = %e,
@@ -1491,7 +1544,14 @@ impl BitmexWsMessageHandler {
                                         }
                                     }
                                     OrderData::Update(msg) => {
-                                        let instrument = self.get_instrument(&msg.symbol);
+                                        let Some(instrument) = self.get_instrument(&msg.symbol)
+                                        else {
+                                            tracing::error!(
+                                                symbol = %msg.symbol,
+                                                "Instrument not found for order update"
+                                            );
+                                            continue;
+                                        };
 
                                         if let Some(event) = parse_order_update_msg(
                                             &msg,
@@ -1537,7 +1597,14 @@ impl BitmexWsMessageHandler {
                                     }
                                     continue;
                                 };
-                                let instrument = self.get_instrument(symbol);
+                                let Some(instrument) = self.get_instrument(symbol) else {
+                                    tracing::error!(
+                                        symbol = %symbol,
+                                        exec_id = ?exec_msg.exec_id,
+                                        "Instrument not found for execution message"
+                                    );
+                                    continue;
+                                };
 
                                 if let Some(fill) = parse_execution_msg(exec_msg, &instrument) {
                                     fills.push(fill);
@@ -1551,7 +1618,13 @@ impl BitmexWsMessageHandler {
                         }
                         BitmexTableMessage::Position { data, .. } => {
                             if let Some(pos_msg) = data.into_iter().next() {
-                                let instrument = self.get_instrument(&pos_msg.symbol);
+                                let Some(instrument) = self.get_instrument(&pos_msg.symbol) else {
+                                    tracing::error!(
+                                        symbol = %pos_msg.symbol,
+                                        "Instrument not found for position message"
+                                    );
+                                    continue;
+                                };
                                 let report = parse_position_msg(pos_msg, &instrument);
                                 NautilusWsMessage::PositionStatusReport(report)
                             } else {
@@ -1609,16 +1682,138 @@ impl BitmexWsMessageHandler {
                         }
                     });
                 }
-                _ => {
-                    // Other BitmexWsMessage types (Welcome, Subscription, Error) are
-                    // already handled in BitmexFeedHandler::next()
-                    continue;
-                }
+                BitmexWsMessage::Welcome { .. } | BitmexWsMessage::Error { .. } => continue,
             }
         }
 
         None
     }
+
+    fn handle_subscription_message(
+        &self,
+        success: bool,
+        subscribe: Option<&String>,
+        request: Option<&BitmexHttpRequest>,
+        error: Option<&str>,
+    ) {
+        if let Some(req) = request {
+            if req
+                .op
+                .eq_ignore_ascii_case(BitmexWsAuthAction::AuthKeyExpires.as_ref())
+            {
+                if success {
+                    tracing::info!("Authenticated BitMEX WebSocket session");
+                    self.auth_tracker.succeed();
+                } else {
+                    let reason = error.unwrap_or("Authentication rejected").to_string();
+                    tracing::error!(error = %reason, "Authentication failed");
+                    self.auth_tracker.fail(reason);
+                }
+                return;
+            }
+
+            if req
+                .op
+                .eq_ignore_ascii_case(BitmexWsOperation::Subscribe.as_ref())
+            {
+                self.handle_subscription_ack(success, request, subscribe, error);
+                return;
+            }
+
+            if req
+                .op
+                .eq_ignore_ascii_case(BitmexWsOperation::Unsubscribe.as_ref())
+            {
+                self.handle_unsubscribe_ack(success, request, subscribe, error);
+                return;
+            }
+        }
+
+        if subscribe.is_some() {
+            self.handle_subscription_ack(success, request, subscribe, error);
+            return;
+        }
+
+        if let Some(error) = error {
+            tracing::warn!(
+                success = success,
+                error = error,
+                "Unhandled subscription control message"
+            );
+        }
+    }
+
+    fn handle_subscription_ack(
+        &self,
+        success: bool,
+        request: Option<&BitmexHttpRequest>,
+        subscribe: Option<&String>,
+        error: Option<&str>,
+    ) {
+        let topics = Self::topics_from_request(request, subscribe);
+
+        if topics.is_empty() {
+            tracing::debug!("Subscription acknowledgement without topics");
+            return;
+        }
+
+        for topic in topics {
+            if success {
+                self.subscriptions.confirm(topic);
+                tracing::debug!(topic = topic, "Subscription confirmed");
+            } else {
+                self.subscriptions.clear_pending(topic);
+                let reason = error.unwrap_or("Subscription rejected");
+                tracing::error!(topic = topic, error = reason, "Subscription failed");
+            }
+        }
+    }
+
+    fn handle_unsubscribe_ack(
+        &self,
+        success: bool,
+        request: Option<&BitmexHttpRequest>,
+        subscribe: Option<&String>,
+        error: Option<&str>,
+    ) {
+        let topics = Self::topics_from_request(request, subscribe);
+
+        if topics.is_empty() {
+            tracing::debug!("Unsubscription acknowledgement without topics");
+            return;
+        }
+
+        for topic in topics {
+            if success {
+                tracing::debug!(topic = topic, "Unsubscription confirmed");
+                self.subscriptions.clear_pending(topic);
+            } else {
+                let reason = error.unwrap_or("Unsubscription rejected");
+                tracing::error!(topic = topic, error = reason, "Unsubscription failed");
+                self.subscriptions.confirm(topic);
+            }
+        }
+    }
+
+    fn topics_from_request<'a>(
+        request: Option<&'a BitmexHttpRequest>,
+        fallback: Option<&'a String>,
+    ) -> Vec<&'a str> {
+        if let Some(req) = request
+            && !req.args.is_empty()
+        {
+            return req.args.iter().filter_map(|arg| arg.as_str()).collect();
+        }
+
+        fallback.into_iter().map(|topic| topic.as_str()).collect()
+    }
+}
+
+fn is_terminal_order_status(status: OrderStatus) -> bool {
+    matches!(
+        status,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected | OrderStatus::Filled,
+    )
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1633,6 +1828,15 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn test_is_heartbeat_message_detection() {
+        assert!(BitmexFeedHandler::is_heartbeat_message("{\"op\":\"ping\"}"));
+        assert!(BitmexFeedHandler::is_heartbeat_message("{\"op\":\"pong\"}"));
+        assert!(!BitmexFeedHandler::is_heartbeat_message(
+            "{\"op\":\"subscribe\",\"args\":[\"trade:XBTUSD\"]}"
+        ));
+    }
+
     #[rstest]
     fn test_reconnect_topics_restoration_logic() {
         // Create real client with credentials
@@ -1646,36 +1850,33 @@ mod tests {
         .unwrap();
 
         // Populate subscriptions like they would be during normal operation
-        client
-            .subscriptions
-            .insert(BitmexWsTopic::Trade.as_ref().to_string(), {
-                let mut set = AHashSet::new();
-                set.insert(Ustr::from("XBTUSD"));
-                set.insert(Ustr::from("ETHUSD"));
-                set
-            });
+        let subs = client.subscriptions.confirmed();
+        subs.insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set.insert(Ustr::from("ETHUSD"));
+            set
+        });
 
-        client
-            .subscriptions
-            .insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
-                let mut set = AHashSet::new();
-                set.insert(Ustr::from("XBTUSD"));
-                set
-            });
+        subs.insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set
+        });
 
         // Private channels (no symbols)
-        client.subscriptions.insert(
+        subs.insert(
             BitmexWsAuthChannel::Order.as_ref().to_string(),
             AHashSet::new(),
         );
-        client.subscriptions.insert(
+        subs.insert(
             BitmexWsAuthChannel::Position.as_ref().to_string(),
             AHashSet::new(),
         );
 
         // Test the actual reconnection topic building logic from lines 258-268
         let mut topics_to_restore = Vec::new();
-        for entry in client.subscriptions.iter() {
+        for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
             if symbols.is_empty() {
                 topics_to_restore.push(channel.clone());
@@ -1753,38 +1954,35 @@ mod tests {
         .unwrap();
 
         // Set up initial subscriptions
-        client
-            .subscriptions
-            .insert(BitmexWsTopic::Trade.as_ref().to_string(), {
-                let mut set = AHashSet::new();
-                set.insert(Ustr::from("XBTUSD"));
-                set.insert(Ustr::from("ETHUSD"));
-                set
-            });
+        let subs = client.subscriptions.confirmed();
+        subs.insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set.insert(Ustr::from("ETHUSD"));
+            set
+        });
 
-        client
-            .subscriptions
-            .insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
-                let mut set = AHashSet::new();
-                set.insert(Ustr::from("XBTUSD"));
-                set
-            });
+        subs.insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set
+        });
 
         // Simulate unsubscribe logic (like from unsubscribe() method lines 586-599)
         let topic = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
         if let Some((channel, symbol)) = topic.split_once(':')
-            && let Some(mut entry) = client.subscriptions.get_mut(channel)
+            && let Some(mut entry) = subs.get_mut(channel)
         {
             entry.remove(&Ustr::from(symbol));
             if entry.is_empty() {
                 drop(entry);
-                client.subscriptions.remove(channel);
+                subs.remove(channel);
             }
         }
 
         // Build restoration topics after unsubscribe
         let mut topics_to_restore = Vec::new();
-        for entry in client.subscriptions.iter() {
+        for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
             if symbols.is_empty() {
                 topics_to_restore.push(channel.clone());

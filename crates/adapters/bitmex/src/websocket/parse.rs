@@ -431,6 +431,20 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
     }
 }
 
+fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> Option<OrderType> {
+    if msg.stop_px.is_some() {
+        if msg.price.is_some() {
+            Some(OrderType::StopLimit)
+        } else {
+            Some(OrderType::StopMarket)
+        }
+    } else if msg.price.is_some() {
+        Some(OrderType::Limit)
+    } else {
+        Some(OrderType::Market)
+    }
+}
+
 /// Parse a BitMEX WebSocket order message into a Nautilus `OrderStatusReport`.
 ///
 /// # Panics
@@ -459,14 +473,18 @@ pub fn parse_order_msg(
         ord_type.into()
     } else if let Some(client_order_id) = msg.cl_ord_id {
         let client_order_id = ClientOrderId::new(client_order_id);
-        order_type_cache
-            .get(&client_order_id)
-            .map(|entry| *entry.value())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Order type not found in cache for client_order_id: {client_order_id} (order missing ord_type field)",
-                )
-            })?
+        if let Some(entry) = order_type_cache.get(&client_order_id) {
+            *entry.value()
+        } else if let Some(inferred) = infer_order_type_from_msg(msg) {
+            order_type_cache.insert(client_order_id, inferred);
+            inferred
+        } else {
+            anyhow::bail!(
+                "Order type not found in cache for client_order_id: {client_order_id} (order missing ord_type field)"
+            );
+        }
+    } else if let Some(inferred) = infer_order_type_from_msg(msg) {
+        inferred
     } else {
         anyhow::bail!("Order missing both ord_type and cl_ord_id");
     };
@@ -1138,6 +1156,23 @@ mod tests {
         assert_eq!(report.filled_qty, Quantity::from(0));
         assert_eq!(report.price.unwrap(), Price::from("98000.0"));
         assert_eq!(report.ts_accepted, 1732530600000000000); // 2024-11-25T10:30:00.000Z
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_infers_type_when_missing() {
+        let json_data = load_test_json("ws_order.json");
+        let mut msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
+        msg.ord_type = None;
+        msg.cl_ord_id = None;
+        msg.price = Some(98_000.0);
+        msg.stop_px = None;
+
+        let cache = dashmap::DashMap::new();
+        let instrument = create_test_perpetual_instrument();
+
+        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
     }
 
     #[rstest]

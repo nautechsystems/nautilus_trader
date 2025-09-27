@@ -24,6 +24,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::Value;
 use strum::Display;
 use ustr::Ustr;
 use uuid::Uuid;
@@ -131,6 +132,8 @@ pub enum BitmexWsMessage {
         success: bool,
         /// The subscription topic if successful.
         subscribe: Option<String>,
+        /// Original request metadata (present for subscribe/auth/unsubscribe).
+        request: Option<BitmexHttpRequest>,
         /// Error message if subscription failed.
         error: Option<String>,
     },
@@ -149,7 +152,7 @@ pub enum BitmexWsMessage {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct BitmexHttpRequest {
     pub op: String,
-    pub args: Vec<String>,
+    pub args: Vec<Value>,
 }
 
 /// Rate limit information from BitMEX API.
