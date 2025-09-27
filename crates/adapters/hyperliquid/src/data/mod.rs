@@ -130,20 +130,13 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
-        let instruments = match self.http_client.request_instruments().await {
-            Ok(mut instruments) => {
-                tracing::debug!(
-                    count = instruments.len(),
-                    "Received Hyperliquid instruments"
-                );
-                instruments.sort_by_key(|instrument| instrument.id());
-                instruments
-            }
-            Err(err) => {
-                tracing::warn!(%err, "Failed to request Hyperliquid instruments");
-                Vec::new()
-            }
-        };
+        let mut instruments = self.http_client.request_instruments().await?;
+
+        tracing::debug!(
+            count = instruments.len(),
+            "Received Hyperliquid instruments"
+        );
+        instruments.sort_by_key(|instrument| instrument.id());
 
         tracing::info!(count = instruments.len(), "Loaded Hyperliquid instruments");
 

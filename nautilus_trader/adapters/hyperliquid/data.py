@@ -25,9 +25,11 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -42,8 +44,30 @@ from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+
+
+# -------------------------------------------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------------------------------------------
+
+
+def _get_hyperliquid_ws_url(is_testnet: bool = False) -> str:
+    """
+    Get the appropriate Hyperliquid WebSocket URL.
+    """
+    if is_testnet:
+        return "wss://api.hyperliquid-testnet.xyz/ws"
+    return "wss://api.hyperliquid.xyz/ws"
+
+
+# -------------------------------------------------------------------------------------------------
+# Data Client
+# -------------------------------------------------------------------------------------------------
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -55,7 +79,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : Any
-        The Hyperliquid HTTP client (to be implemented).
+        The Hyperliquid HTTP client (will be nautilus_pyo3.HyperliquidHttpClient when available).
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -74,13 +98,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: Any,  # TODO: Replace with actual HyperliquidHttpClient when available
+        client: Any,  # TODO: Replace with nautilus_pyo3.HyperliquidHttpClient when available
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         instrument_provider: HyperliquidInstrumentProvider,
         config: HyperliquidDataClientConfig,
-        name: str | None,
+        name: str | None = None,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -92,270 +116,356 @@ class HyperliquidDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
         )
 
+        self._instrument_provider: HyperliquidInstrumentProvider = instrument_provider
+
         # Configuration
         self._config = config
-        self._client = client
-
-        # Log configuration details
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
 
-        # Placeholder for WebSocket connections
-        self._ws_connection = None
+        # HTTP client
+        self._http_client = client
+        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
-        self._log.info("Hyperliquid data client initialized")
+        # WebSocket client
+        ws_url = self._determine_ws_url(config)
+        self._log.info(f"WebSocket URL: {ws_url}", LogColor.BLUE)
+
+        # TODO: Initialize HyperliquidWebSocketClient when available in nautilus_pyo3
+        # For now, use placeholder to prevent import errors
+        self._ws_client = None  # Will be replaced with nautilus_pyo3.HyperliquidWebSocketClient
+        self._ws_client_futures: set[asyncio.Future] = set()
+
+    def _determine_ws_url(self, config: HyperliquidDataClientConfig) -> str:
+        """
+        Determine the WebSocket URL based on configuration.
+        """
+        if config.base_url_ws:
+            return config.base_url_ws
+        return _get_hyperliquid_ws_url(config.testnet)
+
+    @property
+    def instrument_provider(self) -> HyperliquidInstrumentProvider:
+        return self._instrument_provider
+
+    async def _connect(self) -> None:
+        """
+        Connect the client following standard patterns.
+        """
+        await self.instrument_provider.initialize()
+        self._cache_instruments()
+        self._send_all_instruments_to_data_engine()
+
+        # Connect WebSocket following OKX/BitMEX pattern
+        # TODO: Implement WebSocket connection when HyperliquidWebSocketClient is available
+        if self._ws_client is not None:
+            instruments = self.instrument_provider.instruments_pyo3()
+            await self._ws_client.connect(
+                instruments=instruments,
+                callback=self._handle_msg,
+            )
+            await self._ws_client.wait_until_active(timeout_secs=10.0)
+            self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+        else:
+            self._log.warning("WebSocket client not implemented yet - using HTTP only mode")
+
+        # Log authentication status if applicable
+        if hasattr(self._config, "api_key") and self._config.api_key:
+            self._log.info("Hyperliquid API key configured", LogColor.GREEN)
+
+    async def _disconnect(self) -> None:
+        """
+        Disconnect the client following standard patterns.
+        """
+        # Cancel all HTTP client requests
+        self._http_client.cancel_all_requests()
+
+        # Delay to allow websocket to send any unsubscribe messages
+        await asyncio.sleep(1.0)
+
+        # Shutdown WebSocket following OKX/BitMEX pattern
+        if self._ws_client is not None and not self._ws_client.is_closed():
+            self._log.info("Disconnecting WebSocket")
+            await self._ws_client.close()
+            self._log.info(
+                f"Disconnected from {self._ws_client.url}",
+                LogColor.BLUE,
+            )
+
+        # Cancel all WebSocket client futures with timeout
+        if self._ws_client_futures:
+            self._log.debug(f"Canceling {len(self._ws_client_futures)} WebSocket client futures...")
+            await cancel_tasks_with_timeout(
+                self._ws_client_futures,
+                timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+                logger=self._log,
+            )
+            self._ws_client_futures.clear()
+
+        self._log.info("Disconnected from Hyperliquid", LogColor.GREEN)
+
+    def _cache_instruments(self) -> None:
+        """
+        Cache instruments following OKX/BitMEX pattern.
+        """
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
+        for inst in instruments_pyo3:
+            self._http_client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    def _send_all_instruments_to_data_engine(self) -> None:
+        """
+        Send all instruments to data engine following standard pattern.
+        """
+        for instrument in self.instrument_provider.get_all().values():
+            self._handle_data(instrument)
+
+        for currency in self.instrument_provider.currencies().values():
+            self._cache.add_currency(currency)
+
+    def _handle_msg(self, message: bytes) -> None:
+        """
+        Handle WebSocket messages following nautilus_pyo3 callback pattern.
+
+        This method receives raw bytes from the WebSocket and processes them into
+        appropriate Nautilus data types using the capsule_to_data pattern.
+
+        """
+        try:
+            data_obj = capsule_to_data(message)
+            self._handle_data(data_obj)
+        except Exception as e:
+            self._log.error(f"Error handling message: {e}")
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    async def _subscribe_order_book(self, request: SubscribeOrderBook) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         """
-        Subscribe to an order book.
-
-        Parameters
-        ----------
-        request : SubscribeOrderBook
-            The request to subscribe to the order book.
-
+        Subscribe to trade ticks following standard pattern.
         """
-        self._log.warning(
-            f"Order book subscription not yet implemented for {request.instrument_id}",
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_trades(pyo3_instrument_id)
+
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        """
+        Subscribe to quote ticks following standard pattern.
+        """
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
+
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        """
+        Subscribe to order book deltas following standard pattern.
+        """
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_order_book_deltas(
+            pyo3_instrument_id,
+            command.book_type,
+            command.depth if command.depth else 0,
         )
 
-    async def _subscribe_quote_ticks(self, request: SubscribeQuoteTicks) -> None:
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         """
-        Subscribe to quote ticks.
-
-        Parameters
-        ----------
-        request : SubscribeQuoteTicks
-            The request to subscribe to quote ticks.
-
+        Subscribe to order book snapshots following standard pattern.
         """
-        self._log.warning(
-            f"Quote ticks subscription not yet implemented for {request.instrument_id}",
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_order_book_snapshots(
+            pyo3_instrument_id,
+            command.book_type,
+            command.depth if command.depth else 0,
         )
 
-    async def _subscribe_trade_ticks(self, request: SubscribeTradeTicks) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         """
-        Subscribe to trade ticks.
-
-        Parameters
-        ----------
-        request : SubscribeTradeTicks
-            The request to subscribe to trade ticks.
-
+        Subscribe to bars following standard pattern.
         """
-        self._log.warning(
-            f"Trade ticks subscription not yet implemented for {request.instrument_id}",
-        )
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            return
 
-    async def _subscribe_bars(self, request: SubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.subscribe_bars(pyo3_bar_type)
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         """
-        Subscribe to bars.
-
-        Parameters
-        ----------
-        request : SubscribeBars
-            The request to subscribe to bars.
-
+        Subscribe to instrument updates.
         """
-        self._log.warning(f"Bars subscription not yet implemented for {request.instrument_id}")
+        self._log.info(f"Subscribed to instrument updates for {command.instrument_id}")
 
-    async def _subscribe_instrument(self, request: SubscribeInstrument) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         """
-        Subscribe to an instrument.
-
-        Parameters
-        ----------
-        request : SubscribeInstrument
-            The request to subscribe to the instrument.
-
+        Subscribe to instruments updates.
         """
-        self._log.warning(
-            f"Instrument subscription not yet implemented for {request.instrument_id}",
-        )
-
-    async def _subscribe_instruments(self, request: SubscribeInstruments) -> None:
-        """
-        Subscribe to instruments.
-
-        Parameters
-        ----------
-        request : SubscribeInstruments
-            The request to subscribe to instruments.
-
-        """
-        self._log.warning("Instruments subscription not yet implemented")
+        self._log.info("Subscribed to instruments updates")
 
     # -- UNSUBSCRIPTIONS ---------------------------------------------------------------------------
 
-    async def _unsubscribe_order_book(self, request: UnsubscribeOrderBook) -> None:
-        """
-        Unsubscribe from an order book.
-
-        Parameters
-        ----------
-        request : UnsubscribeOrderBook
-            The request to unsubscribe from the order book.
-
-        """
-        self._log.warning(
-            f"Order book unsubscription not yet implemented for {request.instrument_id}",
-        )
-
-    async def _unsubscribe_quote_ticks(self, request: UnsubscribeQuoteTicks) -> None:
-        """
-        Unsubscribe from quote ticks.
-
-        Parameters
-        ----------
-        request : UnsubscribeQuoteTicks
-            The request to unsubscribe from quote ticks.
-
-        """
-        self._log.warning(
-            f"Quote ticks unsubscription not yet implemented for {request.instrument_id}",
-        )
-
-    async def _unsubscribe_trade_ticks(self, request: UnsubscribeTradeTicks) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         """
         Unsubscribe from trade ticks.
-
-        Parameters
-        ----------
-        request : UnsubscribeTradeTicks
-            The request to unsubscribe from trade ticks.
-
         """
-        self._log.warning(
-            f"Trade ticks unsubscription not yet implemented for {request.instrument_id}",
-        )
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            return
 
-    async def _unsubscribe_bars(self, request: UnsubscribeBars) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        """
+        Unsubscribe from quote ticks.
+        """
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_quotes(pyo3_instrument_id)
+
+    async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
+        """
+        Unsubscribe from order book updates.
+        """
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_order_book_deltas(pyo3_instrument_id)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         """
         Unsubscribe from bars.
-
-        Parameters
-        ----------
-        request : UnsubscribeBars
-            The request to unsubscribe from bars.
-
         """
-        self._log.warning(f"Bars unsubscription not yet implemented for {request.instrument_id}")
+        if self._ws_client is None:
+            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            return
 
-    async def _unsubscribe_instrument(self, request: UnsubscribeInstrument) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         """
-        Unsubscribe from an instrument.
-
-        Parameters
-        ----------
-        request : UnsubscribeInstrument
-            The request to unsubscribe from the instrument.
-
+        Unsubscribe from instrument updates.
         """
-        self._log.warning(
-            f"Instrument unsubscription not yet implemented for {request.instrument_id}",
-        )
+        self._log.info(f"Unsubscribed from instrument updates for {command.instrument_id}")
 
-    async def _unsubscribe_instruments(self, request: UnsubscribeInstruments) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         """
-        Unsubscribe from instruments.
-
-        Parameters
-        ----------
-        request : UnsubscribeInstruments
-            The request to unsubscribe from instruments.
-
+        Unsubscribe from instruments updates.
         """
-        self._log.warning("Instruments unsubscription not yet implemented")
+        self._log.info("Unsubscribed from instruments updates")
 
     # -- REQUESTS -----------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         """
-        Request an instrument.
-
-        Parameters
-        ----------
-        request : RequestInstrument
-            The request for the instrument.
-
+        Request instrument definition following standard pattern.
         """
-        self._log.warning(f"Instrument request not yet implemented for {request.instrument_id}")
+        instrument = self.instrument_provider.find(request.instrument_id)
+        if instrument:
+            self._handle_data(instrument)
+            self._log.debug(f"Sent instrument {request.instrument_id}")
+        else:
+            self._log.error(f"Instrument not found: {request.instrument_id}")
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         """
-        Request instruments.
-
-        Parameters
-        ----------
-        request : RequestInstruments
-            The request for instruments.
-
+        Request multiple instrument definitions following standard pattern.
         """
-        self._log.warning("Instruments request not yet implemented")
+        instruments = []
+        for instrument_id in request.instrument_ids:
+            instrument = self.instrument_provider.find(instrument_id)
+            if instrument:
+                instruments.append(instrument)
+                self._handle_data(instrument)
+                self._log.debug(f"Sent instrument {instrument_id}")
+            else:
+                self._log.warning(f"Instrument not found: {instrument_id}")
 
-    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        """
-        Request quote ticks.
-
-        Parameters
-        ----------
-        request : RequestQuoteTicks
-            The request for quote ticks.
-
-        """
-        self._log.warning(f"Quote ticks request not yet implemented for {request.instrument_id}")
+        if not instruments:
+            self._log.warning("No instruments found for request")
+        else:
+            self._log.info(f"Sent {len(instruments)} instruments")
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         """
-        Request trade ticks.
-
-        Parameters
-        ----------
-        request : RequestTradeTicks
-            The request for trade ticks.
-
+        Request historical trade ticks.
         """
-        self._log.warning(f"Trade ticks request not yet implemented for {request.instrument_id}")
+        try:
+            trade_ticks = await self._http_client.request_trade_ticks(
+                request.instrument_id,
+                request.start,
+                request.end,
+                request.limit,
+            )
+            for trade_tick in trade_ticks:
+                self._handle_data(trade_tick)
+        except Exception as e:
+            self._log.error(f"Error requesting trade ticks for {request.instrument_id}: {e}")
+
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
+        """
+        Request historical quote ticks.
+        """
+        try:
+            quote_ticks = await self._http_client.request_quote_ticks(
+                request.instrument_id,
+                request.start,
+                request.end,
+                request.limit,
+            )
+            for quote_tick in quote_ticks:
+                self._handle_data(quote_tick)
+        except Exception as e:
+            self._log.error(f"Error requesting quote ticks for {request.instrument_id}: {e}")
 
     async def _request_bars(self, request: RequestBars) -> None:
         """
-        Request bars.
-
-        Parameters
-        ----------
-        request : RequestBars
-            The request for bars.
-
+        Request historical bars.
         """
-        self._log.warning(f"Bars request not yet implemented for {request.instrument_id}")
+        try:
+            bars = await self._http_client.request_bars(
+                request.bar_type,
+                request.start,
+                request.end,
+                request.limit,
+            )
+            for bar in bars:
+                self._handle_data(bar)
+        except Exception as e:
+            self._log.error(f"Error requesting bars for {request.bar_type}: {e}")
 
-    # -- TASKS --------------------------------------------------------------------------------------
-
-    async def _connect(self) -> None:
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         """
-        Connect the client.
+        Request order book snapshot following standard pattern.
         """
-        self._log.info("Connecting to Hyperliquid...", LogColor.BLUE)
-
-        # TODO: Implement actual connection logic when HyperliquidHttpClient is available
-        self._log.warning("Hyperliquid connection logic not yet implemented")
-
-        # Simulate connection for now
-        await asyncio.sleep(0.1)
-        self._log.info("Hyperliquid connection established (placeholder)", LogColor.GREEN)
-
-    async def _disconnect(self) -> None:
-        """
-        Disconnect the client.
-        """
-        self._log.info("Disconnecting from Hyperliquid...", LogColor.BLUE)
-
-        # TODO: Implement actual disconnection logic
-        if self._ws_connection:
-            # Close WebSocket connections
-            pass
-
-        await asyncio.sleep(0.1)
-        self._log.info("Hyperliquid disconnection completed", LogColor.GREEN)
+        try:
+            snapshot = await self._http_client.request_order_book_snapshot(
+                request.instrument_id,
+                request.depth,
+            )
+            self._handle_data(snapshot)
+        except Exception as e:
+            self._log.error(
+                f"Error requesting order book snapshot for {request.instrument_id}: {e}",
+            )
