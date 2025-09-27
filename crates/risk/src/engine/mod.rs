@@ -788,30 +788,47 @@ impl RiskEngine {
                 }
             } else if order.is_sell() {
                 if cash_account.base_currency.is_some() {
-                    match cum_notional_sell.as_mut() {
-                        Some(cum_notional_buy_val) => {
-                            cum_notional_buy_val.raw += order_balance_impact.raw;
+                    if order.is_reduce_only() {
+                        if self.config.debug {
+                            log::debug!(
+                                "Reduce-only SELL skips cumulative notional free-balance check"
+                            );
                         }
-                        None => {
-                            cum_notional_sell = Some(Money::from_raw(
-                                order_balance_impact.raw,
-                                order_balance_impact.currency,
-                            ));
+                    } else {
+                        match cum_notional_sell.as_mut() {
+                            Some(cum_notional_buy_val) => {
+                                cum_notional_buy_val.raw += order_balance_impact.raw;
+                            }
+                            None => {
+                                cum_notional_sell = Some(Money::from_raw(
+                                    order_balance_impact.raw,
+                                    order_balance_impact.currency,
+                                ));
+                            }
                         }
-                    }
-                    if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
-                    }
+                        if self.config.debug {
+                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                        }
 
-                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
-                        && cum_notional_sell > free
-                    {
-                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                        return false; // Denied
+                        if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                            && cum_notional_sell > free
+                        {
+                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                            return false; // Denied
+                        }
                     }
                 }
                 // Account is already of type Cash, so no check
                 else if let Some(base_currency) = base_currency {
+                    if order.is_reduce_only() {
+                        if self.config.debug {
+                            log::debug!(
+                                "Reduce-only SELL skips base-currency cumulative free check"
+                            );
+                        }
+                        continue;
+                    }
+
                     let cash_value = Money::from_raw(
                         effective_quantity
                             .raw

@@ -1098,6 +1098,135 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
 }
 
 #[rstest]
+fn test_check_orders_risk_allows_reduce_only_sell_with_cash_base_currency(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("100002 USD", "100000 USD", "2 USD"),
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .reduce_only(true)
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    assert!(allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert!(messages.is_empty());
+}
+
+#[rstest]
+fn test_check_orders_risk_allows_reduce_only_sell_with_multi_currency_cash_account(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+
+    let multi_account_state = AccountState::new(
+        account_id(),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100002 USD"),
+            Money::from("100000 USD"),
+            Money::from("2 USD"),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    );
+
+    cache
+        .add_account(AccountAny::Cash(cash_account(multi_account_state)))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .reduce_only(true)
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    assert!(allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert!(messages.is_empty());
+}
+
+#[rstest]
+fn test_check_orders_risk_non_reduce_sell_denies_on_free_balance(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("100002 USD", "100000 USD", "2 USD"),
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    assert!(!allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].event_type(), OrderEventType::Denied);
+    let reason = messages[0].message().unwrap();
+    assert!(
+        reason
+            .as_str()
+            .contains("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE")
+    );
+}
+
+#[rstest]
 fn test_submit_order_when_instrument_not_in_cache_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
