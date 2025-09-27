@@ -591,6 +591,25 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
+fn get_test_account_id() -> AccountId {
+    AccountId::new("BITMEX-001")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_bitmex_websocket_client_creation() {
+    let client = BitmexWebSocketClient::new(
+        None,                            // url
+        Some("test_key".to_string()),    // api_key
+        Some("test_secret".to_string()), // api_secret
+        Some(get_test_account_id()),     // account_id
+        None,                            // heartbeat
+    )
+    .unwrap();
+
+    assert!(!client.is_active());
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_websocket_connection() {
@@ -1445,25 +1464,4 @@ async fn test_heartbeat_timeout_reconnection() {
     assert!(client.is_active());
 
     client.close().await.unwrap();
-}
-
-// Unit tests for WebSocket client components
-
-fn get_test_account_id() -> AccountId {
-    AccountId::new("BITMEX-001")
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_bitmex_websocket_client_creation() {
-    let client = BitmexWebSocketClient::new(
-        None,                            // url
-        Some("test_key".to_string()),    // api_key
-        Some("test_secret".to_string()), // api_secret
-        Some(get_test_account_id()),     // account_id
-        None,                            // heartbeat
-    )
-    .unwrap();
-
-    assert!(!client.is_active());
 }

@@ -111,8 +111,15 @@ pub fn parse_book_msg_vec(
 
     for msg in data {
         if let Some(instrument) = instruments.get(&msg.symbol) {
+            let instrument_id = instrument.id();
+            let price_precision = instrument.price_precision();
             deltas.push(Data::Delta(parse_book_msg(
-                &msg, &action, instrument, ts_init,
+                &msg,
+                &action,
+                instrument,
+                instrument_id,
+                price_precision,
+                ts_init,
             )));
         } else {
             tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for book delta");
@@ -132,8 +139,14 @@ pub fn parse_book10_msg_vec(
 
     for msg in data {
         if let Some(instrument) = instruments.get(&msg.symbol) {
+            let instrument_id = instrument.id();
+            let price_precision = instrument.price_precision();
             depths.push(Data::Depth10(Box::new(parse_book10_msg(
-                &msg, instrument, ts_init,
+                &msg,
+                instrument,
+                instrument_id,
+                price_precision,
+                ts_init,
             ))));
         } else {
             tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for depth10");
@@ -153,7 +166,15 @@ pub fn parse_trade_msg_vec(
 
     for msg in data {
         if let Some(instrument) = instruments.get(&msg.symbol) {
-            trades.push(Data::Trade(parse_trade_msg(&msg, instrument, ts_init)));
+            let instrument_id = instrument.id();
+            let price_precision = instrument.price_precision();
+            trades.push(Data::Trade(parse_trade_msg(
+                &msg,
+                instrument,
+                instrument_id,
+                price_precision,
+                ts_init,
+            )));
         } else {
             tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade");
         }
@@ -173,8 +194,15 @@ pub fn parse_trade_bin_msg_vec(
 
     for msg in data {
         if let Some(instrument) = instruments.get(&msg.symbol) {
+            let instrument_id = instrument.id();
+            let price_precision = instrument.price_precision();
             trades.push(Data::Bar(parse_trade_bin_msg(
-                &msg, &topic, instrument, ts_init,
+                &msg,
+                &topic,
+                instrument,
+                instrument_id,
+                price_precision,
+                ts_init,
             )));
         } else {
             tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade bin");
@@ -190,6 +218,8 @@ pub fn parse_book_msg(
     msg: &BitmexOrderBookMsg,
     action: &BitmexAction,
     instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDelta {
     let flags = if action == &BitmexAction::Insert {
@@ -198,9 +228,8 @@ pub fn parse_book_msg(
         0
     };
 
-    let instrument_id = parse_instrument_id(msg.symbol);
     let action = action.as_book_action();
-    let price = Price::new(msg.price, instrument.price_precision());
+    let price = Price::new(msg.price, price_precision);
     let side = msg.side.as_order_side();
     let size = parse_contracts_quantity(msg.size.unwrap_or(0), instrument);
     let order_id = msg.id;
@@ -229,12 +258,10 @@ pub fn parse_book_msg(
 pub fn parse_book10_msg(
     msg: &BitmexOrderBook10Msg,
     instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
-    let instrument_id = parse_instrument_id(msg.symbol);
-
-    let price_precision = instrument.price_precision();
-
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
@@ -300,17 +327,17 @@ pub fn parse_quote_msg(
     msg: &BitmexQuoteMsg,
     last_quote: &QuoteTick,
     instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> QuoteTick {
-    let instrument_id = parse_instrument_id(msg.symbol);
-
     let bid_price = match msg.bid_price {
-        Some(price) => Price::new(price, instrument.price_precision()),
+        Some(price) => Price::new(price, price_precision),
         None => last_quote.bid_price,
     };
 
     let ask_price = match msg.ask_price {
-        Some(price) => Price::new(price, instrument.price_precision()),
+        Some(price) => Price::new(price, price_precision),
         None => last_quote.ask_price,
     };
 
@@ -342,10 +369,11 @@ pub fn parse_quote_msg(
 pub fn parse_trade_msg(
     msg: &BitmexTradeMsg,
     instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> TradeTick {
-    let instrument_id = parse_instrument_id(msg.symbol);
-    let price = Price::new(msg.price, instrument.price_precision());
+    let price = Price::new(msg.price, price_precision);
     let size = parse_contracts_quantity(msg.size, instrument);
     let aggressor_side = msg.side.as_aggressor_side();
     let trade_id = TradeId::new(
@@ -371,13 +399,13 @@ pub fn parse_trade_bin_msg(
     msg: &BitmexTradeBinMsg,
     topic: &BitmexWsTopic,
     instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Bar {
-    let instrument_id = parse_instrument_id(msg.symbol);
     let spec = bar_spec_from_topic(topic);
     let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
 
-    let price_precision = instrument.price_precision();
     let open = Price::new(msg.open, price_precision);
     let high = Price::new(msg.high, price_precision);
     let low = Price::new(msg.low, price_precision);
@@ -918,7 +946,7 @@ mod tests {
             TimeInForce,
         },
         identifiers::{InstrumentId, Symbol},
-        instruments::{CryptoPerpetual, any::InstrumentAny},
+        instruments::{any::InstrumentAny, crypto_perpetual::CryptoPerpetual},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -976,7 +1004,14 @@ mod tests {
 
         // Test Insert action
         let instrument = create_test_perpetual_instrument();
-        let delta = parse_book_msg(&msg, &BitmexAction::Insert, &instrument, UnixNanos::from(3));
+        let delta = parse_book_msg(
+            &msg,
+            &BitmexAction::Insert,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.order.price, Price::from("98459.9"));
         assert_eq!(delta.order.size, Quantity::from(33000));
@@ -989,7 +1024,14 @@ mod tests {
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
-        let delta = parse_book_msg(&msg, &BitmexAction::Update, &instrument, UnixNanos::from(3));
+        let delta = parse_book_msg(
+            &msg,
+            &BitmexAction::Update,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
         assert_eq!(delta.flags, 0);
         assert_eq!(delta.action, BookAction::Update);
     }
@@ -1000,7 +1042,13 @@ mod tests {
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: BitmexOrderBook10Msg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let depth10 = parse_book10_msg(&msg, &instrument, UnixNanos::from(3));
+        let depth10 = parse_book10_msg(
+            &msg,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
 
         assert_eq!(depth10.instrument_id, instrument_id);
 
@@ -1041,7 +1089,14 @@ mod tests {
         );
         let msg: BitmexQuoteMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument_with_precisions(2, 0);
-        let quote = parse_quote_msg(&msg, &last_quote, &instrument, UnixNanos::from(3));
+        let quote = parse_quote_msg(
+            &msg,
+            &last_quote,
+            &instrument,
+            instrument_id,
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("487.55"));
@@ -1059,7 +1114,13 @@ mod tests {
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: BitmexTradeMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let trade = parse_trade_msg(&msg, &instrument, UnixNanos::from(3));
+        let trade = parse_trade_msg(
+            &msg,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
 
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("98570.9"));
@@ -1082,7 +1143,14 @@ mod tests {
 
         let msg: BitmexTradeBinMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let bar = parse_trade_bin_msg(&msg, &topic, &instrument, UnixNanos::from(3));
+        let bar = parse_trade_bin_msg(
+            &msg,
+            &topic,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
 
         assert_eq!(bar.instrument_id(), instrument_id);
         assert_eq!(
@@ -1121,7 +1189,14 @@ mod tests {
             foreign_notional: 0.0,
         };
 
-        let bar = parse_trade_bin_msg(&msg, &topic, &instrument, UnixNanos::from(3));
+        let bar = parse_trade_bin_msg(
+            &msg,
+            &topic,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
 
         assert_eq!(bar.high, Price::from("50010.0"));
         assert_eq!(bar.low, Price::from("49990.0"));
