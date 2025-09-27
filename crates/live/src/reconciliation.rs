@@ -18,7 +18,12 @@
 //! This module provides managers for reconciling execution state between
 //! the local cache and connected venues during live trading.
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    rc::Rc,
+};
 
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
@@ -44,11 +49,25 @@ pub struct ReconciliationConfig {
     /// Threshold in milliseconds for inflight order checks.
     pub inflight_threshold_ms: u64,
     /// Maximum number of retries for inflight checks.
-    pub inflight_max_retries: u8,
+    pub inflight_max_retries: u32,
     /// Whether to filter unclaimed external orders.
     pub filter_unclaimed_external: bool,
     /// Whether to generate missing orders from reports.
     pub generate_missing_orders: bool,
+    /// Client order IDs excluded from reconciliation.
+    pub filtered_client_order_ids: HashSet<ClientOrderId>,
+    /// Threshold in nanoseconds before acting on venue discrepancies for open orders.
+    pub open_check_threshold_ns: u64,
+    /// Maximum retries before resolving an open order missing at the venue.
+    pub open_check_missing_retries: u32,
+    /// Whether open-order polling should only request open orders from the venue.
+    pub open_check_open_only: bool,
+    /// Lookback window (minutes) for venue order status polling.
+    pub open_check_lookback_mins: Option<u64>,
+    /// Whether to filter position status reports during reconciliation.
+    pub filter_position_reports: bool,
+    /// Instrument IDs to include during reconciliation (empty => all).
+    pub reconciliation_instrument_ids: HashSet<InstrumentId>,
 }
 
 impl Default for ReconciliationConfig {
@@ -56,9 +75,16 @@ impl Default for ReconciliationConfig {
         Self {
             lookback_mins: Some(60),
             inflight_threshold_ms: 5000,
-            inflight_max_retries: 3,
-            filter_unclaimed_external: true,
-            generate_missing_orders: false,
+            inflight_max_retries: 5,
+            filter_unclaimed_external: false,
+            generate_missing_orders: true,
+            filtered_client_order_ids: HashSet::new(),
+            open_check_threshold_ns: 5_000_000_000,
+            open_check_missing_retries: 5,
+            open_check_open_only: true,
+            open_check_lookback_mins: Some(60),
+            filter_position_reports: false,
+            reconciliation_instrument_ids: HashSet::new(),
         }
     }
 }
@@ -81,7 +107,8 @@ struct InflightCheck {
     #[allow(dead_code)]
     pub client_order_id: ClientOrderId,
     pub ts_submitted: UnixNanos,
-    pub retry_count: u8,
+    pub retry_count: u32,
+    pub last_query_ts: Option<UnixNanos>,
 }
 
 /// Manager for reconciling execution state between local cache and venues.
@@ -99,6 +126,9 @@ pub struct ReconciliationManager {
     inflight_checks: HashMap<ClientOrderId, InflightCheck>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
     processed_fills: HashMap<TradeId, ClientOrderId>,
+    recon_check_retries: HashMap<ClientOrderId, u32>,
+    ts_last_query: HashMap<ClientOrderId, UnixNanos>,
+    order_local_activity_ns: HashMap<ClientOrderId, UnixNanos>,
 }
 
 impl Debug for ReconciliationManager {
@@ -108,6 +138,7 @@ impl Debug for ReconciliationManager {
             .field("inflight_checks", &self.inflight_checks)
             .field("external_order_claims", &self.external_order_claims)
             .field("processed_fills", &self.processed_fills)
+            .field("recon_check_retries", &self.recon_check_retries)
             .finish()
     }
 }
@@ -126,6 +157,9 @@ impl ReconciliationManager {
             inflight_checks: HashMap::new(),
             external_order_claims: HashMap::new(),
             processed_fills: HashMap::new(),
+            recon_check_retries: HashMap::new(),
+            ts_last_query: HashMap::new(),
+            order_local_activity_ns: HashMap::new(),
         }
     }
 
@@ -178,7 +212,7 @@ impl ReconciliationManager {
         let mut events = Vec::new();
 
         // Remove from inflight checks if present
-        self.inflight_checks.remove(&report.client_order_id);
+        self.clear_recon_tracking(&report.client_order_id, true);
 
         if let Some(order) = self.get_order(&report.client_order_id) {
             let mut order = order;
@@ -223,17 +257,35 @@ impl ReconciliationManager {
         }
 
         for client_order_id in to_check {
+            if self
+                .config
+                .filtered_client_order_ids
+                .contains(&client_order_id)
+            {
+                continue;
+            }
+
             if let Some(check) = self.inflight_checks.get_mut(&client_order_id) {
+                if let Some(last_query_ts) = check.last_query_ts
+                    && current_time - last_query_ts < threshold_ns
+                {
+                    continue;
+                }
+
                 check.retry_count += 1;
+                check.last_query_ts = Some(current_time);
+                self.ts_last_query.insert(client_order_id, current_time);
+                self.recon_check_retries
+                    .insert(client_order_id, check.retry_count);
+
                 if check.retry_count >= self.config.inflight_max_retries {
                     // Generate rejection after max retries
                     if let Some(order) = self.get_order(&client_order_id) {
-                        events.push(self.create_order_rejected(&order));
+                        events.push(self.create_order_rejected(&order, Some("INFLIGHT_TIMEOUT")));
                     }
                     // Remove from inflight checks regardless of whether order exists
-                    self.inflight_checks.remove(&client_order_id);
+                    self.clear_recon_tracking(&client_order_id, true);
                 }
-                // Otherwise, the check remains for the next cycle
             }
         }
 
@@ -256,8 +308,28 @@ impl ReconciliationManager {
                 client_order_id,
                 ts_submitted,
                 retry_count: 0,
+                last_query_ts: None,
             },
         );
+        self.recon_check_retries.insert(client_order_id, 0);
+        self.ts_last_query.remove(&client_order_id);
+        self.order_local_activity_ns.remove(&client_order_id);
+    }
+
+    /// Records local activity for the specified order.
+    pub fn record_local_activity(&mut self, client_order_id: ClientOrderId, ts_event: UnixNanos) {
+        self.order_local_activity_ns
+            .insert(client_order_id, ts_event);
+    }
+
+    /// Clears reconciliation tracking state for an order.
+    pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
+        self.inflight_checks.remove(client_order_id);
+        self.recon_check_retries.remove(client_order_id);
+        if drop_last_query {
+            self.ts_last_query.remove(client_order_id);
+        }
+        self.order_local_activity_ns.remove(client_order_id);
     }
 
     /// Claims external orders for a specific strategy and instrument.
@@ -289,7 +361,9 @@ impl ReconciliationManager {
         // Generate appropriate event based on status
         match report.order_status {
             OrderStatus::Accepted => Some(self.create_order_accepted(order, report)),
-            OrderStatus::Rejected => Some(self.create_order_rejected(order)),
+            OrderStatus::Rejected => {
+                Some(self.create_order_rejected(order, report.cancel_reason.as_deref()))
+            }
             OrderStatus::Triggered => Some(self.create_order_triggered(order, report)),
             OrderStatus::Canceled => Some(self.create_order_canceled(order, report)),
             OrderStatus::Expired => Some(self.create_order_expired(order, report)),
@@ -322,14 +396,15 @@ impl ReconciliationManager {
         ))
     }
 
-    fn create_order_rejected(&self, order: &OrderAny) -> OrderEventAny {
+    fn create_order_rejected(&self, order: &OrderAny, reason: Option<&str>) -> OrderEventAny {
+        let reason = reason.unwrap_or("UNKNOWN");
         OrderEventAny::Rejected(OrderRejected::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
             order.client_order_id(),
             order.account_id().unwrap_or_default(),
-            Ustr::from("Inflight check timeout"),
+            Ustr::from(reason),
             UUID4::new(),
             self.clock.borrow().timestamp_ns(),
             self.clock.borrow().timestamp_ns(),
@@ -549,14 +624,12 @@ mod tests {
             .advance_time(UnixNanos::from(200_000_000), true);
         let events = manager.check_inflight_orders();
         assert_eq!(events.len(), 0);
-        assert_eq!(
-            manager
-                .inflight_checks
-                .get(&client_order_id)
-                .unwrap()
-                .retry_count,
-            1
-        );
+        let first_check = manager
+            .inflight_checks
+            .get(&client_order_id)
+            .expect("inflight check present");
+        assert_eq!(first_check.retry_count, 1);
+        let first_query_ts = first_check.last_query_ts.expect("last query recorded");
 
         // Second check - should hit max retries and generate rejection
         clock
@@ -565,6 +638,96 @@ mod tests {
         let events = manager.check_inflight_orders();
         assert_eq!(events.len(), 0); // Would generate rejection if order existed in cache
         assert!(!manager.inflight_checks.contains_key(&client_order_id));
+        // Ensure last query timestamp progressed prior to removal
+        assert!(clock.borrow().timestamp_ns() > first_query_ts);
+    }
+
+    #[rstest]
+    fn test_check_inflight_orders_skips_recent_query() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let config = ReconciliationConfig {
+            inflight_threshold_ms: 100,
+            inflight_max_retries: 3,
+            ..ReconciliationConfig::default()
+        };
+        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
+
+        let client_order_id = ClientOrderId::from("O-ABCDEF");
+        manager.register_inflight(client_order_id);
+
+        // First pass triggers a venue query and records timestamp
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(200_000_000), true);
+        let events = manager.check_inflight_orders();
+        assert!(events.is_empty());
+        let initial_check = manager
+            .inflight_checks
+            .get(&client_order_id)
+            .expect("inflight check retained");
+        assert_eq!(initial_check.retry_count, 1);
+        let last_query_ts = initial_check.last_query_ts.expect("last query recorded");
+
+        // Subsequent pass within threshold should be skipped entirely
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(250_000_000), true);
+        let events = manager.check_inflight_orders();
+        assert!(events.is_empty());
+        let second_check = manager
+            .inflight_checks
+            .get(&client_order_id)
+            .expect("inflight check retained");
+        assert_eq!(second_check.retry_count, 1);
+        assert_eq!(second_check.last_query_ts, Some(last_query_ts));
+    }
+
+    #[rstest]
+    fn test_check_inflight_orders_skips_filtered_ids() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let filtered_id = ClientOrderId::from("O-FILTERED");
+        let mut config = ReconciliationConfig::default();
+        config.filtered_client_order_ids.insert(filtered_id);
+        config.inflight_threshold_ms = 100;
+        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
+
+        manager.register_inflight(filtered_id);
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(200_000_000), true);
+        let events = manager.check_inflight_orders();
+        assert!(events.is_empty());
+        assert!(manager.inflight_checks.contains_key(&filtered_id));
+    }
+
+    #[rstest]
+    fn test_record_and_clear_tracking() {
+        let mut manager = create_test_manager();
+        let client_order_id = ClientOrderId::from("O-TRACK");
+
+        manager.register_inflight(client_order_id);
+        let ts_now = UnixNanos::from(1_000_000);
+        manager.record_local_activity(client_order_id, ts_now);
+
+        assert_eq!(
+            manager
+                .order_local_activity_ns
+                .get(&client_order_id)
+                .copied(),
+            Some(ts_now)
+        );
+
+        manager.clear_recon_tracking(&client_order_id, true);
+        assert!(!manager.inflight_checks.contains_key(&client_order_id));
+        assert!(
+            !manager
+                .order_local_activity_ns
+                .contains_key(&client_order_id)
+        );
+        assert!(!manager.recon_check_retries.contains_key(&client_order_id));
+        assert!(!manager.ts_last_query.contains_key(&client_order_id));
     }
 
     #[tokio::test]
@@ -592,8 +755,8 @@ mod tests {
 
         assert_eq!(config.lookback_mins, Some(60));
         assert_eq!(config.inflight_threshold_ms, 5000);
-        assert_eq!(config.inflight_max_retries, 3);
-        assert!(config.filter_unclaimed_external);
-        assert!(!config.generate_missing_orders);
+        assert_eq!(config.inflight_max_retries, 5);
+        assert!(!config.filter_unclaimed_external);
+        assert!(config.generate_missing_orders);
     }
 }
