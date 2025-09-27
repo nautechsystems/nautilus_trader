@@ -17,6 +17,7 @@ from base64 import b64encode
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -25,9 +26,18 @@ from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateExecutionMassStatus
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -36,7 +46,9 @@ from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -671,6 +683,108 @@ class TestMsgSpecSerializer:
         print(b64encode(serialized))
         print(command)
 
+    def test_serialize_and_deserialize_generate_order_status_report_command(self):
+        # Arrange
+        command = GenerateOrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            command_id=UUID4(),
+            ts_init=TestClock().timestamp_ns(),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, GenerateOrderStatusReport)
+        assert GenerateOrderStatusReport.to_dict(deserialized) == GenerateOrderStatusReport.to_dict(
+            command,
+        )
+
+    def test_serialize_and_deserialize_generate_order_status_reports_command(self):
+        # Arrange
+        start = pd.Timestamp("2025-01-01T00:00:00Z")
+        end = pd.Timestamp("2025-01-02T00:00:00Z")
+        command = GenerateOrderStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=start,
+            end=end,
+            open_only=True,
+            command_id=UUID4(),
+            ts_init=TestClock().timestamp_ns(),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, GenerateOrderStatusReports)
+        assert pd.Timestamp(deserialized.start).value == start.value
+        assert pd.Timestamp(deserialized.end).value == end.value
+        assert deserialized.open_only is True
+
+    def test_serialize_and_deserialize_generate_fill_reports_command(self):
+        # Arrange
+        command = GenerateFillReports(
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=TestIdStubs.venue_order_id(),
+            start=pd.Timestamp("2025-01-01T01:00:00Z"),
+            end=pd.Timestamp("2025-01-01T02:00:00Z"),
+            command_id=UUID4(),
+            ts_init=TestClock().timestamp_ns(),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, GenerateFillReports)
+        assert pd.Timestamp(deserialized.start).value == pd.Timestamp(command.start).value
+        assert pd.Timestamp(deserialized.end).value == pd.Timestamp(command.end).value
+
+    def test_serialize_and_deserialize_generate_position_status_reports_command(self):
+        # Arrange
+        command = GeneratePositionStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=pd.Timestamp("2025-01-03T00:00:00Z"),
+            end=pd.Timestamp("2025-01-04T00:00:00Z"),
+            command_id=UUID4(),
+            ts_init=TestClock().timestamp_ns(),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, GeneratePositionStatusReports)
+        assert pd.Timestamp(deserialized.start).value == pd.Timestamp(command.start).value
+        assert pd.Timestamp(deserialized.end).value == pd.Timestamp(command.end).value
+
+    def test_serialize_and_deserialize_generate_execution_mass_status_command(self):
+        # Arrange
+        command = GenerateExecutionMassStatus(
+            trader_id=TestIdStubs.trader_id(),
+            client_id=ClientId("SIM"),
+            command_id=UUID4(),
+            ts_init=TestClock().timestamp_ns(),
+            venue=self.venue,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, GenerateExecutionMassStatus)
+        assert GenerateExecutionMassStatus.to_dict(
+            deserialized,
+        ) == GenerateExecutionMassStatus.to_dict(command)
+
     def test_serialize_and_deserialize_shutdown_system_commands(self):
         # Arrange
         command = ShutdownSystem(
@@ -707,6 +821,162 @@ class TestMsgSpecSerializer:
 
         # Assert
         assert deserialized == event
+
+    def test_serialize_and_deserialize_order_status_report(self):
+        # Arrange
+        report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=TestIdStubs.venue_order_id(),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.from_int(25_000),
+            report_id=UUID4(),
+            ts_accepted=1_000,
+            ts_last=2_000,
+            ts_init=3_000,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_list_id=TestIdStubs.order_list_id(),
+            venue_position_id=TestIdStubs.position_id(),
+            linked_order_ids=[TestIdStubs.client_order_id(2)],
+            parent_order_id=TestIdStubs.client_order_id(3),
+            contingency_type=ContingencyType.NO_CONTINGENCY,
+            expire_time=pd.Timestamp("2025-01-01T00:00:00Z"),
+            price=Price.from_str("1.00010"),
+            trigger_price=None,
+            trigger_type=TriggerType.NO_TRIGGER,
+            limit_offset=None,
+            trailing_offset=None,
+            trailing_offset_type=TrailingOffsetType.NO_TRAILING_OFFSET,
+            avg_px=Decimal("1.00005"),
+            display_qty=None,
+            post_only=False,
+            reduce_only=False,
+            cancel_reason=None,
+            ts_triggered=None,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(report)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, OrderStatusReport)
+        assert deserialized.to_dict() == report.to_dict()
+
+    def test_serialize_and_deserialize_fill_report(self):
+        # Arrange
+        report = FillReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=TestIdStubs.venue_order_id(),
+            trade_id=TestIdStubs.trade_id(),
+            order_side=OrderSide.SELL,
+            last_qty=Quantity.from_int(10_000),
+            last_px=Price.from_str("1.00005"),
+            commission=Money("5.25", USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=4_000,
+            ts_init=5_000,
+            client_order_id=TestIdStubs.client_order_id(),
+            venue_position_id=TestIdStubs.position_id(),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(report)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, FillReport)
+        assert deserialized.to_dict() == report.to_dict()
+
+    def test_serialize_and_deserialize_position_status_report(self):
+        # Arrange
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(50_000),
+            report_id=UUID4(),
+            ts_last=6_000,
+            ts_init=7_000,
+            venue_position_id=TestIdStubs.position_id(),
+            avg_px_open=Decimal("1.00020"),
+        )
+
+        # Act
+        serialized = self.serializer.serialize(report)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, PositionStatusReport)
+        assert deserialized.to_dict() == report.to_dict()
+
+    def test_serialize_and_deserialize_execution_mass_status(self):
+        # Arrange
+        order_report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=TestIdStubs.venue_order_id(),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=10_000,
+            ts_last=11_000,
+            ts_init=12_000,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_list_id=TestIdStubs.order_list_id(),
+            venue_position_id=TestIdStubs.position_id(),
+        )
+        fill_report = FillReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=TestIdStubs.venue_order_id(),
+            trade_id=TestIdStubs.trade_id(),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(5_000),
+            last_px=Price.from_str("1.00001"),
+            commission=Money("1.25", USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=13_000,
+            ts_init=14_000,
+        )
+        position_report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(95_000),
+            report_id=UUID4(),
+            ts_last=15_000,
+            ts_init=16_000,
+        )
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("SIM-CLIENT"),
+            account_id=self.account_id,
+            venue=self.venue,
+            report_id=UUID4(),
+            ts_init=17_000,
+        )
+        mass_status.add_order_reports([order_report])
+        mass_status.add_fill_reports([fill_report])
+        mass_status.add_position_reports([position_report])
+
+        # Act
+        serialized = self.serializer.serialize(mass_status)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert isinstance(deserialized, ExecutionMassStatus)
+        assert deserialized.to_dict() == mass_status.to_dict()
 
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
