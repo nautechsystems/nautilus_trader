@@ -67,7 +67,7 @@ use ustr::Ustr;
 
 use super::{
     auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
-    enums::{OKXWsChannel, OKXWsOperation},
+    enums::{OKXSubscriptionEvent, OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
         ExecutionReport, NautilusWsMessage, OKXAuthentication, OKXAuthenticationArg,
@@ -78,6 +78,7 @@ use super::{
         WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
+    subscription::{SubscriptionState, topic_from_subscription_arg, topic_from_websocket_arg},
 };
 use crate::{
     common::{
@@ -194,6 +195,7 @@ pub struct OKXWebSocketClient {
     subscriptions_inst_family: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
     subscriptions_inst_id: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
     subscriptions_bare: Arc<DashMap<OKXWsChannel, bool>>, // For channels without inst params (e.g., Account)
+    subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
@@ -257,6 +259,7 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = Arc::new(DashMap::new());
         let subscriptions_inst_id = Arc::new(DashMap::new());
         let subscriptions_bare = Arc::new(DashMap::new());
+        let subscriptions_state = SubscriptionState::new();
 
         Ok(Self {
             url,
@@ -272,6 +275,7 @@ impl OKXWebSocketClient {
             subscriptions_inst_family,
             subscriptions_inst_id,
             subscriptions_bare,
+            subscriptions_state,
             request_id_counter: Arc::new(AtomicU64::new(1)),
             pending_place_requests: Arc::new(DashMap::new()),
             pending_cancel_requests: Arc::new(DashMap::new()),
@@ -477,7 +481,9 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = self.subscriptions_inst_family.clone();
         let subscriptions_inst_id = self.subscriptions_inst_id.clone();
         let subscriptions_bare = self.subscriptions_bare.clone();
+        let subscriptions_state = self.subscriptions_state.clone();
         let client_id_aliases = self.client_id_aliases.clone();
+
         let stream_handle = get_runtime().spawn({
             let auth_tracker = auth_tracker.clone();
             async move {
@@ -495,6 +501,7 @@ impl OKXWebSocketClient {
                     active_client_orders,
                     client_id_aliases,
                     auth_tracker.clone(),
+                    subscriptions_state.clone(),
                 );
 
                 // Main message loop with explicit reconnection handling
@@ -509,6 +516,7 @@ impl OKXWebSocketClient {
                             let subscriptions_inst_family_for_task = subscriptions_inst_family.clone();
                             let subscriptions_inst_id_for_task = subscriptions_inst_id.clone();
                             let subscriptions_bare_for_task = subscriptions_bare.clone();
+                            let subscriptions_state_for_task = subscriptions_state.clone();
 
                             let auth_wait = if let Some(cred) = &credential_clone {
                                 let rx = auth_tracker.begin();
@@ -583,6 +591,33 @@ impl OKXWebSocketClient {
                                     None => true,
                                 };
 
+                                let confirmed_topic_count = subscriptions_state_for_task.len();
+                                if confirmed_topic_count == 0 {
+                                    tracing::debug!(
+                                        "No confirmed subscriptions recorded before reconnect; resubscribe will rely on pending topics"
+                                    );
+                                } else {
+                                    tracing::debug!(confirmed_topic_count, "Confirmed subscriptions recorded before reconnect");
+                                }
+                                let confirmed_topics = subscriptions_state_for_task.confirmed();
+                                if confirmed_topic_count <= 10 {
+                                    let topics: Vec<_> = confirmed_topics
+                                        .iter()
+                                        .map(|entry| entry.key().clone())
+                                        .collect();
+                                    if !topics.is_empty() {
+                                        tracing::trace!(topics = ?topics, "Confirmed topics before reconnect");
+                                    }
+                                }
+                                drop(confirmed_topics);
+
+                                let pending_topics = subscriptions_state_for_task.pending();
+                                let pending_topic_count = pending_topics.len();
+                                if pending_topic_count > 0 {
+                                    tracing::debug!(pending_topic_count, "Pending subscriptions awaiting replay after reconnect");
+                                }
+                                drop(pending_topics);
+
                                 let inner_guard = inner_client_for_task.read().await;
                                 if let Some(client) = &*inner_guard {
                                     let should_resubscribe = |channel: &OKXWsChannel| {
@@ -603,12 +638,15 @@ impl OKXWebSocketClient {
                                             continue;
                                         }
                                         for inst_type in inst_types.iter() {
-                                            inst_type_args.push(OKXSubscriptionArg {
+                                            let arg = OKXSubscriptionArg {
                                                 channel: channel.clone(),
                                                 inst_type: Some(*inst_type),
                                                 inst_family: None,
                                                 inst_id: None,
-                                            });
+                                            };
+                                            let topic = topic_from_subscription_arg(&arg);
+                                            subscriptions_state_for_task.mark_subscribe(&topic);
+                                            inst_type_args.push(arg);
                                         }
                                     }
                                     if !inst_type_args.is_empty() {
@@ -636,12 +674,15 @@ impl OKXWebSocketClient {
                                             continue;
                                         }
                                         for inst_family in inst_families.iter() {
-                                            inst_family_args.push(OKXSubscriptionArg {
+                                            let arg = OKXSubscriptionArg {
                                                 channel: channel.clone(),
                                                 inst_type: None,
                                                 inst_family: Some(*inst_family),
                                                 inst_id: None,
-                                            });
+                                            };
+                                            let topic = topic_from_subscription_arg(&arg);
+                                            subscriptions_state_for_task.mark_subscribe(&topic);
+                                            inst_family_args.push(arg);
                                         }
                                     }
                                     if !inst_family_args.is_empty() {
@@ -669,12 +710,15 @@ impl OKXWebSocketClient {
                                             continue;
                                         }
                                         for inst_id in inst_ids.iter() {
-                                            inst_id_args.push(OKXSubscriptionArg {
+                                            let arg = OKXSubscriptionArg {
                                                 channel: channel.clone(),
                                                 inst_type: None,
                                                 inst_family: None,
                                                 inst_id: Some(*inst_id),
-                                            });
+                                            };
+                                            let topic = topic_from_subscription_arg(&arg);
+                                            subscriptions_state_for_task.mark_subscribe(&topic);
+                                            inst_id_args.push(arg);
                                         }
                                     }
                                     if !inst_id_args.is_empty() {
@@ -701,12 +745,15 @@ impl OKXWebSocketClient {
                                         if !should_resubscribe(channel) {
                                             continue;
                                         }
-                                        bare_args.push(OKXSubscriptionArg {
+                                        let arg = OKXSubscriptionArg {
                                             channel: channel.clone(),
                                             inst_type: None,
                                             inst_family: None,
                                             inst_id: None,
-                                        });
+                                        };
+                                        let topic = topic_from_subscription_arg(&arg);
+                                        subscriptions_state_for_task.mark_subscribe(&topic);
+                                        bare_args.push(arg);
                                     }
                                     if !bare_args.is_empty() {
                                         let sub_request = OKXSubscription {
@@ -1005,6 +1052,9 @@ impl OKXWebSocketClient {
 
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
+            let topic = topic_from_subscription_arg(arg);
+            self.subscriptions_state.mark_subscribe(&topic);
+
             // Check if this is a bare channel (no inst params)
             if arg.inst_type.is_none() && arg.inst_family.is_none() && arg.inst_id.is_none() {
                 // Track bare channels like Account
@@ -1066,6 +1116,9 @@ impl OKXWebSocketClient {
     #[allow(clippy::collapsible_if, reason = "Clearer uncollapsed")]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
+            let topic = topic_from_subscription_arg(arg);
+            self.subscriptions_state.mark_unsubscribe(&topic);
+
             // Check if this is a bare channel
             if arg.inst_type.is_none() && arg.inst_family.is_none() && arg.inst_id.is_none() {
                 // Remove bare channel subscription
@@ -2964,8 +3017,7 @@ impl OKXFeedHandler {
                                     OKXWebSocketEvent::Subscription {
                                         event,
                                         arg,
-                                        conn_id,
-                                    } => {
+                                        conn_id, .. } => {
                                         let channel_str = serde_json::to_string(&arg.channel)
                                             .expect("Invalid OKX websocket channel")
                                             .trim_matches('"')
@@ -3095,6 +3147,7 @@ struct OKXWsMessageHandler {
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     auth_tracker: AuthTracker,
     pending_messages: VecDeque<NautilusWsMessage>,
+    subscriptions_state: SubscriptionState,
 }
 
 impl OKXWsMessageHandler {
@@ -3334,6 +3387,7 @@ impl OKXWsMessageHandler {
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
         auth_tracker: AuthTracker,
+        subscriptions_state: SubscriptionState,
     ) -> Self {
         Self {
             account_id,
@@ -3352,6 +3406,7 @@ impl OKXWsMessageHandler {
             funding_rate_cache: AHashMap::new(),
             auth_tracker,
             pending_messages: VecDeque::new(),
+            subscriptions_state,
         }
     }
 
@@ -3812,8 +3867,38 @@ impl OKXWsMessageHandler {
                 OKXWebSocketEvent::Reconnected => {
                     return Some(NautilusWsMessage::Reconnected);
                 }
-                OKXWebSocketEvent::Subscription { .. }
-                | OKXWebSocketEvent::ChannelConnCount { .. } => continue,
+                OKXWebSocketEvent::Subscription {
+                    event,
+                    arg,
+                    code,
+                    msg,
+                    ..
+                } => {
+                    let topic = topic_from_websocket_arg(&arg);
+                    let success = code.as_deref().map(|c| c == "0").unwrap_or(true);
+
+                    match event {
+                        OKXSubscriptionEvent::Subscribe => {
+                            if success {
+                                self.subscriptions_state.confirm(&topic);
+                            } else {
+                                tracing::warn!(?topic, error = ?msg, code = ?code, "Subscription failed");
+                                self.subscriptions_state.mark_failure(&topic);
+                            }
+                        }
+                        OKXSubscriptionEvent::Unsubscribe => {
+                            if success {
+                                self.subscriptions_state.clear_pending(&topic);
+                            } else {
+                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed");
+                                self.subscriptions_state.mark_failure(&topic);
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+                OKXWebSocketEvent::ChannelConnCount { .. } => continue,
             }
         }
 
