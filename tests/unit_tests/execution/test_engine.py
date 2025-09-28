@@ -2319,6 +2319,77 @@ class TestExecutionEngine:
         assert order.quantity == expected_quantity
         assert not order.is_quote_quantity
 
+    def test_submit_order_with_quote_quantity_and_conversion_disabled_keeps_quote_quantity(
+        self,
+    ) -> None:
+        # Arrange
+        local_clock = TestClock()
+        msgbus = MessageBus(trader_id=self.trader_id, clock=local_clock)
+        cache = Cache(database=MockCacheDatabase())
+        portfolio = Portfolio(msgbus=msgbus, cache=cache, clock=local_clock)
+        portfolio.update_account(TestEventStubs.margin_account_state())
+
+        config = ExecEngineConfig(convert_quote_qty_to_base=False, debug=True)
+        exec_engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+            config=config,
+        )
+
+        exec_client = MockExecutionClient(
+            client_id=ClientId(self.venue.value),
+            venue=self.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+        )
+        exec_engine.register_client(exec_client)
+        exec_engine.start()
+
+        cache.add_instrument(AUDUSD_SIM)
+
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(10_000_000),
+            ask_size=Quantity.from_int(10_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        cache.add_quote_tick(tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,
+        )
+        original_qty = order.quantity
+
+        strategy.submit_order(order)
+
+        # Act
+        exec_engine.process(TestEventStubs.order_submitted(order))
+        exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Assert
+        assert order.is_quote_quantity
+        assert order.quantity == original_qty
+
     @pytest.mark.parametrize(
         ("order_side", "expected_quantity"),
         [

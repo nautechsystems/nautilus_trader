@@ -588,6 +588,42 @@ class TestPolymarketExecutionClient:
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id is None
 
+    @pytest.mark.asyncio()
+    async def test_submit_market_buy_without_quote_quantity_denied(self, mocker):
+        """
+        Market BUY orders must be quote-denominated; verify we emit OrderDenied instead
+        of submitting.
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),  # Base-denominated by default
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        denied_spy = mocker.spy(self.exec_client, "generate_order_denied")
+
+        await self.exec_client._submit_order(submit_order)
+
+        mock_create_market_order.assert_not_called()
+        mock_post_order.assert_not_called()
+        denied_spy.assert_called_once()
+        denied_kwargs = denied_spy.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert "quote-denominated quantities" in denied_kwargs["reason"]
+
     def test_handle_unknown_instrument_gracefully(self):
         """
         Test handling websocket messages for unknown instruments gracefully.

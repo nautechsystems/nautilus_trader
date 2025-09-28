@@ -78,7 +78,7 @@ This contrasts with the signature types used for Polymarket-administered wallets
 A single wallet address is supported per trader instance when using environment variables,
 or multiple wallets could be configured with multiple `PolymarketExecutionClient` instances.
 
-:::info
+:::note
 Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
 :::
 
@@ -145,11 +145,10 @@ This allows Polymarket to interact with your funds when executing trades and ens
 To trade with Polymarket using an EOA wallet, follow these steps to generate your API keys:
 
 1. Ensure the following environment variables are set:
+   - `POLYMARKET_PK`: Your private key for signing transactions.
+   - `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
 
-- `POLYMARKET_PK`: Your private key for signing transactions.
-- `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
-
-1. Run the script using:
+2. Run the script using:
 
    ```bash
    python nautilus_trader/adapters/polymarket/scripts/create_api_key.py
@@ -193,70 +192,108 @@ Polymarket operates as a prediction market with limited order complexity compare
 |------------------------|----------------|-------------------------------------|
 | `MARKET`               | ✓              | Executed as marketable limit order. |
 | `LIMIT`                | ✓              |                                     |
-| `STOP_MARKET`          | -              | *Not supported*.                    |
-| `STOP_LIMIT`           | -              | *Not supported*.                    |
-| `MARKET_IF_TOUCHED`    | -              | *Not supported*.                    |
-| `LIMIT_IF_TOUCHED`     | -              | *Not supported*.                    |
-| `TRAILING_STOP_MARKET` | -              | *Not supported*.                    |
+| `STOP_MARKET`          | -              | *Not supported by Polymarket*.      |
+| `STOP_LIMIT`           | -              | *Not supported by Polymarket*.      |
+| `MARKET_IF_TOUCHED`    | -              | *Not supported by Polymarket*.      |
+| `LIMIT_IF_TOUCHED`     | -              | *Not supported by Polymarket*.      |
+| `TRAILING_STOP_MARKET` | -              | *Not supported by Polymarket*.      |
+
+### Quantity semantics
+
+Polymarket treats order quantities differently depending on the order type *and* side:
+
+- **Limit** orders interpret `quantity` as the number of conditional tokens (base units).
+- **Market SELL** orders also consume base-unit quantities.
+- **Market BUY** orders interpret `quantity` as quote notional in **USDC.e**.
+
+As a result, a market buy submitted with a base-denominated quantity will trade far more size than intended.
+
+:::warning
+When submitting market BUY orders, set `quote_quantity=True` (or pre-compute the quote-denominated amount)
+and configure the execution engine with `convert_quote_qty_to_base=False` so the quote amount reaches the adapter unchanged.
+The Polymarket execution client denies base-denominated market buys to prevent unintended fills.
+:::
+
+```python
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.execution.engine import ExecutionEngine
+
+# Temporary: disable automatic conversion until the behaviour is fully removed in a future release
+config = ExecEngineConfig(convert_quote_qty_to_base=False)
+engine = ExecutionEngine(msgbus=msgbus, cache=cache, clock=clock, config=config)
+
+# Correct: Market BUY with quote quantity (spend $10 USDC)
+order = strategy.order_factory.market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(10.0),
+    quote_quantity=True,  # Interpret as USDC.e notional
+)
+strategy.submit_order(order)
+```
 
 ### Execution instructions
 
-| Instruction   | Binary Options | Notes                                     |
-|---------------|----------------|-------------------------------------------|
-| `post_only`   | -              | *Not supported*.                          |
-| `reduce_only` | -              | *Not supported*.                          |
+| Instruction   | Binary Options | Notes                                    |
+|---------------|----------------|------------------------------------------|
+| `post_only`   | -              | *Not supported by Polymarket*.           |
+| `reduce_only` | -              | *Not supported by Polymarket*.           |
 
 ### Time-in-force options
 
-| Time in force | Binary Options | Notes                                     |
-|---------------|----------------|-------------------------------------------|
-| `GTC`         | ✓              | Good Till Canceled.                       |
-| `GTD`         | ✓              | Good Till Date.                           |
-| `FOK`         | ✓              | Fill or Kill.                             |
-| `IOC`         | ✓              | Immediate or Cancel (maps to FAK).        |
+| Time in force | Binary Options | Notes                                    |
+|---------------|----------------|------------------------------------------|
+| `GTC`         | ✓              | Good Till Canceled.                      |
+| `GTD`         | ✓              | Good Till Date.                          |
+| `FOK`         | ✓              | Fill or Kill.                            |
+| `IOC`         | ✓              | Immediate or Cancel (maps to FAK).       |
+
+:::note
+FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) semantics.
+:::
 
 ### Advanced order features
 
-| Feature            | Binary Options | Notes                                |
-|--------------------|----------------|--------------------------------------|
-| Order Modification | -              | Cancellation functionality only.     |
-| Bracket/OCO Orders | -              | *Not supported*.                     |
-| Iceberg Orders     | -              | *Not supported*.                     |
+| Feature            | Binary Options | Notes                               |
+|--------------------|----------------|-------------------------------------|
+| Order Modification | -              | Cancellation functionality only.    |
+| Bracket/OCO Orders | -              | *Not supported by Polymarket*.      |
+| Iceberg Orders     | -              | *Not supported by Polymarket*.      |
 
 ### Batch operations
 
-| Operation          | Binary Options | Notes                                |
-|--------------------|----------------|--------------------------------------|
-| Batch Submit       | -              | *Not supported*.                     |
-| Batch Modify       | -              | *Not supported*.                     |
-| Batch Cancel       | -              | *Not supported*.                     |
+| Operation          | Binary Options | Notes                               |
+|--------------------|----------------|-------------------------------------|
+| Batch Submit       | -              | *Not supported by Polymarket*.      |
+| Batch Modify       | -              | *Not supported by Polymarket*.      |
+| Batch Cancel       | -              | *Not supported by Polymarket*.      |
 
 ### Position management
 
-| Feature              | Binary Options | Notes                                |
-|--------------------|----------------|--------------------------------------|
-| Query positions     | ✓              | Contract balance-based positions.    |
-| Position mode       | -              | Binary outcome positions only.       |
-| Leverage control    | -              | No leverage available.               |
-| Margin mode         | -              | No margin trading.                   |
+| Feature              | Binary Options | Notes                             |
+|--------------------|----------------|-------------------------------------|
+| Query positions     | ✓              | Contract balance-based positions.  |
+| Position mode       | -              | Binary outcome positions only.     |
+| Leverage control    | -              | No leverage available.             |
+| Margin mode         | -              | No margin trading.                 |
 
 ### Order querying
 
-| Feature              | Binary Options | Notes                                |
-|--------------------|----------------|--------------------------------------|
-| Query open orders   | ✓              | Active orders only.                  |
-| Query order history | ✓              | Limited historical data.             |
-| Order status updates| ✓              | Real-time order state changes.      |
-| Trade history       | ✓              | Execution and fill reports.         |
+| Feature              | Binary Options | Notes                             |
+|----------------------|----------------|-----------------------------------|
+| Query open orders    | ✓              | Active orders only.               |
+| Query order history  | ✓              | Limited historical data.          |
+| Order status updates | ✓              | Real-time order state changes.    |
+| Trade history        | ✓              | Execution and fill reports.       |
 
 ### Contingent orders
 
-| Feature              | Binary Options | Notes                                |
-|--------------------|----------------|--------------------------------------|
-| Order lists         | -              | *Not supported*.                     |
-| OCO orders          | -              | *Not supported*.                     |
-| Bracket orders      | -              | *Not supported*.                     |
-| Conditional orders  | -              | *Not supported*.                     |
+| Feature            | Binary Options | Notes                               |
+|--------------------|----------------|-------------------------------------|
+| Order lists        | -              | *Not supported by Polymarket*.      |
+| OCO orders         | -              | *Not supported by Polymarket*.      |
+| Bracket orders     | -              | *Not supported by Polymarket*.      |
+| Conditional orders | -              | *Not supported by Polymarket*.      |
 
 ## Trades
 
@@ -275,7 +312,7 @@ with additional trade events stored in the cache as JSON under a custom key to r
 ## Reconciliation
 
 The Polymarket API returns either all **active** (open) orders or specific orders when queried by the
-Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarkert is as follows:
+Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarket is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
 - Generate position reports from contract balances reported by Polymarket, *per instruments available in the cache*.

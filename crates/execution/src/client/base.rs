@@ -27,9 +27,9 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
-        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted,
-        OrderTriggered, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected,
+        OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
@@ -137,6 +137,27 @@ impl ExecutionClientCore {
         );
         self.send_account_state(account_state);
         Ok(())
+    }
+
+    pub fn generate_order_denied(
+        &self,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: &str,
+        ts_event: UnixNanos,
+    ) {
+        let event = OrderDenied::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.clock.borrow().timestamp_ns(),
+        );
+        self.send_order_event(OrderEventAny::Denied(event));
     }
 
     pub fn generate_order_submitted(

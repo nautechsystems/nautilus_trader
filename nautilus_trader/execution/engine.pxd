@@ -58,6 +58,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint convert_quote_qty_to_base
+    """If quote-denominated order quantities should be converted to base units before submission.\n\n:returns: `bool`"""
     cdef readonly bint manage_own_order_books
     """If the execution engine should maintain own order books based on commands and events.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_orders
@@ -83,6 +85,7 @@ cdef class ExecutionEngine(Component):
     cpdef set[InstrumentId] get_external_order_claims_instruments(self)
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders)
     cpdef void set_manage_own_order_books(self, bint value)
+    cpdef void set_convert_quote_qty_to_base(self, bint value)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

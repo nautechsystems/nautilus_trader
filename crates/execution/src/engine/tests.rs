@@ -5248,57 +5248,47 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     // Act - Submit the order list
     execution_engine.execute(&TradingCommand::SubmitOrderList(submit_order_list));
 
-    // Check the orders immediately after submission to see if conversion happened
+    // Check the orders immediately after submission to confirm quote quantities were converted
     let cache = execution_engine.cache.borrow();
+
+    let last_price = cache
+        .trade(&instrument.id)
+        .map(|trade| trade.price)
+        .or_else(|| {
+            cache.quote(&instrument.id).map(|quote| match order_side {
+                nautilus_model::enums::OrderSide::Buy => quote.ask_price,
+                nautilus_model::enums::OrderSide::Sell => quote.bid_price,
+                nautilus_model::enums::OrderSide::NoOrderSide => quote.ask_price,
+            })
+        })
+        .expect("Expected trade or quote price for conversion");
+
+    let instrument_any = cache
+        .instrument(&instrument.id)
+        .expect("Instrument should exist in cache");
+    let expected_base_quantity =
+        instrument_any.calculate_base_quantity(Quantity::from(100_000), last_price);
 
     // Check entry order
     let cached_entry_order = cache
         .order(&entry_order.client_order_id())
         .expect("Entry order should exist in cache");
+    assert!(!cached_entry_order.is_quote_quantity());
+    assert_eq!(cached_entry_order.quantity(), expected_base_quantity);
 
     // Check stop loss order
     let cached_stop_loss_order = cache
         .order(&stop_loss_order.client_order_id())
         .expect("Stop loss order should exist in cache");
+    assert!(!cached_stop_loss_order.is_quote_quantity());
+    assert_eq!(cached_stop_loss_order.quantity(), expected_base_quantity);
 
     // Check take profit order
     let cached_take_profit_order = cache
         .order(&take_profit_order.client_order_id())
         .expect("Take profit order should exist in cache");
-
-    // Note: The execution engine should convert quote quantity to base quantity during submission
-    // However, the current implementation may not be updating the cached orders properly.
-    // This test documents the current behavior and may need to be updated when the conversion logic is fixed.
-
-    // For now, we'll check that the orders exist and have the expected properties
-    assert!(
-        cached_entry_order.is_quote_quantity(),
-        "Entry order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-    assert!(
-        cached_stop_loss_order.is_quote_quantity(),
-        "Stop loss order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-    assert!(
-        cached_take_profit_order.is_quote_quantity(),
-        "Take profit order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-
-    assert_eq!(
-        cached_entry_order.quantity(),
-        Quantity::from(100_000),
-        "Entry order quantity should remain as quote quantity (conversion may not be working)"
-    );
-    assert_eq!(
-        cached_stop_loss_order.quantity(),
-        Quantity::from(100_000),
-        "Stop loss order quantity should remain as quote quantity (conversion may not be working)"
-    );
-    assert_eq!(
-        cached_take_profit_order.quantity(),
-        Quantity::from(100_000),
-        "Take profit order quantity should remain as quote quantity (conversion may not be working)"
-    );
+    assert!(!cached_take_profit_order.is_quote_quantity());
+    assert_eq!(cached_take_profit_order.quantity(), expected_base_quantity);
 
     // Process order events to simulate the full lifecycle for all orders
     drop(cache); // Release the borrow before processing events
@@ -5340,36 +5330,13 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         .order(&take_profit_order.client_order_id())
         .expect("Take profit order should exist in cache");
 
-    // The final assertions reflect the current behavior where conversion may not be working
-    // These should be updated when the quote quantity conversion is properly implemented
-    assert_eq!(
-        final_entry_order.quantity(),
-        Quantity::from(100_000),
-        "Entry order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
-    assert_eq!(
-        final_stop_loss_order.quantity(),
-        Quantity::from(100_000),
-        "Stop loss order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
-    assert_eq!(
-        final_take_profit_order.quantity(),
-        Quantity::from(100_000),
-        "Take profit order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
+    assert!(!final_entry_order.is_quote_quantity());
+    assert!(!final_stop_loss_order.is_quote_quantity());
+    assert!(!final_take_profit_order.is_quote_quantity());
 
-    assert!(
-        final_entry_order.is_quote_quantity(),
-        "Entry order should still have quote quantity flag (conversion not yet implemented)"
-    );
-    assert!(
-        final_stop_loss_order.is_quote_quantity(),
-        "Stop loss order should still have quote quantity flag (conversion not yet implemented)"
-    );
-    assert!(
-        final_take_profit_order.is_quote_quantity(),
-        "Take profit order should still have quote quantity flag (conversion not yet implemented)"
-    );
+    assert_eq!(final_entry_order.quantity(), expected_base_quantity);
+    assert_eq!(final_stop_loss_order.quantity(), expected_base_quantity);
+    assert_eq!(final_take_profit_order.quantity(), expected_base_quantity);
 }
 
 #[rstest]

@@ -832,6 +832,24 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         order = command.order
 
+        if order.side == OrderSide.BUY and not order.is_quote_quantity:
+            reason = (
+                "Polymarket market buy orders require quote-denominated quantities; "
+                "resubmit with quote_quantity=True"
+            )
+            self._log.error(
+                f"Cannot submit market order {order.client_order_id}: {reason}",
+                LogColor.RED,
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # --------------------------------------------------------------------------------------
         # MARKET ORDER CHANGE
         # --------------------------------------------------------------------------------------

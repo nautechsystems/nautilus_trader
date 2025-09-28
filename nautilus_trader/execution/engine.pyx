@@ -156,6 +156,7 @@ cdef class ExecutionEngine(Component):
 
         # Configuration
         self.debug: bool = config.debug
+        self.convert_quote_qty_to_base = config.convert_quote_qty_to_base
         self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions
@@ -394,6 +395,17 @@ cdef class ExecutionEngine(Component):
 
         """
         self.manage_own_order_books = value
+
+    cpdef void set_convert_quote_qty_to_base(self, bint value):
+        """
+        Set the `convert_quote_qty_to_base` flag with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+        """
+        self.convert_quote_qty_to_base = value
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -1014,7 +1026,11 @@ cdef class ExecutionEngine(Component):
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity base_qty = None
-        if not instrument.is_inverse and order.is_quote_quantity:
+        if self.convert_quote_qty_to_base and not instrument.is_inverse and order.is_quote_quantity:
+            self._log.warning(
+                "`convert_quote_qty_to_base is deprecated`; set `convert_quote_qty_to_base=False` to maintain consistent behavior.",
+                LogColor.YELLOW,
+            )
             last_px = self._last_px_for_conversion(order.instrument_id, order.side)
             if last_px is None:
                 self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
@@ -1047,20 +1063,24 @@ cdef class ExecutionEngine(Component):
 
         # Check if converting quote quantity
         cdef Price last_px = None
-        cdef Quantity quote_qty = None
         cdef Quantity base_qty = None
-        if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
+        if self.convert_quote_qty_to_base and not instrument.is_inverse:
             for order in command.order_list.orders:
-                if order.is_quote_quantity == False:
+                if not order.is_quote_quantity:
                     continue  # Base quantity already set
-                if order.quantity != quote_qty:
-                    last_px = self._last_px_for_conversion(order.instrument_id, order.side)
-                    quote_qty = order.quantity
+
+                self._log.warning(
+                    "`convert_quote_qty_to_base` is deprecated; set `convert_quote_qty_to_base=False` to maintain consistent behavior",
+                    LogColor.YELLOW,
+                )
+
+                last_px = self._last_px_for_conversion(order.instrument_id, order.side)
                 if last_px is None:
                     for order in command.order_list.orders:
                         self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
                     return  # Denied
-                base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
+
+                base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
                 self._set_order_base_qty(order, base_qty)
 
         if self.manage_own_order_books:
