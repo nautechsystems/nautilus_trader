@@ -53,6 +53,7 @@ tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
 webpki-roots = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

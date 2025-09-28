@@ -5111,6 +5111,7 @@ dependencies = [
  "tracing",
  "tracing-test",
  "turmoil",
+ "ustr",
  "webpki-roots 1.0.2",
 ]
 
