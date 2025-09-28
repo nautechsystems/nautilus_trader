@@ -162,6 +162,51 @@ Only *limit* order types support `post_only`.
 | Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.       |
 | Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.          |
 
+### Order parameters
+
+Customize individual orders by supplying a `params` dictionary when calling `Strategy.submit_order`. The Binance execution clients currently recognise:
+
+| Parameter     | Type  | Account types     | Description |
+|---------------|-------|-------------------|-------------|
+| `price_match` | `str` | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see table below) to delegate price selection to the exchange. When provided, Nautilus omits the limit price in the API call so Binance can compute the working price. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
+
+Valid `priceMatch` values for Binance Futures:
+
+| Value         | Behaviour                                                      |
+|---------------|----------------------------------------------------------------|
+| `OPPONENT`    | Join the best price on the opposing side of the book.          |
+| `OPPONENT_5`  | Join the opposing side price but allow up to a 5-tick offset.  |
+| `OPPONENT_10` | Join the opposing side price but allow up to a 10-tick offset. |
+| `OPPONENT_20` | Join the opposing side price but allow up to a 20-tick offset. |
+| `QUEUE`       | Join the best price on the same side (stay maker).             |
+| `QUEUE_5`     | Join the same-side queue but offset up to 5 ticks.             |
+| `QUEUE_10`    | Join the same-side queue but offset up to 10 ticks.            |
+| `QUEUE_20`    | Join the same-side queue but offset up to 20 ticks.            |
+
+:::info
+For more details, see the official documentation: <https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api>.
+:::
+
+#### Example: Futures BBO limit order
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("65000"),  # retained locally for risk management
+)
+
+strategy.submit_order(
+    order,
+    params={"price_match": "QUEUE"},
+)
+```
+
+:::note
+`price_match` cannot be combined with `price` on the Binance API. Nautilus retains the limit price internally for validations, but the exchange receives only the price match mode described above.
+:::
+
 ### Trailing stops
 
 Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
@@ -187,15 +232,15 @@ You must also have at least *one* of the following:
 
 ## Rate limiting
 
-| Key / Endpoint            | Limit (weight/min) | Notes                                                    |
-|---------------------------|--------------------|----------------------------------------------------------|
-| `binance:global`          | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.       |
-| `/api/v3/order`           | 3,000              | Spot order placement.                                    |
-| `/api/v3/allOrders`       | 150                | Spot all-orders endpoint (20× weight multiplier).        |
-| `/api/v3/klines`          | 600                | Spot historical klines.                                  |
-| `/fapi/v1/order`          | 1,200              | Futures order placement.                                 |
-| `/fapi/v1/allOrders`      | 60                 | Futures historical orders (20× multiplier).              |
-| `/fapi/v1/klines`         | 600                | Futures historical klines.                               |
+| Key / Endpoint        | Limit (weight/min) | Notes                                                 |
+|-----------------------|--------------------|-------------------------------------------------------|
+| `binance:global`      | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
+| `/api/v3/order`       | 3,000              | Spot order placement.                                 |
+| `/api/v3/allOrders`   | 150                | Spot all-orders endpoint (20× weight multiplier).     |
+| `/api/v3/klines`      | 600                | Spot historical klines.                               |
+| `/fapi/v1/order`      | 1,200              | Futures order placement.                              |
+| `/fapi/v1/allOrders`  | 60                 | Futures historical orders (20× multiplier).           |
+| `/fapi/v1/klines`     | 600                | Futures historical klines.                            |
 
 Binance assigns request weight dynamically (e.g. `/klines` scales with `limit`). The quotas above mirror the static limits but the client still draws a single token per call, so long history pulls may need manual pacing to respect the live `X-MBX-USED-WEIGHT-*` headers.
 

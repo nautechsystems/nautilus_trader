@@ -242,6 +242,224 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", True)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2),
+            price=Price.from_str("42000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "queue"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        # Assert
+        request = mock_send_request.call_args
+        payload = request[1]["payload"]
+        assert payload["priceMatch"] == "QUEUE"
+        assert payload.get("price") is None
+        assert payload["timeInForce"] == "GTC"
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_post_only_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+            price=Price.from_str("35000"),
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "post-only" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_display_qty_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(3),
+            price=Price.from_str("28000"),
+            display_qty=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "iceberg" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_market_order_with_price_match_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "not supported" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_invalid_price_match_value_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+            price=Price.from_str("33000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "invalid"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "not one of" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_non_string_price_match_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2),
+            price=Price.from_str("30000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": 123},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "string value" in reason
+
+    @pytest.mark.asyncio()
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [

@@ -71,7 +71,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         client: BinanceHttpClient,
         base_endpoint: str,
         testing_endpoint: bool | None = False,
-    ):
+    ) -> None:
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
             HttpMethod.POST: BinanceSecurityType.TRADE,
@@ -150,8 +150,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The order quantity in quote asset units for the request
         price : str, optional
             Mandatory for LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT, LIMIT_MAKER,
-            STOP, TAKE_PROFIT orders
-            The order price for the request
+            STOP, TAKE_PROFIT orders.
+            The order price for the request.
+        priceMatch : str, optional
+            Only for FUTURES LIMIT/STOP/TAKE_PROFIT orders.
+            Enables Binance BBO matching; cannot be sent together with `price`.
         newClientOrderId : str, optional
             The client order ID for the request. A unique ID among open orders.
             Automatically generated if not provided.
@@ -222,6 +225,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         quantity: str | None = None
         quoteOrderQty: str | None = None
         price: str | None = None
+        priceMatch: str | None = None
         newClientOrderId: str | None = None
         strategyId: int | None = None
         strategyType: int | None = None
@@ -623,6 +627,7 @@ class BinanceAccountHttpAPI:
         quantity: str | None = None,
         quote_order_qty: str | None = None,
         price: str | None = None,
+        price_match: str | None = None,
         new_client_order_id: str | None = None,
         strategy_id: int | None = None,
         strategy_type: int | None = None,
@@ -653,6 +658,7 @@ class BinanceAccountHttpAPI:
                 quantity=quantity,
                 quoteOrderQty=quote_order_qty,
                 price=price,
+                priceMatch=price_match,
                 newClientOrderId=new_client_order_id,
                 strategyId=strategy_id,
                 strategyType=strategy_type,

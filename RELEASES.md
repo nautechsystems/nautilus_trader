@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
+- Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
 - Added BitMEX contingent orders support (OCO, OTO, brackets)

@@ -389,6 +389,42 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["signature"] is not None
 
     @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_rejected(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_rejected = mocker.patch.object(self.exec_client, "generate_order_rejected")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(5),
+            price=Price.from_str("2500"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_rejected.assert_called_once()
+        reason = mock_generate_rejected.call_args.kwargs["reason"]
+        assert "only supported" in reason
+
+    @pytest.mark.asyncio()
     async def test_query_order(self, mocker):
         # Arrange
         mock_query_order = mocker.patch(
