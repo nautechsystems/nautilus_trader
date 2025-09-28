@@ -59,7 +59,7 @@ pub mod websocket;
 #[cfg(feature = "python")]
 pub mod python;
 
-// Re-exports for convenient access to primary types
+// Re-exports
 pub use crate::{
     common::{
         enums::{OKXInstrumentType, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide},

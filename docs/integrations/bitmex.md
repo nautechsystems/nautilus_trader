@@ -58,7 +58,7 @@ NautilusTrader integration guide.
 | Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.  |
 | Options           | -         | -       | *Not available*.                                |
 
-:::info
+:::note
 BitMEX has discontinued their options products to focus on their core derivatives and spot offerings.
 :::
 
@@ -73,11 +73,6 @@ BitMEX has discontinued their options products to focus on their core derivative
 - **Perpetual contracts**: Inverse (e.g., XBTUSD) and linear (e.g., ETHUSDT).
 - **Traditional futures**: Fixed expiration date contracts.
 - **Quanto futures**: Contracts settled in a different currency than the underlying.
-
-:::note
-While BitMEX has added spot trading capabilities, their primary focus remains on derivatives.
-The platform uses a unified wallet for both spot and derivatives trading.
-:::
 
 ## Symbology
 

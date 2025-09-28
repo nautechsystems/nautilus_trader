@@ -53,7 +53,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -80,6 +80,7 @@ pub struct OKXDataClient {
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     book_channels: Arc<RwLock<AHashMap<InstrumentId, OKXBookChannel>>>,
     clock: &'static AtomicTime,
+    instrument_refresh_active: bool,
 }
 
 impl OKXDataClient {
@@ -146,6 +147,7 @@ impl OKXDataClient {
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             book_channels: Arc::new(RwLock::new(AHashMap::new())),
             clock,
+            instrument_refresh_active: false,
         })
     }
 
@@ -250,15 +252,7 @@ impl OKXDataClient {
     }
 
     fn contract_filter(&self, instrument: &InstrumentAny) -> bool {
-        match self.config.contract_types.as_ref() {
-            None => true,
-            Some(filter) if filter.is_empty() => true,
-            Some(filter) => {
-                let is_inverse = instrument.is_inverse();
-                (is_inverse && filter.contains(&OKXContractType::Inverse))
-                    || (!is_inverse && filter.contains(&OKXContractType::Linear))
-            }
-        }
+        contract_filter_with_config(&self.config, instrument)
     }
 
     fn handle_ws_message(
@@ -351,6 +345,85 @@ impl OKXDataClient {
         self.tasks.push(handle);
         Ok(())
     }
+
+    fn maybe_spawn_instrument_refresh(&mut self) -> Result<()> {
+        let Some(minutes) = self.config.update_instruments_interval_mins else {
+            return Ok(());
+        };
+
+        if minutes == 0 || self.instrument_refresh_active {
+            return Ok(());
+        }
+
+        let interval_secs = minutes.saturating_mul(60);
+        if interval_secs == 0 {
+            return Ok(());
+        }
+
+        let interval = Duration::from_secs(interval_secs);
+        let cancellation = self.cancellation_token.clone();
+        let instruments_cache = Arc::clone(&self.instruments);
+        let mut http_client = self.http_client.clone();
+        let config = self.config.clone();
+        let client_id = self.client_id;
+
+        let handle = tokio::spawn(async move {
+            loop {
+                let sleep = tokio::time::sleep(interval);
+                tokio::pin!(sleep);
+                tokio::select! {
+                    _ = cancellation.cancelled() => {
+                        tracing::debug!("OKX instrument refresh task cancelled");
+                        break;
+                    }
+                    _ = &mut sleep => {
+                        let instrument_types = if config.instrument_types.is_empty() {
+                            vec![OKXInstrumentType::Spot]
+                        } else {
+                            config.instrument_types.clone()
+                        };
+
+                        let mut collected: Vec<InstrumentAny> = Vec::new();
+
+                        for inst_type in instrument_types {
+                            match http_client.request_instruments(inst_type).await {
+                                Ok(mut instruments) => {
+                                    instruments.retain(|instrument| contract_filter_with_config(&config, instrument));
+                                    collected.extend(instruments);
+                                }
+                                Err(err) => {
+                                    tracing::warn!(client_id=%client_id, instrument_type=?inst_type, error=?err, "Failed to refresh OKX instruments for type");
+                                }
+                            }
+                        }
+
+                        if collected.is_empty() {
+                            tracing::debug!(client_id=%client_id, "OKX instrument refresh yielded no instruments");
+                            continue;
+                        }
+
+                        http_client.add_instruments(collected.clone());
+
+                        {
+                            let mut guard = instruments_cache
+                                .write()
+                                .expect("instrument cache lock poisoned");
+                            guard.clear();
+                            for instrument in &collected {
+                                guard.insert(instrument.id(), instrument.clone());
+                            }
+                        }
+
+                        tracing::debug!(client_id=%client_id, count=collected.len(), "OKX instruments refreshed");
+                    }
+                }
+            }
+        });
+
+        self.tasks.push(handle);
+        self.instrument_refresh_active = true;
+        Ok(())
+    }
 }
 
 fn emit_funding_rates(updates: Vec<FundingRateUpdate>) {
@@ -381,6 +454,18 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
         .map(UnixNanos::from)
 }
 
+fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &InstrumentAny) -> bool {
+    match config.contract_types.as_ref() {
+        None => true,
+        Some(filter) if filter.is_empty() => true,
+        Some(filter) => {
+            let is_inverse = instrument.is_inverse();
+            (is_inverse && filter.contains(&OKXContractType::Inverse))
+                || (!is_inverse && filter.contains(&OKXContractType::Linear))
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl DataClient for OKXDataClient {
     fn client_id(&self) -> ClientId {
@@ -400,6 +485,7 @@ impl DataClient for OKXDataClient {
         tracing::info!("Stopping OKX data client {id}", id = self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
+        self.instrument_refresh_active = false;
         Ok(())
     }
 
@@ -412,6 +498,7 @@ impl DataClient for OKXDataClient {
             .write()
             .expect("book channel cache lock poisoned")
             .clear();
+        self.instrument_refresh_active = false;
         Ok(())
     }
 
@@ -478,6 +565,8 @@ impl DataClient for OKXDataClient {
             self.spawn_business_stream()?;
         }
 
+        self.maybe_spawn_instrument_refresh()?;
+
         self.is_connected.store(true, Ordering::Relaxed);
         tracing::info!("OKX data client connected");
         Ok(())
@@ -509,6 +598,7 @@ impl DataClient for OKXDataClient {
             .write()
             .expect("book channel cache lock poisoned")
             .clear();
+        self.instrument_refresh_active = false;
         tracing::info!("OKX data client disconnected");
         Ok(())
     }
