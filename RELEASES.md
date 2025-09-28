@@ -38,6 +38,7 @@ None
 - Implemented Hyperliquid data client and fix dependencies (#2975), thanks @nicolad
 - Implemented Hyperliquid REST API models for execution (#2983), thanks @nicolad
 - Implemented Hyperliquid `InstrumentProvider` / definitions parsing (#2992), thanks @nicolad
+- Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units

@@ -238,7 +238,7 @@ webpki-roots = "1.0.2"
 zeroize = { version = "1.8.1", features = ["alloc", "zeroize_derive"] }
 
 # dev-dependencies
-axum = { version = "0.8.4", default-features = false, features = [
+axum = { version = "0.8.5", default-features = false, features = [
   "tokio",
   "http1",
   "json",
