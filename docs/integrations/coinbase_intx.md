@@ -129,7 +129,7 @@ To specify a portfolio for trading, set the `COINBASE_INTX_PORTFOLIO_ID` environ
 the desired `portfolio_id`. If you're using multiple execution clients, you can alternatively define
 the `portfolio_id` in the execution configuration for each client.
 
-## Capability Matrix
+## Orders capability
 
 Coinbase International offers market, limit, and stop order types, enabling a broad range of strategies.
 
@@ -335,7 +335,12 @@ credentials are valid and have trading permissions.
 ## Implementation notes
 
 - **Heartbeats**: The adapter maintains heartbeats on both the WebSocket and FIX connections to ensure reliable connectivity.
-- **Rate Limits**: The REST API client is configured to limit requests to the 40/second, as specified by Coinbase International.
+- **Rate Limits**: The REST API client is configured to limit requests to 100 per second, matching the Coinbase International REST allowance. See <https://docs.cdp.coinbase.com/intx/docs/rate-limits> for the official guidance.
+
+:::warning
+Coinbase International returns HTTP 429 when you exceed the 100 requests/sec allowance and can throttle the API key for several seconds, so keep bursts below the documented ceiling.
+:::
+
 - **Graceful Shutdown**: The adapter properly handles graceful shutdown, ensuring all pending messages are processed before disconnecting.
 - **Thread Safety**: All adapter components are thread-safe, allowing them to be used from multiple threads concurrently.
 - **Execution Model**: The adapter can be configured with a single Coinbase International portfolio per execution client. For trading multiple portfolios, you can create multiple execution clients.

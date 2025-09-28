@@ -149,7 +149,7 @@ order = self.order_factory.market(
 Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
 for conditional orders.
 
-## Capability Matrix
+## Orders capability
 
 dYdX supports perpetual futures trading with a comprehensive set of order types and execution features.
 
@@ -209,33 +209,22 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 ### Order querying
 
 | Feature              | Perpetuals | Notes                                          |
-|--------------------|------------|------------------------------------------------|
-| Query open orders   | ✓          | List all active orders.                        |
-| Query order history | ✓          | Historical order data.                         |
-| Order status updates| ✓          | Real-time order state changes.                |
-| Trade history       | ✓          | Execution and fill reports.                   |
+|----------------------|------------|------------------------------------------------|
+| Query open orders    | ✓          | List all active orders.                        |
+| Query order history  | ✓          | Historical order data.                         |
+| Order status updates | ✓          | Real-time order state changes.                |
+| Trade history        | ✓          | Execution and fill reports.                   |
 
 ### Contingent orders
 
-| Feature              | Perpetuals | Notes                                          |
-|--------------------|------------|------------------------------------------------|
+| Feature             | Perpetuals | Notes                                          |
+|---------------------|------------|------------------------------------------------|
 | Order lists         | -          | *Not supported*.                               |
 | OCO orders          | -          | *Not supported*.                               |
 | Bracket orders      | -          | *Not supported*.                               |
 | Conditional orders  | ✓          | Stop market and stop limit orders.           |
 
-### Configuration Options
-
-The following execution client configuration options are available:
-
-| Option           | Default | Description                                                      |
-|------------------|---------|------------------------------------------------------------------|
-| `subaccount`     | `0`     | Subaccount number (venue creates subaccount 0 by default).       |
-| `wallet_address` | `None`  | dYdX wallet address for the account.                             |
-| `mnemonic`       | `None`  | Mnemonic for generating private key for order signing.           |
-| `is_testnet`     | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
-
-### Order Classification
+### Order classification
 
 dYdX classifies orders as either **short-term** or **long-term** orders:
 
@@ -246,7 +235,18 @@ dYdX classifies orders as either **short-term** or **long-term** orders:
 
 The product types for each client must be specified in the configurations.
 
-### Execution Clients
+### Configuration options
+
+The following execution client configuration options are available:
+
+| Option           | Default | Description                                                      |
+|------------------|---------|------------------------------------------------------------------|
+| `subaccount`     | `0`     | Subaccount number (venue creates subaccount 0 by default).       |
+| `wallet_address` | `None`  | dYdX wallet address for the account.                             |
+| `mnemonic`       | `None`  | Mnemonic for generating private key for order signing.           |
+| `is_testnet`     | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
+
+### Execution clients
 
 The account type must be a margin account to trade the perpetual futures contracts.
 
@@ -294,7 +294,7 @@ node.add_exec_client_factory("DYDX", DYDXLiveExecClientFactory)
 node.build()
 ```
 
-### API Credentials
+### API credentials
 
 There are two options for supplying your credentials to the dYdX clients.
 Either pass the corresponding `wallet_address` and `mnemonic` values to the configuration objects, or
@@ -341,7 +341,7 @@ config = TradingNodeConfig(
 )
 ```
 
-### Parser Warnings
+### Parser warnings
 
 Some dYdX instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.

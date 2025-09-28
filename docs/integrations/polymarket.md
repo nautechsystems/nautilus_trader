@@ -183,7 +183,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 We recommend using environment variables to manage your credentials.
 :::
 
-## Capability Matrix
+## Orders capability
 
 Polymarket operates as a prediction market with limited order complexity compared to traditional exchanges.
 
@@ -258,17 +258,6 @@ Polymarket operates as a prediction market with limited order complexity compare
 | Bracket orders      | -              | *Not supported*.                     |
 | Conditional orders  | -              | *Not supported*.                     |
 
-### Configuration options
-
-The following execution client configuration options are available:
-
-| Option                               | Default | Description                      |
-|--------------------------------------|---------|----------------------------------|
-| `signature_type`                     | `0`     | Polymarket signature type (EOA). |
-| `funder`                             | `None`  | Wallet address for funding USDC transactions. |
-| `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
-| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |
-
 ## Trades
 
 Trades on Polymarket can have the following statuses:
@@ -327,3 +316,16 @@ The following limitations and considerations are currently known:
 - Order signing via the Polymarket Python client is slow, taking around one second.
 - Post-only orders are not supported.
 - Reduce-only orders are not supported.
+
+## Configuration
+
+### Configuration options
+
+The following execution client configuration options are available:
+
+| Option                               | Default | Description                      |
+|--------------------------------------|---------|----------------------------------|
+| `signature_type`                     | `0`     | Polymarket signature type (EOA). |
+| `funder`                             | `None`  | Wallet address for funding USDC transactions. |
+| `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
+| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |

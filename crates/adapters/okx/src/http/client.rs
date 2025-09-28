@@ -117,6 +117,8 @@ const OKX_SUCCESS_CODE: &str = "0";
 pub static OKX_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
+const OKX_GLOBAL_RATE_KEY: &str = "okx:global";
+
 /// Represents an OKX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OKXResponse<T> {
@@ -159,6 +161,63 @@ impl Debug for OKXHttpInnerClient {
 }
 
 impl OKXHttpInnerClient {
+    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
+        vec![
+            (OKX_GLOBAL_RATE_KEY.to_string(), *OKX_REST_QUOTA),
+            (
+                "okx:/api/v5/account/balance".to_string(),
+                Quota::per_second(NonZeroU32::new(5).unwrap()),
+            ),
+            (
+                "okx:/api/v5/public/instruments".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/candles".to_string(),
+                Quota::per_second(NonZeroU32::new(50).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/history-candles".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/history-trades".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/order".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()), // 60 requests / 2 seconds (per instrument)
+            ),
+            (
+                "okx:/api/v5/trade/orders-pending".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/orders-history".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/fills".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/order-algo".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/cancel-algos".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+        ]
+    }
+
+    fn rate_limit_keys(endpoint: &str) -> Vec<Ustr> {
+        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
+        let route = format!("okx:{normalized}");
+
+        vec![Ustr::from(OKX_GLOBAL_RATE_KEY), Ustr::from(route.as_str())]
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.cancellation_token.cancel();
@@ -205,7 +264,7 @@ impl OKXHttpInnerClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
             ),
@@ -252,7 +311,7 @@ impl OKXHttpInnerClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
             ),
@@ -340,7 +399,7 @@ impl OKXHttpInnerClient {
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
         let url = format!("{}{path}", self.base_url);
-        let endpoint = path;
+        let endpoint = path.to_string();
         let method_clone = method.clone();
         let body_clone = body.clone();
 
@@ -348,10 +407,11 @@ impl OKXHttpInnerClient {
             let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
+            let endpoint = endpoint.clone();
 
             async move {
                 let mut headers = if authenticate {
-                    self.sign_request(&method, endpoint, body.as_deref())?
+                    self.sign_request(&method, endpoint.as_str(), body.as_deref())?
                 } else {
                     HashMap::new()
                 };
@@ -361,9 +421,17 @@ impl OKXHttpInnerClient {
                     headers.insert("Content-Type".to_string(), "application/json".to_string());
                 }
 
+                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
                 let resp = self
                     .client
-                    .request(method.clone(), url, Some(headers), body, None, None)
+                    .request_with_ustr_keys(
+                        method.clone(),
+                        url,
+                        Some(headers),
+                        body,
+                        None,
+                        Some(rate_keys),
+                    )
                     .await?;
 
                 tracing::trace!("Response: {resp:?}");
@@ -438,7 +506,7 @@ impl OKXHttpInnerClient {
 
         self.retry_manager
             .execute_with_retry_with_cancel(
-                endpoint,
+                endpoint.as_str(),
                 operation,
                 should_retry,
                 create_error,

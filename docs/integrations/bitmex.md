@@ -159,7 +159,7 @@ accordingly, so quantities in Nautilus are always expressed in base units (SOL, 
 
 See the BitMEX API documentation for details on these fields: <https://www.bitmex.com/app/apiOverview#Instrument-Properties>.
 
-## Order capability
+## Orders capability
 
 The BitMEX integration supports the following order types and execution features.
 
@@ -290,45 +290,6 @@ BitMEX caps each REST response at 1,000 rows and requires manual pagination via 
 first page; wider pagination support is scheduled for a future update.
 :::
 
-## Rate limits
-
-BitMEX implements a dual-layer rate limiting system:
-
-### REST API limits
-
-- **Primary rate limit**:
-  - 120 requests per minute for authenticated users.
-  - 30 requests per minute for unauthenticated users.
-  - Uses a token bucket mechanism with continuous refill.
-- **Secondary rate limit**:
-  - 10 requests per second burst limit for specific endpoints (order management).
-  - Applies to order placement, modification, and cancellation.
-- **Order limits**:
-  - 200 open orders per symbol per account.
-  - 10 stop orders per symbol per account.
-
-The adapter automatically respects these limits through built-in rate limiting with a
-10 requests/second quota that handles both the burst limit and average rate requirements.
-
-### WebSocket limits
-
-- Refer to the BitMEX documentation for current connection limits.
-- Authentication is required for private data streams.
-
-### Rate limit headers
-
-BitMEX provides rate limit information in response headers:
-
-- `x-ratelimit-limit`: Total allowed requests.
-- `x-ratelimit-remaining`: Remaining requests in current window.
-- `x-ratelimit-reset`: Unix timestamp when limits reset.
-- `retry-after`: Seconds to wait if rate limited (429 response).
-
-:::warning
-Exceeding rate limits will result in HTTP 429 responses and potential temporary IP bans.
-Multiple 4xx/5xx errors in quick succession may trigger longer bans.
-:::
-
 ## Connection management
 
 ### HTTP Keep-Alive
@@ -350,6 +311,49 @@ BitMEX uses an `api-expires` header for request authentication:
 - Requests include a UNIX timestamp indicating when they expire.
 - Default expiration window is 10 seconds from request creation.
 - Prevents replay attacks and ensures request freshness.
+
+## Rate limiting
+
+BitMEX implements a dual-layer rate limiting system:
+
+### REST limits
+
+- **Burst limit**: 10 requests per second for authenticated users (applies to order placement, modification, and cancel endpoints).
+- **Rolling minute limit**: 120 requests per minute for authenticated users (30 requests per minute for unauthenticated users).
+- **Order caps**: 200 open orders and 10 stop orders per symbol; exceeding these caps triggers exchange-side rejections.
+
+The adapter enforces these quotas automatically and surfaces the rate-limit headers BitMEX returns with each response.
+
+### WebSocket limits
+
+- Connection requests: follow the exchange guidance (currently 3 connections per second per IP).
+- Private streams require authentication; the adapter reconnects automatically if a limit is exceeded.
+
+:::warning
+Exceeding BitMEX rate limits returns HTTP 429 and may trigger temporary IP bans; persistent 4xx/5xx errors can extend the lockout period.
+:::
+
+| Key / Endpoint                    | Limit (req/sec) | Additional quota              | Notes                                    |
+|-----------------------------------|-----------------|-------------------------------|------------------------------------------|
+| `bitmex:global`                   | 10              | `bitmex:minute` = 120 req/min | Burst limit for authenticated users.     |
+| `/api/v1/order`                   | 10              | `/api/v1/order:minute` = 60   | Mirrors BitMEX per-user allowances.      |
+| `/api/v1/order/bulk`              | 5               | –                             | Batch operations throttled tighter.      |
+| `/api/v1/order/cancelAll`         | 2               | –                             | Cancel all orders.                       |
+
+All requests automatically consume both the global burst bucket and the rolling minute bucket. Endpoints that have their own minute quota (e.g. `/api/v1/order`) also queue against that per-route key, so repeated calls with different parameters still share a single rate bucket.
+
+:::info
+For more details on rate limiting, see the official documentation: <https://www.bitmex.com/app/restAPI#Rate-Limits>.
+:::
+
+### Rate-limit headers
+
+BitMEX exposes the current allowance via response headers:
+
+- `x-ratelimit-limit`: total requests permitted in the current window.
+- `x-ratelimit-remaining`: remaining requests before throttling occurs.
+- `x-ratelimit-reset`: UNIX timestamp when the allowance resets.
+- `retry-after`: seconds to wait after a 429 response.
 
 ## Configuration
 

@@ -68,7 +68,7 @@ for the instrument ID. For example:
 - The BTCUSDT perpetual futures contract is identified with `-LINEAR`, such as `BTCUSDT-LINEAR`.
 - The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, such as `BTCUSD-INVERSE`.
 
-## Order capability
+## Orders capability
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
 All the order types listed below can be used as *either* entries or exits, except for trailing stops
@@ -145,19 +145,6 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Bracket orders      | ✓    | ✓      | ✓       | UI only; API users implement manually.  |
 | Conditional orders  | ✓    | ✓      | ✓       | Stop and limit-if-touched orders.       |
 
-### Configuration options
-
-The following execution client configuration options affect order behavior:
-
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `use_gtd`                    | `False` | GTD is not supported; orders are remapped to GTC for local management. |
-| `use_ws_trade_api`           | `False` | If `True`, uses WebSocket for order requests instead of HTTP. |
-| `use_http_batch_api`         | `False` | If `True`, uses HTTP batch API when WebSocket trading is enabled. |
-| `futures_leverages`          | `None`  | Dict to set leverage for futures symbols. |
-| `position_mode`              | `None`  | Dict to set position mode for USDT perpetual and inverse futures. |
-| `margin_mode`                | `None`  | Sets margin mode for the account. |
-
 ### Order parameters
 
 Individual orders can be customized using the `params` dictionary when submitting orders:
@@ -205,9 +192,45 @@ Consider the following points when using trailing stops on Bybit:
 - You cannot query trailing stop orders that are not already open (the `venue_order_id` is unknown until then).
 - You can manually adjust the trigger price in the GUI, which will update the Nautilus order.
 
+## Rate limiting
+
+Every HTTP call consumes the global token bucket as well as any keyed quota(s). When usage exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.
+
+| Key / Endpoint                | Limit (requests/sec) | Notes                                                |
+|------------------------------|----------------------|------------------------------------------------------|
+| `bybit:global`               | 24                   | Exchange-wide 120 req / 5 s ceiling.                 |
+| `/v5/market/kline`           | 20                   | Historical sweeps throttled slightly below global.   |
+| `/v5/market/trades`          | 24                   | Matches the global quota.                            |
+| `/v5/order/create`           | 10                   | Standard order placement.                            |
+| `/v5/order/cancel`           | 10                   | Single-order cancellation.                           |
+| `/v5/order/create-batch`     | 5                    | Batch placement endpoints.                           |
+| `/v5/order/cancel-batch`     | 5                    | Batch cancellation endpoints.                        |
+| `/v5/order/cancel-all`       | 2                    | Full book cancel to mirror Bybit guidance.           |
+
+:::warning
+Bybit responds with error code `10016` when the rate limit is exceeded and may temporarily block the IP if requests continue without back-off.
+:::
+
+:::info
+For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
+:::
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.
+
+### Configuration options
+
+The following execution client configuration options affect order behavior:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `use_gtd`                    | `False` | GTD is not supported; orders are remapped to GTC for local management. |
+| `use_ws_trade_api`           | `False` | If `True`, uses WebSocket for order requests instead of HTTP. |
+| `use_http_batch_api`         | `False` | If `True`, uses HTTP batch API when WebSocket trading is enabled. |
+| `futures_leverages`          | `None`  | Dict to set leverage for futures symbols. |
+| `position_mode`              | `None`  | Dict to set position mode for USDT perpetual and inverse futures. |
+| `margin_mode`                | `None`  | Sets margin mode for the account. |
 
 ### Data clients
 

@@ -838,6 +838,10 @@ Be aware of Interactive Brokers' historical data limitations:
 4. **Respect Rate Limits**: Add delays between requests to avoid hitting rate limits
 5. **Validate Data**: Always check data quality and completeness before backtesting
 
+:::warning
+Interactive Brokers enforces pacing limits; excessive historical-data or order requests trigger pacing violations and IB can disable the API session for several minutes.
+:::
+
 ## Live trading
 
 Live trading with Interactive Brokers requires setting up a `TradingNode` that incorporates both `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient`. These clients depend on the `InteractiveBrokersInstrumentProvider` for instrument management.

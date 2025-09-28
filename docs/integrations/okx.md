@@ -122,7 +122,7 @@ A: Check the `contract_types` parameter in the configuration:
 - For linear contracts: `OKXContractType.LINEAR`.
 - For inverse contracts: `OKXContractType.INVERSE`.
 
-## Order capability
+## Orders capability
 
 Below are the order types, execution instructions, and time-in-force options supported
 for linear perpetual swap products on OKX.
@@ -324,38 +324,44 @@ export OKX_API_PASSPHRASE="your_passphrase"
 
 Or pass them directly in the configuration (not recommended for production).
 
-## Rate limits
+## Rate limiting
 
-The OKX adapter implements automatic rate limiting for both HTTP and WebSocket connections to respect OKX's API limits and prevent rate limit errors.
+The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults for both REST and WebSocket calls.
 
-### HTTP rate limiting
+### REST limits
 
-The HTTP client implements a global default rate limit of **250 requests per second**. This is a conservative default that works across most endpoints. However, note that individual OKX endpoints have their own server-side limits:
+- Global cap: 250 requests per second (matches 500 requests / 2 seconds IP allowance).
+- Endpoint-specific quotas appear in the table below and mirror OKX’s published limits where available.
 
-- Sub-account order limit: 1000 requests per 2 seconds.
-- Account balance: 10 requests per 2 seconds (more restrictive).
-- Account instruments: 20 requests per 2 seconds.
+### WebSocket limits
 
-The global limiter helps prevent hitting the overall rate limit, but endpoints with lower server-side limits may still rate-limit if accessed too frequently.
+- Subscription operations: 3 requests per second.
+- Order actions (place/cancel/amend): 250 requests per second.
 
-### WebSocket rate limiting
+:::warning
+OKX enforces per-endpoint and per-account quotas; exceeding them leads to HTTP 429 responses and temporary throttling on that key.
+:::
 
-The WebSocket client implements keyed rate limiting with different quotas for different operation types:
+| Key / Endpoint                   | Limit (req/sec) | Notes                                                   |
+|----------------------------------|-----------------|---------------------------------------------------------|
+| `okx:global`                     | 250             | Matches 500 req / 2 s IP allowance.                     |
+| `/api/v5/public/instruments`     | 10              | Matches OKX 20 req / 2 s docs.                          |
+| `/api/v5/market/candles`         | 50              | Higher allowance for streaming candles.                 |
+| `/api/v5/market/history-candles` | 20              | Conservative quota for large historical pulls.          |
+| `/api/v5/market/history-trades`  | 30              | Trade history pulls.                                    |
+| `/api/v5/account/balance`        | 5               | OKX guidance: 10 req / 2 s.                             |
+| `/api/v5/trade/order`            | 30              | 60 requests / 2 seconds per-instrument limit.           |
+| `/api/v5/trade/orders-pending`   | 20              | Open order fetch.                                       |
+| `/api/v5/trade/orders-history`   | 20              | Historical orders.                                      |
+| `/api/v5/trade/fills`            | 30              | Execution reports.                                      |
+| `/api/v5/trade/order-algo`       | 10              | Algo placements (conditional orders).                   |
+| `/api/v5/trade/cancel-algos`     | 10              | Algo cancellation.                                      |
 
-- **General operations** (subscriptions): 3 requests per second.
-- **Order operations** (place/cancel/amend): 250 requests per second.
+All keys automatically include the `okx:global` bucket. URLs are normalised (query strings removed) before rate limiting, so requests with different filters share the same quota.
 
-This approach ensures that subscription management doesn't interfere with order execution performance while respecting OKX's connection rate limits.
-
-### OKX API rate limits
-
-OKX enforces various rate limits on their API endpoints:
-
-- **REST API**: Varies by endpoint (typically 20-1000 requests per 2 seconds depending on the endpoint).
-- **WebSocket**: 3 connection requests per second per IP, with subscription and order limits.
-- **Trading**: Order placement has specific limits based on account level and instrument type.
-
-For complete and up-to-date rate limit information, refer to the [OKX API documentation](https://www.okx.com/docs-v5/en/#overview-rate-limit).
+:::info
+For more details on rate limiting, see the official documentation: <https://www.okx.com/docs-v5/en/#rest-api-rate-limit>.
+:::
 
 ## Configuration
 

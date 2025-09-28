@@ -59,7 +59,7 @@ The Betfair adapter provides three primary components:
 - `BetfairDataClient`: streams real-time market data from the Exchange Streaming API.
 - `BetfairExecutionClient`: submits orders (bets) and tracks execution status via the REST API.
 
-## Capability Matrix
+## Orders capability
 
 Betfair operates as a betting exchange with unique characteristics compared to traditional financial exchanges:
 
@@ -134,6 +134,8 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | Bracket orders      | -         | *Not supported*.                        |
 | Conditional orders  | -         | Basic bet conditions only.              |
 
+## Configuration
+
 ### Configuration options
 
 The following execution client configuration options affect order behavior:
@@ -144,8 +146,6 @@ The following execution client configuration options affect order behavior:
 | `request_account_state_secs` | `300`   | Interval for account state checks in seconds (0 disables). |
 | `reconcile_market_ids_only`  | `False` | If `True`, only reconciles orders for configured market IDs. |
 | `ignore_external_orders`     | `False` | If `True`, silently ignores orders not found in cache. |
-
-## Configuration
 
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 

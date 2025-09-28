@@ -100,6 +100,9 @@ use crate::{
 pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).expect("10 is a valid non-zero u32")));
 
+const BITMEX_GLOBAL_RATE_KEY: &str = "bitmex:global";
+const BITMEX_MINUTE_RATE_KEY: &str = "bitmex:minute";
+
 /// Represents a BitMEX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BitmexResponse<T> {
@@ -189,7 +192,7 @@ impl BitmexHttpInnerClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*BITMEX_REST_QUOTA),
                 timeout_secs,
             ),
@@ -235,7 +238,7 @@ impl BitmexHttpInnerClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*BITMEX_REST_QUOTA),
                 timeout_secs,
             ),
@@ -247,6 +250,45 @@ impl BitmexHttpInnerClient {
 
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+    }
+
+    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
+        vec![
+            (BITMEX_GLOBAL_RATE_KEY.to_string(), *BITMEX_REST_QUOTA),
+            (
+                BITMEX_MINUTE_RATE_KEY.to_string(),
+                Quota::per_minute(NonZeroU32::new(120).unwrap()),
+            ),
+            (
+                "bitmex:/api/v1/order".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+            (
+                "bitmex:/api/v1/order:minute".to_string(),
+                Quota::per_minute(NonZeroU32::new(60).unwrap()),
+            ),
+            (
+                "bitmex:/api/v1/order/bulk".to_string(),
+                Quota::per_second(NonZeroU32::new(5).unwrap()),
+            ),
+            (
+                "bitmex:/api/v1/order/cancelAll".to_string(),
+                Quota::per_second(NonZeroU32::new(2).unwrap()),
+            ),
+        ]
+    }
+
+    fn rate_limit_keys(endpoint: &str) -> Vec<Ustr> {
+        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
+        let route = format!("bitmex:{normalized}");
+        let route_minute = format!("{route}:minute");
+
+        vec![
+            Ustr::from(BITMEX_GLOBAL_RATE_KEY),
+            Ustr::from(BITMEX_MINUTE_RATE_KEY),
+            Ustr::from(route.as_str()),
+            Ustr::from(route_minute.as_str()),
+        ]
     }
 
     fn sign_request(
@@ -296,6 +338,7 @@ impl BitmexHttpInnerClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BitmexHttpError> {
+        let endpoint = endpoint.to_string();
         let url = format!("{}{endpoint}", self.base_url);
         let method_clone = method.clone();
         let body_clone = body.clone();
@@ -304,17 +347,19 @@ impl BitmexHttpInnerClient {
             let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
+            let endpoint = endpoint.clone();
 
             async move {
                 let headers = if authenticate {
-                    Some(self.sign_request(&method, endpoint, body.as_deref())?)
+                    Some(self.sign_request(&method, endpoint.as_str(), body.as_deref())?)
                 } else {
                     None
                 };
 
+                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
                 let resp = self
                     .client
-                    .request(method, url, headers, body, None, None)
+                    .request_with_ustr_keys(method, url, headers, body, None, Some(rate_keys))
                     .await?;
 
                 if resp.status.is_success() {
@@ -377,7 +422,7 @@ impl BitmexHttpInnerClient {
 
         self.retry_manager
             .execute_with_retry_with_cancel(
-                endpoint,
+                endpoint.as_str(),
                 operation,
                 should_retry,
                 create_error,

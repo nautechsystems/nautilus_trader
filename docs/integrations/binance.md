@@ -162,19 +162,6 @@ Only *limit* order types support `post_only`.
 | Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.       |
 | Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.          |
 
-### Configuration options
-
-The following execution client configuration options affect order behavior:
-
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
-| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
-| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
-| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
-| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
-| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
-
 ### Trailing stops
 
 Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
@@ -198,7 +185,42 @@ You must also have at least *one* of the following:
 - (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
 - (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
+## Rate limiting
+
+| Key / Endpoint            | Limit (weight/min) | Notes                                                    |
+|---------------------------|--------------------|----------------------------------------------------------|
+| `binance:global`          | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.       |
+| `/api/v3/order`           | 3,000              | Spot order placement.                                    |
+| `/api/v3/allOrders`       | 150                | Spot all-orders endpoint (20× weight multiplier).        |
+| `/api/v3/klines`          | 600                | Spot historical klines.                                  |
+| `/fapi/v1/order`          | 1,200              | Futures order placement.                                 |
+| `/fapi/v1/allOrders`      | 60                 | Futures historical orders (20× multiplier).              |
+| `/fapi/v1/klines`         | 600                | Futures historical klines.                               |
+
+Binance assigns request weight dynamically (e.g. `/klines` scales with `limit`). The quotas above mirror the static limits but the client still draws a single token per call, so long history pulls may need manual pacing to respect the live `X-MBX-USED-WEIGHT-*` headers.
+
+:::warning
+Binance returns HTTP 429 when you exceed the allowed weight and repeated bursts can trigger temporary IP bans, so leave enough headroom between batches.
+:::
+
+:::info
+For more details on rate limiting, see the official documentation: <https://binance-docs.github.io/apidocs/futures/en/#limits>.
+:::
+
 ## Configuration
+
+### Configuration options
+
+The following execution client configuration options affect order behavior:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
+| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
+| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
+| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
+| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
+| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
 
 The most common use case is to configure a live `TradingNode` to include Binance
 data and execution clients. To achieve this, add a `BINANCE` section to your client

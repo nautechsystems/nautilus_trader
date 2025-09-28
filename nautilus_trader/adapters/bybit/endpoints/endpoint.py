@@ -44,6 +44,7 @@ class BybitHttpEndpoint:
         self.client = client
         self.endpoint_type = endpoint_type
         self.url_path = url_path
+        self._ratelimiter_key = f"bybit:{url_path}"
 
         self.decoder = msgspec.json.Decoder()
         self.encoder = msgspec.json.Encoder(enc_hook=enc_hook)
@@ -66,10 +67,25 @@ class BybitHttpEndpoint:
     ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(params))
         method_call = self._method_request[self.endpoint_type]
+        default_keys: list[str] = []
+
+        if ratelimiter_keys:
+            default_keys.extend(ratelimiter_keys)
+
+        default_keys.append(self._ratelimiter_key)
+        default_keys.append("bybit:global")
+        seen: set[str] = set()
+        keys: list[str] = []
+
+        for key in default_keys:
+            if key not in seen:
+                seen.add(key)
+                keys.append(key)
+
         raw: bytes = await method_call(
             http_method=method_type,
             url_path=self.url_path,
             payload=payload,
-            ratelimiter_keys=ratelimiter_keys,
+            ratelimiter_keys=keys,
         )
         return raw

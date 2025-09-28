@@ -40,9 +40,11 @@ None
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
+- Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
+- Optimized rate limiter quota keys with string interning to avoid repeated allocations
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4
 - Upgraded `databento` crate to v0.34.0
@@ -68,6 +70,7 @@ None
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
 
 ### Documentation Updates
+- Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
 - Improved dark and light themes for readability
 - Improved clarity of implemented bar aggregations
 - Standardized consistent styling per docs style guide
