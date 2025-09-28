@@ -498,6 +498,7 @@ impl LiveTimer {
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
         let next_time_atomic = self.next_time_ns.clone();
+        next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
         let sender = self.sender.clone();
 
@@ -508,7 +509,15 @@ impl LiveTimer {
             // 1-millisecond delay to account for the overhead of initializing a tokio timer
             let overhead = Duration::from_millis(1);
             let delay_ns = next_time_ns.saturating_sub(now_ns.as_u64());
-            let delay = Duration::from_nanos(delay_ns).saturating_sub(overhead);
+            let mut delay = Duration::from_nanos(delay_ns);
+
+            // Subtract the estimated startup overhead; saturating to zero for sub-ms delays
+            if delay > overhead {
+                delay -= overhead;
+            } else {
+                delay = Duration::from_nanos(0);
+            }
+
             let start = Instant::now() + delay;
 
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));

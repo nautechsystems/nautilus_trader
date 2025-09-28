@@ -83,7 +83,7 @@ pub struct Throttler<T, F> {
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The name of the timer.
-    timer_name: String,
+    timer_name: Ustr,
     /// The callback to send a message.
     output_send: F,
     /// The callback to drop a message.
@@ -147,7 +147,7 @@ where
             timestamps: VecDeque::with_capacity(limit),
             clock,
             interval,
-            timer_name,
+            timer_name: Ustr::from(&timer_name),
             output_send,
             output_drop,
             actor_id,
@@ -167,7 +167,7 @@ where
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
         let mut clock = self.clock.borrow_mut();
-        if clock.timer_names().contains(&self.timer_name.as_str()) {
+        if clock.timer_exists(&self.timer_name) {
             clock.cancel_timer(&self.timer_name);
         }
         let alert_ts = clock.timestamp_ns() + delta;

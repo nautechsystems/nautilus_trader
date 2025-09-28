@@ -1188,7 +1188,7 @@ impl DataEngine {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
-                if clock.timer_names().contains(&timer_name.as_str()) {
+                if clock.timer_exists(&timer_name) {
                     clock.cancel_timer(&timer_name);
                 }
                 log::debug!("Removed BookSnapshotter for instrument ID {instrument_id}");
