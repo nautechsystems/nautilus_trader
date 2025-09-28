@@ -29,7 +29,6 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
-from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -47,6 +46,9 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
 
@@ -412,12 +414,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Request historical trade ticks.
         """
         try:
-            trade_ticks = await self._http_client.request_trade_ticks(
+            pyo3_trades = await self._http_client.request_trade_ticks(
                 request.instrument_id,
                 request.start,
                 request.end,
                 request.limit,
             )
+            trade_ticks = TradeTick.from_pyo3_list(pyo3_trades)
             for trade_tick in trade_ticks:
                 self._handle_data(trade_tick)
         except Exception as e:
@@ -428,12 +431,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Request historical quote ticks.
         """
         try:
-            quote_ticks = await self._http_client.request_quote_ticks(
+            pyo3_quotes = await self._http_client.request_quote_ticks(
                 request.instrument_id,
                 request.start,
                 request.end,
                 request.limit,
             )
+            quote_ticks = QuoteTick.from_pyo3_list(pyo3_quotes)
             for quote_tick in quote_ticks:
                 self._handle_data(quote_tick)
         except Exception as e:
@@ -444,28 +448,14 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Request historical bars.
         """
         try:
-            bars = await self._http_client.request_bars(
+            pyo3_bars = await self._http_client.request_bars(
                 request.bar_type,
                 request.start,
                 request.end,
                 request.limit,
             )
+            bars = Bar.from_pyo3_list(pyo3_bars)
             for bar in bars:
                 self._handle_data(bar)
         except Exception as e:
             self._log.error(f"Error requesting bars for {request.bar_type}: {e}")
-
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        """
-        Request order book snapshot following standard pattern.
-        """
-        try:
-            snapshot = await self._http_client.request_order_book_snapshot(
-                request.instrument_id,
-                request.depth,
-            )
-            self._handle_data(snapshot)
-        except Exception as e:
-            self._log.error(
-                f"Error requesting order book snapshot for {request.instrument_id}: {e}",
-            )
