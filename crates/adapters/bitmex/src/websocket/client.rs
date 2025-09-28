@@ -68,7 +68,7 @@ use super::{
 use crate::{
     common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
     websocket::{
-        auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
+        auth::{AUTHENTICATION_TIMEOUT_SECS, AuthResultReceiver, AuthTracker},
         parse::{
             parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
             parse_position_msg,
@@ -285,31 +285,38 @@ impl BitmexWebSocketClient {
                         let mut topics_to_restore: Vec<String> = restore_set.into_iter().collect();
                         topics_to_restore.sort();
 
-                        if let Some(cred) = &credential
-                            && let Err(e) = BitmexWebSocketClient::issue_authentication_request(
+                        let auth_rx_opt = if let Some(cred) = &credential {
+                            match BitmexWebSocketClient::issue_authentication_request(
                                 &inner_client,
                                 cred,
                                 &auth_tracker,
                             )
                             .await
-                        {
-                            log::error!(
-                                "Failed to send re-authentication request after reconnection: {e}"
-                            );
-                            continue;
-                        }
+                            {
+                                Ok(rx) => Some(rx),
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to send re-authentication request after reconnection: {e}"
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            None
+                        };
 
-                        let credential_for_task = credential.clone();
                         let inner_for_task = inner_client.clone();
                         let state_for_task = subscriptions.clone();
                         let auth_tracker_for_task = auth_tracker.clone();
+                        let auth_rx_for_task = auth_rx_opt;
                         let topics_to_restore_clone = topics_to_restore.clone();
                         get_runtime().spawn(async move {
-                            if credential_for_task.is_some() {
+                            if let Some(rx) = auth_rx_for_task {
                                 if let Err(e) = auth_tracker_for_task
-                                    .wait_for_result(Duration::from_secs(
-                                        AUTHENTICATION_TIMEOUT_SECS,
-                                    ))
+                                    .wait_for_result(
+                                        Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS),
+                                        rx,
+                                    )
                                     .await
                                 {
                                     log::error!("Authentication after reconnection failed: {e}");
@@ -467,8 +474,8 @@ impl BitmexWebSocketClient {
         inner: &Arc<RwLock<Option<WebSocketClient>>>,
         credential: &Credential,
         tracker: &AuthTracker,
-    ) -> Result<(), BitmexWsError> {
-        tracker.begin();
+    ) -> Result<AuthResultReceiver, BitmexWsError> {
+        let receiver = tracker.begin();
 
         let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
         let signature = credential.sign("GET", "/realtime", expires, "");
@@ -498,7 +505,7 @@ impl BitmexWebSocketClient {
             })?;
         }
 
-        Ok(())
+        Ok(receiver)
     }
 
     /// Authenticate the WebSocket connection using the provided credentials.
@@ -517,9 +524,10 @@ impl BitmexWebSocketClient {
             }
         };
 
-        Self::issue_authentication_request(&self.inner, credential, &self.auth_tracker).await?;
+        let rx =
+            Self::issue_authentication_request(&self.inner, credential, &self.auth_tracker).await?;
         self.auth_tracker
-            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS))
+            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), rx)
             .await
     }
 

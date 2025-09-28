@@ -31,6 +31,8 @@ pub enum OKXWsError {
     JsonError(String),
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("Authentication error: {0}")]
+    AuthenticationError(String),
     /// Wrapping the underlying HttpClientError from the network crate.
     // #[error("Network error: {0}")]
     // WebSocketClientError(WebSocketClientError),  // TODO: Implement Debug

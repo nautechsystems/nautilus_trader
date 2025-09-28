@@ -16,9 +16,9 @@
 //! Provides the WebSocket client integration for the [OKX](https://okx.com) WebSocket API.
 //!
 //! The [`OKXWebSocketClient`] ties together several recurring patterns:
-//! - Heartbeats use `OKX_PING_TEXT`/`OKX_PONG_TEXT`, responding to both text and control-frame pings.
-//! - Authentication honours `OKX_AUTH_TIMEOUT_SECS`, re-authenticating on reconnect before resubscribing
-//!   and skipping private channels when credentials are unavailable.
+//! - Heartbeats use text `ping`/`pong`, responding to both text and control-frame pings.
+//! - Authentication re-runs on reconnect before resubscribing and skips private channels when
+//!   credentials are unavailable.
 //! - Subscriptions cache instrument type/family/ID groupings so reconnects rebuild the same set of
 //!   channels while respecting the authentication guard described above.
 
@@ -53,7 +53,10 @@ use nautilus_network::{
     RECONNECTED,
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_websocket_retry_manager},
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, TEXT_PING, TEXT_PONG, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
+    },
 };
 use reqwest::header::USER_AGENT;
 use serde_json::Value;
@@ -63,6 +66,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
+    auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
     enums::{OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
@@ -133,10 +137,6 @@ pub static OKX_WS_QUOTA: LazyLock<Quota> =
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
-const OKX_PING_TEXT: &str = "ping";
-const OKX_PONG_TEXT: &str = "pong";
-const OKX_AUTH_TIMEOUT_SECS: u64 = 10;
-
 /// Determines if an OKX WebSocket error should trigger a retry.
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
@@ -150,7 +150,12 @@ fn should_retry_okx_error(error: &OKXWsError) -> bool {
                 || msg_lower.contains("connection")
                 || msg_lower.contains("network")
         }
-        OKXWsError::JsonError(_) | OKXWsError::ParsingError(_) => false, // Don't retry parsing errors
+        OKXWsError::AuthenticationError(_)
+        | OKXWsError::JsonError(_)
+        | OKXWsError::ParsingError(_) => {
+            // Don't retry authentication or parsing errors automatically
+            false
+        }
     }
 }
 
@@ -181,8 +186,7 @@ pub struct OKXWebSocketClient {
     credential: Option<Credential>,
     heartbeat: Option<u64>,
     inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
-    auth_state: Arc<tokio::sync::watch::Sender<bool>>,
-    auth_state_rx: tokio::sync::watch::Receiver<bool>,
+    auth_tracker: AuthTracker,
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -253,7 +257,6 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = Arc::new(DashMap::new());
         let subscriptions_inst_id = Arc::new(DashMap::new());
         let subscriptions_bare = Arc::new(DashMap::new());
-        let (auth_tx, auth_rx) = tokio::sync::watch::channel(false);
 
         Ok(Self {
             url,
@@ -261,8 +264,7 @@ impl OKXWebSocketClient {
             credential,
             heartbeat,
             inner: Arc::new(tokio::sync::RwLock::new(None)),
-            auth_state: Arc::new(auth_tx),
-            auth_state_rx: auth_rx,
+            auth_tracker: AuthTracker::new(),
             rx: None,
             signal,
             task_handle: None,
@@ -425,7 +427,7 @@ impl OKXWebSocketClient {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
-            heartbeat_msg: Some(OKX_PING_TEXT.to_string()),
+            heartbeat_msg: Some(TEXT_PING.to_string()),
             message_handler: Some(message_handler),
             ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
@@ -466,7 +468,7 @@ impl OKXWebSocketClient {
         let pending_amend_requests = self.pending_amend_requests.clone();
         let pending_mass_cancel_requests = self.pending_mass_cancel_requests.clone();
         let active_client_orders = self.active_client_orders.clone();
-        let auth_state = self.auth_state.clone();
+        let auth_tracker = self.auth_tracker.clone();
 
         let instruments_cache = self.instruments_cache.clone();
         let inner_client = self.inner.clone();
@@ -475,230 +477,283 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = self.subscriptions_inst_family.clone();
         let subscriptions_inst_id = self.subscriptions_inst_id.clone();
         let subscriptions_bare = self.subscriptions_bare.clone();
-        let auth_state_clone = auth_state.clone();
         let client_id_aliases = self.client_id_aliases.clone();
-        let stream_handle = get_runtime().spawn(async move {
-            let mut handler = OKXWsMessageHandler::new(
-                account_id,
-                instruments_cache,
-                reader,
-                signal,
-                inner_client.clone(),
-                tx,
-                pending_place_requests,
-                pending_cancel_requests,
-                pending_amend_requests,
-                pending_mass_cancel_requests,
-                active_client_orders,
-                client_id_aliases,
-                auth_state,
-            );
+        let stream_handle = get_runtime().spawn({
+            let auth_tracker = auth_tracker.clone();
+            async move {
+                let mut handler = OKXWsMessageHandler::new(
+                    account_id,
+                    instruments_cache,
+                    reader,
+                    signal,
+                    inner_client.clone(),
+                    tx,
+                    pending_place_requests,
+                    pending_cancel_requests,
+                    pending_amend_requests,
+                    pending_mass_cancel_requests,
+                    active_client_orders,
+                    client_id_aliases,
+                    auth_tracker.clone(),
+                );
 
-            // Main message loop with explicit reconnection handling
-            loop {
-                match handler.next().await {
-                    Some(NautilusWsMessage::Reconnected) => {
-                        tracing::info!("Handling WebSocket reconnection");
+                // Main message loop with explicit reconnection handling
+                loop {
+                    match handler.next().await {
+                        Some(NautilusWsMessage::Reconnected) => {
+                            tracing::info!("Handling WebSocket reconnection");
 
-                        let mut auth_succeeded = credential_clone.is_none();
+                            let auth_tracker_for_task = auth_tracker.clone();
+                            let inner_client_for_task = inner_client.clone();
+                            let subscriptions_inst_type_for_task = subscriptions_inst_type.clone();
+                            let subscriptions_inst_family_for_task = subscriptions_inst_family.clone();
+                            let subscriptions_inst_id_for_task = subscriptions_inst_id.clone();
+                            let subscriptions_bare_for_task = subscriptions_bare.clone();
 
-                        // Re-authenticate if we have credentials
-                        if let Some(cred) = &credential_clone {
-                            let inner_guard = inner_client.read().await;
-                            if let Some(client) = &*inner_guard {
-                                let timestamp = SystemTime::now()
-                                    .duration_since(SystemTime::UNIX_EPOCH)
-                                    .expect("System time should be after UNIX epoch")
-                                    .as_secs()
-                                    .to_string();
-                                let signature = cred.sign(&timestamp, "GET", "/users/self/verify", "");
+                            let auth_wait = if let Some(cred) = &credential_clone {
+                                let rx = auth_tracker.begin();
+                                let inner_guard = inner_client.read().await;
 
-                                let auth_message = OKXAuthentication {
-                                    op: "login",
-                                    args: vec![OKXAuthenticationArg {
-                                        api_key: cred.api_key.to_string(),
-                                        passphrase: cred.api_passphrase.clone(),
-                                        timestamp,
-                                        sign: signature,
-                                    }],
-                                };
+                                if let Some(client) = &*inner_guard {
+                                    let timestamp = SystemTime::now()
+                                        .duration_since(SystemTime::UNIX_EPOCH)
+                                        .expect("System time should be after UNIX epoch")
+                                        .as_secs()
+                                        .to_string();
+                                    let signature =
+                                        cred.sign(&timestamp, "GET", "/users/self/verify", "");
 
-                                if let Err(e) = client
-                                    .send_text(serde_json::to_string(&auth_message).unwrap(), None)
-                                    .await
-                                {
-                                    tracing::error!("Failed to send re-authentication request: {e}");
-                                } else {
-                                    tracing::info!(
-                                        "Sent re-authentication request, waiting for response before resubscribing",
-                                    );
+                                    let auth_message = OKXAuthentication {
+                                        op: "login",
+                                        args: vec![OKXAuthenticationArg {
+                                            api_key: cred.api_key.to_string(),
+                                            passphrase: cred.api_passphrase.clone(),
+                                            timestamp,
+                                            sign: signature,
+                                        }],
+                                    };
 
-                                    let mut auth_rx = auth_state_clone.subscribe();
-                                    match tokio::time::timeout(
-                                        Duration::from_secs(OKX_AUTH_TIMEOUT_SECS),
-                                        auth_rx.wait_for(|&auth| auth),
-                                    )
-                                    .await
+                                    if let Err(e) = client
+                                        .send_text(serde_json::to_string(&auth_message).unwrap(), None)
+                                        .await
                                     {
-                                        Ok(Ok(_)) => {
+                                        tracing::error!(
+                                            "Failed to send re-authentication request: {e}",
+                                        );
+                                        auth_tracker.fail(e.to_string());
+                                    } else {
+                                        tracing::info!(
+                                            "Sent re-authentication request, waiting for response before resubscribing",
+                                        );
+                                    }
+                                } else {
+                                    auth_tracker
+                                        .fail("Cannot authenticate: not connected".to_string());
+                                }
+
+                                drop(inner_guard);
+
+                                Some(rx)
+                            } else {
+                                None
+                            };
+
+                            get_runtime().spawn(async move {
+                                let auth_succeeded = match auth_wait {
+                                    Some(rx) => match auth_tracker_for_task
+                                        .wait_for_result(
+                                            Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS),
+                                            rx,
+                                        )
+                                        .await
+                                    {
+                                        Ok(()) => {
                                             tracing::info!(
                                                 "Authentication successful after reconnect, proceeding with resubscription",
                                             );
-                                            auth_succeeded = true;
+                                            true
                                         }
-                                        Ok(Err(e)) => {
+                                        Err(e) => {
                                             tracing::error!(
-                                                "Auth watch channel error after reconnect: {e}",
+                                                "Authentication after reconnect failed: {e}",
                                             );
+                                            false
                                         }
-                                        Err(_) => {
+                                    },
+                                    None => true,
+                                };
+
+                                let inner_guard = inner_client_for_task.read().await;
+                                if let Some(client) = &*inner_guard {
+                                    let should_resubscribe = |channel: &OKXWsChannel| {
+                                        if channel_requires_auth(channel) && !auth_succeeded {
+                                            tracing::warn!(
+                                                ?channel,
+                                                "Skipping private channel resubscription due to missing authentication",
+                                            );
+                                            return false;
+                                        }
+                                        true
+                                    };
+
+                                    let mut inst_type_args = Vec::new();
+                                    for entry in subscriptions_inst_type_for_task.iter() {
+                                        let (channel, inst_types) = entry.pair();
+                                        if !should_resubscribe(channel) {
+                                            continue;
+                                        }
+                                        for inst_type in inst_types.iter() {
+                                            inst_type_args.push(OKXSubscriptionArg {
+                                                channel: channel.clone(),
+                                                inst_type: Some(*inst_type),
+                                                inst_family: None,
+                                                inst_id: None,
+                                            });
+                                        }
+                                    }
+                                    if !inst_type_args.is_empty() {
+                                        let sub_request = OKXSubscription {
+                                            op: OKXWsOperation::Subscribe,
+                                            args: inst_type_args,
+                                        };
+                                        if let Err(e) = client
+                                            .send_text(
+                                                serde_json::to_string(&sub_request).unwrap(),
+                                                None,
+                                            )
+                                            .await
+                                        {
                                             tracing::error!(
-                                                "Timeout waiting for authentication after reconnect",
+                                                "Failed to re-subscribe inst_type channels: {e}",
                                             );
                                         }
                                     }
-                                }
-                            }
-                            drop(inner_guard);
-                        }
 
-                        // Re-subscribe to all channels
-                        // TODO: Extract common resubscription logic to avoid duplication with the auth success path
-                        let inner_guard = inner_client.read().await;
-                        if let Some(client) = &*inner_guard {
-                            let should_resubscribe = |channel: &OKXWsChannel| {
-                                if channel_requires_auth(channel) && !auth_succeeded {
+                                    let mut inst_family_args = Vec::new();
+                                    for entry in subscriptions_inst_family_for_task.iter() {
+                                        let (channel, inst_families) = entry.pair();
+                                        if !should_resubscribe(channel) {
+                                            continue;
+                                        }
+                                        for inst_family in inst_families.iter() {
+                                            inst_family_args.push(OKXSubscriptionArg {
+                                                channel: channel.clone(),
+                                                inst_type: None,
+                                                inst_family: Some(*inst_family),
+                                                inst_id: None,
+                                            });
+                                        }
+                                    }
+                                    if !inst_family_args.is_empty() {
+                                        let sub_request = OKXSubscription {
+                                            op: OKXWsOperation::Subscribe,
+                                            args: inst_family_args,
+                                        };
+                                        if let Err(e) = client
+                                            .send_text(
+                                                serde_json::to_string(&sub_request).unwrap(),
+                                                None,
+                                            )
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "Failed to re-subscribe inst_family channels: {e}",
+                                            );
+                                        }
+                                    }
+
+                                    let mut inst_id_args = Vec::new();
+                                    for entry in subscriptions_inst_id_for_task.iter() {
+                                        let (channel, inst_ids) = entry.pair();
+                                        if !should_resubscribe(channel) {
+                                            continue;
+                                        }
+                                        for inst_id in inst_ids.iter() {
+                                            inst_id_args.push(OKXSubscriptionArg {
+                                                channel: channel.clone(),
+                                                inst_type: None,
+                                                inst_family: None,
+                                                inst_id: Some(*inst_id),
+                                            });
+                                        }
+                                    }
+                                    if !inst_id_args.is_empty() {
+                                        let sub_request = OKXSubscription {
+                                            op: OKXWsOperation::Subscribe,
+                                            args: inst_id_args,
+                                        };
+                                        if let Err(e) = client
+                                            .send_text(
+                                                serde_json::to_string(&sub_request).unwrap(),
+                                                None,
+                                            )
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "Failed to re-subscribe inst_id channels: {e}",
+                                            );
+                                        }
+                                    }
+
+                                    let mut bare_args = Vec::new();
+                                    for entry in subscriptions_bare_for_task.iter() {
+                                        let channel = entry.key();
+                                        if !should_resubscribe(channel) {
+                                            continue;
+                                        }
+                                        bare_args.push(OKXSubscriptionArg {
+                                            channel: channel.clone(),
+                                            inst_type: None,
+                                            inst_family: None,
+                                            inst_id: None,
+                                        });
+                                    }
+                                    if !bare_args.is_empty() {
+                                        let sub_request = OKXSubscription {
+                                            op: OKXWsOperation::Subscribe,
+                                            args: bare_args,
+                                        };
+                                        if let Err(e) = client
+                                            .send_text(
+                                                serde_json::to_string(&sub_request).unwrap(),
+                                                None,
+                                            )
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "Failed to re-subscribe bare channels: {e}",
+                                            );
+                                        }
+                                    }
+
+                                    tracing::info!("Completed re-subscription after reconnect");
+                                } else {
                                     tracing::warn!(
-                                        ?channel,
-                                        "Skipping private channel resubscription due to missing authentication",
+                                        "Skipping resubscription after reconnect: websocket client unavailable",
                                     );
-                                    return false;
                                 }
-                                true
-                            };
+                            });
 
-                            // Batch subscribe by instrument type
-                            let mut inst_type_args = Vec::new();
-                            for entry in subscriptions_inst_type.iter() {
-                                let (channel, inst_types) = entry.pair();
-                                if !should_resubscribe(channel) {
-                                    continue;
-                                }
-                                for inst_type in inst_types.iter() {
-                                    inst_type_args.push(OKXSubscriptionArg {
-                                        channel: channel.clone(),
-                                        inst_type: Some(*inst_type),
-                                        inst_family: None,
-                                        inst_id: None,
-                                    });
-                                }
-                            }
-                            if !inst_type_args.is_empty() {
-                                let sub_request = OKXSubscription {
-                                    op: OKXWsOperation::Subscribe,
-                                    args: inst_type_args,
-                                };
-                                if let Err(e) = client.send_text(serde_json::to_string(&sub_request).unwrap(), None).await {
-                                    tracing::error!("Failed to re-subscribe inst_type channels: {e}");
-                                }
-                            }
-
-                            // Batch subscribe by instrument family
-                            let mut inst_family_args = Vec::new();
-                            for entry in subscriptions_inst_family.iter() {
-                                let (channel, inst_families) = entry.pair();
-                                if !should_resubscribe(channel) {
-                                    continue;
-                                }
-                                for inst_family in inst_families.iter() {
-                                    inst_family_args.push(OKXSubscriptionArg {
-                                        channel: channel.clone(),
-                                        inst_type: None,
-                                        inst_family: Some(*inst_family),
-                                        inst_id: None,
-                                    });
-                                }
-                            }
-                            if !inst_family_args.is_empty() {
-                                let sub_request = OKXSubscription {
-                                    op: OKXWsOperation::Subscribe,
-                                    args: inst_family_args,
-                                };
-                                if let Err(e) = client.send_text(serde_json::to_string(&sub_request).unwrap(), None).await {
-                                    tracing::error!("Failed to re-subscribe inst_family channels: {e}");
-                                }
-                            }
-
-                            // Batch subscribe by instrument ID
-                            let mut inst_id_args = Vec::new();
-                            for entry in subscriptions_inst_id.iter() {
-                                let (channel, inst_ids) = entry.pair();
-                                if !should_resubscribe(channel) {
-                                    continue;
-                                }
-                                for inst_id in inst_ids.iter() {
-                                    inst_id_args.push(OKXSubscriptionArg {
-                                        channel: channel.clone(),
-                                        inst_type: None,
-                                        inst_family: None,
-                                        inst_id: Some(*inst_id),
-                                    });
-                                }
-                            }
-                            if !inst_id_args.is_empty() {
-                                let sub_request = OKXSubscription {
-                                    op: OKXWsOperation::Subscribe,
-                                    args: inst_id_args,
-                                };
-                                if let Err(e) = client.send_text(serde_json::to_string(&sub_request).unwrap(), None).await {
-                                    tracing::error!("Failed to re-subscribe inst_id channels: {e}");
-                                }
-                            }
-
-                            // Batch subscribe bare channels
-                            let mut bare_args = Vec::new();
-                            for entry in subscriptions_bare.iter() {
-                                let channel = entry.key();
-                                if !should_resubscribe(channel) {
-                                    continue;
-                                }
-                                bare_args.push(OKXSubscriptionArg {
-                                    channel: channel.clone(),
-                                    inst_type: None,
-                                    inst_family: None,
-                                    inst_id: None,
-                                });
-                            }
-                            if !bare_args.is_empty() {
-                                let sub_request = OKXSubscription {
-                                    op: OKXWsOperation::Subscribe,
-                                    args: bare_args,
-                                };
-                                if let Err(e) = client.send_text(serde_json::to_string(&sub_request).unwrap(), None).await {
-                                    tracing::error!("Failed to re-subscribe bare channels: {e}");
-                                }
-                            }
-
-                            tracing::info!("Completed re-subscription after reconnect");
+                            continue;
                         }
-                    }
-                    Some(msg) => {
-                        // Forward the message
-                        if handler.tx.send(msg).is_err() {
-                            tracing::error!("Failed to send message through channel: receiver dropped");
+                        Some(msg) => {
+                            if handler.tx.send(msg).is_err() {
+                                tracing::error!(
+                                    "Failed to send message through channel: receiver dropped",
+                                );
+                                break;
+                            }
+                        }
+                        None => {
+                            if handler.is_stopped() {
+                                tracing::debug!(
+                                    "Stop signal received, ending message processing",
+                                );
+                                break;
+                            }
+                            tracing::warn!("WebSocket stream ended unexpectedly");
                             break;
                         }
-
-                    }
-                    None => {
-                        // Stream ended - check if it's a stop signal
-                        if handler.is_stopped() {
-                            tracing::debug!("Stop signal received, ending message processing");
-                            break;
-                        }
-                        // Otherwise it's an unexpected stream end
-                        tracing::warn!("WebSocket stream ended unexpectedly");
-                        break;
                     }
                 }
             }
@@ -707,9 +762,6 @@ impl OKXWebSocketClient {
         self.task_handle = Some(Arc::new(stream_handle));
 
         if self.credential.is_some() {
-            if self.auth_state.send(false).is_err() {
-                tracing::error!("Failed to reset auth state, receiver dropped.");
-            };
             self.authenticate().await?;
         }
 
@@ -723,6 +775,8 @@ impl OKXWebSocketClient {
                 "API credentials not available to authenticate",
             ))
         })?;
+
+        let rx = self.auth_tracker.begin();
 
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -749,37 +803,29 @@ impl OKXWebSocketClient {
                     .await
                 {
                     tracing::error!("Error sending auth message: {e:?}");
+                    self.auth_tracker.fail(e.to_string());
                     return Err(Error::Io(std::io::Error::other(e.to_string())));
                 }
             } else {
                 log::error!("Cannot authenticate: not connected");
+                self.auth_tracker
+                    .fail("Cannot authenticate: not connected".to_string());
                 return Err(Error::ConnectionClosed);
             }
         }
 
-        // Wait for authentication to complete
-        let mut rx = self.auth_state_rx.clone();
-        match tokio::time::timeout(
-            Duration::from_secs(OKX_AUTH_TIMEOUT_SECS),
-            rx.wait_for(|&auth| auth),
-        )
-        .await
+        match self
+            .auth_tracker
+            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), rx)
+            .await
         {
-            Ok(Ok(_)) => {
+            Ok(()) => {
                 tracing::info!("Authentication confirmed by client");
                 Ok(())
             }
-            Ok(Err(e)) => {
-                tracing::error!("Authentication watch channel closed unexpectedly: {e}");
-                Err(Error::Io(std::io::Error::other(
-                    "Authentication watch channel closed",
-                )))
-            }
-            Err(_) => {
-                tracing::error!("Timeout waiting for authentication response");
-                Err(Error::Io(std::io::Error::other(
-                    "Timeout waiting for authentication",
-                )))
+            Err(e) => {
+                tracing::error!("Authentication failed: {e}");
+                Err(Error::Io(std::io::Error::other(e.to_string())))
             }
         }
     }
@@ -2876,11 +2922,11 @@ impl OKXFeedHandler {
                     Some(msg) => match msg {
                         Message::Text(text) => {
                             // Handle ping/pong messages
-                            if text == OKX_PONG_TEXT {
+                            if text == TEXT_PONG {
                                 tracing::trace!("Received pong from OKX");
                                 continue;
                             }
-                            if text == OKX_PING_TEXT {
+                            if text == TEXT_PING {
                                 tracing::trace!("Received ping from OKX (text)");
                                 return Some(OKXWebSocketEvent::Ping);
                             }
@@ -3047,7 +3093,7 @@ struct OKXWsMessageHandler {
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
-    auth_state: Arc<tokio::sync::watch::Sender<bool>>,
+    auth_tracker: AuthTracker,
     pending_messages: VecDeque<NautilusWsMessage>,
 }
 
@@ -3058,7 +3104,7 @@ impl OKXWsMessageHandler {
             let guard = inner.read().await;
 
             if let Some(client) = guard.as_ref() {
-                if let Err(err) = client.send_text(OKX_PONG_TEXT.to_string(), None).await {
+                if let Err(err) = client.send_text(TEXT_PONG.to_string(), None).await {
                     tracing::warn!(error = %err, "Failed to send pong response to OKX text ping");
                 } else {
                     tracing::trace!("Sent pong response to OKX text ping");
@@ -3287,7 +3333,7 @@ impl OKXWsMessageHandler {
         pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-        auth_state: Arc<tokio::sync::watch::Sender<bool>>,
+        auth_tracker: AuthTracker,
     ) -> Self {
         Self {
             account_id,
@@ -3304,7 +3350,7 @@ impl OKXWsMessageHandler {
             last_account_state: None,
             fee_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
-            auth_state,
+            auth_tracker,
             pending_messages: VecDeque::new(),
         }
     }
@@ -3344,20 +3390,12 @@ impl OKXWsMessageHandler {
                     code, msg, conn_id, ..
                 } => {
                     if code == "0" {
-                        if self.auth_state.send(true).is_err() {
-                            tracing::error!(
-                                "Failed to send authentication success signal: receiver dropped"
-                            );
-                        }
+                        self.auth_tracker.succeed();
                         continue;
                     }
 
                     tracing::error!("Authentication failed: {msg}");
-                    if self.auth_state.send(false).is_err() {
-                        tracing::error!(
-                            "Failed to send authentication failure signal: receiver dropped"
-                        );
-                    }
+                    self.auth_tracker.fail(msg.clone());
 
                     let error = OKXWebSocketError {
                         code,
@@ -4115,7 +4153,7 @@ mod tests {
         let mut handler = OKXFeedHandler::new(rx, signal.clone());
 
         // Send a ping message (OKX sends pings)
-        let ping_msg = OKX_PING_TEXT;
+        let ping_msg = TEXT_PING;
         tx.send(Message::Text(ping_msg.to_string().into())).unwrap();
 
         // Send a valid subscription response

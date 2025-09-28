@@ -59,6 +59,9 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 
+pub const TEXT_PING: &str = "ping";
+pub const TEXT_PONG: &str = "pong";
+
 // Connection timing constants
 const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;

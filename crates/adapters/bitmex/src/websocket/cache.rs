@@ -108,9 +108,8 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::common::parse::parse_instrument_id;
-
     use super::*;
+    use crate::common::parse::parse_instrument_id;
 
     fn make_test_instrument(price_precision: u8, size_precision: u8) -> InstrumentAny {
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");

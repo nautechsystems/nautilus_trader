@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Authentication coordination for the BitMEX WebSocket client.
+//! Authentication coordination for the OKX WebSocket client.
 //!
 //! This module ensures each login attempt produces a fresh success or
 //! failure signal before subscriptions resume.
@@ -23,12 +23,12 @@ use std::{
     time::Duration,
 };
 
-use crate::websocket::error::BitmexWsError;
+use super::error::OKXWsError;
 
 pub(crate) type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub(crate) type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
 
-pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 5;
+pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AuthTracker {
@@ -76,18 +76,18 @@ impl AuthTracker {
         &self,
         timeout: Duration,
         receiver: AuthResultReceiver,
-    ) -> Result<(), BitmexWsError> {
+    ) -> Result<(), OKXWsError> {
         match tokio::time::timeout(timeout, receiver).await {
             Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(msg))) => Err(BitmexWsError::AuthenticationError(msg)),
-            Ok(Err(_)) => Err(BitmexWsError::AuthenticationError(
+            Ok(Ok(Err(msg))) => Err(OKXWsError::AuthenticationError(msg)),
+            Ok(Err(_)) => Err(OKXWsError::AuthenticationError(
                 "Authentication channel closed".to_string(),
             )),
             Err(_) => {
                 if let Ok(mut guard) = self.tx.lock() {
                     guard.take();
                 }
-                Err(BitmexWsError::AuthenticationError(
+                Err(OKXWsError::AuthenticationError(
                     "Authentication timed out".to_string(),
                 ))
             }

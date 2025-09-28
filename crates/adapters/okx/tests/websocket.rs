@@ -867,7 +867,7 @@ async fn test_login_failure_emits_error() {
 
     match connect_result {
         Ok(Ok(())) => panic!("connect unexpectedly succeeded"),
-        Ok(Err(err)) => assert!(format!("{err}").contains("authentication")),
+        Ok(Err(err)) => assert!(format!("{err}").contains("Authentication")),
         Err(_) => {
             tokio::time::timeout(Duration::from_secs(1), async {
                 loop {
