@@ -783,8 +783,8 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, size, price, sqrt_price_x96, amount0, amount1
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (chain_id, transaction_hash, log_index)
             DO NOTHING
         ",
@@ -796,6 +796,7 @@ impl BlockchainCacheDatabase {
         .bind(swap.transaction_index as i32)
         .bind(swap.log_index as i32)
         .bind(swap.sender.to_string())
+        .bind(swap.recipient.to_string())
         .bind(swap.side.map(|side| side.to_string()))
         .bind(swap.size.map(|size| size.to_string()))
         .bind(swap.price.map(|price| price.to_string()))
@@ -1339,6 +1340,7 @@ impl BlockchainCacheDatabase {
                 transaction_index,
                 log_index,
                 sender,
+                recipient,
                 NULL::text as owner,
                 side,
                 size,
@@ -1366,6 +1368,7 @@ impl BlockchainCacheDatabase {
                 transaction_index,
                 log_index,
                 sender,
+                NULL::text as recipient,
                 owner,
                 NULL::text as side,
                 NULL::text as size,
@@ -1393,6 +1396,7 @@ impl BlockchainCacheDatabase {
                 transaction_index,
                 log_index,
                 NULL::text as sender,
+                NULL::text as recipient,
                 owner,
                 NULL::text as side,
                 NULL::text as size,

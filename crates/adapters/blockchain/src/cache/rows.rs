@@ -148,7 +148,7 @@ pub fn transform_row_to_dex_pool_data(
                 .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
 
             let recipient_str = row
-                .try_get::<Option<String>, _>("sender")?
+                .try_get::<Option<String>, _>("recipient")?
                 .ok_or_else(|| sqlx::Error::Decode("Missing recipient for swap event".into()))?;
             let recipient = validate_address(&recipient_str)
                 .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;

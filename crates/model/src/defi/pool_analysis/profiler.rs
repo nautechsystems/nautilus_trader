@@ -54,25 +54,27 @@ use crate::defi::{
 pub struct PoolProfiler {
     /// Pool definition.
     pub pool: SharedPool,
-    /// Position tracking by position key (owner:tick_lower:tick_upper)
+    /// Position tracking by position key (owner:tick_lower:tick_upper).
     positions: HashMap<String, PoolPosition>,
-    /// .....ADD
+    /// Tick map managing liquidity distribution across price ranges.
     pub tick_map: TickMap,
+    /// Current tick position of the pool price.
     pub current_tick: Option<i32>,
+    /// Current sqrt price ratio as Q64.96 fixed point number.
     pub price_sqrt_ratio_x96: Option<U160>,
-    /// Total amount of token0 deposited through mints
+    /// Total amount of token0 deposited through mints.
     pub total_amount0_deposited: U256,
-    /// Total amount of token1 deposited through mints
+    /// Total amount of token1 deposited through mints.
     pub total_amount1_deposited: U256,
-    /// Total amount of token0 withdrawn through burns
+    /// Total amount of token0 withdrawn through burns.
     pub total_amount0_withdrawn: U256,
-    /// Total amount of token1 withdrawn through burns
+    /// Total amount of token1 withdrawn through burns.
     pub total_amount1_withdrawn: U256,
-    /// Accumulated protocol fees in token0 units
+    /// Accumulated protocol fees in token0 units.
     pub protocol_fees_token0: U256,
-    /// Accumulated protocol fees in token1 units
+    /// Accumulated protocol fees in token1 units.
     pub protocol_fees_token1: U256,
-    /// Protocol fee packed: lower 4 bits for token0, upper 4 bits for token1
+    /// Protocol fee packed: lower 4 bits for token0, upper 4 bits for token1.
     pub fee_protocol: u8,
 }
 
@@ -81,7 +83,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if the pool's tick spacing is not set
+    /// Panics if the pool's tick spacing is not set.
     #[must_use]
     pub fn new(pool: SharedPool) -> Self {
         let tick_spacing = pool.tick_spacing.expect("Pool tick spacing must be set");
@@ -139,7 +141,7 @@ impl PoolProfiler {
 
     /// Processes a historical pool event and updates internal state.
     ///
-    /// Handles all types of pool events (swaps, mints, burns, fee collections)
+    /// Handles all types of pool events (swaps, mints, burns, fee collections),
     /// and updates the profiler's internal state accordingly. This is the main
     /// entry point for processing historical blockchain events.
     ///
@@ -539,7 +541,7 @@ impl PoolProfiler {
     /// # Errors
     ///
     /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_1_fro_exact0(
+    pub fn swap_1_for_exact0(
         &mut self,
         sender: Address,
         recipient: Address,
@@ -609,7 +611,7 @@ impl PoolProfiler {
 
     /// Processes a mint (liquidity add) event from historical data.
     ///
-    /// Updates pool state when liquidity is added to a position. Validates ticks
+    /// Updates pool state when liquidity is added to a position, validates ticks,
     /// and delegates to internal liquidity management methods.
     ///
     /// # Errors

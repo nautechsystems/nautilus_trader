@@ -124,7 +124,7 @@ impl<'a> PostgresCopyHandler<'a> {
         let copy_statement = r"
             COPY pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, size, price, sqrt_price_x96, amount0, amount1
+                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
             ) FROM STDIN WITH (FORMAT BINARY)";
 
         let mut copy_in = self
@@ -416,8 +416,8 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        // Number of fields (13)
-        row_data.write_all(&13u16.to_be_bytes())?;
+        // Number of fields (14)
+        row_data.write_all(&14u16.to_be_bytes())?;
 
         // chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
@@ -453,6 +453,38 @@ impl<'a> PostgresCopyHandler<'a> {
         let sender_bytes = swap.sender.to_string().as_bytes().to_vec();
         row_data.write_all(&(sender_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&sender_bytes)?;
+
+        // recipient (TEXT)
+        let recipient_bytes = swap.recipient.to_string().as_bytes().to_vec();
+        row_data.write_all(&(recipient_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&recipient_bytes)?;
+
+        // side (TEXT or NULL)
+        if let Some(side) = swap.side {
+            let side_bytes = side.to_string().as_bytes().to_vec();
+            row_data.write_all(&(side_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&side_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        // size (TEXT or NULL)
+        if let Some(size) = swap.size {
+            let size_bytes = size.to_string().as_bytes().to_vec();
+            row_data.write_all(&(size_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&size_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        // price (TEXT or NULL)
+        if let Some(price) = swap.price {
+            let price_bytes = price.to_string().as_bytes().to_vec();
+            row_data.write_all(&(price_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&price_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
 
         // sqrt_price_x96 (U160)
         let sqrt_price_bytes = format_numeric(&swap.sqrt_price_x96).as_bytes().to_vec();

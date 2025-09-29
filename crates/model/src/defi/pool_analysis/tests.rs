@@ -1325,7 +1325,7 @@ fn execute_swap(pool_profiler: &mut PoolProfiler, test: SwapTestCase) -> anyhow:
         SwapTestCase::Swap1ForExact0 {
             amount0,
             sqrt_price_limit,
-        } => pool_profiler.swap_1_fro_exact0(
+        } => pool_profiler.swap_1_for_exact0(
             user_address(),
             user_address(),
             create_block_position(),
