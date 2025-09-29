@@ -1659,14 +1659,24 @@ class BybitExecutionClient(LiveExecutionClient):
                     return
 
                 if bybit_order.orderStatus == BybitOrderStatus.REJECTED:
-                    self.generate_order_rejected(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        reason=bybit_order.rejectReason,
-                        ts_event=report.ts_last,
-                        due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
-                    )
+                    if order.status == OrderStatus.PENDING_UPDATE:
+                        self.generate_order_modify_rejected(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            venue_order_id=report.venue_order_id,
+                            reason=bybit_order.rejectReason,
+                            ts_event=report.ts_last,
+                        )
+                    else:
+                        self.generate_order_rejected(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            reason=bybit_order.rejectReason,
+                            ts_event=report.ts_last,
+                            due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
+                        )
                 elif bybit_order.orderStatus == BybitOrderStatus.NEW:
                     if order.status == OrderStatus.PENDING_UPDATE:
                         self.generate_order_updated(

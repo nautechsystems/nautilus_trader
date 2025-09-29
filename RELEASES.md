@@ -65,6 +65,7 @@ Released on TBD (UTC).
 - Fixed `SandboxExecutionClient` instrument data handling
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
+- Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
