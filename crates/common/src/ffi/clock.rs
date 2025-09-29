@@ -233,8 +233,8 @@ pub unsafe extern "C" fn test_clock_advance_time(
     t.into()
 }
 
-// TODO: This struct implementation potentially leaks memory
-// TODO: Skip clippy check for now since it requires large modification
+// TODO: This drop helper may leak Python callbacks when handlers own Python objects.
+//       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
 #[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {

@@ -171,6 +171,15 @@ impl TimeEventCallback {
     }
 }
 
+impl<F> From<F> for TimeEventCallback
+where
+    F: Fn(TimeEvent) + 'static,
+{
+    fn from(value: F) -> Self {
+        Self::Rust(Rc::new(value))
+    }
+}
+
 impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
     fn from(value: Rc<RustTimeEventCallback>) -> Self {
         Self::Rust(value)
@@ -251,6 +260,10 @@ impl Ord for TimeEventHandlerV2 {
 ///
 /// `TestTimer` simulates time progression in a controlled environment,
 /// allowing for precise control over event generation in test scenarios.
+///
+/// # Threading
+///
+/// The timer mutates its internal state and should only be used from its owning thread.
 #[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
     /// The name of the timer.
@@ -388,6 +401,10 @@ impl Iterator for TestTimer {
 ///
 /// `LiveTimer` triggers events at specified intervals in a real-time environment,
 /// using Tokio's async runtime to handle scheduling and execution.
+///
+/// # Threading
+///
+/// The timer runs on the runtime thread that created it and dispatches events across threads as needed.
 #[derive(Debug)]
 pub struct LiveTimer {
     /// The name of the timer.
@@ -485,18 +502,40 @@ impl LiveTimer {
         let now_ns = clock.get_time_ns();
 
         // Check if the timer's alert time is in the past and adjust if needed
-        let mut next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
-        if next_time_ns <= now_ns {
-            log::warn!(
-                "Timer '{event_name}' alert time {next_time_ns} was in the past, adjusted to current time for immediate fire"
-            );
-            next_time_ns = now_ns.into();
-            self.next_time_ns
-                .store(now_ns.as_u64(), atomic::Ordering::SeqCst);
+        let now_raw = now_ns.as_u64();
+        let mut observed_next = self.next_time_ns.load(atomic::Ordering::SeqCst);
+
+        if observed_next <= now_raw {
+            loop {
+                match self.next_time_ns.compare_exchange(
+                    observed_next,
+                    now_raw,
+                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::SeqCst,
+                ) {
+                    Ok(_) => {
+                        if observed_next < now_raw {
+                            let original = UnixNanos::from(observed_next);
+                            log::warn!(
+                                "Timer '{event_name}' alert time {} was in the past, adjusted to current time for immediate fire",
+                                original.to_rfc3339(),
+                            );
+                        }
+                        observed_next = now_raw;
+                        break;
+                    }
+                    Err(actual) => {
+                        observed_next = actual;
+                        if observed_next > now_raw {
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
-        let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
+        let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(observed_next));
         let next_time_atomic = self.next_time_ns.clone();
         next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
@@ -536,6 +575,10 @@ impl LiveTimer {
                         call_python_with_time_event(event, callback);
                     }
                     TimeEventCallback::Rust(_) => {
+                        debug_assert!(
+                            sender.is_some(),
+                            "LiveTimer with Rust callback requires TimeEventSender"
+                        );
                         let sender = sender
                             .as_ref()
                             .expect("timer event sender was unset for Rust callback system");
@@ -600,13 +643,14 @@ fn call_python_with_time_event(event: TimeEvent, callback: &Py<PyAny>) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU64, rc::Rc};
+    use std::{num::NonZeroU64, sync::Arc};
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     use rstest::*;
     use ustr::Ustr;
 
-    use super::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback};
+    use super::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+    use crate::runner::TimeEventSender;
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -761,7 +805,7 @@ mod tests {
             NonZeroU64::new(1000).unwrap(),
             UnixNanos::from(100),
             None,
-            TimeEventCallback::Rust(Rc::new(|_| {})),
+            TimeEventCallback::from(|_| {}),
             true, // fire_immediately = true
             None, // time_event_sender
         );
@@ -780,7 +824,7 @@ mod tests {
             NonZeroU64::new(1000).unwrap(),
             UnixNanos::from(100),
             None,
-            TimeEventCallback::Rust(Rc::new(|_| {})),
+            TimeEventCallback::from(|_| {}),
             false, // fire_immediately = false
             None,  // time_event_sender
         );
@@ -790,6 +834,35 @@ mod tests {
 
         // With fire_immediately=false, next_time_ns should be start_time_ns + interval
         assert_eq!(timer.next_time_ns(), UnixNanos::from(1100));
+    }
+
+    #[rstest]
+    fn test_live_timer_adjusts_past_due_start_time() {
+        #[derive(Debug)]
+        struct NoopSender;
+
+        impl TimeEventSender for NoopSender {
+            fn send(&self, _handler: TimeEventHandlerV2) {}
+        }
+
+        let sender = Arc::new(NoopSender);
+        let mut timer = LiveTimer::new(
+            Ustr::from("PAST_TIMER"),
+            NonZeroU64::new(1).unwrap(),
+            UnixNanos::from(0),
+            None,
+            TimeEventCallback::from(|_| {}),
+            true,
+            Some(sender),
+        );
+
+        let before = get_atomic_clock_realtime().get_time_ns();
+
+        timer.start();
+
+        assert!(timer.next_time_ns() >= before);
+
+        timer.cancel();
     }
 
     ////////////////////////////////////////////////////////////////////////////////

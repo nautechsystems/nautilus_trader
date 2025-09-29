@@ -318,10 +318,9 @@ where
 
     pub fn get_timer_callback(&self) -> TimeEventCallback {
         let endpoint = self.endpoint.into(); // TODO: Optimize this
-        let process_callback = Rc::new(move |event: TimeEvent| {
+        TimeEventCallback::from(move |event: TimeEvent| {
             msgbus::send_any(endpoint, &(event));
-        });
-        TimeEventCallback::Rust(process_callback)
+        })
     }
 }
 
@@ -348,10 +347,9 @@ where
                 let endpoint = self.endpoint.into(); // TODO: Optimize this
 
                 // Send message to throttler process endpoint to resume
-                let process_callback = Rc::new(move |event: TimeEvent| {
+                throttler.set_timer(Some(TimeEventCallback::from(move |event: TimeEvent| {
                     msgbus::send_any(endpoint, &(event));
-                });
-                throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
+                })));
                 return;
             }
         }
@@ -370,12 +368,10 @@ where
     T: 'static + Debug,
     F: Fn(T) + 'static,
 {
-    let callback = Rc::new(move |_event: TimeEvent| {
+    TimeEventCallback::from(move |_event: TimeEvent| {
         let throttler = get_actor_unchecked::<Throttler<T, F>>(&actor_id);
         throttler.is_limiting = false;
-    });
-
-    TimeEventCallback::Rust(callback)
+    })
 }
 
 ////////////////////////////////////////////////////////////////////////////////

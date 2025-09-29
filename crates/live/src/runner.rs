@@ -176,7 +176,7 @@ impl AsyncRunner {
 
 #[cfg(test)]
 mod tests {
-    use std::{rc::Rc, time::Duration};
+    use std::time::Duration;
 
     use nautilus_common::{
         messages::data::{SubscribeCommand, SubscribeCustomData},
@@ -234,7 +234,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(2),
         );
-        let callback = TimeEventCallback::from(Rc::new(|_: TimeEvent| {}) as Rc<dyn Fn(TimeEvent)>);
+        let callback = TimeEventCallback::from(|_: TimeEvent| {});
         let handler = TimeEventHandlerV2::new(event, callback);
 
         assert!(channel.send(handler).is_ok());
@@ -280,7 +280,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(2),
         );
-        let callback = TimeEventCallback::from(Rc::new(|_: TimeEvent| {}) as Rc<dyn Fn(TimeEvent)>);
+        let callback = TimeEventCallback::from(|_: TimeEvent| {});
         let handler = TimeEventHandlerV2::new(event, callback);
 
         sender.send(handler);

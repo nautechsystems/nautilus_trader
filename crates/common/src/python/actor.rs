@@ -228,7 +228,7 @@ impl PyDataActor {
 
         // Register default time event handler for this actor
         let actor_id = self.actor_id().inner();
-        let callback = TimeEventCallback::Rust(Rc::new(move |event: TimeEvent| {
+        let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 if let Err(e) = actor.on_time_event(&event) {
                     log::error!("Python time event handler failed for actor {actor_id}: {e}");
@@ -236,7 +236,7 @@ impl PyDataActor {
             } else {
                 log::error!("Actor {actor_id} not found for time event handling");
             }
-        }));
+        });
 
         self.clock.inner_mut().register_default_handler(callback);
 

@@ -1030,8 +1030,7 @@ impl DataEngine {
                 .insert(cmd.instrument_id, snapshotter.clone());
             let timer_name = snapshotter.timer_name;
 
-            let callback =
-                TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
+            let callback = TimeEventCallback::from(move |event| snapshotter.snapshot(event));
 
             self.clock
                 .borrow_mut()

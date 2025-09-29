@@ -226,6 +226,10 @@ pub trait Clock: Debug {
 /// A static test clock.
 ///
 /// Stores the current timestamp internally which can be advanced.
+///
+/// # Threading
+///
+/// This clock is thread-affine; use it only from the thread that created it.
 #[derive(Debug)]
 pub struct TestClock {
     time: AtomicTime,
@@ -303,6 +307,8 @@ impl TestClock {
     ///
     /// Panics if `to_time_ns` is less than the current internal clock time.
     pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
+        const MAX_HEAP_SIZE: usize = 100_000;
+
         // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
@@ -311,6 +317,13 @@ impl TestClock {
         );
 
         self.time.set_time(to_time_ns);
+
+        if self.heap.len() > MAX_HEAP_SIZE {
+            log::warn!(
+                "TestClock heap size {} exceeds recommended limit",
+                self.heap.len()
+            );
+        }
 
         // Iterate and advance timers and push events to heap. Only retain alive timers.
         self.timers.retain(|_, timer| {
@@ -548,14 +561,21 @@ impl Clock for TestClock {
             }
         }
 
-        if let Some(stop_time) = stop_time_ns
-            && stop_time <= start_time_ns
-        {
-            anyhow::bail!(
-                "Timer '{name}' stop time {} must be after start time {}",
-                stop_time.to_rfc3339(),
-                start_time_ns.to_rfc3339(),
-            );
+        if let Some(stop_time) = stop_time_ns {
+            if stop_time <= start_time_ns {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} must be after start time {}",
+                    stop_time.to_rfc3339(),
+                    start_time_ns.to_rfc3339(),
+                );
+            }
+            if !allow_past && stop_time <= ts_now {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} is in the past (current time is {})",
+                    stop_time.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
         }
 
         let interval_ns = create_valid_interval(interval_ns);
@@ -604,6 +624,10 @@ impl Clock for TestClock {
 /// A real-time clock which uses system time.
 ///
 /// Timestamps are guaranteed to be unique and monotonically increasing.
+///
+/// # Threading
+///
+/// The clock holds thread-local runtime state and must remain on its originating thread.
 #[derive(Debug)]
 pub struct LiveClock {
     time: &'static AtomicTime,
@@ -733,15 +757,18 @@ impl Clock for LiveClock {
             "No callbacks provided",
         )?;
 
-        let callback = match callback {
-            Some(callback) => callback,
-            None => {
-                if self.callbacks.contains_key(&name) {
-                    self.callbacks.get(&name).unwrap().clone()
-                } else {
-                    self.default_callback.clone().unwrap()
-                }
-            }
+        let callback = if let Some(callback) = callback {
+            self.callbacks.insert(name, callback.clone());
+            callback
+        } else if let Some(existing) = self.callbacks.get(&name) {
+            existing.clone()
+        } else {
+            let default = self
+                .default_callback
+                .clone()
+                .expect("Default callback should exist");
+            self.callbacks.insert(name, default.clone());
+            default
         };
 
         let ts_now = self.get_time_ns();
@@ -831,14 +858,21 @@ impl Clock for LiveClock {
             );
         }
 
-        if let Some(stop_time) = stop_time_ns
-            && stop_time <= start_time_ns
-        {
-            anyhow::bail!(
-                "Timer '{name}' stop time {} must be after start time {}",
-                stop_time.to_rfc3339(),
-                start_time_ns.to_rfc3339(),
-            );
+        if let Some(stop_time) = stop_time_ns {
+            if stop_time <= start_time_ns {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} must be after start time {}",
+                    stop_time.to_rfc3339(),
+                    start_time_ns.to_rfc3339(),
+                );
+            }
+            if !allow_past && stop_time <= ts_now {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} is in the past (current time is {})",
+                    stop_time.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
         }
 
         let interval_ns = create_valid_interval(interval_ns);
@@ -928,8 +962,6 @@ impl Stream for TimeEventStream {
 #[cfg(test)]
 mod tests {
     use std::{
-        cell::RefCell,
-        rc::Rc,
         sync::{Arc, Mutex},
         thread,
         time::{Duration, Instant},
@@ -944,20 +976,23 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct TestCallback {
-        called: Rc<RefCell<bool>>,
+        /// Shared flag updated from within the timer callback; Mutex keeps the closure `Send` for tests.
+        called: Arc<Mutex<bool>>,
     }
 
     impl TestCallback {
-        const fn new(called: Rc<RefCell<bool>>) -> Self {
+        fn new(called: Arc<Mutex<bool>>) -> Self {
             Self { called }
         }
     }
 
     impl From<TestCallback> for TimeEventCallback {
         fn from(callback: TestCallback) -> Self {
-            Self::Rust(Rc::new(move |_event: TimeEvent| {
-                *callback.called.borrow_mut() = true;
-            }))
+            TimeEventCallback::from(move |_event: TimeEvent| {
+                if let Ok(mut called) = callback.called.lock() {
+                    *called = true;
+                }
+            })
         }
     }
 
@@ -1070,11 +1105,11 @@ mod tests {
     #[rstest]
     fn test_default_and_custom_callbacks() {
         let mut clock = TestClock::new();
-        let default_called = Rc::new(RefCell::new(false));
-        let custom_called = Rc::new(RefCell::new(false));
+        let default_called = Arc::new(Mutex::new(false));
+        let custom_called = Arc::new(Mutex::new(false));
 
-        let default_callback = TestCallback::new(Rc::clone(&default_called));
-        let custom_callback = TestCallback::new(Rc::clone(&custom_called));
+        let default_callback = TestCallback::new(Arc::clone(&default_called));
+        let custom_callback = TestCallback::new(Arc::clone(&custom_called));
 
         clock.register_default_handler(TimeEventCallback::from(default_callback));
         clock
@@ -1101,8 +1136,8 @@ mod tests {
             handler.callback.call(handler.event);
         }
 
-        assert!(*default_called.borrow());
-        assert!(*custom_called.borrow());
+        assert!(*default_called.lock().unwrap());
+        assert!(*custom_called.lock().unwrap());
     }
 
     #[rstest]
@@ -1413,13 +1448,51 @@ mod tests {
         assert!(test_clock.timer_exists(&name));
     }
 
-    #[test]
+    #[rstest]
+    fn test_timer_rejects_past_stop_time_when_not_allowed(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(10_000));
+        let current = test_clock.timestamp_ns();
+
+        let result = test_clock.set_timer_ns(
+            "past_stop",
+            10_000,
+            Some(current - 500),
+            Some(current - 100),
+            None,
+            Some(false),
+            None,
+        );
+
+        let err = result.expect_err("expected stop time validation error");
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("stop time"));
+        assert!(err_msg.contains("in the past"));
+    }
+
+    #[rstest]
+    fn test_timer_accepts_future_stop_time(mut test_clock: TestClock) {
+        let current = test_clock.timestamp_ns();
+
+        let result = test_clock.set_timer_ns(
+            "future_stop",
+            1_000,
+            Some(current),
+            Some(current + 10_000),
+            None,
+            Some(false),
+            None,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
     fn test_live_clock_timer_replacement_cancels_previous_task() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
 
         let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::Rust(Rc::new(|_| {})));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let fast_interval = Duration::from_millis(10).as_nanos() as u64;
         clock
@@ -1450,13 +1523,33 @@ mod tests {
         clock.cancel_timers();
     }
 
-    #[test]
+    #[rstest]
+    fn test_live_clock_time_alert_persists_callback() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+
+        let mut clock = LiveClock::new(Some(sender));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+
+        let now = clock.timestamp_ns();
+        let alert_time = now + 1_000_u64;
+
+        clock
+            .set_time_alert_ns("alert-callback", alert_time, None, None)
+            .unwrap();
+
+        assert!(clock.callbacks.contains_key(&Ustr::from("alert-callback")));
+
+        clock.cancel_timers();
+    }
+
+    #[rstest]
     fn test_live_clock_reset_stops_active_timers() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
 
         let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::Rust(Rc::new(|_| {})));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         clock
             .set_timer_ns(
@@ -1479,13 +1572,13 @@ mod tests {
         assert!(events.lock().unwrap().is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_live_timer_short_delay_not_early() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
 
         let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::Rust(Rc::new(|_| {})));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let now = clock.timestamp_ns();
         let start_time = UnixNanos::from(*now + 500_000); // 0.5 ms in the future
