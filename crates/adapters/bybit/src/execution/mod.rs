@@ -13,20 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
-
-use pyo3::prelude::*;
-
-use crate::common::consts::BYBIT_NAUTILUS_BROKER_ID;
-
-/// Loaded as `nautilus_pyo3.bybit`.
-///
-/// # Errors
-///
-/// Returns an error if any bindings fail to register with the Python module.
-#[pymodule]
-#[rustfmt::skip]
-pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
-    Ok(())
-}
+//! Execution client implementation for the Bybit adapter.
