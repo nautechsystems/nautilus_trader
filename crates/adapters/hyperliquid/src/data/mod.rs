@@ -13,26 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    future::Future,
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use ahash::AHashMap;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
+use chrono::{DateTime, Utc};
 use nautilus_common::{
     messages::{
         DataEvent,
         data::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeQuotes, SubscribeTrades,
             TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -44,7 +40,6 @@ use nautilus_core::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
-    data::Data,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -52,18 +47,25 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{
-        consts::HYPERLIQUID_VENUE,
-        credential::{EvmPrivateKey, Secrets},
-    },
-    config::HyperliquidDataClientConfig,
+    common::consts::HYPERLIQUID_VENUE, config::HyperliquidDataClientConfig,
     http::client::HyperliquidHttpClient,
-    websocket::client::HyperliquidWebSocketClient,
 };
+
+// Placeholder for WebSocket client until it's implemented
+#[derive(Debug)]
+pub struct HyperliquidWebSocketClient;
+
+impl HyperliquidWebSocketClient {
+    pub async fn disconnect(&mut self) -> Result<()> {
+        // TODO: Implement WebSocket disconnection
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
     client_id: ClientId,
+    #[allow(dead_code)]
     config: HyperliquidDataClientConfig,
     http_client: HyperliquidHttpClient,
     ws_client: Option<HyperliquidWebSocketClient>,
@@ -73,17 +75,25 @@ pub struct HyperliquidDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     clock: &'static AtomicTime,
+    #[allow(dead_code)]
+    instrument_refresh_active: bool,
 }
 
 impl HyperliquidDataClient {
     /// Creates a new [`HyperliquidDataClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client fails to initialize.
     pub fn new(client_id: ClientId, config: HyperliquidDataClientConfig) -> Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
         let http_client = if let Some(private_key_str) = &config.private_key {
-            let secrets = Secrets {
-                private_key: EvmPrivateKey::new(private_key_str.clone())?,
+            let secrets = crate::common::credential::Secrets {
+                private_key: crate::common::credential::EvmPrivateKey::new(
+                    private_key_str.clone(),
+                )?,
                 is_testnet: config.is_testnet,
                 vault_address: None,
             };
@@ -103,6 +113,7 @@ impl HyperliquidDataClient {
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             clock,
+            instrument_refresh_active: false,
         })
     }
 
@@ -110,54 +121,43 @@ impl HyperliquidDataClient {
         *HYPERLIQUID_VENUE
     }
 
-    #[allow(dead_code)]
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(err) = sender.send(DataEvent::Data(data)) {
-            tracing::error!("Failed to emit data event: {err}");
-        }
-    }
-
-    #[allow(dead_code)]
-    fn spawn_ws<F>(&self, fut: F, context: &'static str)
-    where
-        F: Future<Output = Result<()>> + Send + 'static,
-    {
-        tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::error!("{context}: {err:?}");
-            }
-        });
-    }
-
     async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
-        let mut instruments = self.http_client.request_instruments().await?;
+        let instruments = self
+            .http_client
+            .request_instruments()
+            .await
+            .context("Failed to fetch instruments during bootstrap")?;
 
-        tracing::debug!(
-            count = instruments.len(),
-            "Received Hyperliquid instruments"
-        );
-        instruments.sort_by_key(|instrument| instrument.id());
-
-        tracing::info!(count = instruments.len(), "Loaded Hyperliquid instruments");
-
-        // Update cache
-        {
-            let mut guard = self
-                .instruments
-                .write()
-                .expect("instrument cache lock poisoned");
-            guard.clear();
-            for instrument in &instruments {
-                guard.insert(instrument.id(), instrument.clone());
-            }
+        let mut instruments_map = self.instruments.write().unwrap();
+        for instrument in &instruments {
+            instruments_map.insert(instrument.id(), instrument.clone());
         }
 
+        tracing::info!("Bootstrapped {} instruments", instruments_map.len());
         Ok(instruments)
     }
 
-    fn is_connected(&self) -> bool {
-        self.is_connected.load(Ordering::Relaxed)
+    async fn spawn_ws(&mut self) -> Result<()> {
+        // TODO: Initialize WebSocket client when available
+        // For now, WebSocket functionality is not implemented
+        tracing::warn!("WebSocket client initialization not yet implemented");
+        Ok(())
     }
+
+    fn get_instrument(&self, instrument_id: &InstrumentId) -> Result<InstrumentAny> {
+        let instruments = self.instruments.read().unwrap();
+        instruments
+            .get(instrument_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Instrument {instrument_id} not found"))
+    }
+}
+
+fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
+    value
+        .and_then(|dt| dt.timestamp_nanos_opt())
+        .and_then(|nanos| u64::try_from(nanos).ok())
+        .map(UnixNanos::from)
 }
 
 #[async_trait::async_trait]
@@ -171,22 +171,19 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn start(&mut self) -> Result<()> {
-        tracing::info!("Starting Hyperliquid data client {id}", id = self.client_id);
+        tracing::info!("Starting Hyperliquid data client {}", self.client_id);
         Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
-        tracing::info!("Stopping Hyperliquid data client {id}", id = self.client_id);
+        tracing::info!("Stopping Hyperliquid data client {}", self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> Result<()> {
-        tracing::debug!(
-            "Resetting Hyperliquid data client {id}",
-            id = self.client_id
-        );
+        tracing::debug!("Resetting Hyperliquid data client {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
@@ -194,15 +191,12 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn dispose(&mut self) -> Result<()> {
-        tracing::debug!(
-            "Disposing Hyperliquid data client {id}",
-            id = self.client_id
-        );
+        tracing::debug!("Disposing Hyperliquid data client {}", self.client_id);
         self.stop()
     }
 
     fn is_connected(&self) -> bool {
-        self.is_connected.load(Ordering::Relaxed)
+        self.is_connected.load(Ordering::Acquire)
     }
 
     fn is_disconnected(&self) -> bool {
@@ -214,20 +208,21 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
-        self.bootstrap_instruments().await?;
+        tracing::info!("Connecting HyperliquidDataClient...");
 
-        // Initialize WebSocket client on connect
-        self.ws_client = Some(
-            HyperliquidWebSocketClient::connect(&self.config.ws_url())
-                .await
-                .context("failed to connect Hyperliquid websocket")?,
-        );
+        // Bootstrap instruments from HTTP API
+        let _instruments = self
+            .bootstrap_instruments()
+            .await
+            .context("Failed to bootstrap instruments")?;
+
+        // Connect WebSocket client
+        self.spawn_ws()
+            .await
+            .context("Failed to spawn WebSocket client")?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!(
-            "Connected Hyperliquid data client {id}",
-            id = self.client_id
-        );
+        tracing::info!("HyperliquidDataClient connected");
 
         Ok(())
     }
@@ -237,125 +232,43 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
-        // WebSocket client will be dropped when set to None
-        self.ws_client = None;
+        tracing::info!("Disconnecting HyperliquidDataClient...");
+
+        // Cancel all tasks
+        self.cancellation_token.cancel();
+
+        // Wait for all tasks to complete
+        for task in self.tasks.drain(..) {
+            if let Err(e) = task.await {
+                tracing::error!("Error waiting for task to complete: {e}");
+            }
+        }
+
+        // Disconnect WebSocket client
+        if let Some(mut ws_client) = self.ws_client.take()
+            && let Err(e) = ws_client.disconnect().await
+        {
+            tracing::error!("Error disconnecting WebSocket client: {e}");
+        }
+
+        // Clear state
+        {
+            let mut instruments = self.instruments.write().unwrap();
+            instruments.clear();
+        }
 
         self.is_connected.store(false, Ordering::Relaxed);
-        tracing::info!(
-            "Disconnected Hyperliquid data client {id}",
-            id = self.client_id
-        );
+        tracing::info!("HyperliquidDataClient disconnected");
 
-        Ok(())
-    }
-
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> Result<()> {
-        tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
-        // WebSocket trade subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> Result<()> {
-        tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
-        // WebSocket quote subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> Result<()> {
-        tracing::debug!("Subscribing to book deltas for {}", cmd.instrument_id);
-        // WebSocket book delta subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> Result<()> {
-        tracing::debug!("Subscribing to book snapshots for {}", cmd.instrument_id);
-        // WebSocket book snapshot subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> Result<()> {
-        tracing::debug!("Subscribing to bars for {}", cmd.bar_type);
-        // WebSocket bar subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> Result<()> {
-        tracing::debug!("Subscribing to funding rates for {}", cmd.instrument_id);
-        // WebSocket funding rate subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> Result<()> {
-        tracing::debug!("Subscribing to mark prices for {}", cmd.instrument_id);
-        // WebSocket mark price subscription implementation pending
-        Ok(())
-    }
-
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> Result<()> {
-        tracing::debug!("Subscribing to index prices for {}", cmd.instrument_id);
-        // WebSocket index price subscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> Result<()> {
-        tracing::debug!("Unsubscribing from trades for {}", cmd.instrument_id);
-        // WebSocket trade unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> Result<()> {
-        tracing::debug!("Unsubscribing from quotes for {}", cmd.instrument_id);
-        // WebSocket quote unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> Result<()> {
-        tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
-        // WebSocket book delta unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> Result<()> {
-        tracing::debug!(
-            "Unsubscribing from book snapshots for {}",
-            cmd.instrument_id
-        );
-        // WebSocket book snapshot unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> Result<()> {
-        tracing::debug!("Unsubscribing from bars for {}", cmd.bar_type);
-        // WebSocket bar unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> Result<()> {
-        tracing::debug!("Unsubscribing from funding rates for {}", cmd.instrument_id);
-        // WebSocket funding rate unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> Result<()> {
-        tracing::debug!("Unsubscribing from mark prices for {}", cmd.instrument_id);
-        // WebSocket mark price unsubscription implementation pending
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> Result<()> {
-        tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
-        // WebSocket index price unsubscription implementation pending
         Ok(())
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> Result<()> {
-        tracing::debug!("Requesting instruments");
+        tracing::debug!("Requesting all instruments");
+
         let instruments = {
-            let guard = self
-                .instruments
-                .read()
-                .expect("instrument cache lock poisoned");
-            guard.values().cloned().collect::<Vec<_>>()
+            let instruments_map = self.instruments.read().unwrap();
+            instruments_map.values().cloned().collect()
         };
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -363,12 +276,8 @@ impl DataClient for HyperliquidDataClient {
             request.client_id.unwrap_or(self.client_id),
             self.venue(),
             instruments,
-            request
-                .start
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-            request
-                .end
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
+            datetime_to_unix_nanos(request.start),
+            datetime_to_unix_nanos(request.end),
             self.clock.get_time_ns(),
             request.params.clone(),
         ));
@@ -381,40 +290,47 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_instrument(&self, request: &RequestInstrument) -> Result<()> {
-        tracing::debug!("Requesting instrument for {}", request.instrument_id);
-        let guard = self
-            .instruments
-            .read()
-            .expect("instrument cache lock poisoned");
+        tracing::debug!("Requesting instrument: {}", request.instrument_id);
 
-        let instrument = guard.get(&request.instrument_id).cloned();
+        let instrument = self.get_instrument(&request.instrument_id)?;
 
-        match instrument {
-            Some(instr) => {
-                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                    request.request_id,
-                    request.client_id.unwrap_or(self.client_id),
-                    request.instrument_id,
-                    instr,
-                    request
-                        .start
-                        .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-                    request
-                        .end
-                        .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-                    self.clock.get_time_ns(),
-                    request.params.clone(),
-                )));
+        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+            request.request_id,
+            request.client_id.unwrap_or(self.client_id),
+            instrument.id(),
+            instrument,
+            datetime_to_unix_nanos(request.start),
+            datetime_to_unix_nanos(request.end),
+            self.clock.get_time_ns(),
+            request.params.clone(),
+        )));
 
-                if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-                    tracing::error!("Failed to send instrument response: {err}");
-                }
-            }
-            None => {
-                tracing::warn!("Instrument {} not found", request.instrument_id);
-                // For now, we don't send a response for missing instruments
-                // Consider sending an error response in future enhancement
-            }
+        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send instrument response: {err}");
+        }
+
+        Ok(())
+    }
+
+    fn request_bars(&self, request: &RequestBars) -> Result<()> {
+        tracing::debug!("Requesting bars for {}", request.bar_type);
+
+        // TODO: Implement actual bar data fetching from HTTP API
+        let bars = Vec::new(); // Placeholder
+
+        let response = DataResponse::Bars(BarsResponse::new(
+            request.request_id,
+            request.client_id.unwrap_or(self.client_id),
+            request.bar_type,
+            bars,
+            datetime_to_unix_nanos(request.start),
+            datetime_to_unix_nanos(request.end),
+            self.clock.get_time_ns(),
+            request.params.clone(),
+        ));
+
+        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send bars response: {err}");
         }
 
         Ok(())
@@ -422,18 +338,17 @@ impl DataClient for HyperliquidDataClient {
 
     fn request_trades(&self, request: &RequestTrades) -> Result<()> {
         tracing::debug!("Requesting trades for {}", request.instrument_id);
-        // Historical trade request implementation pending
+
+        // TODO: Implement actual trade data fetching from HTTP API
+        let trades = Vec::new(); // Placeholder
+
         let response = DataResponse::Trades(TradesResponse::new(
             request.request_id,
             request.client_id.unwrap_or(self.client_id),
             request.instrument_id,
-            Vec::new(),
-            request
-                .start
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-            request
-                .end
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
+            trades,
+            datetime_to_unix_nanos(request.start),
+            datetime_to_unix_nanos(request.end),
             self.clock.get_time_ns(),
             request.params.clone(),
         ));
@@ -445,27 +360,171 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> Result<()> {
-        tracing::debug!("Requesting bars for {}", request.bar_type);
-        // Historical bar request implementation pending
-        let response = DataResponse::Bars(BarsResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
-            request.bar_type,
-            Vec::new(),
-            request
-                .start
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-            request
-                .end
-                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)),
-            self.clock.get_time_ns(),
-            request.params.clone(),
-        ));
+    fn subscribe_trades(&mut self, subscription: &SubscribeTrades) -> Result<()> {
+        tracing::debug!("Subscribing to trades: {}", subscription.instrument_id);
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send bars response: {err}");
+        // Validate instrument exists
+        let instruments = self.instruments.read().unwrap();
+        if !instruments.contains_key(&subscription.instrument_id) {
+            return Err(anyhow!(
+                "Instrument {} not found",
+                subscription.instrument_id
+            ));
         }
+
+        // TODO: Add WebSocket subscription logic for trades
+        tracing::info!("Subscribed to trades for {}", subscription.instrument_id);
+
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> Result<()> {
+        tracing::debug!(
+            "Unsubscribing from trades: {}",
+            unsubscription.instrument_id
+        );
+
+        // TODO: Add WebSocket unsubscription logic for trades
+        tracing::info!(
+            "Unsubscribed from trades for {}",
+            unsubscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> Result<()> {
+        tracing::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
+
+        // Validate instrument exists
+        let instruments = self.instruments.read().unwrap();
+        if !instruments.contains_key(&subscription.instrument_id) {
+            return Err(anyhow!(
+                "Instrument {} not found",
+                subscription.instrument_id
+            ));
+        }
+
+        // TODO: Add WebSocket subscription logic for book deltas
+        tracing::info!(
+            "Subscribed to book deltas for {}",
+            subscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(&mut self, unsubscription: &UnsubscribeBookDeltas) -> Result<()> {
+        tracing::debug!(
+            "Unsubscribing from book deltas: {}",
+            unsubscription.instrument_id
+        );
+
+        // TODO: Add WebSocket unsubscription logic for book deltas
+        tracing::info!(
+            "Unsubscribed from book deltas for {}",
+            unsubscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn subscribe_book_snapshots(&mut self, subscription: &SubscribeBookSnapshots) -> Result<()> {
+        tracing::debug!(
+            "Subscribing to book snapshots: {}",
+            subscription.instrument_id
+        );
+
+        // Validate instrument exists
+        let instruments = self.instruments.read().unwrap();
+        if !instruments.contains_key(&subscription.instrument_id) {
+            return Err(anyhow!(
+                "Instrument {} not found",
+                subscription.instrument_id
+            ));
+        }
+
+        // TODO: Add WebSocket subscription logic for book snapshots
+        tracing::info!(
+            "Subscribed to book snapshots for {}",
+            subscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_snapshots(
+        &mut self,
+        unsubscription: &UnsubscribeBookSnapshots,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Unsubscribing from book snapshots: {}",
+            unsubscription.instrument_id
+        );
+
+        // TODO: Add WebSocket unsubscription logic for book snapshots
+        tracing::info!(
+            "Unsubscribed from book snapshots for {}",
+            unsubscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn subscribe_quotes(&mut self, subscription: &SubscribeQuotes) -> Result<()> {
+        tracing::debug!("Subscribing to quotes: {}", subscription.instrument_id);
+
+        // Validate instrument exists
+        let instruments = self.instruments.read().unwrap();
+        if !instruments.contains_key(&subscription.instrument_id) {
+            return Err(anyhow!(
+                "Instrument {} not found",
+                subscription.instrument_id
+            ));
+        }
+
+        // TODO: Add WebSocket subscription logic for quotes
+        tracing::info!("Subscribed to quotes for {}", subscription.instrument_id);
+
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> Result<()> {
+        tracing::debug!(
+            "Unsubscribing from quotes: {}",
+            unsubscription.instrument_id
+        );
+
+        // TODO: Add WebSocket unsubscription logic for quotes
+        tracing::info!(
+            "Unsubscribed from quotes for {}",
+            unsubscription.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn subscribe_bars(&mut self, subscription: &SubscribeBars) -> Result<()> {
+        tracing::debug!("Subscribing to bars: {}", subscription.bar_type);
+
+        // Validate instrument exists
+        let instruments = self.instruments.read().unwrap();
+        let instrument_id = subscription.bar_type.instrument_id();
+        if !instruments.contains_key(&instrument_id) {
+            return Err(anyhow!("Instrument {} not found", instrument_id));
+        }
+
+        // TODO: Add WebSocket subscription logic for bars
+        tracing::info!("Subscribed to bars for {}", subscription.bar_type);
+
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> Result<()> {
+        tracing::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
+
+        // TODO: Add WebSocket unsubscription logic for bars
+        tracing::info!("Unsubscribed from bars for {}", unsubscription.bar_type);
 
         Ok(())
     }
