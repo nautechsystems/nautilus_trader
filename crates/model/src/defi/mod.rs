@@ -30,6 +30,7 @@ pub mod chain;
 pub mod data;
 pub mod dex;
 pub mod hex;
+pub mod pool_analysis;
 pub mod rpc;
 pub mod tick_map;
 pub mod token;
