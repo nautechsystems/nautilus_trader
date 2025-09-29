@@ -106,6 +106,10 @@ cdef extern from "../includes/common.h":
     # A real-time clock which uses system time.
     #
     # Timestamps are guaranteed to be unique and monotonically increasing.
+    #
+    # # Threading
+    #
+    # The clock holds thread-local runtime state and must remain on its originating thread.
     cdef struct LiveClock:
         pass
 
@@ -133,6 +137,10 @@ cdef extern from "../includes/common.h":
     # A static test clock.
     #
     # Stores the current timestamp internally which can be advanced.
+    #
+    # # Threading
+    #
+    # This clock is thread-affine; use it only from the thread that created it.
     cdef struct TestClock:
         pass
 
