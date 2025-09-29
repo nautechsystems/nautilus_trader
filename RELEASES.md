@@ -32,6 +32,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
+- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -41,6 +42,7 @@ Released on TBD (UTC).
 - Implemented Hyperliquid REST API models for execution (#2983), thanks @nicolad
 - Implemented Hyperliquid `InstrumentProvider` / definitions parsing (#2992), thanks @nicolad
 - Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
+- Implemented Hyperliquid DataClient in Rust (#2999), thanks @nicolad
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved socket reconnect sequence and tighten client setup and testing
