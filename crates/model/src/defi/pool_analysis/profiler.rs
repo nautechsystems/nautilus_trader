@@ -80,6 +80,7 @@ impl PoolProfiler {
     /// Creates a new [`PoolProfiler`] instance for tracking pool state and events.
     ///
     /// # Panics
+    ///
     /// Panics if the pool's tick spacing is not set
     #[must_use]
     pub fn new(pool: SharedPool) -> Self {
@@ -103,9 +104,10 @@ impl PoolProfiler {
     /// Initializes the pool with a starting price.
     ///
     /// # Panics
-    /// Panics if:
-    /// - Pool is already initialized
-    /// - Calculated tick doesn't match pool's initial tick (if set)
+    ///
+    /// Panics if any of the following occur:
+    /// - Pool is already initialized.
+    /// - Calculated tick does not match the pool's initial tick (if set).
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
         if self.current_tick.is_some() || self.price_sqrt_ratio_x96.is_some() {
             panic!("Pool already initialized");
@@ -127,7 +129,8 @@ impl PoolProfiler {
     /// Internal helper method to ensure operations are only performed on initialized pools.
     ///
     /// # Panics
-    /// Panics if the pool hasn't been initialized with a starting price
+    ///
+    /// Panics if the pool hasn't been initialized with a starting price.
     pub fn check_if_initialized(&self) {
         if self.current_tick.is_none() || self.price_sqrt_ratio_x96.is_none() {
             panic!("Pool is not initialized");
@@ -141,10 +144,11 @@ impl PoolProfiler {
     /// entry point for processing historical blockchain events.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Event contains invalid data (tick ranges, amounts)
-    /// - Mathematical operations overflow
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Event contains invalid data (tick ranges, amounts).
+    /// - Mathematical operations overflow.
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
         match event {
             DexPoolData::Swap(swap) => {
@@ -167,6 +171,13 @@ impl PoolProfiler {
 
     /// Processes a swap event.
     /// Updates the current tick and crosses any ticks in between.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Pool initialization checks fail.
+    /// - Fee growth calculations overflow when scaled by liquidity.
+    /// - Tick map updates fail because of inconsistent state.
     fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
 
@@ -205,19 +216,27 @@ impl PoolProfiler {
     /// Executes a simulated swap operation with precise AMM mathematics.
     ///
     /// Performs a complete swap simulation following UniswapV3 logic:
-    /// - Validates price limits and swap direction
-    /// - Iteratively processes swap steps across liquidity ranges
-    /// - Handles tick crossing and liquidity updates
-    /// - Calculates protocol fees and updates global fee trackers
-    /// - Returns the resulting swap event
+    /// - Validates price limits and swap direction.
+    /// - Iteratively processes swap steps across liquidity ranges.
+    /// - Handles tick crossing and liquidity updates.
+    /// - Calculates protocol fees and updates global fee trackers.
+    /// - Returns the resulting swap event.
     ///
     /// This is the core swap execution engine used for both exact input and output swaps.
     ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Pool metadata is missing or invalid.
+    /// - The provided sqrt price limit violates swap direction constraints.
+    /// - Liquidity or fee calculations overflow the supported numeric range.
+    ///
     /// # Panics
-    /// Panics if:
-    /// - Pool fee is not initialized (calls `.expect()` on fee)
-    /// - Current tick or price is None after initialization check (calls `.unwrap()`)
-    /// - Mathematical operations result in invalid state
+    ///
+    /// This function panics if:
+    /// - Pool fee is not initialized (calls `.expect()` on fee).
+    /// - Current tick or price is None after initialization check (calls `.unwrap()`).
+    /// - Mathematical operations result in invalid state.
     pub fn execute_swap(
         &mut self,
         sender: Address,
@@ -341,8 +360,16 @@ impl PoolProfiler {
                 if initialized {
                     let liquidity_net = self.tick_map.cross_tick(
                         tick_next,
-                        if zero_for_one { current_fee_growth_global_0 } else { original_fee_growth_global_0},
-                        if zero_for_one { original_fee_growth_global_1 } else { current_fee_growth_global_1},
+                        if zero_for_one {
+                            current_fee_growth_global_0
+                        } else {
+                            original_fee_growth_global_0
+                        },
+                        if zero_for_one {
+                            original_fee_growth_global_1
+                        } else {
+                            current_fee_growth_global_1
+                        },
                     );
 
                     // If we're moving leftward, we interpret liquidityNet as the opposite sign
@@ -424,6 +451,10 @@ impl PoolProfiler {
     ///
     /// Convenience method for executing exact input swaps from token0 to token1.
     /// Sets up parameters and delegates to `execute_swap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_exact0_for_1(
         &mut self,
         sender: Address,
@@ -448,6 +479,10 @@ impl PoolProfiler {
     ///
     /// Convenience method for executing exact output swaps from token0 to token1.
     /// Uses negative amount to indicate exact output specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_0_for_exact1(
         &mut self,
         sender: Address,
@@ -472,6 +507,10 @@ impl PoolProfiler {
     ///
     /// Convenience method for executing exact input swaps from token1 to token0.
     /// Sets up parameters and delegates to `execute_swap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_exact1_for_0(
         &mut self,
         sender: Address,
@@ -496,6 +535,10 @@ impl PoolProfiler {
     ///
     /// Convenience method for executing exact output swaps from token1 to token0.
     /// Uses negative amount to indicate the exact output specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_1_fro_exact0(
         &mut self,
         sender: Address,
@@ -519,6 +562,10 @@ impl PoolProfiler {
     /// Swaps to move the pool price down to a target price.
     ///
     /// Performs a token0-for-token1 swap with maximum input to reach the target price.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_to_lower_sqrt_price(
         &mut self,
         sender: Address,
@@ -539,6 +586,10 @@ impl PoolProfiler {
     /// Swaps to move the pool price up to a target price.
     ///
     /// Performs a token1-for-token0 swap with maximum input to reach the target price.
+    ///
+    /// # Errors
+    ///
+    /// Returns error from [`Self::execute_swap`] when swap execution fails.
     pub fn swap_to_higher_sqrt_price(
         &mut self,
         sender: Address,
@@ -562,10 +613,11 @@ impl PoolProfiler {
     /// and delegates to internal liquidity management methods.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Tick range is invalid or not properly spaced
-    /// - Position updates fail
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Tick range is invalid or not properly spaced.
+    /// - Position updates fail.
     fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
@@ -613,10 +665,15 @@ impl PoolProfiler {
     /// updates pool state, and returns the resulting mint event.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Tick range is invalid
-    /// - Amount calculations fail
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Tick range is invalid.
+    /// - Amount calculations fail.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current sqrt price has not been initialized.
     pub fn execute_mint(
         &mut self,
         recipient: Address,
@@ -666,10 +723,11 @@ impl PoolProfiler {
     /// liquidity delta to reduce the position size and tracks withdrawn amounts.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Tick range is invalid
-    /// - Position updates fail
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Tick range is invalid.
+    /// - Position updates fail.
     fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
@@ -697,11 +755,16 @@ impl PoolProfiler {
     /// updates pool state, and returns the resulting burn event.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Tick range is invalid
-    /// - Amount calculations fail
-    /// - Insufficient liquidity in position
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Tick range is invalid.
+    /// - Amount calculations fail.
+    /// - Insufficient liquidity in position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current sqrt price has not been initialized.
     pub fn execute_burn(
         &mut self,
         recipient: Address,
@@ -762,10 +825,11 @@ impl PoolProfiler {
     /// position and delegates fee collection to the position object.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Pool is not initialized
-    /// - Tick range is invalid
-    /// - Position does not exist
+    ///
+    /// This function returns an error if:
+    /// - Pool is not initialized.
+    /// - Tick range is invalid.
+    /// - Position does not exist.
     fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(collect.tick_lower, collect.tick_upper)?;
@@ -836,10 +900,11 @@ impl PoolProfiler {
     /// valid bounds. Used by all position-related operations.
     ///
     /// # Errors
-    /// Returns error if:
-    /// - `tick_lower >= tick_upper` (invalid range)
-    /// - Ticks are not multiples of pool's tick spacing
-    /// - Ticks are outside MIN_TICK/MAX_TICK bounds
+    ///
+    /// This function returns an error if:
+    /// - `tick_lower >= tick_upper` (invalid range).
+    /// - Ticks are not multiples of pool's tick spacing.
+    /// - Ticks are outside MIN_TICK/MAX_TICK bounds.
     fn validate_ticks(&self, tick_lower: i32, tick_upper: i32) -> anyhow::Result<()> {
         if tick_lower >= tick_upper {
             anyhow::bail!("Invalid tick range: {} >= {}", tick_lower, tick_upper)
@@ -961,6 +1026,7 @@ impl PoolProfiler {
     /// The pool must be initialized before calling this method.
     ///
     /// # Panics
+    ///
     /// Panics if the pool has not been initialized
     pub fn get_current_tick(&self) -> i32 {
         self.current_tick.expect("Pool should be initialized")

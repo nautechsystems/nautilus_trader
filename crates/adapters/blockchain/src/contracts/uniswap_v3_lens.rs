@@ -105,7 +105,9 @@ impl UniswapV3LensContract {
     ///
     /// # Errors
     ///
-    /// Returns an error if the contract call fails or if decoding fails.
+    /// This function returns an error if:
+    /// - Executing the lens contract call fails.
+    /// - Decoding the tick data from the contract response fails.
     pub async fn get_all_ticks(
         &self,
         pool_address: &Address,
@@ -139,6 +141,11 @@ impl UniswapV3LensContract {
             .collect())
     }
 
+    /// Compares on-chain ticks with a local tick map for consistency.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if retrieving ticks from the on-chain lens contract fails.
     pub async fn compare_tick_maps(
         &self,
         pool_address: &Address,
@@ -168,14 +175,12 @@ impl UniswapV3LensContract {
                     }
                 } else {
                     tracing::error!(
-                        "Tick {} is not active on-chain but found in the target tick maps",
-                        tick_index
+                        "Tick {tick_index} is not active on-chain but found in the target tick maps"
                     );
                 }
             } else {
                 tracing::error!(
-                    "Tick {} exists on-chain but not found in the target tick maps",
-                    tick_index
+                    "Tick {tick_index} exists on-chain but not found in the target tick maps"
                 );
             }
         }

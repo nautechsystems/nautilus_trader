@@ -28,7 +28,7 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 ]);
 
 /// Returns the sqrt ratio as a Q64.96 for the given tick. The sqrt ratio is computed as
-/// sqrt(1.0001)^tick
+/// sqrt(1.0001)^tick.
 ///
 /// ## Arguments
 ///
@@ -37,6 +37,10 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 /// ## Returns
 ///
 /// The sqrt ratio as a Q64.96
+///
+/// # Panics
+///
+/// Panics if the absolute tick exceeds [`Tick::MAX_TICK`].
 #[inline]
 pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
     let abs_tick = tick.abs();
@@ -220,6 +224,10 @@ pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
         tick_low
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

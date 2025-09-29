@@ -48,7 +48,11 @@ impl TickBitmap {
         tick / self.tick_spacing
     }
 
-    /// Flip a bit in the bitmap for the given tick (toggle on/off)
+    /// Flip a bit in the bitmap for the given tick (toggle on/off).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `tick` is not a multiple of the configured tick spacing.
     pub fn flip_tick(&mut self, tick: i32) {
         let remainder = tick % self.tick_spacing;
         if remainder != 0 {
@@ -136,6 +140,10 @@ impl TickBitmap {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

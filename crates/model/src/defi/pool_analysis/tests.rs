@@ -65,6 +65,11 @@ fn sqrt_price_x98() -> U160 {
     encode_sqrt_ratio_x96(1, 10)
 }
 
+/// Builds a test pool definition for Uniswap V3 scenarios.
+///
+/// # Panics
+///
+/// Panics if chain metadata or initial parameters are invalid for pool creation.
 pub fn pool_definition(
     fee: Option<u32>,
     tick_spacing: Option<i32>,

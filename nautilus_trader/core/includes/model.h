@@ -168,6 +168,13 @@
 #define QUANTITY_MIN 0.0
 
 /**
+ * Minimum valid tick value for Uniswap V3 pools.
+ */
+#define Tick_MIN_TICK -887272
+
+
+
+/**
  * An account type provided by a trading venue or broker.
  */
 typedef enum AccountType {

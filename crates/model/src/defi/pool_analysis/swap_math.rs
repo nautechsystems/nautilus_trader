@@ -33,15 +33,21 @@ pub struct SwapStepResult {
 
 pub const MAX_FEE: U256 = U256::from_limbs([1000000, 0, 0, 0]);
 
-/// Computes the result of swapping some amount in, or amount out, given the parameters of the swap
+/// Computes the result of swapping some amount in, or amount out, given the parameters of the swap.
 ///
 /// # Arguments
 ///
-/// * `sqrt_ratio_current_x96` - The current sqrt price of the pool
-/// * `sqrt_ratio_target_x96` - The price that cannot be exceeded, from which the direction of the swap is inferred
-/// * `liquidity` - The usable liquidity
-/// * `amount_remaining` - How much input or output amount is remaining to be swapped in/out
-/// * `fee_pips` - The fee taken from the input amount, expressed in hundredths of a bip
+/// - `sqrt_ratio_current_x96` - The current sqrt price of the pool
+/// - `sqrt_ratio_target_x96` - The price that cannot be exceeded, from which the direction of the swap is inferred
+/// - `liquidity` - The usable liquidity
+/// - `amount_remaining` - How much input or output amount is remaining to be swapped in/out
+/// - `fee_pips` - The fee taken from the input amount, expressed in hundredths of a bip
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - Fee adjustment calculations overflow or encounter division by zero.
+/// - Amount or price delta calculations overflow the supported numeric range.
 pub fn compute_swap_step(
     sqrt_ratio_current_x96: U160,
     sqrt_ratio_target_x96: U160,
@@ -181,6 +187,10 @@ pub fn compute_swap_step(
         fee_amount,
     })
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

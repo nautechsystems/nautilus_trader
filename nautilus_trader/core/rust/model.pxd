@@ -99,6 +99,11 @@ cdef extern from "../includes/model.h":
     # The minimum valid quantity value that can be represented.
     const double QUANTITY_MIN # = 0.0
 
+    # Minimum valid tick value for Uniswap V3 pools.
+    const int32_t Tick_MIN_TICK # = -887272
+
+
+
     # An account type provided by a trading venue or broker.
     cpdef enum AccountType:
         # An account with unleveraged cash assets only.

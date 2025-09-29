@@ -26,6 +26,10 @@ pub struct FullMath;
 
 impl FullMath {
     /// Calculates floor(a×b÷denominator) with full precision
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `denominator` is zero or the result would overflow 256 bits.
     pub fn mul_div(a: U256, b: U256, denominator: U256) -> anyhow::Result<U256> {
         if denominator.is_zero() {
             anyhow::bail!("Cannot divide by zero");
@@ -90,7 +94,11 @@ impl FullMath {
     }
 
     /// Calculates ceil(a×b÷denominator) with full precision
-    /// Returns None if result overflows a U256 or denominator == 0
+    /// Returns `Ok` with the rounded result or an error when rounding cannot be performed safely.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `denominator` is zero or the rounded result would overflow `U256`.
     pub fn mul_div_rounding_up(a: U256, b: U256, denominator: U256) -> anyhow::Result<U256> {
         let result = Self::mul_div(a, b, denominator)?;
 
@@ -108,6 +116,10 @@ impl FullMath {
 
     /// Calculates ceil(a÷b) with proper rounding up
     /// Equivalent to Solidity's divRoundingUp function
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `b` is zero or if the rounded quotient would overflow `U256`.
     pub fn div_rounding_up(a: U256, b: U256) -> anyhow::Result<U256> {
         if b.is_zero() {
             anyhow::bail!("Cannot divide by zero");
@@ -252,6 +264,10 @@ impl FullMath {
         z
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

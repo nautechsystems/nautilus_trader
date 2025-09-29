@@ -15,14 +15,17 @@
 
 use crate::defi::tick_map::tick::Tick;
 
-/// Add a signed liquidity delta to liquidity and panic if it overflows or underflows
+/// Add a signed liquidity delta to liquidity and panic if it overflows or underflows.
 ///
 /// # Returns
-/// The resulting liquidity after applying the delta
+///
+/// The resulting liquidity after applying the delta.
 ///
 /// # Panics
-/// * Panics with "Liquidity addition overflow" if adding positive delta causes overflow
-/// * Panics with "Liquidity subtraction underflow" if subtracting causes underflow
+///
+/// This function panics if:
+/// - Adding positive delta causes overflow.
+/// - Subtracting causes underflow.
 pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
     if y < 0 {
         let delta = (-y) as u128;
@@ -62,6 +65,10 @@ pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
 
     u128::MAX / num_ticks as u128
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

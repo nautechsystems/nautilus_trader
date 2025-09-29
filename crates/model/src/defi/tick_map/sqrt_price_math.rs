@@ -24,7 +24,8 @@ use crate::defi::tick_map::tick_math::get_sqrt_ratio_at_tick;
 /// two tokens as a fixed-point number suitable for AMM calculations.
 ///
 /// # Panics
-/// Panics if:
+///
+/// This function panics if:
 /// - `amount1` is zero (division by zero)
 /// - `sqrt(amount1)` is zero during overflow handling
 /// - Mathematical operations result in overflow during `mul_div`
@@ -174,6 +175,9 @@ fn get_next_sqrt_price_from_amount1_rounding_down(
 }
 
 /// Calculates the next sqrt price given an input amount.
+///
+/// # Panics
+/// Panics if `sqrt_price_x96` is zero or if `liquidity` is zero.
 pub fn get_next_sqrt_price_from_input(
     sqrt_price_x96: U160,
     liquidity: u128,
@@ -194,6 +198,9 @@ pub fn get_next_sqrt_price_from_input(
 }
 
 /// Calculates the next sqrt price given an output amount.
+///
+/// # Panics
+/// Panics if `sqrt_price_x96` is zero or if `liquidity` is zero.
 pub fn get_next_sqrt_price_from_output(
     sqrt_price_x96: U160,
     liquidity: u128,
@@ -317,6 +324,10 @@ pub fn get_amounts_for_liquidity(
 pub fn expand_to_18_decimals(amount: u64) -> u128 {
     amount as u128 * 10u128.pow(18)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
