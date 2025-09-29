@@ -15,13 +15,18 @@
 
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
+    contracts::uniswap_v3_lens::UniswapV3LensContract,
     data::core::BlockchainDataClientCore,
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
-use nautilus_model::defi::{chain::Chain, validation::validate_address};
+use nautilus_model::defi::{
+    Blockchain, DexType, chain::Chain, pool_analysis::profiler::PoolProfiler,
+    validation::validate_address,
+};
 
 use crate::opt::DatabaseConfig;
 
@@ -104,6 +109,62 @@ pub async fn run_analyze_pool(
         .sync_pool_events(&dex_type, pool_address, from_block, to_block, reset)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {}", e))?;
+
+    // Profile pool events from database
+    log::info!("Profiling pool events from database...");
+    // Get pool details from data client
+    let pool = data_client.get_pool(&pool_address)?;
+
+    // Create profiler and reporter
+    let mut profiler = PoolProfiler::new(pool.clone());
+    let initial_sqrt_price_x96 = pool
+        .initial_sqrt_price_x96
+        .expect("Pool has no initial sqrt price");
+    profiler.initialize(initial_sqrt_price_x96);
+
+    // Stream and process events
+    if let Some(cache_database) = &data_client.cache.database {
+        let mut stream =
+            cache_database.stream_pool_events(pool.chain.clone(), pool.dex.clone(), &pool_address);
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    profiler.process(&event)?;
+                }
+                Err(e) => log::error!("Error processing event: {}", e),
+            }
+        }
+    }
+
+    // Count ticks for Arbitrum UniswapV3 pools
+    if chain.name == Blockchain::Arbitrum && dex_type == DexType::UniswapV3 {
+        let http_rpc_client = Arc::new(
+            nautilus_blockchain::rpc::http::BlockchainHttpRpcClient::new(
+                data_client.config.http_rpc_url.clone(),
+                data_client.config.rpc_requests_per_second,
+            ),
+        );
+
+        let lens_contract = UniswapV3LensContract::new(http_rpc_client.clone(), chain.name);
+
+        log::info!("Fetching tick data for UniswapV3 pool on Arbitrum...");
+        match lens_contract
+            .compare_tick_maps(&pool_address, &profiler.tick_map)
+            .await
+        {
+            Ok(correct) => {
+                if correct {
+                    log::info!("✅ Tick data for UniswapV3 pool on Arbitrum is correct");
+                } else {
+                    log::error!("❌ Tick data for UniswapV3 pool on Arbitrum is incorrect");
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch tick data: {}", e);
+            }
+        }
+    }
 
     Ok(())
 }
