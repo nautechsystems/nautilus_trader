@@ -294,8 +294,9 @@ pub fn lane_for_action(action: &ActionRequest) -> PostLane {
 // Typed builders (produce ActionRequest), plus Info request helpers.
 // -------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum Grouping {
+    #[default]
     Na,
     NormalTpsl,
     PositionTpsl,
@@ -341,12 +342,6 @@ pub struct TriggerOrderParams {
 pub struct OrderBuilder {
     orders: Vec<OrderRequest>,
     grouping: Grouping,
-}
-
-impl Default for Grouping {
-    fn default() -> Self {
-        Self::Na
-    }
 }
 
 impl OrderBuilder {

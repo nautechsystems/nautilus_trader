@@ -526,10 +526,11 @@ pub enum HyperliquidExecTpSl {
 }
 
 /// Order grouping strategy for linked TP/SL orders in exchange endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum HyperliquidExecGrouping {
     /// No grouping semantics.
     #[serde(rename = "na")]
+    #[default]
     Na,
     /// Normal TP/SL grouping (linked orders).
     #[serde(rename = "normalTpsl")]
@@ -537,12 +538,6 @@ pub enum HyperliquidExecGrouping {
     /// Position-level TP/SL grouping.
     #[serde(rename = "positionTpsl")]
     PositionTpsl,
-}
-
-impl Default for HyperliquidExecGrouping {
-    fn default() -> Self {
-        Self::Na
-    }
 }
 
 /// Order kind specification for the `t` field in exchange endpoint order requests.

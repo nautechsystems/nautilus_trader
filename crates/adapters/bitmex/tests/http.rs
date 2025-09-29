@@ -88,10 +88,10 @@ async fn handle_get_wallet(headers: axum::http::HeaderMap) -> Response {
 
     let wallets = load_test_data("http_get_wallet.json");
     // The test data is an array, but the endpoint returns a single wallet
-    if let Some(wallet_array) = wallets.as_array() {
-        if !wallet_array.is_empty() {
-            return Json(wallet_array[0].clone()).into_response();
-        }
+    if let Some(wallet_array) = wallets.as_array()
+        && !wallet_array.is_empty()
+    {
+        return Json(wallet_array[0].clone()).into_response();
     }
     Json(wallets).into_response()
 }

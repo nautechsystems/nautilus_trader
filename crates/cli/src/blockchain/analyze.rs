@@ -50,7 +50,7 @@ pub async fn run_analyze_pool(
         .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
     let pool_address = validate_address(&pool_address)?;
 
-    let dex_type = find_dex_type_case_insensitive(&dex, &chain).ok_or_else(|| {
+    let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
         let supported_dexes = get_supported_dexes_for_chain(chain.name);
         if supported_dexes.is_empty() {
             anyhow::anyhow!(

@@ -304,7 +304,7 @@ mod tests {
 
     #[rstest]
     fn test_book_level_sorting() {
-        let mut levels = vec![
+        let mut levels = [
             BookLevel::new(BookPrice::new(
                 Price::from("1.00"),
                 OrderSideSpecified::Sell,

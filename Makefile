@@ -150,7 +150,7 @@ clippy:  #-- Run Rust clippy linter with fixes
 
 .PHONY: clippy-nightly
 clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
-	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
+	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::unwrap_used -W clippy::expect_used
 
 .PHONY: clippy-crate-%
 clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)

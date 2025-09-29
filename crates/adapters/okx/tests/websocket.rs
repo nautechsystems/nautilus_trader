@@ -98,8 +98,8 @@ fn value_matches_channel(value: &Value, channel: &str) -> bool {
     value
         .get("channel")
         .and_then(|c| c.as_str())
-        .map_or(false, |name| name.eq(channel))
-        || value.as_str().map_or(false, |name| name.eq(channel))
+        .is_some_and(|name| name.eq(channel))
+        || value.as_str().is_some_and(|name| name.eq(channel))
 }
 
 fn is_private_channel(channel: &str) -> bool {
@@ -182,24 +182,22 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
 
     let trades_payload = load_json("ws_trades.json");
 
-    if state.send_text_ping.load(Ordering::Relaxed) {
-        if socket
+    if state.send_text_ping.load(Ordering::Relaxed)
+        && socket
             .send(Message::Text(TEXT_PING.to_string().into()))
             .await
             .is_err()
-        {
-            return;
-        }
+    {
+        return;
     }
 
-    if state.send_control_ping.load(Ordering::Relaxed) {
-        if socket
+    if state.send_control_ping.load(Ordering::Relaxed)
+        && socket
             .send(Message::Ping(CONTROL_PING_PAYLOAD.to_vec().into()))
             .await
             .is_err()
-        {
-            return;
-        }
+    {
+        return;
     }
 
     while let Some(message) = socket.next().await {
@@ -280,93 +278,93 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     }
 
                     if payload.get("op") == Some(&json!("subscribe")) {
-                        if let Some(args) = payload.get("args").and_then(|value| value.as_array()) {
-                            if let Some(first) = args.first() {
-                                let (key, _) = TestServerState::subscription_key(first);
-                                let channel = first
-                                    .get("channel")
-                                    .and_then(|c| c.as_str())
-                                    .unwrap_or_default();
+                        if let Some(args) = payload.get("args").and_then(|value| value.as_array())
+                            && let Some(first) = args.first()
+                        {
+                            let (key, _) = TestServerState::subscription_key(first);
+                            let channel = first
+                                .get("channel")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or_default();
 
-                                let mut success = true;
-                                if is_private_channel(channel)
-                                    && !state.authenticated.load(Ordering::Relaxed)
-                                {
-                                    success = false;
-                                }
+                            let mut success = true;
+                            if is_private_channel(channel)
+                                && !state.authenticated.load(Ordering::Relaxed)
+                            {
+                                success = false;
+                            }
 
-                                if success && state.pop_fail_subscription(&key).await {
-                                    success = false;
-                                    state.drop_next_connection.store(true, Ordering::Relaxed);
-                                }
+                            if success && state.pop_fail_subscription(&key).await {
+                                success = false;
+                                state.drop_next_connection.store(true, Ordering::Relaxed);
+                            }
 
-                                if success {
-                                    let mut subscriptions = state.subscriptions.lock().await;
-                                    subscriptions.push(first.clone());
-                                }
+                            if success {
+                                let mut subscriptions = state.subscriptions.lock().await;
+                                subscriptions.push(first.clone());
+                            }
 
-                                let mut ack = json!({
-                                    "event": "subscribe",
-                                    "arg": first,
-                                    "connId": "test-conn",
-                                    "code": if success { "0" } else { "60019" },
-                                });
+                            let mut ack = json!({
+                                "event": "subscribe",
+                                "arg": first,
+                                "connId": "test-conn",
+                                "code": if success { "0" } else { "60019" },
+                            });
 
-                                if !success {
-                                    ack["msg"] = json!("Subscription failed");
-                                }
+                            if !success {
+                                ack["msg"] = json!("Subscription failed");
+                            }
 
-                                if socket
-                                    .send(Message::Text(ack.to_string().into()))
+                            if socket
+                                .send(Message::Text(ack.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+
+                            state.record_subscription_event(first, success).await;
+
+                            if success
+                                && socket
+                                    .send(Message::Text(trades_payload.to_string().into()))
                                     .await
                                     .is_err()
-                                {
-                                    break;
-                                }
+                            {
+                                break;
+                            }
 
-                                state.record_subscription_event(first, success).await;
-
-                                if success
-                                    && socket
-                                        .send(Message::Text(trades_payload.to_string().into()))
-                                        .await
-                                        .is_err()
-                                {
-                                    break;
-                                }
-
-                                if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                                    let _ = socket.send(Message::Close(None)).await;
-                                    break;
-                                }
+                            if state.drop_next_connection.swap(false, Ordering::Relaxed) {
+                                let _ = socket.send(Message::Close(None)).await;
+                                break;
                             }
                         }
                         continue;
                     }
 
                     if payload.get("op") == Some(&json!("unsubscribe")) {
-                        if let Some(args) = payload.get("args").and_then(|value| value.as_array()) {
-                            if let Some(first) = args.first() {
-                                {
-                                    let mut unsubscriptions = state.unsubscriptions.lock().await;
-                                    unsubscriptions.push(first.clone());
-                                }
-                                let ack = json!({
-                                    "event": "unsubscribe",
-                                    "arg": first,
-                                    "connId": "test-conn",
-                                });
-                                if socket
-                                    .send(Message::Text(ack.to_string().into()))
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                                if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                                    let _ = socket.send(Message::Close(None)).await;
-                                    break;
-                                }
+                        if let Some(args) = payload.get("args").and_then(|value| value.as_array())
+                            && let Some(first) = args.first()
+                        {
+                            {
+                                let mut unsubscriptions = state.unsubscriptions.lock().await;
+                                unsubscriptions.push(first.clone());
+                            }
+                            let ack = json!({
+                                "event": "unsubscribe",
+                                "arg": first,
+                                "connId": "test-conn",
+                            });
+                            if socket
+                                .send(Message::Text(ack.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            if state.drop_next_connection.swap(false, Ordering::Relaxed) {
+                                let _ = socket.send(Message::Close(None)).await;
+                                break;
                             }
                         }
                         continue;

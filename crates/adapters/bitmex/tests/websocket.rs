@@ -141,14 +141,13 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         return;
     }
 
-    if state.send_initial_ping.load(Ordering::Relaxed) {
-        if socket
+    if state.send_initial_ping.load(Ordering::Relaxed)
+        && socket
             .send(Message::Ping(TEST_PING_PAYLOAD.to_vec().into()))
             .await
             .is_err()
-        {
-            return;
-        }
+    {
+        return;
     }
 
     // Handle incoming messages
@@ -238,32 +237,31 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         topic == ch || topic.starts_with(&format!("{}:", ch))
                                     });
 
-                                    if requires_auth {
-                                        if !state.authenticated.load(Ordering::Relaxed) {
-                                            // Send auth error
-                                            let error_response = json!({
-                                                "status": 401,
-                                                "error": "Not authenticated",
-                                                "meta": {},
-                                                "request": {
-                                                    "op": "subscribe",
-                                                    "args": [topic]
-                                                }
-                                            });
-
-                                            if socket
-                                                .send(Message::Text(
-                                                    serde_json::to_string(&error_response)
-                                                        .unwrap()
-                                                        .into(),
-                                                ))
-                                                .await
-                                                .is_err()
-                                            {
-                                                break;
+                                    if requires_auth && !state.authenticated.load(Ordering::Relaxed)
+                                    {
+                                        // Send auth error
+                                        let error_response = json!({
+                                            "status": 401,
+                                            "error": "Not authenticated",
+                                            "meta": {},
+                                            "request": {
+                                                "op": "subscribe",
+                                                "args": [topic]
                                             }
-                                            continue;
+                                        });
+
+                                        if socket
+                                            .send(Message::Text(
+                                                serde_json::to_string(&error_response)
+                                                    .unwrap()
+                                                    .into(),
+                                            ))
+                                            .await
+                                            .is_err()
+                                        {
+                                            break;
                                         }
+                                        continue;
                                     }
 
                                     // Track subscription
@@ -1271,7 +1269,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
 
     let auth_calls_after_first = *state.auth_calls.lock().await;
     assert!(
-        auth_calls_after_first >= initial_auth_calls + 1,
+        auth_calls_after_first > initial_auth_calls,
         "expected re-authentication before retrying subscriptions",
     );
 

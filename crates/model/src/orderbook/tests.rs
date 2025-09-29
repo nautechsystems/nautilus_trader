@@ -1116,7 +1116,7 @@ fn test_book_filtered_with_depth_limit() {
     let mut own_book = OwnOrderBook::new(instrument_id);
 
     // Add orders to the public book at multiple levels
-    let bid_orders = vec![
+    let bid_orders = [
         BookOrder::new(
             OrderSide::Buy,
             Price::from("100.00"),
@@ -1127,7 +1127,7 @@ fn test_book_filtered_with_depth_limit() {
         BookOrder::new(OrderSide::Buy, Price::from("98.00"), Quantity::from(300), 3),
     ];
 
-    let ask_orders = vec![
+    let ask_orders = [
         BookOrder::new(
             OrderSide::Sell,
             Price::from("101.00"),
