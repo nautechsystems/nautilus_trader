@@ -13,10 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::pin::Pin;
+
 use alloy::primitives::{Address, U256};
+use futures_util::{Stream, StreamExt};
 use nautilus_model::defi::{
     Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
-    data::PoolFeeCollect, validation::validate_address,
+    data::{DexPoolData, PoolFeeCollect},
+    pool_analysis::position::PoolPosition,
+    validation::validate_address,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
@@ -24,7 +29,8 @@ use crate::{
     cache::{
         consistency::CachedBlocksConsistencyStatus,
         copy::PostgresCopyHandler,
-        rows::{BlockTimestampRow, PoolRow, TokenRow},
+        rows::{BlockTimestampRow, PoolRow, TokenRow, transform_row_to_dex_pool_data},
+        types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
 };
@@ -419,8 +425,8 @@ impl BlockchainCacheDatabase {
                 chain_id, address, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
-                fee, tick_spacing
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (chain_id, address)
             DO UPDATE
             SET
@@ -431,7 +437,9 @@ impl BlockchainCacheDatabase {
                 token1_chain = $7,
                 token1_address = $8,
                 fee = $9,
-                tick_spacing = $10
+                tick_spacing = $10,
+                initial_tick = $11,
+                initial_sqrt_price_x96 = $12
         ",
         )
         .bind(pool.chain.chain_id as i32)
@@ -444,6 +452,8 @@ impl BlockchainCacheDatabase {
         .bind(pool.token1.address.to_string())
         .bind(pool.fee.map(|fee| fee as i32))
         .bind(pool.tick_spacing.map(|tick_spacing| tick_spacing as i32))
+        .bind(pool.initial_tick)
+        .bind(pool.initial_sqrt_price_x96.as_ref().map(|p| p.to_string()))
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -470,6 +480,8 @@ impl BlockchainCacheDatabase {
         let mut token1_addresses: Vec<String> = Vec::with_capacity(pools.len());
         let mut fees: Vec<Option<i32>> = Vec::with_capacity(pools.len());
         let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(pools.len());
+        let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(pools.len());
+        let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(pools.len());
         let mut chain_ids: Vec<i32> = Vec::with_capacity(pools.len());
 
         // Fill vectors from pools
@@ -484,6 +496,9 @@ impl BlockchainCacheDatabase {
             token1_addresses.push(pool.token1.address.to_string());
             fees.push(pool.fee.map(|fee| fee as i32));
             tick_spacings.push(pool.tick_spacing.map(|tick_spacing| tick_spacing as i32));
+            initial_ticks.push(pool.initial_tick);
+            initial_sqrt_price_x96s
+                .push(pool.initial_sqrt_price_x96.as_ref().map(|p| p.to_string()));
         }
 
         // Execute batch insert with UNNEST
@@ -493,13 +508,13 @@ impl BlockchainCacheDatabase {
                 chain_id, address, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
-                fee, tick_spacing
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
             )
             SELECT *
             FROM UNNEST(
                 $1::int4[], $2::text[], $3::text[], $4::int8[],
                 $5::int4[], $6::text[], $7::int4[], $8::text[],
-                $9::int4[], $10::int4[]
+                $9::int4[], $10::int4[], $11::int4[], $12::text[]
             )
             ON CONFLICT (chain_id, address) DO NOTHING
            ",
@@ -514,6 +529,8 @@ impl BlockchainCacheDatabase {
         .bind(&token1_addresses[..])
         .bind(&fees[..])
         .bind(&tick_spacings[..])
+        .bind(&initial_ticks[..])
+        .bind(&initial_sqrt_price_x96s[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -541,9 +558,13 @@ impl BlockchainCacheDatabase {
         let mut transaction_indices: Vec<i32> = Vec::with_capacity(swaps.len());
         let mut log_indices: Vec<i32> = Vec::with_capacity(swaps.len());
         let mut senders: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut sides: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut sizes: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut prices: Vec<String> = Vec::with_capacity(swaps.len());
+        let mut recipients: Vec<String> = Vec::with_capacity(swaps.len());
+        let mut sides: Vec<Option<String>> = Vec::with_capacity(swaps.len());
+        let mut sizes: Vec<Option<String>> = Vec::with_capacity(swaps.len());
+        let mut prices: Vec<Option<String>> = Vec::with_capacity(swaps.len());
+        let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(swaps.len());
+        let mut amount0s: Vec<String> = Vec::with_capacity(swaps.len());
+        let mut amount1s: Vec<String> = Vec::with_capacity(swaps.len());
         let mut chain_ids: Vec<i32> = Vec::with_capacity(swaps.len());
 
         // Fill vectors from swaps
@@ -555,9 +576,13 @@ impl BlockchainCacheDatabase {
             transaction_indices.push(swap.transaction_index as i32);
             log_indices.push(swap.log_index as i32);
             senders.push(swap.sender.to_string());
-            sides.push(swap.side.to_string());
-            sizes.push(swap.size.to_string());
-            prices.push(swap.price.to_string());
+            recipients.push(swap.recipient.to_string());
+            sides.push(swap.side.map(|side| side.to_string()));
+            sizes.push(swap.size.map(|size| size.to_string()));
+            prices.push(swap.price.map(|price| price.to_string()));
+            sqrt_price_x96s.push(swap.sqrt_price_x96.to_string());
+            amount0s.push(swap.amount0.to_string());
+            amount1s.push(swap.amount1.to_string());
         }
 
         // Execute batch insert with UNNEST
@@ -565,13 +590,17 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, size, price
+                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
             )
-            SELECT *
+            SELECT
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, side, size, price, sqrt_price_x96::u160, amount0::i256, amount1::i256
             FROM UNNEST(
                 $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
-                $6::int4[], $7::text[], $8::text[], $9::text[], $10::text[]
-            )
+                $6::int4[], $7::text[], $8::text[], $9::text[], $10::text[],
+                $11::text[], $12::text[], $13::text[], $14::text[]
+            ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
+                   log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
            ",
         )
@@ -582,9 +611,13 @@ impl BlockchainCacheDatabase {
         .bind(&transaction_indices[..])
         .bind(&log_indices[..])
         .bind(&senders[..])
+        .bind(&recipients[..])
         .bind(&sides[..])
         .bind(&sizes[..])
         .bind(&prices[..])
+        .bind(&sqrt_price_x96s[..])
+        .bind(&amount0s[..])
+        .bind(&amount1s[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -647,12 +680,17 @@ impl BlockchainCacheDatabase {
                 log_index, event_type, sender, owner, position_liquidity,
                 amount0, amount1, tick_lower, tick_upper
             )
-            SELECT *
+            SELECT
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, event_type, sender, owner, position_liquidity::u128,
+                amount0::u256, amount1::u256, tick_lower, tick_upper
             FROM UNNEST(
                 $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
                 $6::int4[], $7::text[], $8::text[], $9::text[], $10::text[],
                 $11::text[], $12::text[], $13::int4[], $14::int4[]
-            )
+            ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
+                   log_index, event_type, sender, owner, position_liquidity,
+                   amount0, amount1, tick_lower, tick_upper)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
            ",
         )
@@ -745,8 +783,8 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, size, price
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                log_index, sender, side, size, price, sqrt_price_x96, amount0, amount1
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (chain_id, transaction_hash, log_index)
             DO NOTHING
         ",
@@ -758,9 +796,12 @@ impl BlockchainCacheDatabase {
         .bind(swap.transaction_index as i32)
         .bind(swap.log_index as i32)
         .bind(swap.sender.to_string())
-        .bind(swap.side.to_string())
-        .bind(swap.size.to_string())
-        .bind(swap.price.to_string())
+        .bind(swap.side.map(|side| side.to_string()))
+        .bind(swap.size.map(|size| size.to_string()))
+        .bind(swap.price.map(|price| price.to_string()))
+        .bind(swap.sqrt_price_x96.to_string())
+        .bind(swap.amount0.to_string())
+        .bind(swap.amount1.to_string())
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -796,9 +837,9 @@ impl BlockchainCacheDatabase {
         .bind(liquidity_update.kind.to_string())
         .bind(liquidity_update.sender.map(|sender| sender.to_string()))
         .bind(liquidity_update.owner.to_string())
-        .bind(liquidity_update.position_liquidity.to_string())
-        .bind(liquidity_update.amount0.to_string())
-        .bind(liquidity_update.amount1.to_string())
+        .bind(U128Pg(liquidity_update.position_liquidity))
+        .bind(U256Pg(liquidity_update.amount0))
+        .bind(U256Pg(liquidity_update.amount1))
         .bind(liquidity_update.tick_lower)
         .bind(liquidity_update.tick_upper)
         .execute(&self.pool)
@@ -878,7 +919,9 @@ impl BlockchainCacheDatabase {
                 token1_chain,
                 token1_address,
                 fee,
-                tick_spacing
+                tick_spacing,
+                initial_tick,
+                initial_sqrt_price_x96
             FROM pool
             WHERE chain_id = $1 AND dex_name = $2
             ORDER BY creation_block ASC
@@ -1096,8 +1139,8 @@ impl BlockchainCacheDatabase {
         let mut transaction_indices: Vec<i32> = Vec::with_capacity(collects.len());
         let mut log_indices: Vec<i32> = Vec::with_capacity(collects.len());
         let mut owners: Vec<String> = Vec::with_capacity(collects.len());
-        let mut fee0s: Vec<String> = Vec::with_capacity(collects.len());
-        let mut fee1s: Vec<String> = Vec::with_capacity(collects.len());
+        let mut amount0s: Vec<String> = Vec::with_capacity(collects.len());
+        let mut amount1s: Vec<String> = Vec::with_capacity(collects.len());
         let mut tick_lowers: Vec<i32> = Vec::with_capacity(collects.len());
         let mut tick_uppers: Vec<i32> = Vec::with_capacity(collects.len());
         let mut chain_ids: Vec<i32> = Vec::with_capacity(collects.len());
@@ -1111,8 +1154,8 @@ impl BlockchainCacheDatabase {
             transaction_indices.push(collect.transaction_index as i32);
             log_indices.push(collect.log_index as i32);
             owners.push(collect.owner.to_string());
-            fee0s.push(collect.fee0.to_string());
-            fee1s.push(collect.fee1.to_string());
+            amount0s.push(collect.amount0.to_string());
+            amount1s.push(collect.amount1.to_string());
             tick_lowers.push(collect.tick_lower);
             tick_uppers.push(collect.tick_upper);
         }
@@ -1122,13 +1165,16 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_collect_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, owner, fee0, fee1, tick_lower, tick_upper
+                log_index, owner, amount0, amount1, tick_lower, tick_upper
             )
-            SELECT *
+            SELECT
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, owner, amount0::u256, amount1::u256, tick_lower, tick_upper
             FROM UNNEST(
                 $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
                 $6::int4[], $7::text[], $8::text[], $9::text[], $10::int4[], $11::int4[]
-            )
+            ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
+                   log_index, owner, amount0, amount1, tick_lower, tick_upper)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
            ",
         )
@@ -1139,14 +1185,100 @@ impl BlockchainCacheDatabase {
         .bind(&transaction_indices[..])
         .bind(&log_indices[..])
         .bind(&owners[..])
-        .bind(&fee0s[..])
-        .bind(&fee1s[..])
+        .bind(&amount0s[..])
+        .bind(&amount1s[..])
         .bind(&tick_lowers[..])
         .bind(&tick_uppers[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_fee_collect table: {e}"))
+    }
+
+    /// Inserts multiple pool positions in a single database operation using UNNEST for optimal performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_pool_positions_batch(
+        &self,
+        chain_id: u32,
+        positions: &[(Address, PoolPosition)],
+    ) -> anyhow::Result<()> {
+        if positions.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare vectors for each column
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(positions.len());
+        let mut owners: Vec<String> = Vec::with_capacity(positions.len());
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(positions.len());
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(positions.len());
+        let mut liquidities: Vec<String> = Vec::with_capacity(positions.len());
+        let mut fee_growth_inside_0_lasts: Vec<String> = Vec::with_capacity(positions.len());
+        let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(positions.len());
+        let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(positions.len());
+        let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(positions.len());
+        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(positions.len());
+
+        // Fill vectors from positions
+        for (pool_address, position) in positions {
+            pool_addresses.push(pool_address.to_string());
+            owners.push(position.owner.to_string());
+            tick_lowers.push(position.tick_lower);
+            tick_uppers.push(position.tick_upper);
+            liquidities.push(position.liquidity.to_string());
+            fee_growth_inside_0_lasts.push(position.fee_growth_inside_0_last.to_string());
+            fee_growth_inside_1_lasts.push(position.fee_growth_inside_1_last.to_string());
+            tokens_owed_0s.push(position.tokens_owed_0.to_string());
+            tokens_owed_1s.push(position.tokens_owed_1.to_string());
+            last_updated_blocks.push(None); // Or derive from context
+        }
+
+        // Execute batch insert with UNNEST
+        sqlx::query(
+            r"
+            INSERT INTO pool_position (
+                chain_id, pool_address, owner, tick_lower, tick_upper,
+                liquidity, fee_growth_inside_0_last, fee_growth_inside_1_last,
+                tokens_owed_0, tokens_owed_1, last_updated_block
+            )
+            SELECT
+                $1, pool_address, owner, tick_lower, tick_upper,
+                liquidity::u128, fee_growth_inside_0_last::u256, fee_growth_inside_1_last::u256,
+                tokens_owed_0::u128, tokens_owed_1::u128, last_updated_block
+            FROM UNNEST(
+                $2::text[], $3::text[], $4::int4[], $5::int4[],
+                $6::text[], $7::text[], $8::text[],
+                $9::text[], $10::text[], $11::int8[]
+            ) AS t(pool_address, owner, tick_lower, tick_upper,
+                   liquidity, fee_growth_inside_0_last, fee_growth_inside_1_last,
+                   tokens_owed_0, tokens_owed_1, last_updated_block)
+            ON CONFLICT (chain_id, pool_address, owner, tick_lower, tick_upper)
+            DO UPDATE SET
+                liquidity = EXCLUDED.liquidity,
+                fee_growth_inside_0_last = EXCLUDED.fee_growth_inside_0_last,
+                fee_growth_inside_1_last = EXCLUDED.fee_growth_inside_1_last,
+                tokens_owed_0 = EXCLUDED.tokens_owed_0,
+                tokens_owed_1 = EXCLUDED.tokens_owed_1,
+                last_updated_block = EXCLUDED.last_updated_block
+           ",
+        )
+        .bind(chain_id as i32)
+        .bind(&pool_addresses[..])
+        .bind(&owners[..])
+        .bind(&tick_lowers[..])
+        .bind(&tick_uppers[..])
+        .bind(&liquidities[..])
+        .bind(&fee_growth_inside_0_lasts[..])
+        .bind(&fee_growth_inside_1_lasts[..])
+        .bind(&tokens_owed_0s[..])
+        .bind(&tokens_owed_1s[..])
+        .bind(&last_updated_blocks[..])
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_position table: {e}"))
     }
 
     pub async fn update_pool_initial_price_tick(
@@ -1174,5 +1306,122 @@ impl BlockchainCacheDatabase {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
+    }
+
+    /// Streams pool events from all event tables (swap, liquidity, collect) for a specific pool.
+    ///
+    /// Creates a unified stream of pool events from multiple tables, ordering them chronologically
+    /// by block number, transaction index, and log index.
+    ///
+    /// # Returns
+    ///
+    /// A stream of `DexPoolData` events in chronological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails or if event transformation fails.
+    pub fn stream_pool_events<'a>(
+        &'a self,
+        chain: SharedChain,
+        dex: SharedDex,
+        pool_address: &Address,
+    ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
+        let chain_id = chain.chain_id as i32;
+        let pool_address_str = pool_address.to_string();
+
+        let query = r"
+            (SELECT
+                'swap' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                NULL::text as owner,
+                side,
+                size,
+                price,
+                sqrt_price_x96::text,
+                amount0::text as swap_amount0,
+                amount1::text as swap_amount1,
+                NULL::text as position_liquidity,
+                NULL::text as amount0,
+                NULL::text as amount1,
+                NULL::integer as tick_lower,
+                NULL::integer as tick_upper,
+                NULL::text as liquidity_event_type
+            FROM pool_swap_event
+            WHERE chain_id = $1 AND pool_address = $2)
+
+            UNION ALL
+
+            (SELECT
+                'liquidity' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                owner,
+                NULL::text as side,
+                NULL::text as size,
+                NULL::text as price,
+                NULL::text as sqrt_price_x96,
+                amount0::text as swap_amount0,
+                amount1::text as swap_amount1,
+                position_liquidity::text,
+                amount0::text,
+                amount1::text,
+                tick_lower::integer,
+                tick_upper::integer,
+                event_type as liquidity_event_type
+            FROM pool_liquidity_event
+            WHERE chain_id = $1 AND pool_address = $2)
+
+            UNION ALL
+
+            (SELECT
+                'collect' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                NULL::text as sender,
+                owner,
+                NULL::text as side,
+                NULL::text as size,
+                NULL::text as price,
+                NULL::text as sqrt_price_x96,
+                amount0::text as swap_amount0,
+                amount1::text as swap_amount1,
+                NULL::text as position_liquidity,
+                amount0::text,
+                amount1::text,
+                tick_lower::integer,
+                tick_upper::integer,
+                NULL::text as liquidity_event_type
+            FROM pool_collect_event
+            WHERE chain_id = $1 AND pool_address = $2)
+
+            ORDER BY block, transaction_index, log_index
+        ";
+
+        let stream = sqlx::query(query)
+            .bind(chain_id)
+            .bind(pool_address_str)
+            .fetch(&self.pool)
+            .map(move |row_result| match row_result {
+                Ok(row) => transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone())
+                    .map_err(|e| anyhow::anyhow!("Transform error: {}", e)),
+                Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
+            });
+
+        Box::pin(stream)
     }
 }

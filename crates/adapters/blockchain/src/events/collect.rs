@@ -13,13 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
-use nautilus_model::{
-    defi::{SharedChain, SharedDex, data::PoolFeeCollect},
-    identifiers::InstrumentId,
-    types::Quantity,
-};
+use nautilus_model::defi::{SharedChain, SharedDex, data::PoolFeeCollect};
 
 /// Represents a collect event that occurs when fees are collected from a position in a liquidity pool.
 #[derive(Debug, Clone)]
@@ -45,9 +41,9 @@ pub struct CollectEvent {
     /// The upper tick boundary of the position.
     pub tick_upper: i32,
     /// The amount of token0 fees collected.
-    pub amount0: U256,
+    pub amount0: u128,
     /// The amount of token1 fees collected.
-    pub amount1: U256,
+    pub amount1: u128,
 }
 
 impl CollectEvent {
@@ -65,8 +61,8 @@ impl CollectEvent {
         recipient: Address,
         tick_lower: i32,
         tick_upper: i32,
-        amount0: U256,
-        amount1: U256,
+        amount0: u128,
+        amount1: u128,
     ) -> Self {
         Self {
             dex,
@@ -90,24 +86,20 @@ impl CollectEvent {
         &self,
         chain: SharedChain,
         dex: SharedDex,
-        instrument_id: InstrumentId,
         pool_address: Address,
-        fee0: Quantity,
-        fee1: Quantity,
         timestamp: Option<UnixNanos>,
     ) -> PoolFeeCollect {
         PoolFeeCollect::new(
             chain,
             dex,
-            instrument_id,
             pool_address,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,
             self.log_index,
             self.owner,
-            fee0,
-            fee1,
+            self.amount0,
+            self.amount1,
             self.tick_lower,
             self.tick_upper,
             timestamp,

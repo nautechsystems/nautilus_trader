@@ -21,6 +21,36 @@
 use nautilus_model::defi::{Block, PoolLiquidityUpdate, PoolSwap, data::PoolFeeCollect};
 use sqlx::{PgPool, postgres::PgPoolCopyExt};
 
+// Helper to convert scientific notation to decimal
+fn format_scientific_to_decimal(s: &str) -> String {
+    use std::str::FromStr;
+
+    use rust_decimal::Decimal;
+
+    match Decimal::from_str(s) {
+        Ok(decimal) => decimal.to_string(),
+        Err(_) => s.to_string(), // Fallback
+    }
+}
+
+/// Formats a numeric value for PostgreSQL NUMERIC type
+fn format_numeric<T: ToString>(value: &T) -> String {
+    let s = value.to_string();
+
+    // Remove any '+' prefix
+    let s = s.trim_start_matches('+');
+
+    // Handle scientific notation by converting to decimal
+    if s.contains('e') || s.contains('E') {
+        return format_scientific_to_decimal(s);
+    }
+
+    // For very large numbers that rust_decimal can't handle,
+    // just return the cleaned string since alloy_primitives already
+    // produces clean decimal format
+    s.to_string()
+}
+
 /// Handles PostgreSQL COPY BINARY operations for blockchain data.
 #[derive(Debug)]
 pub struct PostgresCopyHandler<'a> {
@@ -94,7 +124,7 @@ impl<'a> PostgresCopyHandler<'a> {
         let copy_statement = r"
             COPY pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, size, price
+                log_index, sender, side, size, price, sqrt_price_x96, amount0, amount1
             ) FROM STDIN WITH (FORMAT BINARY)";
 
         let mut copy_in = self
@@ -243,9 +273,9 @@ impl<'a> PostgresCopyHandler<'a> {
         let mut header = Vec::new();
 
         // PostgreSQL binary copy header
-        header.write_all(b"PGCOPY\n\xff\r\n\0").unwrap(); // Signature
-        header.write_all(&[0, 0, 0, 0]).unwrap(); // Flags field
-        header.write_all(&[0, 0, 0, 0]).unwrap(); // Header extension length
+        header.write_all(b"PGCOPY\n\xff\r\n\0")?; // Signature
+        header.write_all(&[0, 0, 0, 0])?; // Flags field
+        header.write_all(&[0, 0, 0, 0])?; // Header extension length
 
         copy_in
             .send(header)
@@ -269,128 +299,100 @@ impl<'a> PostgresCopyHandler<'a> {
         let mut row_data = Vec::new();
 
         // Number of fields (14)
-        row_data.write_all(&14u16.to_be_bytes()).unwrap();
+        row_data.write_all(&14u16.to_be_bytes())?;
 
         // Field 1: chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
-        row_data
-            .write_all(&(chain_id_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&chain_id_bytes).unwrap();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
 
         // Field 2: number (INT8)
         let number_bytes = (block.number as i64).to_be_bytes();
-        row_data
-            .write_all(&(number_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&number_bytes).unwrap();
+        row_data.write_all(&(number_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&number_bytes)?;
 
         // Field 3: hash (TEXT)
         let hash_bytes = block.hash.as_bytes();
-        row_data
-            .write_all(&(hash_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(hash_bytes).unwrap();
+        row_data.write_all(&(hash_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(hash_bytes)?;
 
         // Field 4: parent_hash (TEXT)
         let parent_hash_bytes = block.parent_hash.as_bytes();
-        row_data
-            .write_all(&(parent_hash_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(parent_hash_bytes).unwrap();
+        row_data.write_all(&(parent_hash_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(parent_hash_bytes)?;
 
         // Field 5: miner (TEXT)
         let miner_bytes = block.miner.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(miner_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&miner_bytes).unwrap();
+        row_data.write_all(&(miner_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&miner_bytes)?;
 
         // Field 6: gas_limit (INT8)
         let gas_limit_bytes = (block.gas_limit as i64).to_be_bytes();
-        row_data
-            .write_all(&(gas_limit_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&gas_limit_bytes).unwrap();
+        row_data.write_all(&(gas_limit_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&gas_limit_bytes)?;
 
         // Field 7: gas_used (INT8)
         let gas_used_bytes = (block.gas_used as i64).to_be_bytes();
-        row_data
-            .write_all(&(gas_used_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&gas_used_bytes).unwrap();
+        row_data.write_all(&(gas_used_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&gas_used_bytes)?;
 
         // Field 8: timestamp (TEXT)
         let timestamp_bytes = block.timestamp.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(timestamp_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&timestamp_bytes).unwrap();
+        row_data.write_all(&(timestamp_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&timestamp_bytes)?;
 
         // Field 9: base_fee_per_gas (TEXT, nullable)
         if let Some(ref base_fee) = block.base_fee_per_gas {
             let base_fee_bytes = base_fee.to_string().as_bytes().to_vec();
-            row_data
-                .write_all(&(base_fee_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&base_fee_bytes).unwrap();
+            row_data.write_all(&(base_fee_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&base_fee_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 10: blob_gas_used (TEXT, nullable)
         if let Some(ref blob_gas) = block.blob_gas_used {
             let blob_gas_bytes = blob_gas.to_string().as_bytes().to_vec();
-            row_data
-                .write_all(&(blob_gas_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&blob_gas_bytes).unwrap();
+            row_data.write_all(&(blob_gas_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&blob_gas_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 11: excess_blob_gas (TEXT, nullable)
         if let Some(ref excess_blob) = block.excess_blob_gas {
             let excess_blob_bytes = excess_blob.to_string().as_bytes().to_vec();
-            row_data
-                .write_all(&(excess_blob_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&excess_blob_bytes).unwrap();
+            row_data.write_all(&(excess_blob_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&excess_blob_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 12: l1_gas_price (TEXT, nullable)
         if let Some(ref l1_gas_price) = block.l1_gas_price {
             let l1_gas_price_bytes = l1_gas_price.to_string().as_bytes().to_vec();
-            row_data
-                .write_all(&(l1_gas_price_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&l1_gas_price_bytes).unwrap();
+            row_data.write_all(&(l1_gas_price_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&l1_gas_price_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 13: l1_gas_used (INT8, nullable)
         if let Some(l1_gas_used) = block.l1_gas_used {
             let l1_gas_used_bytes = (l1_gas_used as i64).to_be_bytes();
-            row_data
-                .write_all(&(l1_gas_used_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&l1_gas_used_bytes).unwrap();
+            row_data.write_all(&(l1_gas_used_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&l1_gas_used_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 14: l1_fee_scalar (INT8, nullable)
         if let Some(l1_fee_scalar) = block.l1_fee_scalar {
             let l1_fee_scalar_bytes = (l1_fee_scalar as i64).to_be_bytes();
-            row_data
-                .write_all(&(l1_fee_scalar_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&l1_fee_scalar_bytes).unwrap();
+            row_data.write_all(&(l1_fee_scalar_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&l1_fee_scalar_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         copy_in
@@ -414,78 +416,58 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        // Number of fields (10)
-        row_data.write_all(&10u16.to_be_bytes()).unwrap();
+        // Number of fields (13)
+        row_data.write_all(&13u16.to_be_bytes())?;
 
-        // Field 1: chain_id (INT4)
+        // chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
-        row_data
-            .write_all(&(chain_id_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&chain_id_bytes).unwrap();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
 
-        // Field 2: pool_address (TEXT)
+        // pool_address (TEXT)
         let pool_address_bytes = swap.pool_address.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(pool_address_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&pool_address_bytes).unwrap();
+        row_data.write_all(&(pool_address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&pool_address_bytes)?;
 
-        // Field 3: block (INT8)
+        // block (INT8)
         let block_bytes = (swap.block as i64).to_be_bytes();
-        row_data
-            .write_all(&(block_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&block_bytes).unwrap();
+        row_data.write_all(&(block_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&block_bytes)?;
 
-        // Field 4: transaction_hash (TEXT)
+        // transaction_hash (TEXT)
         let tx_hash_bytes = swap.transaction_hash.as_bytes();
-        row_data
-            .write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(tx_hash_bytes).unwrap();
+        row_data.write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(tx_hash_bytes)?;
 
-        // Field 5: transaction_index (INT4)
+        // transaction_index (INT4)
         let tx_index_bytes = (swap.transaction_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(tx_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tx_index_bytes).unwrap();
+        row_data.write_all(&(tx_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tx_index_bytes)?;
 
-        // Field 6: log_index (INT4)
+        // log_index (INT4)
         let log_index_bytes = (swap.log_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(log_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&log_index_bytes).unwrap();
+        row_data.write_all(&(log_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&log_index_bytes)?;
 
-        // Field 7: sender (TEXT)
+        // sender (TEXT)
         let sender_bytes = swap.sender.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(sender_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&sender_bytes).unwrap();
+        row_data.write_all(&(sender_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&sender_bytes)?;
 
-        // Field 8: side (TEXT)
-        let side_bytes = swap.side.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(side_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&side_bytes).unwrap();
+        // sqrt_price_x96 (U160)
+        let sqrt_price_bytes = format_numeric(&swap.sqrt_price_x96).as_bytes().to_vec();
+        row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&sqrt_price_bytes)?;
 
-        // Field 9: size (TEXT)
-        let size_bytes = swap.size.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(size_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&size_bytes).unwrap();
+        // amount0 (I256)
+        let amount0_bytes = format_numeric(&swap.amount0).as_bytes().to_vec();
+        row_data.write_all(&(amount0_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&amount0_bytes)?;
 
-        // Field 10: price (TEXT)
-        let price_bytes = swap.price.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(price_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&price_bytes).unwrap();
+        // amount1 (I256)
+        let amount1_bytes = format_numeric(&swap.amount1).as_bytes().to_vec();
+        row_data.write_all(&(amount1_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&amount1_bytes)?;
 
         copy_in
             .send(row_data)
@@ -509,109 +491,83 @@ impl<'a> PostgresCopyHandler<'a> {
         let mut row_data = Vec::new();
 
         // Number of fields (14)
-        row_data.write_all(&14u16.to_be_bytes()).unwrap();
+        row_data.write_all(&14u16.to_be_bytes())?;
 
         // Field 1: chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
-        row_data
-            .write_all(&(chain_id_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&chain_id_bytes).unwrap();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
 
         // Field 2: pool_address (TEXT)
         let pool_address_bytes = update.pool_address.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(pool_address_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&pool_address_bytes).unwrap();
+        row_data.write_all(&(pool_address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&pool_address_bytes)?;
 
         // Field 3: block (INT8)
         let block_bytes = (update.block as i64).to_be_bytes();
-        row_data
-            .write_all(&(block_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&block_bytes).unwrap();
+        row_data.write_all(&(block_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&block_bytes)?;
 
         // Field 4: transaction_hash (TEXT)
         let tx_hash_bytes = update.transaction_hash.as_bytes();
-        row_data
-            .write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(tx_hash_bytes).unwrap();
+        row_data.write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(tx_hash_bytes)?;
 
         // Field 5: transaction_index (INT4)
         let tx_index_bytes = (update.transaction_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(tx_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tx_index_bytes).unwrap();
+        row_data.write_all(&(tx_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tx_index_bytes)?;
 
         // Field 6: log_index (INT4)
         let log_index_bytes = (update.log_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(log_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&log_index_bytes).unwrap();
+        row_data.write_all(&(log_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&log_index_bytes)?;
 
         // Field 7: event_type (TEXT)
         let event_type_bytes = update.kind.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(event_type_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&event_type_bytes).unwrap();
+        row_data.write_all(&(event_type_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&event_type_bytes)?;
 
         // Field 8: sender (TEXT, nullable)
         if let Some(sender) = update.sender {
             let sender_bytes = sender.to_string().as_bytes().to_vec();
-            row_data
-                .write_all(&(sender_bytes.len() as i32).to_be_bytes())
-                .unwrap();
-            row_data.write_all(&sender_bytes).unwrap();
+            row_data.write_all(&(sender_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&sender_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes()).unwrap(); // NULL value
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
         }
 
         // Field 9: owner (TEXT)
         let owner_bytes = update.owner.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(owner_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&owner_bytes).unwrap();
+        row_data.write_all(&(owner_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&owner_bytes)?;
 
-        // Field 10: position_liquidity (TEXT)
-        let position_liquidity_bytes = update.position_liquidity.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(position_liquidity_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&position_liquidity_bytes).unwrap();
+        // Field 10: position_liquidity (U128)
+        let position_liquidity_bytes = format_numeric(&update.position_liquidity)
+            .as_bytes()
+            .to_vec();
+        row_data.write_all(&(position_liquidity_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&position_liquidity_bytes)?;
 
-        // Field 11: amount0 (TEXT)
-        let amount0_bytes = update.amount0.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(amount0_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&amount0_bytes).unwrap();
+        // Field 11: amount0 (U256)
+        let amount0_bytes = format_numeric(&update.amount0).as_bytes().to_vec();
+        row_data.write_all(&(amount0_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&amount0_bytes)?;
 
-        // Field 12: amount1 (TEXT)
-        let amount1_bytes = update.amount1.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(amount1_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&amount1_bytes).unwrap();
+        // Field 12: amount1 (U256)
+        let amount1_bytes = format_numeric(&update.amount1).as_bytes().to_vec();
+        row_data.write_all(&(amount1_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&amount1_bytes)?;
 
         // Field 13: tick_lower (INT4)
         let tick_lower_bytes = update.tick_lower.to_be_bytes();
-        row_data
-            .write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tick_lower_bytes).unwrap();
+        row_data.write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tick_lower_bytes)?;
 
         // Field 14: tick_upper (INT4)
         let tick_upper_bytes = update.tick_upper.to_be_bytes();
-        row_data
-            .write_all(&(tick_upper_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tick_upper_bytes).unwrap();
+        row_data.write_all(&(tick_upper_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tick_upper_bytes)?;
 
         copy_in
             .send(row_data)
@@ -637,7 +593,7 @@ impl<'a> PostgresCopyHandler<'a> {
         let copy_statement = r"
             COPY pool_collect_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, owner, fee0, fee1, tick_lower, tick_upper
+                log_index, owner, amount0, amount1, tick_lower, tick_upper
             ) FROM STDIN WITH (FORMAT BINARY)";
 
         let mut copy_in = self
@@ -661,7 +617,7 @@ impl<'a> PostgresCopyHandler<'a> {
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
             // Log detailed information about the failed batch
-            tracing::error!("COPY operation failed for pool_fee_collect batch:");
+            tracing::error!("COPY operation failed for temp_pool_collect batch:");
             tracing::error!("  Chain ID: {}", chain_id);
             tracing::error!("  Batch size: {}", collects.len());
 
@@ -711,84 +667,62 @@ impl<'a> PostgresCopyHandler<'a> {
         let mut row_data = Vec::new();
 
         // Number of fields (11)
-        row_data.write_all(&11u16.to_be_bytes()).unwrap();
+        row_data.write_all(&11u16.to_be_bytes())?;
 
         // Field 1: chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
-        row_data
-            .write_all(&(chain_id_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&chain_id_bytes).unwrap();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
 
         // Field 2: pool_address (TEXT)
         let pool_address_bytes = collect.pool_address.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(pool_address_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&pool_address_bytes).unwrap();
+        row_data.write_all(&(pool_address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&pool_address_bytes)?;
 
         // Field 3: block (INT8)
         let block_bytes = (collect.block as i64).to_be_bytes();
-        row_data
-            .write_all(&(block_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&block_bytes).unwrap();
+        row_data.write_all(&(block_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&block_bytes)?;
 
         // Field 4: transaction_hash (TEXT)
         let tx_hash_bytes = collect.transaction_hash.as_bytes();
-        row_data
-            .write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(tx_hash_bytes).unwrap();
+        row_data.write_all(&(tx_hash_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(tx_hash_bytes)?;
 
         // Field 5: transaction_index (INT4)
         let tx_index_bytes = (collect.transaction_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(tx_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tx_index_bytes).unwrap();
+        row_data.write_all(&(tx_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tx_index_bytes)?;
 
         // Field 6: log_index (INT4)
         let log_index_bytes = (collect.log_index as i32).to_be_bytes();
-        row_data
-            .write_all(&(log_index_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&log_index_bytes).unwrap();
+        row_data.write_all(&(log_index_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&log_index_bytes)?;
 
         // Field 7: owner (TEXT)
         let owner_bytes = collect.owner.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(owner_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&owner_bytes).unwrap();
+        row_data.write_all(&(owner_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&owner_bytes)?;
 
-        // Field 8: fee0 (TEXT)
-        let fee0_bytes = collect.fee0.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(fee0_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&fee0_bytes).unwrap();
+        // Field 8: amount0 (U256)
+        let fee0_bytes = format_numeric(&collect.amount0).as_bytes().to_vec();
+        row_data.write_all(&(fee0_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&fee0_bytes)?;
 
-        // Field 9: fee1 (TEXT)
-        let fee1_bytes = collect.fee1.to_string().as_bytes().to_vec();
-        row_data
-            .write_all(&(fee1_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&fee1_bytes).unwrap();
+        // Field 9: amount1 (U256)
+        let fee1_bytes = format_numeric(&collect.amount1).as_bytes().to_vec();
+        row_data.write_all(&(fee1_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&fee1_bytes)?;
 
         // Field 10: tick_lower (INT4)
         let tick_lower_bytes = collect.tick_lower.to_be_bytes();
-        row_data
-            .write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tick_lower_bytes).unwrap();
+        row_data.write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tick_lower_bytes)?;
 
         // Field 11: tick_upper (INT4)
         let tick_upper_bytes = collect.tick_upper.to_be_bytes();
-        row_data
-            .write_all(&(tick_upper_bytes.len() as i32).to_be_bytes())
-            .unwrap();
-        row_data.write_all(&tick_upper_bytes).unwrap();
+        row_data.write_all(&(tick_upper_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tick_upper_bytes)?;
 
         copy_in
             .send(row_data)
