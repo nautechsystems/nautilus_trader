@@ -157,7 +157,7 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 
 | Order Type             | Perpetuals | Notes                                   |
 |------------------------|------------|-----------------------------------------|
-| `MARKET`               | ✓          | Requires price for slippage protection. |
+| `MARKET`               | ✓          | Requires price for slippage protection. Quote quantity not supported. |
 | `LIMIT`                | ✓          |                                         |
 | `STOP_MARKET`          | ✓          | Long-term orders only.                  |
 | `STOP_LIMIT`           | ✓          | Long-term orders only.                  |

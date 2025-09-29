@@ -162,7 +162,7 @@ The BitMEX integration supports the following order types and execution features
 
 | Order Type             | Supported | Notes                                         |
 |------------------------|-----------|-----------------------------------------------|
-| `MARKET`               | ✓         | Executed immediately at current market price. |
+| `MARKET`               | ✓         | Executed immediately at current market price. Quote quantity not supported. |
 | `LIMIT`                | ✓         | Executed only at specified price or better.   |
 | `STOP_MARKET`          | ✓         | Supported (set `trigger_price`).              |
 | `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |

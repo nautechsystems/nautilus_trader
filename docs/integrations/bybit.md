@@ -78,7 +78,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 | Order Type             | Spot | Linear | Inverse | Notes                     |
 |------------------------|------|--------|---------|---------------------------|
-| `MARKET`               | ✓    | ✓      | ✓       |                           |
+| `MARKET`               | ✓    | ✓      | ✓       | Supports quote quantity.  |
 | `LIMIT`                | ✓    | ✓      | ✓       |                           |
 | `STOP_MARKET`          | ✓    | ✓      | ✓       |                           |
 | `STOP_LIMIT`           | ✓    | ✓      | ✓       |                           |

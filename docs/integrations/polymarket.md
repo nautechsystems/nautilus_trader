@@ -190,7 +190,7 @@ Polymarket operates as a prediction market with limited order complexity compare
 
 | Order Type             | Binary Options | Notes                               |
 |------------------------|----------------|-------------------------------------|
-| `MARKET`               | ✓              | Executed as marketable limit order. |
+| `MARKET`               | ✓              | Executed as marketable limit order. BUY orders require quote quantity, SELL orders require base quantity. |
 | `LIMIT`                | ✓              |                                     |
 | `STOP_MARKET`          | -              | *Not supported by Polymarket*.      |
 | `STOP_LIMIT`           | -              | *Not supported by Polymarket*.      |

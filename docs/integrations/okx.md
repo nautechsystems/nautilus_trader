@@ -148,7 +148,7 @@ use_hyphens_in_client_order_ids=False
 
 | Order Type          | Linear Perpetual Swap | Notes                                |
 |---------------------|-----------------------|--------------------------------------|
-| `MARKET`            | ✓                     | Immediate execution at market price. |
+| `MARKET`            | ✓                     | Immediate execution at market price. Supports quote quantity. |
 | `LIMIT`             | ✓                     | Execution at specified price or better. |
 | `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order). |
 | `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order). |

@@ -86,7 +86,7 @@ The following tables detail the order types, execution instructions, and time-in
 
 | Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
 |------------------------|------|--------|--------------|--------------|-------------------------|
-| `MARKET`               | ✓    | ✓      | ✓            | ✓            |                         |
+| `MARKET`               | ✓    | ✓      | ✓            | ✓            | Quote quantity support: Spot/Margin only. |
 | `LIMIT`                | ✓    | ✓      | ✓            | ✓            |                         |
 | `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
 | `STOP_LIMIT`           | ✓    | ✓      | ✓            | ✓            |                         |
@@ -166,9 +166,9 @@ Only *limit* order types support `post_only`.
 
 Customize individual orders by supplying a `params` dictionary when calling `Strategy.submit_order`. The Binance execution clients currently recognise:
 
-| Parameter     | Type  | Account types     | Description |
-|---------------|-------|-------------------|-------------|
-| `price_match` | `str` | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see table below) to delegate price selection to the exchange. When provided, Nautilus omits the limit price in the API call so Binance can compute the working price. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
+| Parameter       | Type   | Account types     | Description |
+|-----------------|--------|-------------------|-------------|
+| `price_match`   | `str`  | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see table below) to delegate price selection to the exchange. When provided, Nautilus omits the limit price in the API call so Binance can compute the working price. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
 
 Valid `priceMatch` values for Binance Futures:
 

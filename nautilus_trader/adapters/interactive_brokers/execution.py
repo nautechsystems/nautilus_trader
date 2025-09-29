@@ -825,6 +825,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if order.is_post_only:
             raise ValueError("`post_only` not supported by Interactive Brokers")
 
+        is_inverse = self.instrument_provider.find(order.instrument_id).is_inverse
+        if order.is_quote_quantity and not is_inverse:
+            raise ValueError("UNSUPPORTED_QUOTE_QUANTITY")
+
         ib_order = IBOrder()
         time_in_force = order.time_in_force
         price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)

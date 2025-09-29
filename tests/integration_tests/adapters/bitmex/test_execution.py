@@ -263,6 +263,42 @@ async def test_submit_order_rejection(exec_client, instrument, strategy):
     exec_client._mock_http_client.submit_order.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_submit_order_with_quote_quantity_denied(exec_client, instrument, strategy, mocker):
+    # Arrange
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-005"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(1000),
+        quote_quantity=True,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
+
+
 # ============================================================================
 # ORDER MODIFICATION TESTS
 # ============================================================================

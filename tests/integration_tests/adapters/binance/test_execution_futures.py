@@ -353,6 +353,42 @@ class TestBinanceFuturesExecutionClient:
         assert "iceberg" in reason
 
     @pytest.mark.asyncio()
+    async def test_submit_market_order_with_quote_quantity_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        denied_kwargs = mock_generate_denied.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
+
+    @pytest.mark.asyncio()
     async def test_submit_market_order_with_price_match_rejected(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(

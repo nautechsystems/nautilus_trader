@@ -936,11 +936,33 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         assert price_match is None  # type checking
 
+        if order.is_quote_quantity and not self._binance_account_type.is_spot_or_margin:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        if order.is_quote_quantity:
+            quantity = None
+            quote_order_qty = str(order.quantity)
+        else:
+            quantity = str(order.quantity)
+            quote_order_qty = None
+
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             order_type=self._enum_parser.parse_internal_order_type(order),
-            quantity=str(order.quantity),
+            quantity=quantity,
+            quote_order_qty=quote_order_qty,
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
