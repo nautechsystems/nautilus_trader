@@ -15,7 +15,7 @@
 
 use std::{cmp::max, collections::HashSet, sync::Arc};
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
@@ -29,7 +29,6 @@ use crate::{
     config::BlockchainDataClientConfig,
     contracts::erc20::{Erc20Contract, TokenInfoError},
     data::subscription::DefiDataSubscriptionManager,
-    decode::u256_to_quantity,
     events::{
         burn::BurnEvent, collect::CollectEvent, mint::MintEvent, pool_created::PoolCreatedEvent,
         swap::SwapEvent,
@@ -542,7 +541,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
-                    beyond_stale_data,
+                    false, // TODO temporary dont use copy command
                     false,
                 )
                 .await?;
@@ -565,7 +564,7 @@ impl BlockchainDataClientCore {
             &mut swap_batch,
             &mut liquidity_batch,
             &mut collect_batch,
-            beyond_stale_data,
+            false,
             true,
         )
         .await?;
@@ -635,17 +634,14 @@ impl BlockchainDataClientCore {
             .cache
             .get_block_timestamp(swap_event.block_number)
             .copied();
-
-        let (side, size, price) = dex_extended
-            .convert_to_trade_data(&pool.token0, &pool.token1, swap_event)
-            .expect("Failed to convert swap event to trade data");
+        let (side, size, price) =
+            dex_extended.convert_to_trade_data(&pool.token0, &pool.token1, swap_event)?;
         let swap = swap_event.to_pool_swap(
             self.chain.clone(),
-            pool.instrument_id,
             pool.address,
-            side,
-            size,
-            price,
+            Some(side),
+            Some(size),
+            Some(price),
             timestamp,
         );
 
@@ -670,21 +666,11 @@ impl BlockchainDataClientCore {
             .cache
             .get_block_timestamp(mint_event.block_number)
             .copied();
-        let liquidity = u256_to_quantity(
-            U256::from(mint_event.amount),
-            self.chain.native_currency_decimals,
-        )?;
-        let amount0 = u256_to_quantity(mint_event.amount0, pool.token0.decimals)?;
-        let amount1 = u256_to_quantity(mint_event.amount1, pool.token1.decimals)?;
 
         let liquidity_update = mint_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
-            pool.instrument_id,
             pool.address,
-            liquidity,
-            amount0,
-            amount1,
             timestamp,
         );
 
@@ -709,21 +695,11 @@ impl BlockchainDataClientCore {
             .cache
             .get_block_timestamp(burn_event.block_number)
             .copied();
-        let liquidity = u256_to_quantity(
-            U256::from(burn_event.amount),
-            self.chain.native_currency_decimals,
-        )?;
-        let amount0 = u256_to_quantity(burn_event.amount0, pool.token0.decimals)?;
-        let amount1 = u256_to_quantity(burn_event.amount1, pool.token1.decimals)?;
 
         let liquidity_update = burn_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
-            pool.instrument_id,
             pool.address,
-            liquidity,
-            amount0,
-            amount1,
             timestamp,
         );
 
@@ -747,16 +723,11 @@ impl BlockchainDataClientCore {
             .cache
             .get_block_timestamp(collect_event.block_number)
             .copied();
-        let fee0 = u256_to_quantity(collect_event.amount0, pool.token0.decimals)?;
-        let fee1 = u256_to_quantity(collect_event.amount1, pool.token1.decimals)?;
 
         let fee_collect = collect_event.to_pool_fee_collect(
             self.chain.clone(),
             dex_extended.dex.clone(),
-            pool.instrument_id,
             pool.address,
-            fee0,
-            fee1,
             timestamp,
         );
 

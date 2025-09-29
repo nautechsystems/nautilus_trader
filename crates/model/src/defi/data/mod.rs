@@ -37,6 +37,13 @@ pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
 pub use transaction::Transaction;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DexPoolData {
+    Swap(PoolSwap),
+    LiquidityUpdate(PoolLiquidityUpdate),
+    FeeCollect(PoolFeeCollect),
+}
+
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
 #[cfg_attr(
     feature = "python",
@@ -67,9 +74,9 @@ impl DefiData {
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Block(_) => panic!("`InstrumentId` not applicable to `Block`"), // TBD?
-            Self::PoolSwap(swap) => swap.instrument_id,
-            Self::PoolLiquidityUpdate(update) => update.instrument_id,
-            Self::PoolFeeCollect(collect) => collect.instrument_id,
+            Self::PoolSwap(swap) => swap.instrument_id(),
+            Self::PoolLiquidityUpdate(update) => update.instrument_id(),
+            Self::PoolFeeCollect(collect) => collect.instrument_id(),
             Self::Pool(pool) => pool.instrument_id,
         }
     }

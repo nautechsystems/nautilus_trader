@@ -13,11 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Smart contract interfaces and utilities for blockchain interactions.
-//!
-//! This module provides tools for interacting with various smart contracts on EVM-compatible
-//! blockchains, including standard token contracts (ERC20) and DeFi protocol contracts.
+pub mod position;
+pub mod profiler;
+pub mod swap_math;
 
-pub mod base;
-pub mod erc20;
-pub mod uniswap_v3_lens;
+#[cfg(test)]
+pub mod tests;

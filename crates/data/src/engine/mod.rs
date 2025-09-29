@@ -754,15 +754,15 @@ impl DataEngine {
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSwap(swap) => {
-                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id);
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id());
                 msgbus::publish(topic, &swap as &dyn Any);
             }
             DefiData::PoolLiquidityUpdate(update) => {
-                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
+                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id());
                 msgbus::publish(topic, &update as &dyn Any);
             }
             DefiData::PoolFeeCollect(collect) => {
-                let topic = switchboard::get_defi_collect_topic(collect.instrument_id);
+                let topic = switchboard::get_defi_collect_topic(collect.instrument_id());
                 msgbus::publish(topic, &collect as &dyn Any);
             }
         }

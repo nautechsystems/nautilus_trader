@@ -15,15 +15,14 @@
 
 use std::fmt::Display;
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    defi::{SharedChain, SharedDex},
+    defi::{Pool, SharedChain, SharedDex},
     identifiers::InstrumentId,
-    types::Quantity,
 };
 
 #[derive(
@@ -65,8 +64,6 @@ pub struct PoolLiquidityUpdate {
     pub chain: SharedChain,
     /// The decentralized exchange where the liquidity update was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool instrument ID.
-    pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
     /// The type of the pool liquidity update.
@@ -84,11 +81,11 @@ pub struct PoolLiquidityUpdate {
     /// The blockchain address that owns the liquidity position.
     pub owner: Address,
     /// The amount of liquidity tokens affected in the position.
-    pub position_liquidity: Quantity,
+    pub position_liquidity: u128,
     /// The amount of the first token in the pool pair.
-    pub amount0: Quantity,
+    pub amount0: U256,
     /// The amount of the second token in the pool pair.
-    pub amount1: Quantity,
+    pub amount1: U256,
     /// The lower price tick boundary of the liquidity position.
     pub tick_lower: i32,
     /// The upper price tick boundary of the liquidity position.
@@ -106,7 +103,6 @@ impl PoolLiquidityUpdate {
     pub const fn new(
         chain: SharedChain,
         dex: SharedDex,
-        instrument_id: InstrumentId,
         pool_address: Address,
         kind: PoolLiquidityUpdateType,
         block: u64,
@@ -115,9 +111,9 @@ impl PoolLiquidityUpdate {
         log_index: u32,
         sender: Option<Address>,
         owner: Address,
-        position_liquidity: Quantity,
-        amount0: Quantity,
-        amount1: Quantity,
+        position_liquidity: u128,
+        amount0: U256,
+        amount1: U256,
         tick_lower: i32,
         tick_upper: i32,
         timestamp: Option<UnixNanos>,
@@ -125,7 +121,6 @@ impl PoolLiquidityUpdate {
         Self {
             chain,
             dex,
-            instrument_id,
             pool_address,
             kind,
             block,
@@ -143,6 +138,11 @@ impl PoolLiquidityUpdate {
             ts_init: timestamp,
         }
     }
+
+    /// Returns the instrument ID for this pool's trading pair.
+    pub fn instrument_id(&self) -> InstrumentId {
+        Pool::create_instrument_id(self.chain.name, &self.dex, &self.pool_address)
+    }
 }
 
 impl Display for PoolLiquidityUpdate {
@@ -150,7 +150,11 @@ impl Display for PoolLiquidityUpdate {
         write!(
             f,
             "PoolLiquidityUpdate(instrument_id={}, kind={}, amount0={}, amount1={}, liquidity={})",
-            self.instrument_id, self.kind, self.amount0, self.amount1, self.position_liquidity
+            self.instrument_id(),
+            self.kind,
+            self.amount0,
+            self.amount1,
+            self.position_liquidity
         )
     }
 }

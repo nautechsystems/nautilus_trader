@@ -15,9 +15,9 @@
 
 mod common;
 
-use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, sync::Arc};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync::Arc};
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, I256, U160};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
@@ -1918,7 +1918,6 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     let swap = PoolSwap::new(
         chain,
         dex,
-        pool.instrument_id,
         pool.address,
         1000u64,
         "0x123".to_string(),
@@ -1926,9 +1925,13 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Buy,
-        Quantity::from("1000"),
-        Price::from("500"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
     );
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {

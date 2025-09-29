@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::{
-    dyn_abi::SolType,
-    primitives::{Address, U256},
-    sol,
-};
+use alloy::{dyn_abi::SolType, primitives::Address, sol};
 use hypersync_client::simple_types::Log;
 use nautilus_model::defi::SharedDex;
 
@@ -106,8 +102,8 @@ pub fn parse_collect_event(dex: SharedDex, log: Log) -> anyhow::Result<CollectEv
             decoded.recipient,
             tick_lower,
             tick_upper,
-            U256::from(decoded.amount0),
-            U256::from(decoded.amount1),
+            decoded.amount0,
+            decoded.amount1,
         ))
     } else {
         Err(anyhow::anyhow!("Missing data in collect event log"))

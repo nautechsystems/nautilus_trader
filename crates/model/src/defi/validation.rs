@@ -27,9 +27,9 @@ use alloy_primitives::Address;
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - The address does not start with '0x' prefix.
-/// - The address has invalid length (must be 42 characters including '0x').
+/// This function returns an error if:
+/// - The address does not start with the `0x` prefix.
+/// - The address has invalid length (must be 42 characters including `0x`).
 /// - The address contains invalid hexadecimal characters.
 /// - The address has an incorrect checksum (for checksummed addresses).
 pub fn validate_address(address: &str) -> anyhow::Result<Address> {
@@ -48,6 +48,10 @@ pub fn validate_address(address: &str) -> anyhow::Result<Address> {
 
     Ok(parsed_address)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

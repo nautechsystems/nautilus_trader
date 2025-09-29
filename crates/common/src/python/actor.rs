@@ -1435,6 +1435,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use alloy_primitives::{I256, U160};
     use nautilus_core::{UUID4, UnixNanos};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::{
@@ -2214,7 +2215,6 @@ mod tests {
         let swap = PoolSwap::new(
             chain.clone(),
             dex.clone(),
-            pool.instrument_id,
             pool.address,
             12345,
             "0xabc123".to_string(),
@@ -2224,9 +2224,15 @@ mod tests {
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
-            nautilus_model::enums::OrderSide::Buy,
-            Quantity::from("1000"),
-            Price::from("1.0"),
+            "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
+                .parse()
+                .unwrap(),
+            I256::from_str("1000000000000000000").unwrap(),
+            I256::from_str("400000000000000").unwrap(),
+            U160::from(59000000000000u128),
+            Some(nautilus_model::enums::OrderSide::Buy),
+            Some(Quantity::from("1000")),
+            Some(Price::from("1.0")),
         );
 
         assert!(rust_actor.on_pool_swap(&swap).is_ok());

@@ -1,18 +1,3 @@
-------------------- ENUMS -------------------
-
-CREATE TYPE ACCOUNT_TYPE AS ENUM ('Cash', 'Margin', 'Betting');
-CREATE TYPE AGGREGATION_SOURCE AS ENUM ('EXTERNAL', 'INTERNAL');
-CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NO_AGGRESSOR','BUYER','SELLER');
-CREATE TYPE ASSET_CLASS AS ENUM ('FX', 'EQUITY', 'COMMODITY', 'DEBT', 'INDEX', 'CRYPTOCURRENCY', 'ALTERNATIVE');
-CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 'Forward', 'Cfg', 'Bond', 'Option', 'OptionSpread', 'Warrant', 'SportsBetting');
-CREATE TYPE BAR_AGGREGATION AS ENUM ('TICK', 'TICK_IMBALANCE', 'TICK_RUNS', 'VOLUME', 'VOLUME_IMBALANCE', 'VOLUME_RUNS', 'VALUE', 'VALUE_IMBALANCE', 'VALUE_RUNS', 'MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH');
-CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
-CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released', 'Submitted', 'Accepted', 'Rejected', 'Canceled', 'Expired', 'Triggered', 'PendingUpdate', 'PendingCancel', 'PartiallyFilled', 'Filled');
-CREATE TYPE CURRENCY_TYPE AS ENUM('CRYPTO', 'FIAT', 'COMMODITY_BACKED');
-CREATE TYPE TRAILING_OFFSET_TYPE AS ENUM('NO_TRAILING_OFFSET', 'PRICE', 'BASIS_POINTS', 'TICKS', 'PRICE_TIER');
-CREATE TYPE PRICE_TYPE AS ENUM('BID','ASK','MID','LAST');
-------------------- TABLES -------------------
-
 CREATE TABLE IF NOT EXISTS "general" (
     id TEXT PRIMARY KEY NOT NULL,
     value bytea not null
@@ -368,9 +353,13 @@ CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
     sender TEXT NOT NULL,
+    recipient TEXT NOT NULL,
     side TEXT NOT NULL,
     size TEXT NOT NULL,
     price TEXT NOT NULL,
+    sqrt_price_x96 U160 NOT NULL,
+    amount0 I256 NOT NULL,
+    amount1 I256 NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number), // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
@@ -387,9 +376,9 @@ CREATE TABLE IF NOT EXISTS "pool_liquidity_event" (
     event_type TEXT NOT NULL,
     sender TEXT,
     owner TEXT NOT NULL,
-    position_liquidity TEXT NOT NULL,
-    amount0 TEXT NOT NULL,
-    amount1 TEXT NOT NULL,
+    position_liquidity U128 NOT NULL,
+    amount0 U160 NOT NULL,
+    amount1 U160 NOT NULL,
     tick_lower INTEGER NOT NULL,
     tick_upper INTEGER NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
@@ -406,11 +395,27 @@ CREATE TABLE IF NOT EXISTS "pool_collect_event" (
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
     owner TEXT NOT NULL,
-    fee0 TEXT NOT NULL,
-    fee1 TEXT NOT NULL,
+    amount0 U256 NOT NULL,
+    amount1 U256 NOT NULL,
     tick_lower INTEGER NOT NULL,
     tick_upper INTEGER NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
+);
+
+CREATE TABLE IF NOT EXISTS "pool_position" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    tick_lower INTEGER NOT NULL,
+    tick_upper INTEGER NOT NULL,
+    liquidity U128 NOT NULL,
+    fee_growth_inside_0_last U256 NOT NULL,
+    fee_growth_inside_1_last U256 NOT NULL,
+    tokens_owed_0 U128 NOT NULL,
+    tokens_owed_1 U128 NOT NULL,
+    last_updated_block BIGINT,
+    PRIMARY KEY (chain_id, pool_address, owner, tick_lower, tick_upper),
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address)
 );

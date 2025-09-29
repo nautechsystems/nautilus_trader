@@ -25,7 +25,7 @@ hypersync = ["nautilus-blockchain"]
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-blockchain = { workspace = true, features = ["hypersync"], optional = true }
 nautilus-model = { workspace = true, features = ["defi"] }
-
+futures-util = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }

@@ -75,6 +75,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
+rust_decimal = {workspace = true}
 
 hypersync-client = { workspace = true, optional = true }
 hypersync-schema = { workspace = true, optional = true }
