@@ -135,6 +135,17 @@ pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
 }
 
 /// Returns the tick corresponding to the given sqrt ratio.
+///
+/// Converts a sqrt price ratio (as Q64.96 fixed point) back to its corresponding
+/// tick value using logarithmic calculations. This is the inverse operation of
+/// `get_sqrt_ratio_at_tick`.
+///
+/// # Panics
+/// Panics if the sqrt price is outside the valid range:
+/// - `sqrt_price_x96 < MIN_SQRT_RATIO` (too small)
+/// - `sqrt_price_x96 >= MAX_SQRT_RATIO` (too large)
+///
+/// Valid range is approximately from tick -887272 to +887272.
 pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
     assert!(
         sqrt_price_x96 >= MIN_SQRT_RATIO && sqrt_price_x96 < MAX_SQRT_RATIO,

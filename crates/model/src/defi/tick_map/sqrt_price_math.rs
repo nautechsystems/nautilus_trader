@@ -19,6 +19,15 @@ use super::full_math::FullMath;
 use crate::defi::tick_map::tick_math::get_sqrt_ratio_at_tick;
 
 /// Encodes the sqrt ratio of two token amounts as a Q64.96 fixed point number.
+///
+/// Calculates sqrt(amount0 / amount1) * 2^96 to encode the price ratio between
+/// two tokens as a fixed-point number suitable for AMM calculations.
+///
+/// # Panics
+/// Panics if:
+/// - `amount1` is zero (division by zero)
+/// - `sqrt(amount1)` is zero during overflow handling
+/// - Mathematical operations result in overflow during `mul_div`
 pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
     let amount0_u256 = U256::from(amount0);
     let amount1_u256 = U256::from(amount1);

@@ -102,8 +102,9 @@ impl TickMap {
             .entry(upper_tick)
             .or_insert_with(|| Tick::from_tick(upper_tick));
 
-        let lower_tick = self.ticks.get(&lower_tick).unwrap();
-        let upper_tick = self.ticks.get(&upper_tick).unwrap();
+        // Now safely access both ticks (they're guaranteed to exist)
+        let lower_tick = &self.ticks[&lower_tick];
+        let upper_tick = &self.ticks[&upper_tick];
 
         // Calculate the fee growth below
         let fee_growth_below_0 = if current_tick >= lower_tick.value {

@@ -54,7 +54,7 @@ impl PoolPosition {
             owner,
             tick_lower,
             tick_upper,
-            liquidity: liquidity.abs() as u128,
+            liquidity: liquidity.unsigned_abs(),
             fee_growth_inside_0_last: U256::ZERO,
             fee_growth_inside_1_last: U256::ZERO,
             tokens_owed_0: 0,
@@ -69,7 +69,7 @@ impl PoolPosition {
     /// Generates a unique string key for a position based on owner and tick range.
     #[must_use]
     pub fn get_position_key(owner: &Address, tick_lower: i32, tick_upper: i32) -> String {
-        format!("{}:{}:{}", owner.to_string(), tick_lower, tick_upper)
+        format!("{}:{}:{}", owner, tick_lower, tick_upper)
     }
 
     /// Updates the liquidity amount by the given delta.

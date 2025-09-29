@@ -202,6 +202,22 @@ impl PoolProfiler {
         Ok(())
     }
 
+    /// Executes a simulated swap operation with precise AMM mathematics.
+    ///
+    /// Performs a complete swap simulation following UniswapV3 logic:
+    /// - Validates price limits and swap direction
+    /// - Iteratively processes swap steps across liquidity ranges
+    /// - Handles tick crossing and liquidity updates
+    /// - Calculates protocol fees and updates global fee trackers
+    /// - Returns the resulting swap event
+    ///
+    /// This is the core swap execution engine used for both exact input and output swaps.
+    ///
+    /// # Panics
+    /// Panics if:
+    /// - Pool fee is not initialized (calls `.expect()` on fee)
+    /// - Current tick or price is None after initialization check (calls `.unwrap()`)
+    /// - Mathematical operations result in invalid state
     pub fn execute_swap(
         &mut self,
         sender: Address,
@@ -222,11 +238,10 @@ impl PoolProfiler {
             {
                 anyhow::bail!("SPL: Invalid sqrt price limit for zeroForOne swap");
             }
-        } else {
-            if sqrt_price_limit_x96 <= current_sqrt_price || sqrt_price_limit_x96 >= MAX_SQRT_RATIO
-            {
-                anyhow::bail!("SPL: Invalid sqrt price limit for oneForZero swap");
-            }
+        } else if sqrt_price_limit_x96 <= current_sqrt_price
+            || sqrt_price_limit_x96 >= MAX_SQRT_RATIO
+        {
+            anyhow::bail!("SPL: Invalid sqrt price limit for oneForZero swap");
         }
 
         // Swapping cache variables
@@ -241,6 +256,12 @@ impl PoolProfiler {
         let mut amount_calculated = I256::ZERO;
         let mut protocol_fee = U256::ZERO;
 
+        // Track current fee growth during swap (like state.feeGrowthGlobalX128 in Solidity)
+        let original_fee_growth_global_0 = self.tick_map.fee_growth_global_0;
+        let original_fee_growth_global_1 = self.tick_map.fee_growth_global_1;
+        let mut current_fee_growth_global_0 = self.tick_map.fee_growth_global_0;
+        let mut current_fee_growth_global_1 = self.tick_map.fee_growth_global_1;
+
         while amount_specified_remaining != I256::ZERO && sqrt_price_limit_x96 != current_sqrt_price
         {
             let sqrt_price_start_x96 = current_sqrt_price;
@@ -250,11 +271,7 @@ impl PoolProfiler {
                 .next_initialized_tick(current_tick, zero_for_one);
 
             // Make sure we do not overshoot MIN/MAX tick
-            if tick_next < Tick::MIN_TICK {
-                tick_next = Tick::MIN_TICK;
-            } else if tick_next > Tick::MAX_TICK {
-                tick_next = Tick::MAX_TICK;
-            }
+            tick_next = tick_next.clamp(Tick::MIN_TICK, Tick::MAX_TICK);
 
             // Get the price for the next tick
             let sqrt_price_next = get_sqrt_ratio_at_tick(tick_next);
@@ -266,12 +283,10 @@ impl PoolProfiler {
                 } else {
                     sqrt_price_next
                 }
+            } else if sqrt_price_next > sqrt_price_limit_x96 {
+                sqrt_price_limit_x96
             } else {
-                if sqrt_price_next > sqrt_price_limit_x96 {
-                    sqrt_price_limit_x96
-                } else {
-                    sqrt_price_next
-                }
+                sqrt_price_next
             };
 
             let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
@@ -312,9 +327,11 @@ impl PoolProfiler {
                 let fee_growth_delta =
                     FullMath::mul_div(step_fee_amount, Q128, U256::from(self.tick_map.liquidity))?;
                 if zero_for_one {
-                    self.tick_map.fee_growth_global_0 += fee_growth_delta;
+                    current_fee_growth_global_0 += fee_growth_delta;
+                    self.tick_map.fee_growth_global_0 = current_fee_growth_global_0;
                 } else {
-                    self.tick_map.fee_growth_global_1 += fee_growth_delta;
+                    current_fee_growth_global_1 += fee_growth_delta;
+                    self.tick_map.fee_growth_global_1 = current_fee_growth_global_1;
                 }
             }
 
@@ -324,16 +341,8 @@ impl PoolProfiler {
                 if initialized {
                     let liquidity_net = self.tick_map.cross_tick(
                         tick_next,
-                        if zero_for_one {
-                            self.tick_map.fee_growth_global_0
-                        } else {
-                            self.tick_map.fee_growth_global_0
-                        },
-                        if zero_for_one {
-                            self.tick_map.fee_growth_global_1
-                        } else {
-                            self.tick_map.fee_growth_global_1
-                        },
+                        if zero_for_one { current_fee_growth_global_0 } else { original_fee_growth_global_0},
+                        if zero_for_one { original_fee_growth_global_1 } else { current_fee_growth_global_1},
                     );
 
                     // If we're moving leftward, we interpret liquidityNet as the opposite sign
@@ -790,7 +799,7 @@ impl PoolProfiler {
         let position = self
             .positions
             .entry(position_key)
-            .or_insert(PoolPosition::new(owner.clone(), tick_lower, tick_upper, 0));
+            .or_insert(PoolPosition::new(*owner, tick_lower, tick_upper, 0));
 
         // Update tickmaps.
         let flipped_lower = self
@@ -897,6 +906,10 @@ impl PoolProfiler {
 
     /// Gets the current liquidity at the current tick.
     /// Calculates active liquidity by summing all positions that span the current tick.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `current_tick` is `None`.
     #[must_use]
     pub fn get_active_liquidity(&self) -> u128 {
         let current_tick = self.current_tick.unwrap();
