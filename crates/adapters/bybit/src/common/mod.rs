@@ -21,6 +21,7 @@ pub mod enums;
 pub mod models;
 pub mod parse;
 pub mod symbol;
+pub mod urls;
 
 #[cfg(test)]
 pub mod testing;

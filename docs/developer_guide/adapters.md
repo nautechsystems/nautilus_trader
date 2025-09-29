@@ -33,6 +33,12 @@ Typical Rust structure:
 crates/adapters/your_adapter/
 ├── src/
 │   ├── common/           # Shared types and utilities
+│   │   ├── consts.rs     # Venue constants / broker IDs
+│   │   ├── credential.rs # API key storage and signing helpers
+│   │   ├── enums.rs      # Venue enums mirrored in REST/WS payloads
+│   │   ├── urls.rs       # Environment & product aware base-url resolvers
+│   │   ├── parse.rs      # Shared parsing helpers
+│   │   └── testing.rs    # Fixtures reused across unit tests
 │   ├── http/             # HTTP client implementation
 │   │   ├── client.rs     # HTTP client with authentication
 │   │   ├── models.rs     # Structs for REST payloads
@@ -84,7 +90,7 @@ nautilus_trader/adapters/your_adapter/
 
 ## Rust adapter patterns
 
-- **Common code (`common/`)**: Group venue constants, credential helpers, enums, and reusable parsers under `src/common`. Adapters such as OKX keep submodules like `consts`, `credential`, `enums`, and `urls` alongside a `testing` module for fixtures, providing a single place for cross-cutting pieces.
+- **Common code (`common/`)**: Group venue constants, credential helpers, enums, and reusable parsers under `src/common`. Adapters such as OKX keep submodules like `consts`, `credential`, `enums`, and `urls` alongside a `testing` module for fixtures, providing a single place for cross-cutting pieces. When an adapter has multiple environments or product categories, add a dedicated `common::urls` helper so REST/WebSocket base URLs stay in sync with the Python layer.
 - **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 - **Error taxonomy (`error.rs`)**: Centralise HTTP/WebSocket failure handling in an adapter-specific error enum. BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport error—follow that shape so operational tooling can react consistently.
 - **Python exports (`python/mod.rs`)**: Mirror the Rust surface area through PyO3 modules by re-exporting clients, enums, and helper functions. When new functionality lands in Rust, add it to `python/mod.rs` so the Python layer stays in sync (the OKX adapter is a good reference).

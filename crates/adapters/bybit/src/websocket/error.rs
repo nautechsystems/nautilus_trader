@@ -25,20 +25,24 @@ pub type BybitWsResult<T> = Result<T, BybitWsError>;
 #[derive(Debug, Error)]
 pub enum BybitWsError {
     /// The WebSocket client is not currently connected.
-    #[error("websocket not connected")]
+    #[error("WebSocket not connected")]
     NotConnected,
 
     /// Failed to send a message over the WebSocket connection.
-    #[error("websocket send error: {0}")]
+    #[error("WebSocket send error: {0}")]
     Send(String),
 
     /// Underlying transport error from the WebSocket implementation.
-    #[error("websocket transport error: {0}")]
+    #[error("WebSocket transport error: {0}")]
     Transport(String),
 
     /// Failed to parse or serialize JSON payloads.
-    #[error("json error: {0}")]
+    #[error("JSON error: {0}")]
     Json(String),
+
+    /// Authentication handshake failed or timed out.
+    #[error("Authentication error: {0}")]
+    Authentication(String),
 }
 
 impl From<SendError> for BybitWsError {

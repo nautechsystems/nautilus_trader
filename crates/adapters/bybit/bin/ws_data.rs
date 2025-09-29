@@ -19,7 +19,10 @@
 use std::error::Error;
 
 use futures_util::StreamExt;
-use nautilus_bybit::websocket::{client::BybitWebSocketClient, messages::BybitWebSocketMessage};
+use nautilus_bybit::{
+    common::enums::{BybitEnvironment, BybitProductType},
+    websocket::{client::BybitWebSocketClient, messages::BybitWebSocketMessage},
+};
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -31,7 +34,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .compact()
         .init();
 
-    let mut client = BybitWebSocketClient::new_public(None, None);
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        None,
+        None,
+    );
     client.connect().await?;
 
     client

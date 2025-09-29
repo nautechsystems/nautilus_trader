@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Bybit WebSocket client providing public market data streaming.
+//!
+//! Bybit API reference <https://bybit-exchange.github.io/docs/>.
 
 use std::{
     fmt,
@@ -21,11 +23,12 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use dashmap::DashMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_network::{
     RECONNECTED,
     websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
@@ -35,8 +38,14 @@ use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    common::consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG, BYBIT_WS_PUBLIC_URL},
+    common::{
+        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG},
+        credential::Credential,
+        enums::{BybitEnvironment, BybitProductType},
+        urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
+    },
     websocket::{
+        auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
         error::{BybitWsError, BybitWsResult},
         messages::{
             BybitWebSocketError, BybitWebSocketMessage, BybitWsAuthResponse, BybitWsKlineMsg,
@@ -50,22 +59,32 @@ const MAX_ARGS_PER_SUBSCRIPTION_REQUEST: usize = 10;
 const DEFAULT_HEARTBEAT_SECS: u64 = 20;
 const PING_MESSAGE: &str = r#"{"op":"ping"}"#;
 const PONG_MESSAGE: &str = r#"{"op":"pong"}"#;
+const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
 
 /// Public/market data WebSocket client for Bybit.
 pub struct BybitWebSocketClient {
     url: String,
+    environment: BybitEnvironment,
+    product_type: Option<BybitProductType>,
+    credential: Option<Credential>,
+    requires_auth: bool,
+    auth_tracker: AuthTracker,
     heartbeat: Option<u64>,
     inner: Arc<RwLock<Option<WebSocketClient>>>,
     rx: Option<tokio::sync::mpsc::UnboundedReceiver<BybitWebSocketMessage>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: Arc<DashMap<String, ()>>,
+    is_authenticated: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for BybitWebSocketClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BybitWebSocketClient")
             .field("url", &self.url)
+            .field("environment", &self.environment)
+            .field("product_type", &self.product_type)
+            .field("requires_auth", &self.requires_auth)
             .field("heartbeat", &self.heartbeat)
             .field("active_subscriptions", &self.subscriptions.len())
             .finish()
@@ -76,14 +95,86 @@ impl BybitWebSocketClient {
     /// Creates a new Bybit public WebSocket client.
     #[must_use]
     pub fn new_public(url: Option<String>, heartbeat: Option<u64>) -> Self {
+        Self::new_public_with(
+            BybitProductType::Linear,
+            BybitEnvironment::Mainnet,
+            url,
+            heartbeat,
+        )
+    }
+
+    /// Creates a new Bybit public WebSocket client targeting the specified product/environment.
+    #[must_use]
+    pub fn new_public_with(
+        product_type: BybitProductType,
+        environment: BybitEnvironment,
+        url: Option<String>,
+        heartbeat: Option<u64>,
+    ) -> Self {
         Self {
-            url: url.unwrap_or_else(|| BYBIT_WS_PUBLIC_URL.to_string()),
+            url: url.unwrap_or_else(|| bybit_ws_public_url(product_type, environment)),
+            environment,
+            product_type: Some(product_type),
+            credential: None,
+            requires_auth: false,
+            auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
             inner: Arc::new(RwLock::new(None)),
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: Arc::new(DashMap::new()),
+            is_authenticated: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Creates a new Bybit private WebSocket client.
+    #[must_use]
+    pub fn new_private(
+        environment: BybitEnvironment,
+        credential: Credential,
+        url: Option<String>,
+        heartbeat: Option<u64>,
+    ) -> Self {
+        Self {
+            url: url.unwrap_or_else(|| bybit_ws_private_url(environment).to_string()),
+            environment,
+            product_type: None,
+            credential: Some(credential),
+            requires_auth: true,
+            auth_tracker: AuthTracker::new(),
+            heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
+            inner: Arc::new(RwLock::new(None)),
+            rx: None,
+            signal: Arc::new(AtomicBool::new(false)),
+            task_handle: None,
+            subscriptions: Arc::new(DashMap::new()),
+            is_authenticated: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Creates a new Bybit trade WebSocket client for order operations.
+    #[must_use]
+    pub fn new_trade(
+        environment: BybitEnvironment,
+        credential: Credential,
+        url: Option<String>,
+        heartbeat: Option<u64>,
+    ) -> Self {
+        Self {
+            url: url.unwrap_or_else(|| bybit_ws_trade_url(environment).to_string()),
+            environment,
+            product_type: None,
+            credential: Some(credential),
+            requires_auth: true,
+            auth_tracker: AuthTracker::new(),
+            heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
+            inner: Arc::new(RwLock::new(None)),
+            rx: None,
+            signal: Arc::new(AtomicBool::new(false)),
+            task_handle: None,
+            subscriptions: Arc::new(DashMap::new()),
+            is_authenticated: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -141,6 +232,10 @@ impl BybitWebSocketClient {
         let inner = Arc::clone(&self.inner);
         let signal = Arc::clone(&self.signal);
         let subscriptions = Arc::clone(&self.subscriptions);
+        let auth_tracker = self.auth_tracker.clone();
+        let credential = self.credential.clone();
+        let requires_auth = self.requires_auth;
+        let is_authenticated = Arc::clone(&self.is_authenticated);
 
         let task_handle = get_runtime().spawn(async move {
             while let Some(message) = message_rx.recv().await {
@@ -148,8 +243,31 @@ impl BybitWebSocketClient {
                     break;
                 }
 
-                match BybitWebSocketClient::handle_message(&inner, &subscriptions, message).await {
+                match BybitWebSocketClient::handle_message(
+                    &inner,
+                    &subscriptions,
+                    &auth_tracker,
+                    requires_auth,
+                    &is_authenticated,
+                    message,
+                )
+                .await
+                {
                     Ok(Some(BybitWebSocketMessage::Reconnected)) => {
+                        if let Err(err) = BybitWebSocketClient::authenticate_inner(
+                            &inner,
+                            requires_auth,
+                            credential.clone(),
+                            &auth_tracker,
+                            &is_authenticated,
+                        )
+                        .await
+                        {
+                            let error = BybitWebSocketError::from_message(err.to_string());
+                            if event_tx.send(BybitWebSocketMessage::Error(error)).is_err() {
+                                break;
+                            }
+                        }
                         if let Err(err) =
                             BybitWebSocketClient::resubscribe_all_inner(&inner, &subscriptions)
                                 .await
@@ -181,6 +299,8 @@ impl BybitWebSocketClient {
 
         self.task_handle = Some(task_handle);
 
+        self.authenticate_if_required().await?;
+
         // Resubscribe to any pre-registered topics (e.g. configured before connect).
         if !self.subscriptions.is_empty() {
             Self::resubscribe_all_inner(&self.inner, &self.subscriptions).await?;
@@ -207,6 +327,7 @@ impl BybitWebSocketClient {
         }
 
         self.rx = None;
+        self.is_authenticated.store(false, Ordering::Relaxed);
 
         Ok(())
     }
@@ -298,6 +419,17 @@ impl BybitWebSocketClient {
         ]
     }
 
+    async fn authenticate_if_required(&self) -> BybitWsResult<()> {
+        Self::authenticate_inner(
+            &self.inner,
+            self.requires_auth,
+            self.credential.clone(),
+            &self.auth_tracker,
+            &self.is_authenticated,
+        )
+        .await
+    }
+
     async fn send_text_inner(
         inner: &Arc<RwLock<Option<WebSocketClient>>>,
         text: &str,
@@ -354,6 +486,9 @@ impl BybitWebSocketClient {
     async fn handle_message(
         inner: &Arc<RwLock<Option<WebSocketClient>>>,
         _subscriptions: &Arc<DashMap<String, ()>>,
+        auth_tracker: &AuthTracker,
+        requires_auth: bool,
+        is_authenticated: &Arc<AtomicBool>,
         message: Message,
     ) -> BybitWsResult<Option<BybitWebSocketMessage>> {
         match message {
@@ -382,6 +517,24 @@ impl BybitWebSocketClient {
                 }
 
                 if let Some(event) = Self::classify_message(&value) {
+                    if let BybitWebSocketMessage::Auth(auth) = &event {
+                        if auth.success.unwrap_or(false) && auth.ret_code.unwrap_or_default() == 0 {
+                            is_authenticated.store(true, Ordering::Relaxed);
+                            auth_tracker.succeed();
+                        } else {
+                            is_authenticated.store(false, Ordering::Relaxed);
+                            let message = auth
+                                .ret_msg
+                                .clone()
+                                .unwrap_or_else(|| "Authentication failed".to_string());
+                            auth_tracker.fail(message);
+                        }
+                    } else if let BybitWebSocketMessage::Error(err) = &event
+                        && requires_auth
+                        && !is_authenticated.load(Ordering::Relaxed)
+                    {
+                        auth_tracker.fail(err.message.clone());
+                    }
                     if let BybitWebSocketMessage::Error(err) = &event {
                         tracing::debug!(code = err.code, message = %err.message, "Bybit websocket error frame");
                     }
@@ -466,6 +619,57 @@ impl BybitWebSocketClient {
         }
 
         None
+    }
+
+    async fn authenticate_inner(
+        inner: &Arc<RwLock<Option<WebSocketClient>>>,
+        requires_auth: bool,
+        credential: Option<Credential>,
+        auth_tracker: &AuthTracker,
+        is_authenticated: &Arc<AtomicBool>,
+    ) -> BybitWsResult<()> {
+        if !requires_auth {
+            return Ok(());
+        }
+
+        is_authenticated.store(false, Ordering::Relaxed);
+
+        let credential = credential.ok_or_else(|| {
+            BybitWsError::Authentication(
+                "API credentials not provided for authentication".to_string(),
+            )
+        })?;
+
+        let receiver = auth_tracker.begin();
+
+        let now_ns = get_atomic_clock_realtime().get_time_ns().as_i64();
+        let now_ms = now_ns / 1_000_000;
+        let expires = now_ms + WEBSOCKET_AUTH_WINDOW_MS;
+        let signature = credential.sign_websocket_auth(expires);
+
+        let payload = json!({
+            "op": "auth",
+            "args": [credential.api_key().as_str(), expires, signature],
+        });
+
+        if let Err(err) = Self::send_text_inner(inner, &payload.to_string()).await {
+            auth_tracker.fail(err.to_string());
+            return Err(err);
+        }
+
+        match auth_tracker
+            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), receiver)
+            .await
+        {
+            Ok(()) => {
+                is_authenticated.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(err) => {
+                is_authenticated.store(false, Ordering::Relaxed);
+                Err(err)
+            }
+        }
     }
 }
 #[cfg(test)]

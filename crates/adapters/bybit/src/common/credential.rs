@@ -60,6 +60,17 @@ impl Credential {
         &self.api_key
     }
 
+    /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.
+    ///
+    /// `expires` should be the millisecond timestamp used by the login payload.
+    #[must_use]
+    pub fn sign_websocket_auth(&self, expires: i64) -> String {
+        let message = format!("GET/realtime{expires}");
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        hex::encode(tag.as_ref())
+    }
+
     /// Produces the Bybit HMAC signature for the provided payload.
     ///
     /// `payload` should contain either a URL-encoded query string (for GET requests)
@@ -140,5 +151,18 @@ mod tests {
 
         let expected = credential.sign_with_payload(TIMESTAMP, RECV_WINDOW, Some(""));
         assert_eq!(signature, expected);
+    }
+
+    #[rstest]
+    fn sign_websocket_auth_matches_reference() {
+        let credential = Credential::new(API_KEY, API_SECRET);
+        let expires: i64 = 1_700_000_000_000;
+
+        let signature = credential.sign_websocket_auth(expires);
+
+        assert_eq!(
+            signature,
+            "bacffe7500499eb829bb58c45d36d1b3e5ac67c14eaeba91df5e99ccee013925"
+        );
     }
 }

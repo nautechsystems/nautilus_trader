@@ -24,8 +24,8 @@ use nautilus_network::http::HttpClient;
 use thiserror::Error;
 
 use crate::common::{
-    consts::{BYBIT_HTTP_URL, BYBIT_NAUTILUS_BROKER_ID},
-    credential::Credential,
+    consts::BYBIT_NAUTILUS_BROKER_ID, credential::Credential, enums::BybitEnvironment,
+    urls::bybit_http_base_url,
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -42,6 +42,7 @@ pub enum BybitHttpError {
 #[derive(Clone, Debug)]
 pub struct BybitHttpClient {
     base_url: String,
+    environment: BybitEnvironment,
     client: HttpClient,
     credential: Option<Credential>,
     recv_window_ms: u64,
@@ -50,28 +51,40 @@ pub struct BybitHttpClient {
 impl BybitHttpClient {
     /// Creates a new client without credentials for public endpoints.
     #[must_use]
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        let base_url = base_url.unwrap_or_else(|| BYBIT_HTTP_URL.to_string());
+    pub fn new(
+        environment: BybitEnvironment,
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> Self {
+        let base_url = base_url.unwrap_or_else(|| bybit_http_base_url(environment).to_string());
         let client = HttpClient::new(Self::default_headers(), vec![], vec![], None, timeout_secs);
 
         Self {
             base_url,
+            environment,
             client,
             credential: None,
             recv_window_ms: DEFAULT_RECV_WINDOW_MS,
         }
     }
 
+    /// Creates a new client configured for the live (mainnet) environment.
+    #[must_use]
+    pub fn new_default(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
+        Self::new(BybitEnvironment::Mainnet, base_url, timeout_secs)
+    }
+
     /// Creates a new client configured with API credentials for private endpoints.
     #[must_use]
     pub fn with_credential(
+        environment: BybitEnvironment,
         api_key: impl Into<String>,
         api_secret: impl Into<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
         recv_window_ms: Option<u64>,
     ) -> Self {
-        let mut client = Self::new(base_url, timeout_secs);
+        let mut client = Self::new(environment, base_url, timeout_secs);
         client.credential = Some(Credential::new(api_key, api_secret));
         if let Some(recv_window_ms) = recv_window_ms {
             client.recv_window_ms = recv_window_ms;
@@ -89,6 +102,12 @@ impl BybitHttpClient {
     #[must_use]
     pub fn http_client(&self) -> &HttpClient {
         &self.client
+    }
+
+    /// Returns the configured environment for this client.
+    #[must_use]
+    pub const fn environment(&self) -> BybitEnvironment {
+        self.environment
     }
 
     /// Returns the API credential if configured.
@@ -157,8 +176,14 @@ mod tests {
 
     #[rstest]
     fn sign_get_matches_reference() {
-        let client =
-            BybitHttpClient::with_credential(API_KEY, API_SECRET, None, None, Some(RECV_WINDOW));
+        let client = BybitHttpClient::with_credential(
+            BybitEnvironment::Mainnet,
+            API_KEY,
+            API_SECRET,
+            None,
+            None,
+            Some(RECV_WINDOW),
+        );
         let query = "category=linear&symbol=BTCUSDT";
 
         let signature = client.sign_get(TIMESTAMP, Some(query)).unwrap();
@@ -171,8 +196,14 @@ mod tests {
 
     #[rstest]
     fn sign_post_matches_reference() {
-        let client =
-            BybitHttpClient::with_credential(API_KEY, API_SECRET, None, None, Some(RECV_WINDOW));
+        let client = BybitHttpClient::with_credential(
+            BybitEnvironment::Mainnet,
+            API_KEY,
+            API_SECRET,
+            None,
+            None,
+            Some(RECV_WINDOW),
+        );
         let body = "{\"category\": \"linear\", \"symbol\": \"BTCUSDT\", \"orderLinkId\": \"test-order-1\"}";
 
         let signature = client.sign_post(TIMESTAMP, Some(body)).unwrap();
@@ -185,7 +216,7 @@ mod tests {
 
     #[rstest]
     fn sign_without_credential_errors() {
-        let client = BybitHttpClient::new(None, None);
+        let client = BybitHttpClient::new(BybitEnvironment::Mainnet, None, None);
         let err = client.sign_get(TIMESTAMP, Some("foo=bar")).unwrap_err();
         assert_eq!(err, BybitHttpError::MissingCredentials);
     }

@@ -73,6 +73,18 @@ pub enum BybitAccountType {
     Unified,
 }
 
+/// Environments supported by the Bybit API stack.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BybitEnvironment {
+    /// Live trading environment.
+    Mainnet,
+    /// Demo (paper trading) environment.
+    Demo,
+    /// Testnet environment for spot/derivatives.
+    Testnet,
+}
+
 /// Product categories supported by the v5 API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -124,6 +136,17 @@ pub enum BybitInstrumentStatus {
 }
 
 impl BybitProductType {
+    /// Returns the canonical lowercase identifier used for REST/WS routes.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Spot => "spot",
+            Self::Linear => "linear",
+            Self::Inverse => "inverse",
+            Self::Option => "option",
+        }
+    }
+
     /// Returns `true` if the product is a spot instrument.
     #[must_use]
     pub fn is_spot(self) -> bool {
