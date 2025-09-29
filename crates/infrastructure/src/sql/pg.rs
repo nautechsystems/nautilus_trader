@@ -212,16 +212,15 @@ pub async fn init_postgres(
 
     // Execute all the sql files in schema dir
     let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
-    let mut sql_files =
-        std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
-    let plpgsql_regex = Regex::new(r"\$\$ LANGUAGE plpgsql(?:\s+SECURITY\s+DEFINER)?;")?;
-    for file in &mut sql_files {
-        let file_name = file.file_name();
+    let sql_files = vec!["types.sql", "functions.sql", "partitions.sql", "tables.sql"];
+    let plpgsql_regex =
+        Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
+    for file_name in &sql_files {
         log::info!("Executing schema file: {file_name:?}");
-        let file_path = file.path();
-        let sql_content = std::fs::read_to_string(file_path.clone())?;
-        let sql_statements: Vec<String> = match file_name.to_str() {
-            Some("functions.sql" | "partitions.sql") => {
+        let file_path = format!("{}/{}", schema_dir, file_name);
+        let sql_content = std::fs::read_to_string(&file_path)?;
+        let sql_statements: Vec<String> = match *file_name {
+            "functions.sql" | "partitions.sql" => {
                 let mut statements = Vec::new();
                 let mut last_end = 0;
 
