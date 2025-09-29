@@ -212,6 +212,9 @@ As a result, a market buy submitted with a base-denominated quantity will trade 
 When submitting market BUY orders, set `quote_quantity=True` (or pre-compute the quote-denominated amount)
 and configure the execution engine with `convert_quote_qty_to_base=False` so the quote amount reaches the adapter unchanged.
 The Polymarket execution client denies base-denominated market buys to prevent unintended fills.
+
+**NautilusTrader now forwards market orders to Polymarket's native market-order endpoint, so the
+quote amount you specify for a BUY is executed directly (no more synthetic max-price limits).**
 :::
 
 ```python

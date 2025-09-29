@@ -24,9 +24,10 @@ Released on TBD (UTC).
 - Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
 - Added OKX conditional trigger orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
+- Added Polymarket native market orders support
 
 ### Breaking Changes
-None
+- Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
 ### Internal Improvements
 - Added BitMEX adapter integration tests
@@ -67,6 +68,7 @@ None
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
+- Fixed Polymarket market order submission to use native CLOB market orders (#2984)
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
