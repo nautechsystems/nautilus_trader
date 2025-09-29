@@ -287,7 +287,8 @@ class TradingNode:
         """
         try:
             if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self.run_async())
+                task = self.kernel.loop.create_task(self.run_async())
+                task.add_done_callback(self._handle_run_task_result)
             else:
                 self.kernel.loop.run_until_complete(self.run_async())
         except RuntimeError as e:
@@ -464,6 +465,14 @@ class TradingNode:
             self.kernel.logger.info(f"loop.is_running={self.kernel.loop.is_running()}")
             self.kernel.logger.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
             self.kernel.logger.info("DISPOSED")
+
+    def _handle_run_task_result(self, task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return  # Normal control flow
+        except BaseException as e:
+            self.kernel.logger.exception("Error in run_async task", e)
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
         self.kernel.logger.warning(f"Received {sig.name}, shutting down")
