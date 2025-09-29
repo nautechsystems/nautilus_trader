@@ -159,7 +159,7 @@ clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-cr
 #== Dependencies
 
 .PHONY: outdated
-outdated:  #-- Check for outdated dependencies
+outdated: check-outdated-installed  #-- Check for outdated dependencies
 	cargo outdated --workspace --root-deps-only
 	uv tree --outdated --depth 1 --all-groups
 
@@ -219,6 +219,13 @@ check-llvm-cov-installed:  #-- Verify cargo-llvm-cov is installed
 check-hack-installed:  #-- Verify cargo-hack is installed
 	@if ! cargo hack --version >/dev/null 2>&1; then \
 		echo "cargo-hack is not installed. You can install it using 'cargo install cargo-hack'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-outdated-installed
+check-outdated-installed:  #-- Verify cargo-outdated is installed
+	@if ! cargo outdated --version >/dev/null 2>&1; then \
+		echo "cargo-outdated is not installed. You can install it using 'cargo install cargo-outdated'"; \
 		exit 1; \
 	fi
 
