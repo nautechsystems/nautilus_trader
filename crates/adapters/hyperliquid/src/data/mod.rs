@@ -40,6 +40,7 @@ use nautilus_core::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
+    data::Data,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -47,20 +48,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::HYPERLIQUID_VENUE, config::HyperliquidDataClientConfig,
+    common::consts::{HYPERLIQUID_TESTNET_WS_URL, HYPERLIQUID_VENUE, HYPERLIQUID_WS_URL},
+    config::HyperliquidDataClientConfig,
     http::client::HyperliquidHttpClient,
+    websocket::client::HyperliquidWebSocketClient,
 };
-
-// Placeholder for WebSocket client until it's implemented
-#[derive(Debug)]
-pub struct HyperliquidWebSocketClient;
-
-impl HyperliquidWebSocketClient {
-    pub async fn disconnect(&mut self) -> Result<()> {
-        // TODO: Implement WebSocket disconnection
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
@@ -138,9 +130,21 @@ impl HyperliquidDataClient {
     }
 
     async fn spawn_ws(&mut self) -> Result<()> {
-        // TODO: Initialize WebSocket client when available
-        // For now, WebSocket functionality is not implemented
-        tracing::warn!("WebSocket client initialization not yet implemented");
+        let ws_url = if self.config.is_testnet {
+            HYPERLIQUID_TESTNET_WS_URL
+        } else {
+            HYPERLIQUID_WS_URL
+        };
+
+        tracing::info!("Connecting to Hyperliquid WebSocket at {}", ws_url);
+
+        let ws_client = HyperliquidWebSocketClient::connect(ws_url)
+            .await
+            .context("Failed to connect to Hyperliquid WebSocket")?;
+
+        self.ws_client = Some(ws_client);
+        tracing::info!("Hyperliquid WebSocket client connected successfully");
+
         Ok(())
     }
 
@@ -158,6 +162,15 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
         .and_then(|dt| dt.timestamp_nanos_opt())
         .and_then(|nanos| u64::try_from(nanos).ok())
         .map(UnixNanos::from)
+}
+
+impl HyperliquidDataClient {
+    #[allow(dead_code)]
+    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+        if let Err(err) = sender.send(DataEvent::Data(data)) {
+            tracing::error!("Failed to emit data event: {err}");
+        }
+    }
 }
 
 #[async_trait::async_trait]
