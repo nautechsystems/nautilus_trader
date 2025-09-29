@@ -12,3 +12,93 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Connects to the Bybit public WebSocket feed and streams specified market data topics.
+//! Useful when manually validating the Rust WebSocket client implementation.
+
+use std::error::Error;
+
+use futures_util::StreamExt;
+use nautilus_bybit::websocket::{client::BybitWebSocketClient, messages::BybitWebSocketMessage};
+use tokio::{pin, signal};
+use tracing::level_filters::LevelFilter;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::INFO)
+        .with_target(false)
+        .compact()
+        .init();
+
+    let mut client = BybitWebSocketClient::new_public(None, None);
+    client.connect().await?;
+
+    client
+        .subscribe(vec![
+            "orderbook.1.BTCUSDT".to_string(),
+            "publicTrade.BTCUSDT".to_string(),
+            "tickers.BTCUSDT".to_string(),
+        ])
+        .await?;
+
+    let stream = client.stream();
+    let shutdown = signal::ctrl_c();
+    pin!(stream);
+    pin!(shutdown);
+
+    tracing::info!("Streaming Bybit market data; press Ctrl+C to exit");
+
+    loop {
+        tokio::select! {
+            Some(event) = stream.next() => {
+                match event {
+                    BybitWebSocketMessage::Orderbook(msg) => {
+                        tracing::info!(topic = %msg.topic, "orderbook update");
+                    }
+                    BybitWebSocketMessage::Trade(msg) => {
+                        tracing::info!(topic = %msg.topic, trades = msg.data.len(), "trade update");
+                    }
+                    BybitWebSocketMessage::TickerLinear(msg) => {
+                        tracing::info!(topic = %msg.topic, bid = ?msg.data.bid1_price, ask = ?msg.data.ask1_price, "linear ticker update");
+                    }
+                    BybitWebSocketMessage::TickerOption(msg) => {
+                        tracing::info!(topic = %msg.topic, bid = %msg.data.bid_price, ask = %msg.data.ask_price, "option ticker update");
+                    }
+                    BybitWebSocketMessage::Response(msg) => {
+                        tracing::debug!(?msg, "response frame");
+                    }
+                    BybitWebSocketMessage::Subscription(msg) => {
+                        tracing::info!(op = %msg.op, success = msg.success, "subscription ack");
+                    }
+                    BybitWebSocketMessage::Auth(msg) => {
+                        tracing::info!(op = %msg.op, "auth ack");
+                    }
+                    BybitWebSocketMessage::Error(err) => {
+                        tracing::error!(code = err.code, message = %err.message, "bybit websocket error");
+                    }
+                    BybitWebSocketMessage::Raw(value) => {
+                        tracing::debug!(payload = %value, "raw message");
+                    }
+                    BybitWebSocketMessage::Reconnected => {
+                        tracing::warn!("WebSocket reconnected");
+                    }
+                    BybitWebSocketMessage::Pong => {
+                        tracing::trace!("Received pong");
+                    }
+                    BybitWebSocketMessage::Kline(msg) => {
+                        tracing::info!(topic = %msg.topic, bars = msg.data.len(), "kline update");
+                    }
+                }
+            }
+            _ = &mut shutdown => {
+                tracing::info!("Received Ctrl+C, closing connection");
+                client.close().await?;
+                break;
+            }
+            else => break,
+        }
+    }
+
+    Ok(())
+}

@@ -15,4 +15,7 @@
 
 //! WebSocket client bindings for the Bybit adapter.
 
+pub mod client;
+pub mod error;
 pub mod messages;
+pub mod parse;

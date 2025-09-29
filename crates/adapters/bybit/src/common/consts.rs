@@ -31,8 +31,8 @@ pub const BYBIT_NAUTILUS_BROKER_ID: &str = "Qy000878";
 pub const BYBIT_HTTP_URL: &str = "https://api.bybit.com";
 pub const BYBIT_HTTP_TESTNET_URL: &str = "https://api-testnet.bybit.com";
 
-pub const BYBIT_WS_PUBLIC_URL: &str = "wss://stream.bybit.com/v5/public";
+pub const BYBIT_WS_PUBLIC_URL: &str = "wss://stream.bybit.com/v5/public/linear";
 pub const BYBIT_WS_PRIVATE_URL: &str = "wss://stream.bybit.com/v5/private";
 
-pub const BYBIT_WS_TESTNET_PUBLIC_URL: &str = "wss://stream-testnet.bybit.com/v5/public";
+pub const BYBIT_WS_TESTNET_PUBLIC_URL: &str = "wss://stream-testnet.bybit.com/v5/public/linear";
 pub const BYBIT_WS_TESTNET_PRIVATE_URL: &str = "wss://stream-testnet.bybit.com/v5/private";

@@ -53,11 +53,13 @@ nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -65,7 +67,9 @@ serde_json = { workspace = true }
 serde_repr = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
@@ -79,3 +83,8 @@ rstest = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
 axum = { workspace = true }
+
+# Run with `cargo run -p nautilus-bybit --bin bybit-ws-data`.
+[[bin]]
+name = "bybit-ws-data"
+path = "bin/ws_data.rs"

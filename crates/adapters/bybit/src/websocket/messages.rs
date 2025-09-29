@@ -15,6 +15,7 @@
 //! WebSocket message types for Bybit public and private channels.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
 use crate::common::enums::{
@@ -22,6 +23,103 @@ use crate::common::enums::{
     BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
     BybitTriggerDirection, BybitTriggerType,
 };
+
+/// High level message emitted by the Bybit WebSocket client.
+#[derive(Debug, Clone)]
+pub enum BybitWebSocketMessage {
+    /// Generic response (subscribe/auth acknowledgement).
+    Response(BybitWsResponse),
+    /// Authentication acknowledgement.
+    Auth(BybitWsAuthResponse),
+    /// Subscription acknowledgement.
+    Subscription(BybitWsSubscriptionMsg),
+    /// Orderbook snapshot or delta.
+    Orderbook(BybitWsOrderbookDepthMsg),
+    /// Trade updates.
+    Trade(BybitWsTradeMsg),
+    /// Kline updates.
+    Kline(BybitWsKlineMsg),
+    /// Linear/inverse ticker update.
+    TickerLinear(BybitWsTickerLinearMsg),
+    /// Option ticker update.
+    TickerOption(BybitWsTickerOptionMsg),
+    /// Error received from the venue or client lifecycle.
+    Error(BybitWebSocketError),
+    /// Raw message payload that does not yet have a typed representation.
+    Raw(Value),
+    /// Notification that the underlying connection reconnected.
+    Reconnected,
+    /// Explicit pong event (text-based heartbeat acknowledgement).
+    Pong,
+}
+
+/// Represents an error event surfaced by the WebSocket client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWebSocketError {
+    /// Error/return code reported by Bybit.
+    pub code: i64,
+    /// Human readable message.
+    pub message: String,
+    /// Optional connection identifier.
+    #[serde(default)]
+    pub conn_id: Option<String>,
+    /// Optional topic associated with the error (when applicable).
+    #[serde(default)]
+    pub topic: Option<String>,
+    /// Optional request identifier related to the failure.
+    #[serde(default)]
+    pub req_id: Option<String>,
+}
+
+impl BybitWebSocketError {
+    /// Creates a new error with the provided code/message.
+    #[must_use]
+    pub fn new(code: i64, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            conn_id: None,
+            topic: None,
+            req_id: None,
+        }
+    }
+
+    /// Builds an error payload from a generic response frame.
+    #[must_use]
+    pub fn from_response(response: &BybitWsResponse) -> Self {
+        Self {
+            code: response.ret_code.unwrap_or_default(),
+            message: response
+                .ret_msg
+                .clone()
+                .unwrap_or_else(|| "Bybit websocket error".to_string()),
+            conn_id: response.conn_id.clone(),
+            topic: response.topic.clone(),
+            req_id: response.req_id.clone(),
+        }
+    }
+
+    /// Convenience constructor for client-side errors (e.g. parsing failures).
+    #[must_use]
+    pub fn from_message(message: impl Into<String>) -> Self {
+        Self::new(-1, message)
+    }
+}
+
+/// Subscription acknowledgement returned by Bybit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsSubscriptionMsg {
+    pub success: bool,
+    pub op: String,
+    #[serde(default)]
+    pub conn_id: Option<String>,
+    #[serde(default)]
+    pub req_id: Option<String>,
+    #[serde(default)]
+    pub ret_msg: Option<String>,
+}
 
 /// Generic response returned by the endpoint when subscribing or authenticating.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -170,6 +268,50 @@ pub struct BybitWsTickerLinearMsg {
     #[serde(default)]
     pub cs: Option<i64>,
     pub data: BybitWsTickerLinear,
+}
+
+/// Option ticker event payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsTickerOption {
+    pub symbol: String,
+    pub bid_price: String,
+    pub bid_size: String,
+    pub bid_iv: String,
+    pub ask_price: String,
+    pub ask_size: String,
+    pub ask_iv: String,
+    pub last_price: String,
+    pub high_price24h: String,
+    pub low_price24h: String,
+    pub mark_price: String,
+    pub index_price: String,
+    pub mark_price_iv: String,
+    pub underlying_price: String,
+    pub open_interest: String,
+    pub turnover24h: String,
+    pub volume24h: String,
+    pub total_volume: String,
+    pub total_turnover: String,
+    pub delta: String,
+    pub gamma: String,
+    pub vega: String,
+    pub theta: String,
+    pub predicted_delivery_price: String,
+    pub change24h: String,
+}
+
+/// Envelope for option ticker updates.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsTickerOptionMsg {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub topic: String,
+    #[serde(rename = "type")]
+    pub msg_type: String,
+    pub ts: i64,
+    pub data: BybitWsTickerOption,
 }
 
 /// Trade event payload containing trade executions on public feeds.
