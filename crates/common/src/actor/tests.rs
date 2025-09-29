@@ -23,6 +23,7 @@ use std::{
     sync::Arc,
 };
 
+use alloy_primitives::{I256, U160};
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
@@ -1625,7 +1626,6 @@ fn test_subscribe_and_receive_pool_swaps(
     let swap = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1633,9 +1633,13 @@ fn test_subscribe_and_receive_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Buy,
-        Quantity::from("1000"),
-        Price::from("500"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
     );
 
     actor.subscribe_pool_swaps(instrument_id, None, None);
@@ -1684,7 +1688,6 @@ fn test_unsubscribe_pool_swaps(
     let swap1 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex.clone()),
-        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1692,9 +1695,13 @@ fn test_unsubscribe_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Buy,
-        Quantity::from("1000"),
-        Price::from("500"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
     );
     msgbus::publish(topic, &swap1);
 
@@ -1704,7 +1711,6 @@ fn test_unsubscribe_pool_swaps(
     let swap2 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        instrument_id,
         pool_address,
         2000u64,
         "0x456".to_string(),
@@ -1712,9 +1718,13 @@ fn test_unsubscribe_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Sell,
-        Quantity::from("2000"),
-        Price::from("1000"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        Some(OrderSide::Sell),
+        Some(Quantity::from("2000")),
+        Some(Price::from("1000")),
     );
     msgbus::publish(topic, &swap2);
 

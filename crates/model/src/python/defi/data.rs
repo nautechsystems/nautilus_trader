@@ -44,7 +44,6 @@ impl PoolSwap {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        instrument_id: InstrumentId,
         pool_address: String,
         block: u64,
         transaction_hash: String,
@@ -52,15 +51,22 @@ impl PoolSwap {
         log_index: u32,
         timestamp: u64,
         sender: String,
-        side: OrderSide,
-        size: Quantity,
-        price: Price,
+        receiver: String,
+        amount0: String,
+        amount1: String,
+        sqrt_price_x96: String,
+        side: Option<OrderSide>,
+        size: Option<Quantity>,
+        price: Option<Price>,
     ) -> PyResult<Self> {
         let sender = sender.parse().map_err(to_pyvalue_err)?;
+        let receiver = receiver.parse().map_err(to_pyvalue_err)?;
+        let amount0 = amount0.parse().map_err(to_pyvalue_err)?;
+        let amount1 = amount1.parse().map_err(to_pyvalue_err)?;
+        let sqrt_price_x96 = sqrt_price_x96.parse().map_err(to_pyvalue_err)?;
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),
-            instrument_id,
             Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
             block,
             transaction_hash,
@@ -68,6 +74,10 @@ impl PoolSwap {
             log_index,
             Some(timestamp.into()),
             sender,
+            receiver,
+            amount0,
+            amount1,
+            sqrt_price_x96,
             side,
             size,
             price,
@@ -89,7 +99,7 @@ impl PoolSwap {
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+        self.instrument_id()
     }
 
     #[getter]
@@ -130,19 +140,19 @@ impl PoolSwap {
 
     #[getter]
     #[pyo3(name = "side")]
-    fn py_side(&self) -> OrderSide {
+    fn py_side(&self) -> Option<OrderSide> {
         self.side
     }
 
     #[getter]
     #[pyo3(name = "size")]
-    fn py_size(&self) -> Quantity {
+    fn py_size(&self) -> Option<Quantity> {
         self.size
     }
 
     #[getter]
     #[pyo3(name = "price")]
-    fn py_price(&self) -> Price {
+    fn py_price(&self) -> Option<Price> {
         self.price
     }
 
@@ -190,7 +200,6 @@ impl PoolLiquidityUpdate {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        instrument_id: InstrumentId,
         pool_address: String,
         kind: PoolLiquidityUpdateType,
         block: u64,
@@ -199,9 +208,9 @@ impl PoolLiquidityUpdate {
         log_index: u32,
         sender: Option<String>,
         owner: String,
-        position_liquidity: Quantity,
-        amount0: Quantity,
-        amount1: Quantity,
+        position_liquidity: String,
+        amount0: String,
+        amount1: String,
         tick_lower: i32,
         tick_upper: i32,
         timestamp: u64,
@@ -211,10 +220,12 @@ impl PoolLiquidityUpdate {
             .transpose()
             .map_err(to_pyvalue_err)?;
         let owner = owner.parse().map_err(to_pyvalue_err)?;
+        let position_liquidity = position_liquidity.parse().map_err(to_pyvalue_err)?;
+        let amount0 = amount0.parse().map_err(to_pyvalue_err)?;
+        let amount1 = amount1.parse().map_err(to_pyvalue_err)?;
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),
-            instrument_id,
             Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
             kind,
             block,
@@ -247,7 +258,7 @@ impl PoolLiquidityUpdate {
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> crate::identifiers::InstrumentId {
-        self.instrument_id
+        self.instrument_id()
     }
 
     #[getter]
@@ -300,20 +311,20 @@ impl PoolLiquidityUpdate {
 
     #[getter]
     #[pyo3(name = "position_liquidity")]
-    fn py_position_liquidity(&self) -> Quantity {
-        self.position_liquidity
+    fn py_position_liquidity(&self) -> String {
+        self.position_liquidity.to_string()
     }
 
     #[getter]
     #[pyo3(name = "amount0")]
-    fn py_amount0(&self) -> Quantity {
-        self.amount0
+    fn py_amount0(&self) -> String {
+        self.amount0.to_string()
     }
 
     #[getter]
     #[pyo3(name = "amount1")]
-    fn py_amount1(&self) -> Quantity {
-        self.amount1
+    fn py_amount1(&self) -> String {
+        self.amount1.to_string()
     }
 
     #[getter]
