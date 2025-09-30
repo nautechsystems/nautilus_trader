@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
+from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -42,10 +43,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
-
-
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
