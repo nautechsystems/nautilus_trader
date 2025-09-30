@@ -442,7 +442,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         name = str(bar_type)
         now = self._clock.timestamp_ns()
-        start = params.get("start_ns")
+        start = params.pop("start_ns", None)
 
         if start is not None:
             # start_time = pd.Timestamp(start)
