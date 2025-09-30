@@ -84,6 +84,8 @@ jobs:
           docker image prune -a -f || true
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema

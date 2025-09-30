@@ -408,7 +408,7 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 
 .PHONY: install-cli
 install-cli:  #-- Install Nautilus CLI tool from source
-	cargo install --path crates/cli --bin nautilus --force
+	cargo install --path crates/cli --bin nautilus --locked --force
 
 #== Internal
 
