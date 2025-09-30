@@ -132,6 +132,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._recon_check_retries: Counter[ClientOrderId] = Counter()
         self._ts_last_query: dict[ClientOrderId, int] = {}
         self._order_local_activity_ns: dict[ClientOrderId, int] = {}
+        self._inferred_fill_ts: dict[ClientOrderId, int] = {}
+        self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
 
         self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
@@ -438,6 +440,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _handle_event_with_tracking(self, event: OrderEvent) -> None:
         self._record_local_activity(event)
+
+        # Track inferred fill timestamps to prevent duplicate historical fills
+        if isinstance(event, OrderFilled) and event.reconciliation:
+            client_order_id = event.client_order_id
+            if client_order_id not in self._inferred_fill_ts:
+                self._inferred_fill_ts[client_order_id] = event.ts_event
+
         self._handle_event(event)
 
         if event.client_order_id is None:
@@ -447,10 +456,14 @@ class LiveExecutionEngine(ExecutionEngine):
         if order and order.is_closed:
             self._clear_recon_tracking(order.client_order_id)
             self._order_local_activity_ns.pop(order.client_order_id, None)
+            self._inferred_fill_ts.pop(order.client_order_id, None)
 
     def _on_start(self) -> None:
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running")
+
+        # Clear reconciliation event for fresh start cycle
+        self._startup_reconciliation_event.clear()
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
@@ -739,7 +752,10 @@ class LiveExecutionEngine(ExecutionEngine):
         except Exception as e:
             self._log.exception("Error auditing own books", e)
 
-    async def _continuous_reconciliation_loop(self) -> None:
+    # ruff: noqa: C901
+    async def _continuous_reconciliation_loop(
+        self,
+    ) -> None:
         try:
             # Track last execution times (in nanoseconds)
             ts_last_inflight_check = 0
@@ -772,7 +788,28 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.BLUE,
             )
 
-            await asyncio.sleep(self.reconciliation_startup_delay_secs)
+            # Only wait if reconciliation is enabled (otherwise event never set)
+            if self.reconciliation:
+                self._log.info(
+                    "Awaiting startup reconciliation completion before starting continuous checks",
+                    LogColor.BLUE,
+                )
+                await self._startup_reconciliation_event.wait()
+                self._log.info("Startup reconciliation completed", LogColor.GREEN)
+
+                # Apply additional startup delay AFTER reconciliation completes
+                if self.reconciliation_startup_delay_secs > 0:
+                    self._log.info(
+                        f"Applying post-reconciliation startup delay "
+                        f"({self.reconciliation_startup_delay_secs}s)",
+                        LogColor.BLUE,
+                    )
+                    await asyncio.sleep(self.reconciliation_startup_delay_secs)
+            else:
+                self._log.info(
+                    "Startup reconciliation disabled, proceeding with continuous checks",
+                    LogColor.BLUE,
+                )
 
             while True:
                 ts_now = self._clock.timestamp_ns()
@@ -860,7 +897,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._ts_last_query[order.client_order_id] = query_ts
                 self._recon_check_retries[order.client_order_id] = retries + 1
 
-    async def _check_orders_consistency(self) -> None:  # noqa: C901 (too complex)
+    async def _check_orders_consistency(self) -> None:
         try:
             self._log.debug("Checking order consistency between cached-state and venues")
 
@@ -1116,7 +1153,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"Received {command!r}", LogColor.BLUE)
         self._loop.create_task(self.reconcile_execution_state())
 
-    async def reconcile_execution_state(  # noqa: C901 (too complex)
+    async def reconcile_execution_state(
         self,
         timeout_secs: float = 10.0,
     ) -> bool:
@@ -1142,123 +1179,130 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
 
-        for client_id in self._external_clients:
-            command = GenerateExecutionMassStatus(
-                trader_id=self.trader_id,
-                client_id=client_id,
-                command_id=UUID4(),
-                venue=None,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._log.info(
-                f"Requesting execution mass status from {client_id}",
-                LogColor.BLUE,
-            )
-            self._msgbus.publish(
-                topic=f"commands.trading.{client_id}",
-                msg=command,
-            )
-
-        if not self._clients:
-            self._log.debug("No execution clients for reconciliation")
-            return True
-
-        results: list[bool] = []
-
-        # Request execution mass status report from clients
-        reconciliation_lookback_mins: int | None = (
-            self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
-        )
-        mass_status_coros = [
-            c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
-        ]
-        mass_status_all = await asyncio.gather(*mass_status_coros, return_exceptions=True)
-
-        # Reconcile each mass status with the execution engine
-        for mass_status_or_exception in mass_status_all:
-            if isinstance(mass_status_or_exception, Exception):
-                self._log.error(f"Failed to generate mass status: {mass_status_or_exception}")
-                results.append(False)
-                continue
-
-            if mass_status_or_exception is None:
-                self._log.warning(
-                    "No execution mass status available for reconciliation "
-                    "(likely due to an adapter client error when generating reports)",
-                )
-                continue
-
-            mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
-            client_id = mass_status.client_id
-            venue = mass_status.venue
-            result = self._reconcile_execution_mass_status(mass_status)
-
-            if not result and self.filter_position_reports:
-                self._log_reconciliation_result(client_id, result)
-                results.append(result)
-                self._log.warning(
-                    "`filter_position_reports` enabled, skipping further reconciliation",
-                )
-                continue
-
-            client = self._clients[client_id]
-
-            # Check internal and external position reconciliation
-            report_tasks: list[asyncio.Task] = []
-
-            for position in self._cache.positions_open(venue):
-                instrument_id = position.instrument_id
-
-                if instrument_id in mass_status.position_reports:
-                    self._log.debug(f"Position {instrument_id} for {client_id} already reconciled")
-                    continue  # Already reconciled
-
-                self._log.info(f"{position} pending reconciliation")
-                position_status_command = GeneratePositionStatusReports(
-                    instrument_id=instrument_id,
-                    start=None,
-                    end=None,
+        try:
+            for client_id in self._external_clients:
+                command = GenerateExecutionMassStatus(
+                    trader_id=self.trader_id,
+                    client_id=client_id,
                     command_id=UUID4(),
+                    venue=None,
                     ts_init=self._clock.timestamp_ns(),
                 )
-                report_tasks.append(
-                    client.generate_position_status_reports(position_status_command),
+                self._log.info(
+                    f"Requesting execution mass status from {client_id}",
+                    LogColor.BLUE,
+                )
+                self._msgbus.publish(
+                    topic=f"commands.trading.{client_id}",
+                    msg=command,
                 )
 
-            if report_tasks:
-                # Reconcile specific internal open positions
-                self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
-                position_results: list[bool] = []
+            if not self._clients:
+                self._log.debug("No execution clients for reconciliation")
+                # Signal completion even with no clients
+                return True
 
-                for task_result_or_exception in await asyncio.gather(
-                    *report_tasks,
-                    return_exceptions=True,
-                ):
-                    if isinstance(task_result_or_exception, Exception):
-                        self._log.error(
-                            f"Failed to generate position status reports: {task_result_or_exception}",
-                        )
-                        position_results.append(False)
-                        continue
+            results: list[bool] = []
 
-                    task_result = cast("list[PositionStatusReport]", task_result_or_exception)
-
-                    for report in task_result:
-                        position_result = self._reconcile_position_report(report)
-                        self._log_reconciliation_result(report.instrument_id, position_result)
-                        position_results.append(position_result)
-
-                result = result and all(position_results)
-
-            self._log_reconciliation_result(client_id, result)
-            results.append(result)
-
-            self._msgbus.publish(
-                topic=f"reports.execution.{mass_status.venue}",
-                msg=mass_status,
+            # Request execution mass status report from clients
+            reconciliation_lookback_mins: int | None = (
+                self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
             )
+            mass_status_coros = [
+                c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
+            ]
+            mass_status_all = await asyncio.gather(*mass_status_coros, return_exceptions=True)
 
-        return all(results)
+            # Reconcile each mass status with the execution engine
+            for mass_status_or_exception in mass_status_all:
+                if isinstance(mass_status_or_exception, Exception):
+                    self._log.error(f"Failed to generate mass status: {mass_status_or_exception}")
+                    results.append(False)
+                    continue
+
+                if mass_status_or_exception is None:
+                    self._log.warning(
+                        "No execution mass status available for reconciliation "
+                        "(likely due to an adapter client error when generating reports)",
+                    )
+                    continue
+
+                mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
+                client_id = mass_status.client_id
+                venue = mass_status.venue
+                result = self._reconcile_execution_mass_status(mass_status)
+
+                if not result and self.filter_position_reports:
+                    self._log_reconciliation_result(client_id, result)
+                    results.append(result)
+                    self._log.warning(
+                        "`filter_position_reports` enabled, skipping further reconciliation",
+                    )
+                    continue
+
+                client = self._clients[client_id]
+
+                # Check internal and external position reconciliation
+                report_tasks: list[asyncio.Task] = []
+
+                for position in self._cache.positions_open(venue):
+                    instrument_id = position.instrument_id
+
+                    if instrument_id in mass_status.position_reports:
+                        self._log.debug(
+                            f"Position {instrument_id} for {client_id} already reconciled",
+                        )
+                        continue  # Already reconciled
+
+                    self._log.info(f"{position} pending reconciliation")
+                    position_status_command = GeneratePositionStatusReports(
+                        instrument_id=instrument_id,
+                        start=None,
+                        end=None,
+                        command_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    report_tasks.append(
+                        client.generate_position_status_reports(position_status_command),
+                    )
+
+                if report_tasks:
+                    # Reconcile specific internal open positions
+                    self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
+                    position_results: list[bool] = []
+
+                    for task_result_or_exception in await asyncio.gather(
+                        *report_tasks,
+                        return_exceptions=True,
+                    ):
+                        if isinstance(task_result_or_exception, Exception):
+                            self._log.error(
+                                f"Failed to generate position status reports: {task_result_or_exception}",
+                            )
+                            position_results.append(False)
+                            continue
+
+                        task_result = cast("list[PositionStatusReport]", task_result_or_exception)
+
+                        for report in task_result:
+                            position_result = self._reconcile_position_report(report)
+                            self._log_reconciliation_result(report.instrument_id, position_result)
+                            position_results.append(position_result)
+
+                    result = result and all(position_results)
+
+                self._log_reconciliation_result(client_id, result)
+                results.append(result)
+
+                self._msgbus.publish(
+                    topic=f"reports.execution.{mass_status.venue}",
+                    msg=mass_status,
+                )
+
+            return all(results)
+        finally:
+            # Always signal completion to prevent continuous loop signal await hang
+            self._startup_reconciliation_event.set()
 
     def reconcile_execution_report(self, report: ExecutionReport) -> bool:
         """
@@ -1317,7 +1361,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._reconcile_execution_mass_status(report)
 
-    def _reconcile_execution_mass_status(  # noqa: C901 (too complex)
+    def _reconcile_execution_mass_status(
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
@@ -1394,7 +1438,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    def _reconcile_order_report(  # noqa: C901 (too complex)
+    def _reconcile_order_report(
         self,
         report: OrderStatusReport,
         trades: list[FillReport],
@@ -1586,12 +1630,25 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return self._reconcile_fill_report(order, report, instrument)
 
-    def _reconcile_fill_report(  # noqa: C901 (too complex)
+    def _reconcile_fill_report(
         self,
         order: Order,
         report: FillReport,
         instrument: Instrument,
     ) -> bool:
+        # Check if this fill predates an inferred reconciliation fill
+        # This prevents historical fills from being applied on top of inferred fills
+        client_order_id = order.client_order_id
+        if client_order_id in self._inferred_fill_ts:
+            earliest_inferred_ts = self._inferred_fill_ts[client_order_id]
+            if report.ts_event < earliest_inferred_ts:
+                self._log.debug(
+                    f"Skipping historical fill {report.trade_id} (ts_event={report.ts_event}) "
+                    f"for {client_order_id!r} as it predates inferred reconciliation fill "
+                    f"(ts={earliest_inferred_ts}); this fill is already accounted for in the inferred fill",
+                )
+                return True  # Skip this fill, it's already covered by inferred fill
+
         if report.trade_id in order.trade_ids:
             # Fill already applied; check if data is consistent.
             # An existing fill may be sourced from the cache on start,
@@ -1741,7 +1798,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return True  # Reconciled
 
-    def _reconcile_position_report_netting(  # noqa: C901 (too complex)
+    def _reconcile_position_report_netting(
         self,
         report: PositionStatusReport,
     ) -> bool:
@@ -1785,16 +1842,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 return True
 
-            order_side = (
-                OrderSide.BUY
-                if report.signed_decimal_qty > position_signed_decimal_qty
-                else OrderSide.SELL
-            )
-
-            # Calculate the price for the reconciliation order
-            # Get current position average price if available
+            # Calculate current position average price if available (needed for reconciliation)
             current_avg_px = None
-
             if positions_open:
                 # Calculate weighted average price of current positions
                 total_value = Decimal(0)
@@ -1809,6 +1858,106 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 if total_qty > 0:
                     current_avg_px = total_value / total_qty
+
+            now = self._clock.timestamp_ns()
+
+            # Check if position crosses through zero (flips from long to short or vice versa)
+            crosses_zero = (
+                position_signed_decimal_qty != 0
+                and report.signed_decimal_qty != 0
+                and (
+                    (position_signed_decimal_qty > 0 and report.signed_decimal_qty < 0)
+                    or (position_signed_decimal_qty < 0 and report.signed_decimal_qty > 0)
+                )
+            )
+
+            if crosses_zero:
+                self._log.info(
+                    f"Position crosses through zero for {report.instrument_id}: "
+                    f"current={position_signed_decimal_qty}, target={report.signed_decimal_qty}. "
+                    f"Splitting reconciliation into two fills: close existing position, then open new position",
+                    LogColor.BLUE,
+                )
+
+                # First fill: Close the existing position (bring to zero)
+                close_qty_decimal = abs(position_signed_decimal_qty)
+                close_quantity = Quantity(close_qty_decimal, instrument.size_precision)
+                close_side = OrderSide.BUY if position_signed_decimal_qty < 0 else OrderSide.SELL
+
+                # Use current position average price for closing
+                close_price = None
+                if current_avg_px is not None:
+                    close_price = instrument.make_price(current_avg_px)
+                else:
+                    quote = self._cache.quote_tick(report.instrument_id)
+                    if quote:
+                        close_price = (
+                            quote.ask_price if close_side == OrderSide.BUY else quote.bid_price
+                        )
+
+                if close_price:
+                    close_report = OrderStatusReport(
+                        instrument_id=report.instrument_id,
+                        account_id=report.account_id,
+                        venue_order_id=VenueOrderId(str(uuid.uuid4())),
+                        order_side=close_side,
+                        order_type=OrderType.LIMIT,
+                        time_in_force=TimeInForce.GTC,
+                        order_status=OrderStatus.FILLED,
+                        price=close_price,
+                        quantity=close_quantity,
+                        filled_qty=close_quantity,
+                        avg_px=close_price.as_decimal(),
+                        report_id=UUID4(),
+                        ts_accepted=now,
+                        ts_last=now,
+                        ts_init=now,
+                    )
+                    self._reconcile_order_report(close_report, trades=[], is_external=False)
+
+                # Second fill: Open new position in opposite direction
+                open_qty_decimal = abs(report.signed_decimal_qty)
+                open_quantity = Quantity(open_qty_decimal, instrument.size_precision)
+                open_side = OrderSide.BUY if report.signed_decimal_qty > 0 else OrderSide.SELL
+
+                # Use venue's reported average price for the new position
+                open_price = None
+                if report.avg_px_open is not None:
+                    open_price = instrument.make_price(report.avg_px_open)
+                else:
+                    quote = self._cache.quote_tick(report.instrument_id)
+                    if quote:
+                        open_price = (
+                            quote.ask_price if open_side == OrderSide.BUY else quote.bid_price
+                        )
+
+                if open_price:
+                    open_report = OrderStatusReport(
+                        instrument_id=report.instrument_id,
+                        account_id=report.account_id,
+                        venue_order_id=VenueOrderId(str(uuid.uuid4())),
+                        order_side=open_side,
+                        order_type=OrderType.LIMIT,
+                        time_in_force=TimeInForce.GTC,
+                        order_status=OrderStatus.FILLED,
+                        price=open_price,
+                        quantity=open_quantity,
+                        filled_qty=open_quantity,
+                        avg_px=open_price.as_decimal(),
+                        report_id=UUID4(),
+                        ts_accepted=now,
+                        ts_last=now,
+                        ts_init=now,
+                    )
+                    self._reconcile_order_report(open_report, trades=[], is_external=False)
+
+                return True  # Reconciliation complete via split fills
+
+            order_side = (
+                OrderSide.BUY
+                if report.signed_decimal_qty > position_signed_decimal_qty
+                else OrderSide.SELL
+            )
 
             # Calculate reconciliation price
             reconciliation_price = calculate_reconciliation_price(
@@ -1839,8 +1988,6 @@ class LiveExecutionEngine(ExecutionEngine):
                     # If no market data, use current average price of positions as fallback
                     if current_avg_px is not None:
                         reconciliation_price = instrument.make_price(current_avg_px)
-
-            now = self._clock.timestamp_ns()
 
             if reconciliation_price:
                 # Generate a LIMIT order with the calculated reconciliation price
@@ -1911,7 +2058,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"Generated inferred {filled}", LogColor.BLUE)
         return filled
 
-    def _generate_order(  # noqa: C901 (too complex)
+    def _generate_order(
         self,
         report: OrderStatusReport,
         is_external: bool = True,

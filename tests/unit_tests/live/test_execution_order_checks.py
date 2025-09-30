@@ -567,6 +567,9 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
 
     exec_engine._check_orders_consistency = counting_check
 
+    # Set startup reconciliation event so loop can start
+    exec_engine._startup_reconciliation_event.set()
+
     # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
@@ -853,6 +856,9 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
 
     exec_engine._check_inflight_orders = counting_check
 
+    # Set startup reconciliation event so loop can start
+    exec_engine._startup_reconciliation_event.set()
+
     # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
@@ -885,6 +891,9 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
                 exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = failing_check
+
+    # Set startup reconciliation event so loop can start
+    exec_engine._startup_reconciliation_event.set()
 
     # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
@@ -1274,6 +1283,9 @@ async def test_reconciliation_loop_runs_both_checks(
 
     exec_engine._check_inflight_orders = counting_problematic_check
     exec_engine._check_orders_consistency = counting_consistency_check
+
+    # Set startup reconciliation event so loop can start
+    exec_engine._startup_reconciliation_event.set()
 
     # Act
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())

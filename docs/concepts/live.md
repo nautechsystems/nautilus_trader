@@ -170,11 +170,13 @@ See [Execution reconciliation](../concepts/execution#execution-reconciliation) f
 
 #### Continuous reconciliation
 
-**Purpose**: Maintains accurate execution state through a continuous reconciliation loop that:
+**Purpose**: Maintains accurate execution state through a continuous reconciliation loop that runs *after* startup reconciliation completes, this loop:
 
 - (1) Monitors in-flight orders for delays exceeding a configured threshold.
 - (2) Reconciles open orders with the venue at configurable intervals.
 - (3) Audits internal *own* order books against the venue's public books.
+
+**Startup sequence**: The continuous reconciliation loop waits for startup reconciliation to complete before beginning periodic checks. This prevents race conditions where continuous checks might interfere with the initial state reconciliation. The `reconciliation_startup_delay_secs` parameter applies an additional delay *after* startup reconciliation completes.
 
 If an order's status cannot be reconciled after exhausting all retries, the engine resolves the order as follows:
 
@@ -217,25 +219,24 @@ Orders that age beyond `open_check_lookback_mins` rely on this targeted probe. K
 
 This ensures the trading node maintains a consistent execution state even under unreliable conditions.
 
-| Setting                             | Default   | Description                                                                                                                         |
-|-------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
+| Setting                             | Default        | Description                                                                                                                         |
+|-------------------------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------|
 | `inflight_check_interval_ms`        | 2,000&nbsp;ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
 | `inflight_check_threshold_ms`       | 5,000&nbsp;ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
 | `inflight_check_retries`            | 5&nbsp;retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
-| `open_check_interval_secs`          | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
-| `open_check_open_only`              | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
+| `open_check_interval_secs`          | None           | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
+| `open_check_open_only`              | True           | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
 | `open_check_lookback_mins`          | 60&nbsp;min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
 | `open_check_threshold_ms`           | 5,000&nbsp;ms  | Minimum time since the order's last cached event before open-order checks act on venue discrepancies (missing, mismatched status, etc.). |
 | `open_check_missing_retries`        | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
-| `reconciliation_startup_delay_secs` | 10.0&nbsp;s    | Initial delay (seconds) before starting continuous reconciliation loop. Provides time for system stabilization after startup. |
-| `own_books_audit_interval_secs`     | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
+| `reconciliation_startup_delay_secs` | 10.0&nbsp;s    | Additional delay (seconds) applied *after* startup reconciliation completes before starting continuous reconciliation loop. Provides time for additional system stabilization. |
+| `own_books_audit_interval_secs`     | None           | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
 
 :::warning
 **Important configuration guidelines:**
 
 - **`open_check_lookback_mins`**: Do not reduce below 60 minutes. This lookback window must be sufficiently generous for your venue's order history retention. Setting it too short can trigger false "missing order" resolutions even with built-in safeguards, as orders may appear missing when they're simply outside the query window.
-
-- **`reconciliation_startup_delay_secs`**: Do not reduce below 10 seconds for production systems. This delay allows the system to stabilize after startup, ensuring all connections are established and initial state is loaded before reconciliation begins. Reducing this too much can cause reconciliation to run against incomplete state.
+- **`reconciliation_startup_delay_secs`**: Do not reduce below 10 seconds for production systems. This delay is applied *after* startup reconciliation completes, allowing additional time for system stabilization before continuous reconciliation checks begin. This prevents continuous checks from starting immediately after startup reconciliation finishes.
 
 :::
 

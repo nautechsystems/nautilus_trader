@@ -180,6 +180,10 @@ def fixture_exec_engine(msgbus, cache, clock, exec_client, portfolio):
     exec_engine.register_client(exec_client)
     exec_engine.start()
 
+    # Set startup reconciliation event so continuous loop can start
+    # (integration tests don't call reconcile_execution_state)
+    exec_engine._startup_reconciliation_event.set()
+
     yield exec_engine
 
     exec_engine.stop()

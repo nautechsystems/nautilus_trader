@@ -139,8 +139,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         not found at the venue. This prevents race conditions where orders are resolved too
         quickly due to network delays or venue processing time.
     reconciliation_startup_delay_secs : PositiveFloat, default 10.0
-        The initial delay (seconds) before starting the continuous reconciliation loop.
-        This provides time for initial system stabilization after startup.
+        The additional delay (seconds) applied AFTER startup reconciliation
+        completes before starting the continuous reconciliation loop. This provides time
+        for additional system stabilization after initial reconciliation.
     purge_closed_orders_interval_mins : PositiveInt, optional
         The interval (minutes) between purging closed orders from the in-memory cache,
         **will not purge from the database**. If None, closed orders will **not** be automatically purged.

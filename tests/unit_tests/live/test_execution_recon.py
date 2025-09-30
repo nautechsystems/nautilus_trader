@@ -1132,12 +1132,13 @@ class TestReconciliationEdgeCases:
         internal_position = Position(instrument=instrument, fill=fill)
         self.cache.add_position(internal_position, OmsType.NETTING)
 
-        # External report shows -50 units short (need to generate 150 SELL order)
+        # External report shows -50 units short with avg_px (need to generate 2 orders: close + open)
         external_report = PositionStatusReport(
             account_id=TestIdStubs.account_id(),
             instrument_id=instrument.id,
             position_side=PositionSide.SHORT,
             quantity=Quantity.from_int(50),
+            avg_px_open=Decimal("1.0"),  # Provide avg price so split fill can calculate
             report_id=UUID4(),
             ts_last=0,
             ts_init=0,
@@ -1158,13 +1159,22 @@ class TestReconciliationEdgeCases:
 
         # Assert
         assert result is True
-        assert len(reconcile_calls) == 1
+        # With the new split fill logic, this should generate TWO reconciliation orders
+        assert len(reconcile_calls) == 2
 
-        order_report, _ = reconcile_calls[0]
-        assert order_report.order_side == OrderSide.SELL
-        assert order_report.quantity == Quantity.from_int(150)  # 100 to close + 50 to open short
-        assert order_report.filled_qty == Quantity.from_int(150)
-        assert order_report.order_status == OrderStatus.FILLED
+        # First order: close existing LONG position (SELL 100)
+        close_report, _ = reconcile_calls[0]
+        assert close_report.order_side == OrderSide.SELL
+        assert close_report.quantity == Quantity.from_int(100)
+        assert close_report.filled_qty == Quantity.from_int(100)
+        assert close_report.order_status == OrderStatus.FILLED
+
+        # Second order: open new SHORT position (SELL 50)
+        open_report, _ = reconcile_calls[1]
+        assert open_report.order_side == OrderSide.SELL
+        assert open_report.quantity == Quantity.from_int(50)
+        assert open_report.filled_qty == Quantity.from_int(50)
+        assert open_report.order_status == OrderStatus.FILLED
 
     @pytest.mark.asyncio()
     async def test_position_reconciliation_cross_side_short_to_long(self, live_exec_engine):
@@ -1191,12 +1201,13 @@ class TestReconciliationEdgeCases:
         internal_position = Position(instrument=instrument, fill=fill)
         self.cache.add_position(internal_position, OmsType.NETTING)
 
-        # External report shows 75 units long (need to generate 175 BUY order)
+        # External report shows 75 units long with avg_px (need to generate 2 orders: close + open)
         external_report = PositionStatusReport(
             account_id=TestIdStubs.account_id(),
             instrument_id=instrument.id,
             position_side=PositionSide.LONG,
             quantity=Quantity.from_int(75),
+            avg_px_open=Decimal("1.0"),  # Provide avg price so split fill can calculate
             report_id=UUID4(),
             ts_last=0,
             ts_init=0,
@@ -1216,13 +1227,22 @@ class TestReconciliationEdgeCases:
 
         # Assert
         assert result is True
-        assert len(reconcile_calls) == 1
+        # With the new split fill logic, this should generate TWO reconciliation orders
+        assert len(reconcile_calls) == 2
 
-        order_report, _ = reconcile_calls[0]
-        assert order_report.order_side == OrderSide.BUY
-        assert order_report.quantity == Quantity.from_int(175)  # 100 to close + 75 to open long
-        assert order_report.filled_qty == Quantity.from_int(175)
-        assert order_report.order_status == OrderStatus.FILLED
+        # First order: close existing SHORT position (BUY 100)
+        close_report, _ = reconcile_calls[0]
+        assert close_report.order_side == OrderSide.BUY
+        assert close_report.quantity == Quantity.from_int(100)
+        assert close_report.filled_qty == Quantity.from_int(100)
+        assert close_report.order_status == OrderStatus.FILLED
+
+        # Second order: open new LONG position (BUY 75)
+        open_report, _ = reconcile_calls[1]
+        assert open_report.order_side == OrderSide.BUY
+        assert open_report.quantity == Quantity.from_int(75)
+        assert open_report.filled_qty == Quantity.from_int(75)
+        assert open_report.order_status == OrderStatus.FILLED
 
     @pytest.mark.asyncio()
     async def test_position_reconciliation_zero_difference_after_rounding(self, live_exec_engine):
@@ -1827,6 +1847,144 @@ class TestReconciliationEdgeCases:
         assert generated_order.price == Price.from_str("1.0001")  # Ask price for BUY order
         assert generated_order.status == OrderStatus.FILLED
 
+    @pytest.mark.asyncio()
+    async def test_position_reconciliation_crosses_zero_splits_into_two_fills(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that position reconciliation crossing through zero generates two separate fills:
+        one to close the existing position and one to open the new position.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units @ 1.0)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-CROSS-ZERO"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows -50 units short with avg_px=1.05
+        # This crosses through zero: LONG 100 -> SHORT -50
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(50),
+            avg_px_open=Decimal("1.05"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Spy on reconcile_order_report calls
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades, is_external=True):
+            reconcile_calls.append((order_report, trades, is_external))
+            return original_reconcile(order_report, trades, is_external)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+
+        # Should have generated TWO reconciliation orders: one to close, one to open
+        assert len(reconcile_calls) == 2
+
+        # First order: close existing LONG position (SELL 100)
+        close_report, _, _ = reconcile_calls[0]
+        assert close_report.order_side == OrderSide.SELL
+        assert close_report.quantity == Quantity.from_int(100)
+        assert close_report.filled_qty == Quantity.from_int(100)
+        assert close_report.order_status == OrderStatus.FILLED
+
+        # Second order: open new SHORT position (SELL 50 @ venue's avg price)
+        open_report, _, _ = reconcile_calls[1]
+        assert open_report.order_side == OrderSide.SELL
+        assert open_report.quantity == Quantity.from_int(50)
+        assert open_report.filled_qty == Quantity.from_int(50)
+        assert open_report.order_status == OrderStatus.FILLED
+        assert open_report.avg_px == Decimal("1.05")
+
+    @pytest.mark.asyncio()
+    async def test_duplicate_fill_detection_prevents_historical_fills_after_inferred_fill(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that historical fills with timestamps older than inferred reconciliation
+        fills are skipped to prevent duplicate fill application.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Create an order
+        order = TestExecStubs.limit_order(
+            instrument=instrument,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100),
+        )
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.add_order(order, None)
+
+        # Apply an inferred reconciliation fill with ts_event = 1000
+        inferred_fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            last_qty=Quantity.from_int(50),
+            last_px=Price.from_str("1.0"),
+            ts_event=1000,
+        )
+        # Manually track this as an inferred fill (simulating reconciliation behavior)
+        live_exec_engine._inferred_fill_ts[order.client_order_id] = 1000
+        live_exec_engine._handle_event(inferred_fill)
+
+        # Verify the order was filled
+        assert order.filled_qty == Quantity.from_int(50)
+
+        # Try to apply a historical fill with older timestamp (ts_event = 500)
+        historical_fill_report = FillReport(
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("historical-fill-1"),
+            account_id=order.account_id,
+            instrument_id=instrument.id,
+            order_side=order.side,
+            last_qty=Quantity.from_int(10),
+            last_px=Price.from_str("0.99"),
+            commission=Money(0.01, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=500,  # Older than inferred fill
+            ts_init=1500,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_fill_report(order, historical_fill_report, instrument)
+
+        # Assert
+        assert result is True  # Returns True (success) but doesn't apply the fill
+        # Order should still have only 50 filled (from inferred fill), not 60
+        assert order.filled_qty == Quantity.from_int(50)
+        # Historical fill trade_id should NOT be in order's trade_ids
+        assert TradeId("historical-fill-1") not in order.trade_ids
+
 
 class TestReconciliationFiltering:
     """
@@ -2058,3 +2216,149 @@ class TestReconciliationFiltering:
         assert len(cache.orders()) == 1
         assert cache.order(ClientOrderId("included-order")) is not None
         assert cache.order(filtered_coid) is None
+
+
+class TestLiveExecutionReconciliationEdgeCases:
+    """
+    Tests for edge cases in reconciliation event signaling to prevent deadlocks.
+    """
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_disabled_does_not_block_continuous_loop(self):
+        """
+        Test that when reconciliation is disabled, continuous loop doesn't hang waiting
+        for event.
+        """
+        # Arrange
+        loop = asyncio.get_event_loop()
+        clock = LiveClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+
+        client = MockLiveExecutionClient(
+            loop=loop,
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+
+        # Create engine with reconciliation disabled
+        exec_engine = LiveExecutionEngine(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=LiveExecEngineConfig(
+                reconciliation=False,
+                open_check_interval_secs=5.0,
+            ),
+        )
+        exec_engine.register_client(client)
+
+        # Act
+        exec_engine.start()
+
+        # Give continuous loop a moment to start
+        await asyncio.sleep(0.1)
+
+        # Assert - if we get here without hanging, the test passes
+        assert exec_engine.reconciliation is False
+        assert exec_engine._reconciliation_task is not None
+
+        # Cleanup
+        exec_engine.stop()
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_with_no_clients_sets_event(self):
+        """
+        Test that reconciliation with no clients sets event so continuous loop doesn't
+        hang.
+        """
+        # Arrange
+        loop = asyncio.get_event_loop()
+        clock = LiveClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+
+        # Create engine without registering any clients
+        exec_engine = LiveExecutionEngine(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=LiveExecEngineConfig(
+                reconciliation=True,
+                open_check_interval_secs=5.0,
+            ),
+        )
+
+        # Act
+        result = await exec_engine.reconcile_execution_state()
+
+        # Assert
+        assert result is True
+        assert exec_engine._startup_reconciliation_event.is_set()
+
+    @pytest.mark.asyncio()
+    async def test_on_start_clears_reconciliation_event(self):
+        """
+        Test that _on_start() clears the reconciliation event to prevent race
+        conditions.
+        """
+        # Arrange
+        loop = asyncio.get_event_loop()
+        clock = LiveClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+
+        client = MockLiveExecutionClient(
+            loop=loop,
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+
+        exec_engine = LiveExecutionEngine(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=LiveExecEngineConfig(
+                reconciliation=True,
+                open_check_interval_secs=5.0,
+            ),
+        )
+        exec_engine.register_client(client)
+
+        # Set the event manually to simulate it being set from a previous cycle
+        exec_engine._startup_reconciliation_event.set()
+        assert exec_engine._startup_reconciliation_event.is_set()
+
+        # Act - Start engine which should call _on_start()
+        exec_engine.start()
+
+        # Give _on_start time to execute
+        await asyncio.sleep(0.05)
+
+        # Assert - Event should be cleared by _on_start()
+        assert not exec_engine._startup_reconciliation_event.is_set()
+
+        # Verify reconciliation sets it again
+        await exec_engine.reconcile_execution_state()
+        assert exec_engine._startup_reconciliation_event.is_set()
+
+        # Cleanup
+        exec_engine.stop()
