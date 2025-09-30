@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Implemented Hyperliquid `InstrumentProvider` / definitions parsing (#2992), thanks @nicolad
 - Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
 - Implemented Hyperliquid DataClient in Rust (#2999), thanks @nicolad
+- Implemented Hyperliquid ExecutionClient in Python (#3003), thanks @nicolad
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved socket reconnect sequence and tighten client setup and testing
@@ -55,7 +56,7 @@ Released on TBD (UTC).
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4
-- Upgraded `databento` crate to v0.34.0
+- Upgraded `databento` crate to v0.34.1
 - Upgraded `datafusion` crate to v0.50.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
@@ -63,6 +64,7 @@ Released on TBD (UTC).
 - Fixed reduce-only order panic when quantity exceeds position
 - Fixed position purge logic to prevent purging re-opened position
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
+- Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
@@ -77,6 +79,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
+- Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
 
