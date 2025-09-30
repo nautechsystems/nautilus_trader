@@ -880,6 +880,11 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
                     continue
 
+                self._log.warning(
+                    f"Order {order.client_order_id!r} exceeded max inflight retries ({retries}), "
+                    f"resolving as failed",
+                    LogColor.YELLOW,
+                )
                 self._resolve_inflight_order(order)
             else:
                 self._log.debug(f"Querying {order} with venue...")
@@ -979,11 +984,18 @@ class LiveExecutionEngine(ExecutionEngine):
                 if report.is_open != is_in_open_ids:
                     should_reconcile = True
                     reconcile_reason = f"venue_open={report.is_open}, cache_open={is_in_open_ids}"
-                elif report.filled_qty and report.filled_qty > 0 and report.client_order_id:
+                elif report.client_order_id:
                     order = self._cache.order(report.client_order_id)
-                    if order and order.filled_qty != report.filled_qty:
-                        should_reconcile = True
-                        reconcile_reason = f"filled_qty mismatch: venue={report.filled_qty}, cache={order.filled_qty}"
+                    if order:
+                        # Check filled_qty mismatch, treating None as zero
+                        report_filled = (
+                            report.filled_qty
+                            if report.filled_qty is not None
+                            else Quantity.zero(order.quantity.precision)
+                        )
+                        if order.filled_qty != report_filled:
+                            should_reconcile = True
+                            reconcile_reason = f"filled_qty mismatch: venue={report_filled}, cache={order.filled_qty}"
 
                 if should_reconcile:
                     # Apply include filter before reconciling
@@ -1225,6 +1237,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         "No execution mass status available for reconciliation "
                         "(likely due to an adapter client error when generating reports)",
                     )
+                    results.append(False)
                     continue
 
                 mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
@@ -1895,6 +1908,7 @@ class LiveExecutionEngine(ExecutionEngine):
                             quote.ask_price if close_side == OrderSide.BUY else quote.bid_price
                         )
 
+                close_result = False
                 if close_price:
                     close_report = OrderStatusReport(
                         instrument_id=report.instrument_id,
@@ -1913,7 +1927,11 @@ class LiveExecutionEngine(ExecutionEngine):
                         ts_last=now,
                         ts_init=now,
                     )
-                    self._reconcile_order_report(close_report, trades=[], is_external=False)
+                    close_result = self._reconcile_order_report(
+                        close_report,
+                        trades=[],
+                        is_external=False,
+                    )
 
                 # Second fill: Open new position in opposite direction
                 open_qty_decimal = abs(report.signed_decimal_qty)
@@ -1931,6 +1949,7 @@ class LiveExecutionEngine(ExecutionEngine):
                             quote.ask_price if open_side == OrderSide.BUY else quote.bid_price
                         )
 
+                open_result = False
                 if open_price:
                     open_report = OrderStatusReport(
                         instrument_id=report.instrument_id,
@@ -1949,7 +1968,19 @@ class LiveExecutionEngine(ExecutionEngine):
                         ts_last=now,
                         ts_init=now,
                     )
-                    self._reconcile_order_report(open_report, trades=[], is_external=False)
+                    open_result = self._reconcile_order_report(
+                        open_report,
+                        trades=[],
+                        is_external=False,
+                    )
+
+                # Check both fills succeeded
+                if not (close_result and open_result):
+                    self._log.error(
+                        f"Failed to reconcile cross-zero position for {report.instrument_id}: "
+                        f"close={close_result}, open={open_result}",
+                    )
+                    return False
 
                 return True  # Reconciliation complete via split fills
 
