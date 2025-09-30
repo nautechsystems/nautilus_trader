@@ -113,7 +113,7 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 
-- Install the web3 Python package: `pip install --upgrade web3==5.28`.
+- Install the web3 Python package: `pip install --upgrade web3==7.12.1`.
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
@@ -311,6 +311,36 @@ FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) se
 | OCO orders         | -              | *Not supported by Polymarket*.      |
 | Bracket orders     | -              | *Not supported by Polymarket*.      |
 | Conditional orders | -              | *Not supported by Polymarket*.      |
+
+### Precision limits
+
+Polymarket enforces different precision constraints based on tick size and order type.
+
+**Binary Option instruments** typically support up to 6 decimal places for amounts (with 0.0001 tick size), but **market orders have stricter precision requirements**:
+
+- **FOK (Fill-or-Kill) market orders:**
+  - Sell orders: maker amount limited to **2 decimal places**.
+  - Taker amount: limited to **4 decimal places**.
+  - The product `size × price` must not exceed **2 decimal places**.
+
+- **Regular GTC orders:** More flexible precision based on market tick size.
+
+**Tick size precision hierarchy:**
+
+| Tick Size | Price Decimals | Size Decimals | Amount Decimals |
+|-----------|----------------|---------------|-----------------|
+| 0.1       | 1              | 2             | 3               |
+| 0.01      | 2              | 2             | 4               |
+| 0.001     | 3              | 2             | 5               |
+| 0.0001    | 4              | 2             | 6               |
+
+:::note
+
+- The tick size precision hierarchy is defined in the [`py-clob-client` `ROUNDING_CONFIG`](https://github.com/Polymarket/py-clob-client/blob/main/py_clob_client/order_builder/builder.py).
+- FOK market order precision limits (2 decimals for maker amount) are based on API error responses documented in [issue #121](https://github.com/Polymarket/py-clob-client/issues/121).
+- Tick sizes can change dynamically during market conditions, particularly when markets become one-sided.
+
+:::
 
 ## Trades
 
