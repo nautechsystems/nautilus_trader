@@ -900,6 +900,7 @@ impl Cache {
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
             if let Some(order) = self.orders.get(&client_order_id)
+                && order.is_closed()
                 && let Some(ts_closed) = order.ts_closed()
                 && ts_closed + buffer_ns <= ts_now
             {
@@ -935,6 +936,7 @@ impl Cache {
 
         for position_id in self.index.positions_closed.clone() {
             if let Some(position) = self.positions.get(&position_id)
+                && position.is_closed()
                 && let Some(ts_closed) = position.ts_closed
                 && ts_closed + buffer_ns <= ts_now
             {
