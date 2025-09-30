@@ -105,8 +105,14 @@ impl ExecutionClientCore {
         self.account_id = account_id;
     }
 
+    /// Returns a reference to the clock.
     #[must_use]
+    pub const fn clock(&self) -> &Rc<RefCell<dyn Clock>> {
+        &self.clock
+    }
+
     /// Returns the account associated with this execution client.
+    #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
         self.cache.borrow().account(&self.account_id).cloned()
     }

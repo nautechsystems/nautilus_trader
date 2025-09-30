@@ -15,21 +15,25 @@
 
 //! Live execution client implementation for the OKX adapter.
 
-use std::{future::Future, sync::Mutex};
+use std::{cell::Ref, future::Future, sync::Mutex};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, pin_mut};
-use nautilus_common::{msgbus, runtime::get_runtime};
+use nautilus_common::{
+    clock::Clock, messages::ExecutionEvent, msgbus, runner::get_exec_event_sender,
+    runtime::get_runtime,
+};
 use nautilus_core::UnixNanos;
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
+use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     enums::{AccountType, OrderType},
     events::{AccountState, OrderEventAny},
     identifiers::InstrumentId,
     orders::Order,
-    reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
+    reports::ExecutionMassStatus,
 };
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
@@ -728,6 +732,16 @@ impl LiveExecutionClient for OKXExecutionClient {
     }
 }
 
+impl LiveExecutionClientExt for OKXExecutionClient {
+    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
+        get_exec_event_sender()
+    }
+
+    fn get_clock(&self) -> Ref<'_, dyn Clock> {
+        self.core.clock().borrow()
+    }
+}
+
 impl OKXExecutionClient {
     fn start_ws_stream(&mut self) -> anyhow::Result<()> {
         if self.ws_stream_handle.is_some() {
@@ -792,28 +806,30 @@ fn dispatch_account_state(state: AccountState) {
 }
 
 fn dispatch_execution_report(report: ExecutionReport) {
+    let sender = get_exec_event_sender();
     match report {
-        ExecutionReport::Order(order_report) => dispatch_order_status_report(order_report),
-        ExecutionReport::Fill(fill_report) => dispatch_fill_report(fill_report),
+        ExecutionReport::Order(order_report) => {
+            let exec_report =
+                nautilus_common::messages::ExecutionReport::OrderStatus(Box::new(order_report));
+            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+                warn!("Failed to send order status report: {e}");
+            }
+        }
+        ExecutionReport::Fill(fill_report) => {
+            let exec_report =
+                nautilus_common::messages::ExecutionReport::Fill(Box::new(fill_report));
+            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+                warn!("Failed to send fill report: {e}");
+            }
+        }
     }
 }
 
-fn dispatch_order_status_report(report: OrderStatusReport) {
-    msgbus::send_any(
-        "ExecEngine.reconcile_execution_report".into(),
-        &report as &dyn std::any::Any,
-    );
-}
-
-fn dispatch_fill_report(report: FillReport) {
-    msgbus::send_any(
-        "ExecEngine.reconcile_execution_report".into(),
-        &report as &dyn std::any::Any,
-    );
-}
-
 fn dispatch_order_event(event: OrderEventAny) {
-    msgbus::send_any("ExecEngine.process".into(), &event as &dyn std::any::Any);
+    let sender = get_exec_event_sender();
+    if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
+        warn!("Failed to send order event: {e}");
+    }
 }
 
 fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<DateTime<Utc>> {

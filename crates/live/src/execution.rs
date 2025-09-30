@@ -19,19 +19,26 @@
 //! coordinating between the core execution engine and venue-specific clients
 //! while managing state reconciliation.
 
-use std::{cell::RefCell, collections::HashSet, fmt::Debug, rc::Rc, time::Duration};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashSet,
+    fmt::{Debug, Display},
+    rc::Rc,
+    time::Duration,
+};
 
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    messages::execution::TradingCommand,
+    messages::{ExecutionEvent, ExecutionReport as ExecReportEnum, execution::TradingCommand},
     msgbus::{self, MessageBus, switchboard},
 };
+use nautilus_execution::client::ExecutionClient;
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientOrderId, InstrumentId},
-    reports::ExecutionMassStatus,
+    identifiers::{ClientId, ClientOrderId, InstrumentId},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 
 use crate::{
@@ -328,4 +335,72 @@ impl LiveExecutionEngine {
     pub fn is_running(&self) -> bool {
         self.is_running
     }
+}
+
+/// Extension trait for live execution clients with message channel support.
+pub trait LiveExecutionClientExt: ExecutionClient {
+    /// Gets the message channel for sending execution events.
+    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent>;
+
+    /// Gets the clock for timestamp generation.
+    fn get_clock(&self) -> Ref<'_, dyn Clock>;
+
+    /// Sends an order event to the execution engine.
+    fn send_order_event(&self, event: OrderEventAny) {
+        if let Err(e) = self
+            .get_message_channel()
+            .send(ExecutionEvent::Order(event))
+        {
+            log_send_error(&self.client_id(), &e);
+        }
+    }
+
+    /// Sends an order status report to the execution engine.
+    fn send_order_status_report(&self, report: OrderStatusReport) {
+        let exec_report = ExecReportEnum::OrderStatus(Box::new(report));
+        if let Err(e) = self
+            .get_message_channel()
+            .send(ExecutionEvent::Report(exec_report))
+        {
+            log_send_error(&self.client_id(), &e);
+        }
+    }
+
+    /// Sends a fill report to the execution engine.
+    fn send_fill_report(&self, report: FillReport) {
+        let exec_report = ExecReportEnum::Fill(Box::new(report));
+        if let Err(e) = self
+            .get_message_channel()
+            .send(ExecutionEvent::Report(exec_report))
+        {
+            log_send_error(&self.client_id(), &e);
+        }
+    }
+
+    /// Sends a position status report to the execution engine.
+    fn send_position_status_report(&self, report: PositionStatusReport) {
+        let exec_report = ExecReportEnum::Position(Box::new(report));
+        if let Err(e) = self
+            .get_message_channel()
+            .send(ExecutionEvent::Report(exec_report))
+        {
+            log_send_error(&self.client_id(), &e);
+        }
+    }
+
+    /// Sends a mass status report to the execution engine.
+    fn send_mass_status(&self, mass_status: ExecutionMassStatus) {
+        let exec_report = ExecReportEnum::Mass(Box::new(mass_status));
+        if let Err(e) = self
+            .get_message_channel()
+            .send(ExecutionEvent::Report(exec_report))
+        {
+            log_send_error(&self.client_id(), &e);
+        }
+    }
+}
+
+#[inline(always)]
+fn log_send_error<E: Display>(client_id: &ClientId, e: &E) {
+    log::error!("ExecutionClient-{client_id} failed to send message: {e}");
 }

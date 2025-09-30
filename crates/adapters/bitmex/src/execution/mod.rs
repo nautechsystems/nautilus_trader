@@ -15,22 +15,28 @@
 
 //! Live execution client implementation for the BitMEX adapter.
 
-use std::{any::Any, future::Future, sync::Mutex};
+use std::{any::Any, cell::Ref, future::Future, sync::Mutex};
 
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount, QueryOrder,
-        SubmitOrder, SubmitOrderList,
+    clock::Clock,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
+        },
     },
     msgbus,
+    runner::get_exec_event_sender,
     runtime::get_runtime,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
+use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     events::{AccountState, OrderEventAny, OrderRejected},
     identifiers::{AccountId, VenueOrderId},
@@ -628,26 +634,42 @@ fn dispatch_account_state(state: AccountState) {
 }
 
 fn dispatch_order_status_report(report: OrderStatusReport) {
-    msgbus::send_any(
-        "ExecEngine.reconcile_execution_report".into(),
-        &report as &dyn Any,
-    );
+    let sender = get_exec_event_sender();
+    let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(Box::new(report));
+    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+        warn!("Failed to send order status report: {e}");
+    }
 }
 
 fn dispatch_fill_report(report: FillReport) {
-    msgbus::send_any(
-        "ExecEngine.reconcile_execution_report".into(),
-        &report as &dyn Any,
-    );
+    let sender = get_exec_event_sender();
+    let exec_report = nautilus_common::messages::ExecutionReport::Fill(Box::new(report));
+    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+        warn!("Failed to send fill report: {e}");
+    }
 }
 
 fn dispatch_position_status_report(report: PositionStatusReport) {
-    msgbus::send_any(
-        "ExecEngine.reconcile_execution_report".into(),
-        &report as &dyn Any,
-    );
+    let sender = get_exec_event_sender();
+    let exec_report = nautilus_common::messages::ExecutionReport::Position(Box::new(report));
+    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+        warn!("Failed to send position status report: {e}");
+    }
 }
 
 fn dispatch_order_event(event: OrderEventAny) {
-    msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
+    let sender = get_exec_event_sender();
+    if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
+        warn!("Failed to send order event: {e}");
+    }
+}
+
+impl LiveExecutionClientExt for BitmexExecutionClient {
+    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
+        get_exec_event_sender()
+    }
+
+    fn get_clock(&self) -> Ref<'_, dyn Clock> {
+        self.core.clock().borrow()
+    }
 }
