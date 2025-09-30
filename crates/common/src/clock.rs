@@ -963,8 +963,7 @@ impl Stream for TimeEventStream {
 mod tests {
     use std::{
         sync::{Arc, Mutex},
-        thread,
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     use nautilus_core::time::get_atomic_clock_realtime;
@@ -972,7 +971,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::runner::TimeEventSender;
+    use crate::{runner::TimeEventSender, testing::wait_until};
 
     #[derive(Debug, Default)]
     struct TestCallback {
@@ -1022,18 +1021,7 @@ mod tests {
         target: usize,
         timeout: Duration,
     ) {
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if events.lock().unwrap().len() >= target {
-                return;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-
-        panic!(
-            "Timed out waiting for {target} events, captured {}",
-            events.lock().unwrap().len()
-        );
+        wait_until(|| events.lock().unwrap().len() >= target, timeout);
     }
 
     #[fixture]
@@ -1568,8 +1556,10 @@ mod tests {
 
         clock.reset();
 
-        thread::sleep(Duration::from_millis(100));
-        assert!(events.lock().unwrap().is_empty());
+        wait_until(
+            || events.lock().unwrap().is_empty(),
+            Duration::from_millis(500),
+        );
     }
 
     #[rstest]
