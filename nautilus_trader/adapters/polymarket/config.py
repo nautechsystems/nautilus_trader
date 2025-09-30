@@ -33,15 +33,15 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type.
+        The Polymarket signature type: 0 (EOA), 1 (Email/Magic Wallet Proxy), or 2 (Browser Wallet Proxy).
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
-        The Polymarket API public key.
+        The Polymarket API key.
         If ``None`` then will source the `POLYMARKET_API_KEY` environment variable.
     api_secret : str, optional
-        The Polymarket API public key.
+        The Polymarket API secret.
         If ``None`` then will source the `POLYMARKET_API_SECRET` environment variable.
     passphrase : str, optional
         The Polymarket API passphrase.
@@ -93,16 +93,16 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type.
+        The Polymarket signature type: 0 (EOA), 1 (Email/Magic Wallet Proxy), or 2 (Browser Wallet Proxy).
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
-        The Polymarket API public key.
+        The Polymarket API key.
         If ``None`` then will source the `POLYMARKET_API_KEY` environment variable.
     api_secret : str, optional
-        The Polymarket API public key.
-        If ``None`` then will source the `POLYMARKET_API_SECRET` environment variables.
+        The Polymarket API secret.
+        If ``None`` then will source the `POLYMARKET_API_SECRET` environment variable.
     passphrase : str, optional
         The Polymarket API passphrase.
         If ``None`` then will source the `POLYMARKET_PASSPHRASE` environment variable.

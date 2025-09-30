@@ -117,7 +117,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
+            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
         ),
@@ -127,7 +127,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
+            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
