@@ -33,7 +33,10 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type: 0 (EOA), 1 (Email/Magic Wallet Proxy), or 2 (Browser Wallet Proxy).
+        The Polymarket signature type:
+        - 0: EOA (Externally Owned Account)
+        - 1: Email/Magic Wallet Proxy
+        - 2: Browser Wallet Proxy
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
@@ -93,7 +96,10 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type: 0 (EOA), 1 (Email/Magic Wallet Proxy), or 2 (Browser Wallet Proxy).
+        The Polymarket signature type:
+        - 0: EOA (Externally Owned Account)
+        - 1: Email/Magic Wallet Proxy
+        - 2: Browser Wallet Proxy
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.

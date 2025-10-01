@@ -20,9 +20,13 @@ use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
 
 use crate::{
-    data::{QuoteTick, TradeTick, depth::OrderBookDepth10, order::BookOrder, stubs::*},
+    data::{
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, depth::OrderBookDepth10,
+        order::BookOrder, stubs::*,
+    },
     enums::{
-        AggressorSide, BookType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TimeInForce,
+        AggressorSide, BookType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, RecordFlag,
+        TimeInForce,
     },
     identifiers::{ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     orderbook::{
@@ -4883,4 +4887,62 @@ fn prop_test_l1_book_operations() {
     proptest!(|(operations in prop::collection::vec(l1_operation_strategy(), 5..=50))| {
         test_l1_book_with_operations(operations);
     });
+}
+
+#[rstest]
+fn test_apply_deltas_single_clear_no_f_last() {
+    // Test that applying a single CLEAR delta without F_LAST flag doesn't crash
+    let instrument_id = InstrumentId::from("TEST.SIM");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Add some initial data to the book
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.0"),
+        Quantity::from("10.0"),
+        1,
+    );
+    book.add(bid, 0, 0, 0.into());
+
+    assert_eq!(book.bids(None).count(), 1);
+
+    // Create a CLEAR delta without F_LAST flag (only F_SNAPSHOT)
+    let clear_delta = OrderBookDelta::clear(instrument_id, 0, 0.into(), 0.into());
+
+    // Verify it doesn't have F_LAST
+    assert!(!RecordFlag::F_LAST.matches(clear_delta.flags));
+    assert!(RecordFlag::F_SNAPSHOT.matches(clear_delta.flags));
+
+    // Create OrderBookDeltas with only the clear delta
+    let deltas = OrderBookDeltas::new(instrument_id, vec![clear_delta]);
+
+    // Apply it - should not crash
+    book.apply_deltas(&deltas);
+
+    // Book should be cleared
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 0);
+}
+
+#[rstest]
+fn test_apply_deltas_empty_clear_to_empty_book() {
+    // Test applying CLEAR to an already empty book
+    let instrument_id = InstrumentId::from("TEST.SIM");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Book is already empty
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 0);
+
+    // Create a CLEAR delta
+    let clear_delta = OrderBookDelta::clear(instrument_id, 0, 0.into(), 0.into());
+
+    let deltas = OrderBookDeltas::new(instrument_id, vec![clear_delta]);
+
+    // Apply it - should not crash
+    book.apply_deltas(&deltas);
+
+    // Book should still be empty
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 0);
 }

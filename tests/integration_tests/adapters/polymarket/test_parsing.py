@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
@@ -28,10 +29,18 @@ from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeC
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Money
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -441,3 +450,134 @@ def test_parse_book_snapshot_to_quote_both_empty() -> None:
     assert quote.bid_size == instrument.make_qty(0.0)
     assert quote.ask_price == instrument.make_price(POLYMARKET_MAX_PRICE)
     assert quote.ask_size == instrument.make_qty(0.0)
+
+
+def test_parse_empty_book_snapshot_returns_none():
+    """
+    Test that parsing a book snapshot with both empty bids and asks returns None.
+
+    This can occur near market resolution and should not crash.
+
+    """
+    # Arrange
+    raw_data = {
+        "asks": [],
+        "asset_id": "46428986054832220603415781377952331535489217742718963672459046269597594860904",
+        "bids": [],
+        "event_type": "book",
+        "hash": "71f5c52df95bea6fa56312686790af61d4a42fcc",
+        "market": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57",
+        "received_at": 1756944696893,
+        "timestamp": "1756944561003",
+    }
+
+    instrument = BinaryOption.from_dict(
+        {
+            "activation_ns": 0,
+            "asset_class": "ALTERNATIVE",
+            "currency": "USDC.e",
+            "description": "Bitcoin Up or Down - September 3, 7PM ET",
+            "expiration_ns": 1756944000000000000,
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "maker_fee": "0",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "max_quantity": None,
+            "min_quantity": "1",
+            "outcome": "Up",
+            "price_increment": "0.01",
+            "price_precision": 2,
+            "raw_symbol": "46428986054832220603415781377952331535489217742718963672459046269597594860904",
+            "size_increment": "0.000001",
+            "size_precision": 6,
+            "taker_fee": "0",
+            "tick_scheme_name": None,
+            "ts_event": 0,
+            "ts_init": 0,
+            "type": "BinaryOption",
+        },
+    )
+
+    # Act
+    snapshot = msgspec.json.decode(msgspec.json.encode(raw_data), type=PolymarketBookSnapshot)
+    result = snapshot.parse_to_snapshot(instrument=instrument, ts_init=0)
+
+    # Assert
+    assert result is None
+
+
+def test_parse_empty_book_snapshot_in_backtest_engine():
+    """
+    Integration test: empty book snapshots should not crash the backtest engine.
+    This is a regression test for a double-free crash that occurred when processing
+    OrderBookDeltas with only a CLEAR delta and no F_LAST flag.
+    """
+    # Arrange
+    raw_data = [
+        {
+            "asks": [],
+            "asset_id": "46428986054832220603415781377952331535489217742718963672459046269597594860904",
+            "bids": [],
+            "event_type": "book",
+            "hash": "71f5c52df95bea6fa56312686790af61d4a42fcc",
+            "market": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57",
+            "received_at": 1756944696893,
+            "timestamp": "1756944561003",
+        },
+    ]
+
+    instrument = BinaryOption.from_dict(
+        {
+            "activation_ns": 0,
+            "asset_class": "ALTERNATIVE",
+            "currency": "USDC.e",
+            "description": "Bitcoin Up or Down - September 3, 7PM ET",
+            "expiration_ns": 1756944000000000000,
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "maker_fee": "0",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "max_quantity": None,
+            "min_quantity": "1",
+            "outcome": "Up",
+            "price_increment": "0.01",
+            "price_precision": 2,
+            "raw_symbol": "46428986054832220603415781377952331535489217742718963672459046269597594860904",
+            "size_increment": "0.000001",
+            "size_precision": 6,
+            "taker_fee": "0",
+            "tick_scheme_name": None,
+            "ts_event": 0,
+            "ts_init": 0,
+            "type": "BinaryOption",
+        },
+    )
+
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
+        logging=LoggingConfig(log_level="ERROR"),  # Suppress output
+    )
+    engine = BacktestEngine(config=config)
+    engine.add_venue(
+        venue=POLYMARKET_VENUE,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        base_currency=USDC,
+        starting_balances=[Money(100, USDC)],
+        book_type=BookType.L2_MBP,
+    )
+    engine.add_instrument(instrument)
+
+    # Act - parse and add data (should skip empty snapshots)
+    deltas = []
+    for msg in raw_data:
+        snapshot = msgspec.json.decode(msgspec.json.encode(msg), type=PolymarketBookSnapshot)
+        ob_snapshot = snapshot.parse_to_snapshot(instrument=instrument, ts_init=0)
+        if ob_snapshot is not None:
+            deltas.append(ob_snapshot)
+
+    if deltas:
+        engine.add_data(deltas)
+
+    # Assert - should complete without crashing
+    engine.run()

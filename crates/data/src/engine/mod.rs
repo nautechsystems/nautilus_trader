@@ -808,6 +808,10 @@ impl DataEngine {
         let deltas = if self.config.buffer_deltas {
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
                 buffered_deltas.deltas.push(delta);
+                buffered_deltas.flags = delta.flags;
+                buffered_deltas.sequence = delta.sequence;
+                buffered_deltas.ts_event = delta.ts_event;
+                buffered_deltas.ts_init = delta.ts_init;
             } else {
                 let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
                 self.buffered_deltas_map
@@ -844,6 +848,13 @@ impl DataEngine {
 
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
                 buffered_deltas.deltas.extend(deltas.deltas);
+
+                if let Some(last_delta) = buffered_deltas.deltas.last() {
+                    buffered_deltas.flags = last_delta.flags;
+                    buffered_deltas.sequence = last_delta.sequence;
+                    buffered_deltas.ts_event = last_delta.ts_event;
+                    buffered_deltas.ts_init = last_delta.ts_init;
+                }
             } else {
                 self.buffered_deltas_map.insert(instrument_id, deltas);
             }

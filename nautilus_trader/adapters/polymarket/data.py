@@ -410,6 +410,10 @@ class PolymarketDataClient(LiveMarketDataClient):
         now_ns = self._clock.timestamp_ns()
         deltas = ws_message.parse_to_snapshot(instrument=instrument, ts_init=now_ns)
 
+        if deltas is None:
+            # Skip empty snapshots (can occur near market resolution)
+            return
+
         self._handle_deltas(instrument, deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
@@ -601,6 +605,10 @@ class PolymarketDataClient(LiveMarketDataClient):
         )
 
         deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=ts_init)
+
+        if deltas is None:
+            # Skip empty snapshots (can occur near market resolution)
+            return
 
         new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
         new_book.apply_deltas(deltas)
