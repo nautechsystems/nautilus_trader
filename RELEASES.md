@@ -32,7 +32,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
-- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000), thanks @filipmacek
+- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
