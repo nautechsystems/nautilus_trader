@@ -448,17 +448,6 @@ node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
 node.build()
 ```
 
-## Common issues
-
-Common issues when using the OKX adapter:
-
-- **Authentication errors**: Verify your API credentials and ensure they have the required permissions.
-- **Insufficient permissions**: Verify your API key has trading permissions if executing orders.
-- **Rate limit exceeded**: Reduce request frequency or implement delays between requests.
-- **Invalid symbols**: Ensure you're using valid OKX instrument identifiers.
-
-For detailed error information, check the NautilusTrader logs.
-
 :::info
 For additional features or to contribute to the OKX adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).

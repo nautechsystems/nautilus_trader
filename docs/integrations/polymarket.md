@@ -204,7 +204,7 @@ Polymarket operates as a prediction market with a more limited set of order type
 
 | Order Type             | Binary Options | Notes                               |
 |------------------------|----------------|-------------------------------------|
-| `MARKET`               | ✓              | Executed as marketable limit order. BUY orders require quote quantity, SELL orders require base quantity. |
+| `MARKET`               | ✓              | **BUY orders require quote quantity**, SELL orders require base quantity. |
 | `LIMIT`                | ✓              |                                     |
 | `STOP_MARKET`          | -              | *Not supported by Polymarket*.      |
 | `STOP_LIMIT`           | -              | *Not supported by Polymarket*.      |
@@ -325,7 +325,7 @@ Polymarket enforces different precision constraints based on tick size and order
 
 - **Regular GTC orders:** More flexible precision based on market tick size.
 
-**Tick size precision hierarchy:**
+### Tick size precision hierarchy
 
 | Tick Size | Price Decimals | Size Decimals | Amount Decimals |
 |-----------|----------------|---------------|-----------------|
@@ -413,3 +413,8 @@ The following execution client configuration options are available:
 | `funder`                             | `None`  | Wallet address for funding USDC transactions. |
 | `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
 | `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |
+
+:::info
+For additional features or to contribute to the Polymarket adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

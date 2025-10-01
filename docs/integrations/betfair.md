@@ -28,7 +28,7 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 For API details and troubleshooting, see the official [Betfair Developer Documentation](https://developer.betfair.com/en/get-started/).
 
-## Application Keys
+## Application keys
 
 Betfair requires an Application Key to authenticate API requests. After registering and funding your account, obtain your key using the [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
 
@@ -63,7 +63,7 @@ The Betfair adapter provides three primary components:
 
 Betfair operates as a betting exchange with unique characteristics compared to traditional financial exchanges:
 
-### Order Types
+### Order types
 
 | Order Type             | Supported | Notes                               |
 |------------------------|-----------|-------------------------------------|
@@ -75,7 +75,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                    |
 | `TRAILING_STOP_MARKET` | -         | *Not supported*.                    |
 
-### Execution Instructions
+### Execution instructions
 
 | Instruction   | Supported | Notes                               |
 |---------------|-----------|-------------------------------------|
@@ -91,7 +91,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `FOK`         | -         | Betting exchange uses different model. |
 | `IOC`         | -         | Betting exchange uses different model. |
 
-### Advanced Order Features
+### Advanced order features
 
 | Feature            | Supported | Notes                                    |
 |--------------------|-----------|------------------------------------------|
@@ -168,3 +168,8 @@ node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
 node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
 node.build()
 ```
+
+:::info
+For additional features or to contribute to the Betfair adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

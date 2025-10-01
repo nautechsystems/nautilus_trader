@@ -196,16 +196,16 @@ Consider the following points when using trailing stops on Bybit:
 
 Every HTTP call consumes the global token bucket as well as any keyed quota(s). When usage exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.
 
-| Key / Endpoint                | Limit (requests/sec) | Notes                                                |
-|------------------------------|----------------------|------------------------------------------------------|
-| `bybit:global`               | 24                   | Exchange-wide 120 req / 5 s ceiling.                 |
-| `/v5/market/kline`           | 20                   | Historical sweeps throttled slightly below global.   |
-| `/v5/market/trades`          | 24                   | Matches the global quota.                            |
-| `/v5/order/create`           | 10                   | Standard order placement.                            |
-| `/v5/order/cancel`           | 10                   | Single-order cancellation.                           |
-| `/v5/order/create-batch`     | 5                    | Batch placement endpoints.                           |
-| `/v5/order/cancel-batch`     | 5                    | Batch cancellation endpoints.                        |
-| `/v5/order/cancel-all`       | 2                    | Full book cancel to mirror Bybit guidance.           |
+| Key / Endpoint            | Limit (requests/sec) | Notes                                                |
+|---------------------------|----------------------|------------------------------------------------------|
+| `bybit:global`            | 120                  | Exchange-wide 600 req / 5 s ceiling.                 |
+| `/v5/market/kline`        | 20                   | Historical sweeps throttled slightly below global.   |
+| `/v5/market/trades`       | 24                   | Matches the global quota.                            |
+| `/v5/order/create`        | 10                   | Standard order placement.                            |
+| `/v5/order/cancel`        | 10                   | Single-order cancellation.                           |
+| `/v5/order/create-batch`  | 5                    | Batch placement endpoints.                           |
+| `/v5/order/cancel-batch`  | 5                    | Batch cancellation endpoints.                        |
+| `/v5/order/cancel-all`    | 2                    | Full book cancel to mirror Bybit guidance.           |
 
 :::warning
 Bybit responds with error code `10016` when the rate limit is exceeded and may temporarily block the IP if requests continue without back-off.
@@ -400,3 +400,8 @@ We recommend using environment variables to manage your credentials.
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
+
+:::info
+For additional features or to contribute to the Bybit adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

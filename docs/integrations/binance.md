@@ -5,20 +5,6 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
-## Installation
-
-To install NautilusTrader with Binance support:
-
-```bash
-pip install --upgrade "nautilus_trader[binance]"
-```
-
-To build from source with all extras (including Binance):
-
-```bash
-uv sync --all-extras
-```
-
 ## Examples
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
@@ -184,7 +170,7 @@ Valid `priceMatch` values for Binance Futures:
 | `QUEUE_20`    | Join the same-side queue but offset up to 20 ticks.            |
 
 :::info
-For more details, see the official documentation: <https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api>.
+For more details, see the [official documentation](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api).
 :::
 
 #### Example: Futures BBO limit order
@@ -230,7 +216,87 @@ You must also have at least *one* of the following:
 - (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
 - (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
+## Order books
+
+Order books can be maintained at full or partial depths depending on the
+subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
+Nautilus will use the highest streaming rate possible:
+
+Order books can be maintained at full or partial depths based on the subscription settings.
+WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
+highest available streaming rate:
+
+- **Spot**: 100ms
+- **Futures**: 0ms (*unthrottled*)
+
+There is a limitation of one order book per instrument per trader instance.
+As stream subscriptions may vary, the latest order book data (deltas or snapshots)
+subscription will be used by the Binance data client.
+
+Order book snapshot rebuilds will be triggered on:
+
+- Initial subscription of the order book data.
+- Data websocket reconnects.
+
+The sequence of events is as follows:
+
+- Deltas will start buffered.
+- Snapshot is requested and awaited.
+- Snapshot response is parsed to `OrderBookDeltas`.
+- Snapshot deltas are sent to the `DataEngine`.
+- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
+- Deltas will stop buffering.
+- Remaining deltas are sent to the `DataEngine`.
+
+## Binance data differences
+
+The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
+where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
+
+## Binance specific data
+
+It's possible to subscribe to Binance specific data streams as they become available to the
+adapter over time.
+
+:::note
+Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
+As more adapters are built out which need for example mark price and funding rate updates, then these
+methods may eventually become first-class (not requiring custom/generic subscriptions as below).
+:::
+
+### `BinanceFuturesMarkPriceUpdate`
+
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
+data streams by subscribing in the following way from your actor or strategy:
+
+```python
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.model import DataType
+from nautilus_trader.model import ClientId
+
+# In your `on_start` method
+self.subscribe_data(
+    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
+    client_id=ClientId("BINANCE"),
+)
+```
+
+This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate`
+objects to your `on_data` method. You will need to check the type, as this
+method acts as a flexible handler for all custom/generic data.
+
+```python
+from nautilus_trader.core import Data
+
+def on_data(self, data: Data):
+    # First check the type of data
+    if isinstance(data, BinanceFuturesMarkPriceUpdate):
+        # Do something with the data
+```
+
 ## Rate limiting
+
+Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (e.g., every minute resets at :00 seconds). The adapter uses token bucket rate limiters to approximate this behavior, helping to reduce the risk of quota violations while maintaining high throughput for normal trading operations.
 
 | Key / Endpoint        | Limit (weight/min) | Notes                                                 |
 |-----------------------|--------------------|-------------------------------------------------------|
@@ -529,80 +595,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             self.submit_order(order, position_id)
     ```
 
-## Order books
-
-Order books can be maintained at full or partial depths depending on the
-subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
-Nautilus will use the highest streaming rate possible:
-
-Order books can be maintained at full or partial depths based on the subscription settings.
-WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
-highest available streaming rate:
-
-- **Spot**: 100ms
-- **Futures**: 0ms (*unthrottled*)
-
-There is a limitation of one order book per instrument per trader instance.
-As stream subscriptions may vary, the latest order book data (deltas or snapshots)
-subscription will be used by the Binance data client.
-
-Order book snapshot rebuilds will be triggered on:
-
-- Initial subscription of the order book data.
-- Data websocket reconnects.
-
-The sequence of events is as follows:
-
-- Deltas will start buffered.
-- Snapshot is requested and awaited.
-- Snapshot response is parsed to `OrderBookDeltas`.
-- Snapshot deltas are sent to the `DataEngine`.
-- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
-- Deltas will stop buffering.
-- Remaining deltas are sent to the `DataEngine`.
-
-## Binance data differences
-
-The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
-where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
-
-## Binance specific data
-
-It's possible to subscribe to Binance specific data streams as they become available to the
-adapter over time.
-
-:::note
-Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
-As more adapters are built out which need for example mark price and funding rate updates, then these
-methods may eventually become first-class (not requiring custom/generic subscriptions as below).
+:::info
+For additional features or to contribute to the Binance adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
 :::
-
-### `BinanceFuturesMarkPriceUpdate`
-
-You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
-data streams by subscribing in the following way from your actor or strategy:
-
-```python
-from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.model import DataType
-from nautilus_trader.model import ClientId
-
-# In your `on_start` method
-self.subscribe_data(
-    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
-    client_id=ClientId("BINANCE"),
-)
-```
-
-This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate`
-objects to your `on_data` method. You will need to check the type, as this
-method acts as a flexible handler for all custom/generic data.
-
-```python
-from nautilus_trader.core import Data
-
-def on_data(self, data: Data):
-    # First check the type of data
-    if isinstance(data, BinanceFuturesMarkPriceUpdate):
-        # Do something with the data
-```
