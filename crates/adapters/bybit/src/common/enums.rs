@@ -88,6 +88,7 @@ pub enum BybitEnvironment {
 /// Product categories supported by the v5 API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, eq_int))]
 pub enum BybitProductType {
     Spot,
     Linear,

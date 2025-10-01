@@ -184,7 +184,7 @@ async fn test_authenticated_endpoints(api_key: &str, api_secret: &str) -> anyhow
     let client = BybitHttpClient::with_credentials(
         api_key.to_string(),
         api_secret.to_string(),
-        base_url,
+        Some(base_url),
         Some(60),
         None,
         None,

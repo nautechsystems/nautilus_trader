@@ -294,7 +294,7 @@ async fn test_client_with_credentials() {
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
-        "https://api.bybit.com".to_string(),
+        Some("https://api.bybit.com".to_string()),
         Some(60),
         None,
         None,
@@ -369,7 +369,7 @@ async fn test_place_order() {
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
-        base_url,
+        Some(base_url),
         Some(60),
         None,
         None,

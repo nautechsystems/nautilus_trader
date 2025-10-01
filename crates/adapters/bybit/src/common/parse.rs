@@ -542,6 +542,114 @@ fn extract_strike_from_symbol(symbol: &str) -> Result<Price> {
     parse_price(strike, "option strike")
 }
 
+/// Parses a Bybit order into a Nautilus OrderStatusReport.
+pub fn parse_order_status_report(
+    order: &crate::http::models::BybitOrder,
+    instrument: &InstrumentAny,
+    account_id: nautilus_model::identifiers::AccountId,
+    ts_init: UnixNanos,
+) -> Result<nautilus_model::reports::OrderStatusReport> {
+    use nautilus_model::{
+        enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+        identifiers::{ClientOrderId, VenueOrderId},
+        reports::OrderStatusReport,
+    };
+
+    use crate::common::enums::{BybitOrderStatus, BybitOrderType, BybitTimeInForce};
+
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(order.order_id);
+
+    let order_side: OrderSide = order.side.into();
+
+    let order_type: OrderType = match order.order_type {
+        BybitOrderType::Market => OrderType::Market,
+        BybitOrderType::Limit => OrderType::Limit,
+        BybitOrderType::Unknown => OrderType::Limit,
+    };
+
+    let time_in_force: TimeInForce = match order.time_in_force {
+        BybitTimeInForce::Gtc => TimeInForce::Gtc,
+        BybitTimeInForce::Ioc => TimeInForce::Ioc,
+        BybitTimeInForce::Fok => TimeInForce::Fok,
+        BybitTimeInForce::PostOnly => TimeInForce::Gtc,
+    };
+
+    let order_status: OrderStatus = match order.order_status {
+        BybitOrderStatus::Created | BybitOrderStatus::New | BybitOrderStatus::Untriggered => {
+            OrderStatus::Accepted
+        }
+        BybitOrderStatus::Rejected => OrderStatus::Rejected,
+        BybitOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
+        BybitOrderStatus::Filled => OrderStatus::Filled,
+        BybitOrderStatus::Canceled | BybitOrderStatus::PartiallyFilledCanceled => {
+            OrderStatus::Canceled
+        }
+        BybitOrderStatus::Triggered => OrderStatus::Triggered,
+        BybitOrderStatus::Deactivated => OrderStatus::Canceled,
+    };
+
+    let quantity =
+        parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty")?;
+
+    let filled_qty = parse_quantity_with_precision(
+        &order.cum_exec_qty,
+        instrument.size_precision(),
+        "order.cumExecQty",
+    )?;
+
+    let ts_accepted = parse_millis_timestamp(&order.created_time, "order.createdTime")?;
+    let ts_last = parse_millis_timestamp(&order.updated_time, "order.updatedTime")?;
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None,
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force,
+        order_status,
+        quantity,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        Some(nautilus_core::uuid::UUID4::new()),
+    );
+
+    if !order.order_link_id.is_empty() {
+        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id.as_str()));
+    }
+
+    if !order.price.is_empty() && order.price != "0" {
+        let price =
+            parse_price_with_precision(&order.price, instrument.price_precision(), "order.price")?;
+        report = report.with_price(price);
+    }
+
+    if let Some(avg_price) = &order.avg_price
+        && !avg_price.is_empty()
+        && avg_price != "0"
+    {
+        let avg_px = avg_price
+            .parse::<f64>()
+            .with_context(|| format!("Failed to parse avg_price='{avg_price}' as f64"))?;
+        report = report.with_avg_px(avg_px);
+    }
+
+    if !order.trigger_price.is_empty() && order.trigger_price != "0" {
+        let trigger_price = parse_price_with_precision(
+            &order.trigger_price,
+            instrument.price_precision(),
+            "order.triggerPrice",
+        )?;
+        report = report.with_trigger_price(trigger_price);
+    }
+
+    Ok(report)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

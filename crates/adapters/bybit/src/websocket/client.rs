@@ -672,12 +672,19 @@ impl BybitWebSocketClient {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::common::testing::load_test_json;
 
-    #[test]
+    #[rstest]
     fn classify_orderbook_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_orderbook_snapshot.json"))
             .expect("invalid fixture");
@@ -686,7 +693,7 @@ mod tests {
         assert!(matches!(message, BybitWebSocketMessage::Orderbook(_)));
     }
 
-    #[test]
+    #[rstest]
     fn classify_trade_snapshot() {
         let json: Value =
             serde_json::from_str(&load_test_json("ws_public_trade.json")).expect("invalid fixture");
@@ -695,7 +702,7 @@ mod tests {
         assert!(matches!(message, BybitWebSocketMessage::Trade(_)));
     }
 
-    #[test]
+    #[rstest]
     fn classify_ticker_linear_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_ticker_linear.json"))
             .expect("invalid fixture");
@@ -704,7 +711,7 @@ mod tests {
         assert!(matches!(message, BybitWebSocketMessage::TickerLinear(_)));
     }
 
-    #[test]
+    #[rstest]
     fn classify_ticker_option_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_ticker_option.json"))
             .expect("invalid fixture");

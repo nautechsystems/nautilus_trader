@@ -21,10 +21,20 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
+use nautilus_model::{
+    data::{Bar, BarType, TradeTick},
+    enums::{BarAggregation, OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
+    reports::OrderStatusReport,
+    types::{Price, Quantity},
+};
 use nautilus_network::{
     http::HttpClient,
     ratelimiter::quota::Quota,
@@ -33,6 +43,7 @@ use nautilus_network::{
 use reqwest::{Method, header::USER_AGENT};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use super::{
     error::BybitHttpError,
@@ -42,13 +53,27 @@ use super::{
         BybitOpenOrdersResponse, BybitPlaceOrderResponse, BybitServerTimeResponse,
         BybitTradesResponse,
     },
-    query::{BybitInstrumentsInfoParams, BybitKlinesParams, BybitTradesParams},
+    query::{
+        BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
+        BybitBatchCancelOrderEntryBuilder, BybitBatchPlaceOrderEntryBuilder,
+        BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder,
+        BybitInstrumentsInfoParams, BybitKlinesParams, BybitPlaceOrderParamsBuilder,
+        BybitTradesParams,
+    },
 };
 use crate::common::{
     consts::BYBIT_NAUTILUS_BROKER_ID,
     credential::Credential,
-    enums::{BybitEnvironment, BybitProductType},
+    enums::{
+        BybitEnvironment, BybitKlineInterval, BybitOrderSide, BybitOrderType, BybitProductType,
+        BybitTimeInForce,
+    },
     models::BybitResponse,
+    parse::{
+        parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
+        parse_option_instrument, parse_order_status_report, parse_spot_instrument,
+        parse_trade_tick,
+    },
     urls::bybit_http_base_url,
 };
 
@@ -71,6 +96,7 @@ pub struct BybitHttpInnerClient {
     recv_window_ms: u64,
     retry_manager: RetryManager<BybitHttpError>,
     cancellation_token: CancellationToken,
+    instruments: Arc<Mutex<HashMap<Ustr, InstrumentAny>>>,
 }
 
 impl Default for BybitHttpInnerClient {
@@ -143,6 +169,7 @@ impl BybitHttpInnerClient {
             recv_window_ms: DEFAULT_RECV_WINDOW_MS,
             retry_manager,
             cancellation_token: CancellationToken::new(),
+            instruments: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -155,7 +182,7 @@ impl BybitHttpInnerClient {
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
-        base_url: String,
+        base_url: Option<String>,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
@@ -177,7 +204,8 @@ impl BybitHttpInnerClient {
         })?;
 
         Ok(Self {
-            base_url,
+            base_url: base_url
+                .unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
@@ -189,6 +217,7 @@ impl BybitHttpInnerClient {
             recv_window_ms: DEFAULT_RECV_WINDOW_MS,
             retry_manager,
             cancellation_token: CancellationToken::new(),
+            instruments: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -528,6 +557,75 @@ impl BybitHttpInnerClient {
             .await
     }
 
+    /// Fetches wallet balance (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
+    pub async fn http_get_wallet_balance(
+        &self,
+        params: &super::query::BybitWalletBalanceParams,
+    ) -> Result<super::models::BybitWalletBalanceResponse, BybitHttpError> {
+        let path = Self::build_path("/v5/account/wallet-balance", params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Fetches tickers for market data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/tickers>
+    pub async fn http_get_tickers<T: DeserializeOwned>(
+        &self,
+        params: &super::query::BybitTickersParams,
+    ) -> Result<T, BybitHttpError> {
+        let path = Self::build_path("/v5/market/tickers", params)?;
+        self.send_request(Method::GET, &path, None, false).await
+    }
+
+    /// Fetches trade execution history (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/order/execution>
+    pub async fn http_get_trade_history(
+        &self,
+        params: &super::query::BybitTradeHistoryParams,
+    ) -> Result<super::models::BybitTradeHistoryResponse, BybitHttpError> {
+        let path = Self::build_path("/v5/execution/list", params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    // TODO: Add position information endpoint once position models are defined
+    // /// Fetches position information (requires authentication).
+    // ///
+    // /// # Errors
+    // ///
+    // /// Returns an error if the request fails or the response cannot be parsed.
+    // ///
+    // /// # References
+    // ///
+    // /// - <https://bybit-exchange.github.io/docs/v5/position/position>
+    // pub async fn http_get_positions(
+    //     &self,
+    //     params: &super::query::BybitPositionListParams,
+    // ) -> Result<super::models::BybitPositionListResponse, BybitHttpError> {
+    //     let path = Self::build_path("/v5/position/list", params)?;
+    //     self.send_request(Method::GET, &path, None, true).await
+    // }
+
     /// Returns the base URL used for requests.
     #[must_use]
     pub fn base_url(&self) -> &str {
@@ -545,6 +643,697 @@ impl BybitHttpInnerClient {
     pub fn credential(&self) -> Option<&Credential> {
         self.credential.as_ref()
     }
+
+    /// Add an instrument to the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
+        let mut cache = self.instruments.lock().unwrap();
+        let symbol = Ustr::from(instrument.id().symbol.as_str());
+        cache.insert(symbol, instrument);
+    }
+
+    /// Get an instrument from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument is not found in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn instrument_from_cache(&self, symbol: &str) -> anyhow::Result<InstrumentAny> {
+        let symbol_ustr = Ustr::from(symbol);
+        let cache = self.instruments.lock().unwrap();
+        cache.get(&symbol_ustr).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Instrument {symbol} not found in cache, ensure instruments loaded first"
+            )
+        })
+    }
+
+    /// Generate a timestamp for initialization.
+    #[must_use]
+    pub fn generate_ts_init(&self) -> UnixNanos {
+        get_atomic_clock_realtime().get_time_ns()
+    }
+
+    // =========================================================================
+    // High-level domain methods
+    // =========================================================================
+
+    /// Submit a new order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Order validation fails.
+    /// - The order is rejected.
+    /// - The API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        reduce_only: bool,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let bybit_side = match order_side {
+            OrderSide::Buy => BybitOrderSide::Buy,
+            OrderSide::Sell => BybitOrderSide::Sell,
+            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
+        };
+
+        let bybit_order_type = match order_type {
+            OrderType::Market => BybitOrderType::Market,
+            OrderType::Limit => BybitOrderType::Limit,
+            _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
+        };
+
+        let bybit_tif = match time_in_force {
+            TimeInForce::Gtc => BybitTimeInForce::Gtc,
+            TimeInForce::Ioc => BybitTimeInForce::Ioc,
+            TimeInForce::Fok => BybitTimeInForce::Fok,
+            _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
+        };
+
+        let mut order_entry = BybitBatchPlaceOrderEntryBuilder::default();
+        order_entry.symbol(instrument_id.symbol.as_str().to_string());
+        order_entry.side(bybit_side);
+        order_entry.order_type(bybit_order_type);
+        order_entry.qty(quantity.to_string());
+        order_entry.time_in_force(Some(bybit_tif));
+        order_entry.order_link_id(Some(client_order_id.to_string()));
+
+        if let Some(price) = price {
+            order_entry.price(Some(price.to_string()));
+        }
+
+        if reduce_only {
+            order_entry.reduce_only(Some(true));
+        }
+
+        let order_entry = order_entry.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let mut params = BybitPlaceOrderParamsBuilder::default();
+        params.category(product_type);
+        params.order(order_entry);
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let body = serde_json::to_value(&params)?;
+        let response = self.http_place_order(&body).await?;
+
+        let order_id = response
+            .result
+            .order_id
+            .ok_or_else(|| anyhow::anyhow!("No order_id in response"))?;
+
+        // Query the order to get full details
+        let mut query_params = super::query::BybitOpenOrdersParamsBuilder::default();
+        query_params.category(product_type);
+        query_params.order_id(Some(order_id.as_str().to_string()));
+
+        let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let path = Self::build_path("/v5/order/realtime", &query_params)?;
+        let order_response: super::models::BybitOpenOrdersResponse =
+            self.send_request(Method::GET, &path, None, true).await?;
+
+        let order = order_response
+            .result
+            .list
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No order returned after submission"))?;
+
+        if order.order_status == crate::common::enums::BybitOrderStatus::Rejected {
+            anyhow::bail!("Order rejected: {}", order.reject_reason);
+        }
+
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(&order, &instrument, account_id, ts_init)
+    }
+
+    /// Cancel an order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
+    pub async fn cancel_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let mut cancel_entry = BybitBatchCancelOrderEntryBuilder::default();
+        cancel_entry.symbol(instrument_id.symbol.as_str().to_string());
+
+        if let Some(venue_order_id) = venue_order_id {
+            cancel_entry.order_id(Some(venue_order_id.to_string()));
+        } else if let Some(client_order_id) = client_order_id {
+            cancel_entry.order_link_id(Some(client_order_id.to_string()));
+        } else {
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
+        }
+
+        let cancel_entry = cancel_entry.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let mut params = BybitCancelOrderParamsBuilder::default();
+        params.category(product_type);
+        params.order(cancel_entry);
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let body = serde_json::to_vec(&params)?;
+
+        let response: super::models::BybitPlaceOrderResponse = self
+            .send_request(Method::POST, "/v5/order/cancel", Some(body), true)
+            .await?;
+
+        let order_id = response
+            .result
+            .order_id
+            .ok_or_else(|| anyhow::anyhow!("No order_id in cancel response"))?;
+
+        // Query the order to get full details after cancellation
+        let mut query_params = super::query::BybitOpenOrdersParamsBuilder::default();
+        query_params.category(product_type);
+        query_params.order_id(Some(order_id.as_str().to_string()));
+
+        let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let path = Self::build_path("/v5/order/history", &query_params)?;
+        let order_response: super::models::BybitOrderHistoryResponse =
+            self.send_request(Method::GET, &path, None, true).await?;
+
+        let order = order_response
+            .result
+            .list
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No order returned in cancel response"))?;
+
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(&order, &instrument, account_id, ts_init)
+    }
+
+    /// Cancel all orders for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn cancel_all_orders(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let mut params = BybitCancelAllOrdersParamsBuilder::default();
+        params.category(product_type);
+        params.symbol(Some(instrument_id.symbol.as_str().to_string()));
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let body = serde_json::to_vec(&params)?;
+
+        let _response: crate::common::models::BybitListResponse<serde_json::Value> = self
+            .send_request(Method::POST, "/v5/order/cancel-all", Some(body), true)
+            .await?;
+
+        // Query the order history to get all canceled orders
+        let mut query_params = super::query::BybitOrderHistoryParamsBuilder::default();
+        query_params.category(product_type);
+        query_params.symbol(Some(instrument_id.symbol.as_str().to_string()));
+        query_params.limit(Some(50));
+
+        let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let path = Self::build_path("/v5/order/history", &query_params)?;
+        let order_response: super::models::BybitOrderHistoryResponse =
+            self.send_request(Method::GET, &path, None, true).await?;
+
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        let mut reports = Vec::new();
+        for order in order_response.result.list {
+            if let Ok(report) = parse_order_status_report(&order, &instrument, account_id, ts_init)
+            {
+                reports.push(report);
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Modify an existing order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The order is already closed.
+    /// - The API returns an error.
+    pub async fn modify_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let mut amend_entry = BybitBatchAmendOrderEntryBuilder::default();
+        amend_entry.symbol(instrument_id.symbol.as_str().to_string());
+
+        if let Some(venue_order_id) = venue_order_id {
+            amend_entry.order_id(Some(venue_order_id.to_string()));
+        } else if let Some(client_order_id) = client_order_id {
+            amend_entry.order_link_id(Some(client_order_id.to_string()));
+        } else {
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
+        }
+
+        if let Some(quantity) = quantity {
+            amend_entry.qty(Some(quantity.to_string()));
+        }
+
+        if let Some(price) = price {
+            amend_entry.price(Some(price.to_string()));
+        }
+
+        let amend_entry = amend_entry.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let mut params = BybitAmendOrderParamsBuilder::default();
+        params.category(product_type);
+        params.order(amend_entry);
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let body = serde_json::to_vec(&params)?;
+
+        let response: super::models::BybitPlaceOrderResponse = self
+            .send_request(Method::POST, "/v5/order/amend", Some(body), true)
+            .await?;
+
+        let order_id = response
+            .result
+            .order_id
+            .ok_or_else(|| anyhow::anyhow!("No order_id in amend response"))?;
+
+        // Query the order to get full details after amendment
+        let mut query_params = super::query::BybitOpenOrdersParamsBuilder::default();
+        query_params.category(product_type);
+        query_params.order_id(Some(order_id.as_str().to_string()));
+
+        let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let path = Self::build_path("/v5/order/realtime", &query_params)?;
+        let order_response: super::models::BybitOpenOrdersResponse =
+            self.send_request(Method::GET, &path, None, true).await?;
+
+        let order = order_response
+            .result
+            .list
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No order returned after modification"))?;
+
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(&order, &instrument, account_id, ts_init)
+    }
+
+    /// Query a single order by client order ID or venue order ID.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn query_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let mut params = super::query::BybitOpenOrdersParamsBuilder::default();
+        params.category(product_type);
+
+        if let Some(venue_order_id) = venue_order_id {
+            params.order_id(Some(venue_order_id.to_string()));
+        } else if let Some(client_order_id) = client_order_id {
+            params.order_link_id(Some(client_order_id.to_string()));
+        } else {
+            anyhow::bail!("Either client_order_id or venue_order_id must be provided");
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let path = Self::build_path("/v5/order/realtime", &params)?;
+
+        let response: super::models::BybitOpenOrdersResponse =
+            self.send_request(Method::GET, &path, None, true).await?;
+
+        if response.result.list.is_empty() {
+            return Ok(None);
+        }
+
+        let order = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        let report = parse_order_status_report(order, &instrument, account_id, ts_init)?;
+        Ok(Some(report))
+    }
+
+    /// Request multiple order status reports.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn request_order_status_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let params = if open_only {
+            let mut p = super::query::BybitOpenOrdersParamsBuilder::default();
+            p.category(product_type);
+            if let Some(instrument_id) = &instrument_id {
+                p.symbol(Some(instrument_id.symbol.as_str().to_string()));
+            }
+            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
+            let path = Self::build_path("/v5/order/realtime", &params)?;
+            let response: super::models::BybitOpenOrdersResponse =
+                self.send_request(Method::GET, &path, None, true).await?;
+            response.result.list
+        } else {
+            let mut p = super::query::BybitOrderHistoryParamsBuilder::default();
+            p.category(product_type);
+            if let Some(instrument_id) = &instrument_id {
+                p.symbol(Some(instrument_id.symbol.as_str().to_string()));
+            }
+            if let Some(limit) = limit {
+                p.limit(Some(limit));
+            }
+            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
+            let path = Self::build_path("/v5/order/history", &params)?;
+            let response: super::models::BybitOrderHistoryResponse =
+                self.send_request(Method::GET, &path, None, true).await?;
+            response.result.list
+        };
+
+        let account_id = AccountId::new("BYBIT");
+        let ts_init = self.generate_ts_init();
+
+        let mut reports = Vec::new();
+        for order in params {
+            if let Some(ref instrument_id) = instrument_id {
+                let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+                if let Ok(report) =
+                    parse_order_status_report(&order, &instrument, account_id, ts_init)
+                {
+                    reports.push(report);
+                }
+            } else {
+                // Try to get instrument from symbol
+                if let Ok(instrument) = self.instrument_from_cache(order.symbol.as_str())
+                    && let Ok(report) =
+                        parse_order_status_report(&order, &instrument, account_id, ts_init)
+                {
+                    reports.push(report);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Request instruments for a given product type.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    pub async fn request_instruments(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let ts_init = self.generate_ts_init();
+
+        let mut params_builder = super::query::BybitInstrumentsInfoParamsBuilder::default();
+        params_builder.category(product_type);
+        if let Some(symbol_str) = symbol {
+            params_builder.symbol(symbol_str);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let mut instruments = Vec::new();
+
+        match product_type {
+            BybitProductType::Spot => {
+                let response: super::models::BybitInstrumentSpotResponse =
+                    self.http_get_instruments(&params).await?;
+
+                // Get fee rates for all symbols
+                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                fee_params.category(product_type);
+                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
+                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
+                let fee_response: super::models::BybitFeeRateResponse =
+                    self.send_request(Method::GET, &path, None, true).await?;
+
+                let fee_map: std::collections::HashMap<_, _> = fee_response
+                    .result
+                    .list
+                    .into_iter()
+                    .map(|f| (f.symbol, f))
+                    .collect();
+
+                for definition in response.result.list {
+                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
+                        && let Ok(instrument) =
+                            parse_spot_instrument(&definition, fee_rate, ts_init, ts_init)
+                    {
+                        instruments.push(instrument);
+                    }
+                }
+            }
+            BybitProductType::Linear => {
+                let response: super::models::BybitInstrumentLinearResponse =
+                    self.http_get_instruments(&params).await?;
+
+                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                fee_params.category(product_type);
+                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
+                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
+                let fee_response: super::models::BybitFeeRateResponse =
+                    self.send_request(Method::GET, &path, None, true).await?;
+
+                let fee_map: std::collections::HashMap<_, _> = fee_response
+                    .result
+                    .list
+                    .into_iter()
+                    .map(|f| (f.symbol, f))
+                    .collect();
+
+                for definition in response.result.list {
+                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
+                        && let Ok(instrument) =
+                            parse_linear_instrument(&definition, fee_rate, ts_init, ts_init)
+                    {
+                        instruments.push(instrument);
+                    }
+                }
+            }
+            BybitProductType::Inverse => {
+                let response: super::models::BybitInstrumentInverseResponse =
+                    self.http_get_instruments(&params).await?;
+
+                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                fee_params.category(product_type);
+                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
+                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
+                let fee_response: super::models::BybitFeeRateResponse =
+                    self.send_request(Method::GET, &path, None, true).await?;
+
+                let fee_map: std::collections::HashMap<_, _> = fee_response
+                    .result
+                    .list
+                    .into_iter()
+                    .map(|f| (f.symbol, f))
+                    .collect();
+
+                for definition in response.result.list {
+                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
+                        && let Ok(instrument) =
+                            parse_inverse_instrument(&definition, fee_rate, ts_init, ts_init)
+                    {
+                        instruments.push(instrument);
+                    }
+                }
+            }
+            BybitProductType::Option => {
+                let response: super::models::BybitInstrumentOptionResponse =
+                    self.http_get_instruments(&params).await?;
+
+                for definition in response.result.list {
+                    if let Ok(instrument) = parse_option_instrument(&definition, ts_init, ts_init) {
+                        instruments.push(instrument);
+                    }
+                }
+            }
+        }
+
+        // Add all instruments to cache
+        for instrument in &instruments {
+            self.add_instrument(instrument.clone());
+        }
+
+        Ok(instruments)
+    }
+
+    /// Request trade tick history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
+    pub async fn request_trades(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+
+        let mut params_builder = super::query::BybitTradesParamsBuilder::default();
+        params_builder.category(product_type);
+        params_builder.symbol(instrument_id.symbol.as_str().to_string());
+        if let Some(limit_val) = limit {
+            params_builder.limit(limit_val);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let response = self.http_get_recent_trades(&params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let mut trades = Vec::new();
+
+        for trade in response.result.list {
+            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, ts_init) {
+                trades.push(trade_tick);
+            }
+        }
+
+        Ok(trades)
+    }
+
+    /// Request bar/kline history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/kline>
+    pub async fn request_bars(
+        &self,
+        product_type: BybitProductType,
+        bar_type: BarType,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        let instrument = self.instrument_from_cache(bar_type.instrument_id().symbol.as_str())?;
+
+        // Convert Nautilus BarAggregation to BybitKlineInterval
+        let interval = match bar_type.spec().aggregation {
+            BarAggregation::Minute => BybitKlineInterval::Minute1,
+            BarAggregation::Hour => BybitKlineInterval::Hour1,
+            BarAggregation::Day => BybitKlineInterval::Day1,
+            _ => anyhow::bail!(
+                "Unsupported bar aggregation: {:?}",
+                bar_type.spec().aggregation
+            ),
+        };
+
+        let mut params_builder = super::query::BybitKlinesParamsBuilder::default();
+        params_builder.category(product_type);
+        params_builder.symbol(bar_type.instrument_id().symbol.as_str().to_string());
+        params_builder.interval(interval);
+
+        if let Some(start_ts) = start {
+            params_builder.start(start_ts);
+        }
+        if let Some(end_ts) = end {
+            params_builder.end(end_ts);
+        }
+        if let Some(limit_val) = limit {
+            params_builder.limit(limit_val);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let response = self.http_get_klines(&params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let mut bars = Vec::new();
+
+        for kline in response.result.list {
+            if let Ok(bar) = parse_kline_bar(&kline, &instrument, bar_type, false, ts_init) {
+                bars.push(bar);
+            }
+        }
+
+        Ok(bars)
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -553,6 +1342,10 @@ impl BybitHttpInnerClient {
 
 /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct BybitHttpClient {
     pub(crate) inner: Arc<BybitHttpInnerClient>,
 }
@@ -606,7 +1399,7 @@ impl BybitHttpClient {
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
-        base_url: String,
+        base_url: Option<String>,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
@@ -623,6 +1416,24 @@ impl BybitHttpClient {
                 retry_delay_max_ms,
             )?),
         })
+    }
+
+    /// Returns the base URL used for requests.
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        self.inner.base_url()
+    }
+
+    /// Returns the configured receive window in milliseconds.
+    #[must_use]
+    pub fn recv_window_ms(&self) -> u64 {
+        self.inner.recv_window_ms()
+    }
+
+    /// Returns the API credential if configured.
+    #[must_use]
+    pub fn credential(&self) -> Option<&Credential> {
+        self.inner.credential()
     }
 
     /// Cancel all pending HTTP requests.
@@ -643,7 +1454,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -656,7 +1469,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -672,7 +1487,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -688,7 +1505,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -704,7 +1523,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -720,7 +1541,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -736,7 +1559,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -752,7 +1577,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -768,7 +1595,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -785,7 +1614,9 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or the response cannot be parsed.
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
     ///
     /// # References
     ///
@@ -800,26 +1631,221 @@ impl BybitHttpClient {
     // =========================================================================
     // High-level methods using Nautilus domain objects
     // =========================================================================
-    // TODO: Implement submit_order, cancel_order, cancel_all_orders, etc.
-    // These will take Nautilus domain types (InstrumentId, ClientOrderId, etc.)
-    // and convert them to Bybit-specific types before calling the http_* methods
 
-    /// Returns the base URL used for requests.
-    #[must_use]
-    pub fn base_url(&self) -> &str {
-        self.inner.base_url()
+    /// Add an instrument to the cache.
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
+        self.inner.add_instrument(instrument);
     }
 
-    /// Returns the configured receive window in milliseconds.
-    #[must_use]
-    pub fn recv_window_ms(&self) -> u64 {
-        self.inner.recv_window_ms()
+    /// Submit a new order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Order validation fails.
+    /// - The order is rejected.
+    /// - The API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        reduce_only: bool,
+    ) -> anyhow::Result<OrderStatusReport> {
+        self.inner
+            .submit_order(
+                product_type,
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                time_in_force,
+                price,
+                reduce_only,
+            )
+            .await
     }
 
-    /// Returns the API credential if configured.
-    #[must_use]
-    pub fn credential(&self) -> Option<&Credential> {
-        self.inner.credential()
+    /// Cancel an order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
+    pub async fn cancel_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        self.inner
+            .cancel_order(product_type, instrument_id, client_order_id, venue_order_id)
+            .await
+    }
+
+    /// Cancel all orders for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn cancel_all_orders(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.inner
+            .cancel_all_orders(product_type, instrument_id)
+            .await
+    }
+
+    /// Modify an existing order.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The order is already closed.
+    /// - The API returns an error.
+    pub async fn modify_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        self.inner
+            .modify_order(
+                product_type,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                quantity,
+                price,
+            )
+            .await
+    }
+
+    /// Query a single order by client order ID or venue order ID.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn query_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        self.inner
+            .query_order(product_type, instrument_id, client_order_id, venue_order_id)
+            .await
+    }
+
+    /// Request multiple order status reports.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn request_order_status_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.inner
+            .request_order_status_reports(product_type, instrument_id, open_only, limit)
+            .await
+    }
+
+    /// Request instruments for a given product type.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    pub async fn request_instruments(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.inner.request_instruments(product_type, symbol).await
+    }
+
+    /// Request trade tick history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
+    pub async fn request_trades(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        self.inner
+            .request_trades(product_type, instrument_id, limit)
+            .await
+    }
+
+    /// Request bar/kline history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/kline>
+    pub async fn request_bars(
+        &self,
+        product_type: BybitProductType,
+        bar_type: BarType,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        self.inner
+            .request_bars(product_type, bar_type, start, end, limit)
+            .await
     }
 }
 
@@ -848,7 +1874,7 @@ mod tests {
         let client = BybitHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            "https://api-testnet.bybit.com".to_string(),
+            Some("https://api-testnet.bybit.com".to_string()),
             Some(60),
             None,
             None,
