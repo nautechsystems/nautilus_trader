@@ -265,6 +265,11 @@ cdef extern from "../includes/common.h":
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
     #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+    #
     # # Panics
     #
     # Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -343,6 +348,11 @@ cdef extern from "../includes/common.h":
     # This function assumes:
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
     #
     # # Panics
     #

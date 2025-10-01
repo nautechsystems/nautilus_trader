@@ -396,6 +396,11 @@ void test_clock_set_time_alert(struct TestClock_API *clock,
  * - `name_ptr` is a valid C string pointer.
  * - `callback_ptr` is a valid `PyCallable` pointer.
  *
+ * # Parameters
+ *
+ * - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+ * - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+ *
  * # Panics
  *
  * Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -486,6 +491,11 @@ void live_clock_set_time_alert(struct LiveClock_API *clock,
  * This function assumes:
  * - `name_ptr` is a valid C string pointer.
  * - `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Parameters
+ *
+ * - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+ * - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
  *
  * # Panics
  *

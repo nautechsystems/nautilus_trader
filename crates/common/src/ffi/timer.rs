@@ -140,7 +140,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
                 }
             }
             TimeEventCallback::Rust(_) => {
-                panic!("Legacy time event handler is not supported for Rust callback")
+                panic!("Legacy time event handler is not supported for Rust callbacks")
             }
         }
     }

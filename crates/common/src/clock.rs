@@ -38,7 +38,7 @@ use ustr::Ustr;
 use crate::{
     runner::{TimeEventSender, get_time_event_sender},
     timer::{
-        LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
+        LiveTimer, ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
         create_valid_interval,
     },
 };
@@ -178,6 +178,11 @@ pub trait Clock: Debug {
     ///
     /// Any existing timer registered under the same `name` is cancelled before the new timer is scheduled.
     ///
+    /// # Start Time
+    ///
+    /// - `None` or `Some(0)`: Uses the current time as start time.
+    /// - `Some(non_zero)`: Uses the specified timestamp as start time.
+    ///
     /// # Flags
     ///
     /// | `allow_past` | `fire_immediately` | Behavior                                                                              |
@@ -190,7 +195,7 @@ pub trait Clock: Debug {
     /// # Callback
     ///
     /// - `callback`: Some, then callback handles the time event.
-    /// - `callback`: None, then the clock’s default time event callback is used.
+    /// - `callback`: None, then the clock's default time event callback is used.
     ///
     /// # Errors
     ///
@@ -237,7 +242,7 @@ pub struct TestClock {
     timers: BTreeMap<Ustr, TestTimer>,
     default_callback: Option<TimeEventCallback>,
     callbacks: HashMap<Ustr, TimeEventCallback>,
-    heap: BinaryHeap<TimeEvent>, // TODO: Deprecated - move to global time event heap
+    heap: BinaryHeap<ScheduledTimeEvent>, // TODO: Deprecated - move to global time event heap
 }
 
 impl TestClock {
@@ -328,7 +333,7 @@ impl TestClock {
         // Iterate and advance timers and push events to heap. Only retain alive timers.
         self.timers.retain(|_, timer| {
             timer.advance(to_time_ns).for_each(|event| {
-                self.heap.push(event);
+                self.heap.push(ScheduledTimeEvent::new(event));
             });
 
             !timer.is_expired()
@@ -366,7 +371,9 @@ impl Iterator for TestClock {
     type Item = TimeEventHandlerV2;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.heap.pop().map(|event| self.get_handler(event))
+        self.heap
+            .pop()
+            .map(|event| self.get_handler(event.into_inner()))
     }
 }
 
@@ -924,11 +931,11 @@ impl Clock for LiveClock {
 // Helper struct to stream events from the heap
 #[derive(Debug)]
 pub struct TimeEventStream {
-    heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+    heap: Arc<Mutex<BinaryHeap<ScheduledTimeEvent>>>,
 }
 
 impl TimeEventStream {
-    pub const fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
+    pub const fn new(heap: Arc<Mutex<BinaryHeap<ScheduledTimeEvent>>>) -> Self {
         Self { heap }
     }
 }
@@ -947,7 +954,7 @@ impl Stream for TimeEventStream {
         };
 
         if let Some(event) = heap.pop() {
-            Poll::Ready(Some(event))
+            Poll::Ready(Some(event.into_inner()))
         } else {
             cx.waker().wake_by_ref();
             Poll::Pending

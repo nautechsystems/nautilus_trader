@@ -53,7 +53,7 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -71,20 +71,6 @@ pub struct TimeEvent {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
-}
-
-/// Reverse order for `TimeEvent` comparison to be used in max heap.
-impl PartialOrd for TimeEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Reverse order for `TimeEvent` comparison to be used in max heap.
-impl Ord for TimeEvent {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.ts_event.cmp(&self.ts_event)
-    }
 }
 
 impl TimeEvent {
@@ -118,18 +104,47 @@ impl Display for TimeEvent {
     }
 }
 
-impl PartialEq for TimeEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.event_id == other.event_id
+/// Wrapper for [`TimeEvent`] that implements ordering by timestamp for heap scheduling.
+///
+/// This newtype allows time events to be ordered in a priority queue (max heap) by their
+/// timestamp while keeping [`TimeEvent`] itself clean with standard field-based equality.
+/// Events are ordered in reverse (earlier timestamps have higher priority).
+#[repr(transparent)] // Guarantees zero-cost abstraction with identical memory layout
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScheduledTimeEvent(pub TimeEvent);
+
+impl ScheduledTimeEvent {
+    /// Creates a new scheduled time event.
+    #[must_use]
+    pub const fn new(event: TimeEvent) -> Self {
+        Self(event)
+    }
+
+    /// Extracts the inner time event.
+    #[must_use]
+    pub fn into_inner(self) -> TimeEvent {
+        self.0
     }
 }
 
-pub type RustTimeEventCallback = dyn Fn(TimeEvent);
+impl PartialOrd for ScheduledTimeEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
+impl Ord for ScheduledTimeEvent {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse order for max heap: earlier timestamps have higher priority
+        other.0.ts_event.cmp(&self.0.ts_event)
+    }
+}
+
+/// Callback type for time events.
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
     Python(Py<PyAny>),
-    Rust(Rc<RustTimeEventCallback>),
+    Rust(Rc<dyn Fn(TimeEvent)>),
 }
 
 impl Clone for TimeEventCallback {
@@ -180,8 +195,8 @@ where
     }
 }
 
-impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
-    fn from(value: Rc<RustTimeEventCallback>) -> Self {
+impl From<Rc<dyn Fn(TimeEvent)>> for TimeEventCallback {
+    fn from(value: Rc<dyn Fn(TimeEvent)>) -> Self {
         Self::Rust(value)
     }
 }
@@ -489,7 +504,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// Panics if Rust-based callback system active and no time event sender has been set.
+    /// Panics if Rust-based callback system is active and no time event sender has been set.
     #[allow(unused_variables, reason = "callback is used")]
     pub fn start(&mut self) {
         let event_name = self.name;

@@ -61,7 +61,7 @@ use nautilus_common::{
         UnsubscribeCommand,
     },
     msgbus::{self, MStr, Topic, handler::ShareableMessageHandler, switchboard},
-    timer::TimeEventCallback,
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{
@@ -1041,7 +1041,9 @@ impl DataEngine {
                 .insert(cmd.instrument_id, snapshotter.clone());
             let timer_name = snapshotter.timer_name;
 
-            let callback = TimeEventCallback::from(move |event| snapshotter.snapshot(event));
+            let callback_fn: Rc<dyn Fn(TimeEvent)> =
+                Rc::new(move |event| snapshotter.snapshot(event));
+            let callback = TimeEventCallback::from(callback_fn);
 
             self.clock
                 .borrow_mut()

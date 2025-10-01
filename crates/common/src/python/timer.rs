@@ -60,7 +60,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
                 #[cfg(feature = "python")]
                 TimeEventCallback::Python(callback) => callback,
                 TimeEventCallback::Rust(_) => {
-                    panic!("Python time event handler is not supported for Rust callback")
+                    panic!("Python time event handler is not supported for Rust callbacks")
                 }
             },
         }
