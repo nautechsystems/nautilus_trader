@@ -16,6 +16,8 @@
 //! Python bindings for the [`Cache`] component.
 
 use nautilus_core::python::to_pyvalue_err;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
@@ -502,5 +504,57 @@ impl Cache {
     #[pyo3(name = "synthetic_ids")]
     fn py_synthetic_ids(&self) -> Vec<InstrumentId> {
         self.synthetic_ids().into_iter().copied().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool")]
+    fn py_add_pool(&mut self, pool: Pool) -> PyResult<()> {
+        self.add_pool(pool).map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool")]
+    fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
+        self.pool(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_ids")]
+    fn py_pool_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pools")]
+    fn py_pools(&self, venue: Option<Venue>) -> Vec<Pool> {
+        self.pools(venue.as_ref()).into_iter().cloned().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool_profiler")]
+    fn py_add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> PyResult<()> {
+        self.add_pool_profiler(pool_profiler)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler")]
+    fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
+        self.pool_profiler(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler_ids")]
+    fn py_pool_profiler_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_profiler_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profilers")]
+    fn py_pool_profilers(&self, venue: Option<Venue>) -> Vec<PoolProfiler> {
+        self.pool_profilers(venue.as_ref())
+            .into_iter()
+            .cloned()
+            .collect()
     }
 }

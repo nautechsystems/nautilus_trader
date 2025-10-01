@@ -17,5 +17,8 @@ pub mod position;
 pub mod profiler;
 pub mod swap_math;
 
+// Re-exports
+pub use profiler::PoolProfiler;
+
 #[cfg(test)]
 pub mod tests;

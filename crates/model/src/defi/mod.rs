@@ -48,6 +48,7 @@ pub use data::{
     transaction::Transaction,
 };
 pub use dex::{AmmType, Dex, DexType, SharedDex};
+pub use pool_analysis::PoolProfiler;
 pub use token::{SharedToken, Token};
 
 /// Number of decimal places used by the native Ether denomination.

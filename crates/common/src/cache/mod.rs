@@ -44,7 +44,7 @@ use nautilus_core::{
     datetime::secs_to_nanos,
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::Pool;
+use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
@@ -100,6 +100,8 @@ pub struct Cache {
     position_snapshots: AHashMap<PositionId, Bytes>,
     #[cfg(feature = "defi")]
     pools: AHashMap<InstrumentId, Pool>,
+    #[cfg(feature = "defi")]
+    pool_profilers: AHashMap<InstrumentId, PoolProfiler>,
 }
 
 impl Debug for Cache {
@@ -174,6 +176,8 @@ impl Cache {
             position_snapshots: AHashMap::new(),
             #[cfg(feature = "defi")]
             pools: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            pool_profilers: AHashMap::new(),
         }
     }
 
@@ -1207,6 +1211,20 @@ impl Cache {
         log::debug!("Adding `Pool` {}", pool.instrument_id);
 
         self.pools.insert(pool.instrument_id, pool);
+        Ok(())
+    }
+
+    /// Adds a `PoolProfiler` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    #[cfg(feature = "defi")]
+    pub fn add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> anyhow::Result<()> {
+        let instrument_id = pool_profiler.pool.instrument_id;
+        log::debug!("Adding `PoolProfiler` {instrument_id}");
+
+        self.pool_profilers.insert(instrument_id, pool_profiler);
         Ok(())
     }
 
@@ -2991,6 +3009,78 @@ impl Cache {
     #[must_use]
     pub fn pool_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut Pool> {
         self.pools.get_mut(instrument_id)
+    }
+
+    /// Returns the instrument IDs of all pools in the cache, optionally filtered by `venue`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_ids(&self, venue: Option<&Venue>) -> Vec<InstrumentId> {
+        match venue {
+            Some(v) => self
+                .pools
+                .keys()
+                .filter(|id| &id.venue == v)
+                .copied()
+                .collect(),
+            None => self.pools.keys().copied().collect(),
+        }
+    }
+
+    /// Returns references to all pools in the cache, optionally filtered by `venue`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pools(&self, venue: Option<&Venue>) -> Vec<&Pool> {
+        match venue {
+            Some(v) => self
+                .pools
+                .values()
+                .filter(|p| &p.instrument_id.venue == v)
+                .collect(),
+            None => self.pools.values().collect(),
+        }
+    }
+
+    /// Gets a reference to the pool profiler for the `instrument_id`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profiler(&self, instrument_id: &InstrumentId) -> Option<&PoolProfiler> {
+        self.pool_profilers.get(instrument_id)
+    }
+
+    /// Gets a mutable reference to the pool profiler for the `instrument_id`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profiler_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut PoolProfiler> {
+        self.pool_profilers.get_mut(instrument_id)
+    }
+
+    /// Returns the instrument IDs of all pool profilers in the cache, optionally filtered by `venue`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profiler_ids(&self, venue: Option<&Venue>) -> Vec<InstrumentId> {
+        match venue {
+            Some(v) => self
+                .pool_profilers
+                .keys()
+                .filter(|id| &id.venue == v)
+                .copied()
+                .collect(),
+            None => self.pool_profilers.keys().copied().collect(),
+        }
+    }
+
+    /// Returns references to all pool profilers in the cache, optionally filtered by `venue`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_profilers(&self, venue: Option<&Venue>) -> Vec<&PoolProfiler> {
+        match venue {
+            Some(v) => self
+                .pool_profilers
+                .values()
+                .filter(|p| &p.pool.instrument_id.venue == v)
+                .collect(),
+            None => self.pool_profilers.values().collect(),
+        }
     }
 
     /// Gets a reference to the latest quote for the `instrument_id`.
