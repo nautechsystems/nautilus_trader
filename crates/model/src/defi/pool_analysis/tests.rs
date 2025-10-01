@@ -1183,6 +1183,28 @@ fn test_if_mint_below_current_price_works_after_burn_and_fee_collect(
     }
 }
 
+#[rstest]
+fn test_collect_with_invalid_ticks_does_not_panic(mut uni_pool_profiler: PoolProfiler) {
+    let min_tick = Tick::get_min_tick(TICK_SPACING);
+    let max_tick = Tick::get_max_tick(TICK_SPACING);
+
+    let initial_position = uni_pool_profiler
+        .get_position(&lp_address(), min_tick, max_tick)
+        .expect("Position should exist");
+    let initial_tokens_owed_0 = initial_position.tokens_owed_0;
+
+    // Collect with invalid ticks (tick_lower > tick_upper) should not panic
+    let invalid_collect = create_collect_event(100, 50, 1000, 1000);
+    let result = uni_pool_profiler.process(&DexPoolData::FeeCollect(invalid_collect));
+    assert!(result.is_ok());
+
+    // Verify valid position remains unchanged
+    let position_after = uni_pool_profiler
+        .get_position(&lp_address(), min_tick, max_tick)
+        .expect("Position should still exist");
+    assert_eq!(position_after.tokens_owed_0, initial_tokens_owed_0);
+}
+
 // ----------- SWAP TESTING ----------
 // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.swaps.spec.ts
 
