@@ -97,6 +97,9 @@ dydx = [
 polymarket = [
     "py-clob-client==0.25.0,<1.0.0",  # Pinned to 0.25.0 for stability
 ]
+schwab = [
+    "schwab-py==1.5.0",
+]
 
 [dependency-groups]
 dev = [
