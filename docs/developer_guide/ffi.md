@@ -84,9 +84,9 @@ pub extern "C" fn orderbook_drop(book: OrderBook_API) {
 
 Memory-safety requirements are therefore:
 
-1.  Every constructor (`*_new`) **must** have a matching `*_drop` exported
+1. Every constructor (`*_new`) **must** have a matching `*_drop` exported
     next to it.
-2.  The *Python/Cython* binding must guarantee that `*_drop` is invoked
+2. The *Python/Cython* binding must guarantee that `*_drop` is invoked
     exactly once. Two approaches are accepted:
 
     • Wrap the pointer in a `PyCapsule` created with

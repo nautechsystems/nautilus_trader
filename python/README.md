@@ -65,10 +65,10 @@ This is the only command you need to get started. If you make changes to the Rus
 
 The `nautilus_trader` Python package acts as a "facade" over the compiled Rust core.
 
-1.  **The build**: `maturin develop` compiles all the Rust code into a single native library, `nautilus_trader/_libnautilus.so`.
-2.  **The facade**: The `nautilus_trader/__init__.py` file imports all the functionality from the `_libnautilus.so` file.
-3.  **The submodules**: Each subdirectory (e.g., `nautilus_trader/model/`) uses its `__init__.py` to re-export the relevant components from `_libnautilus`, creating a clean, organized public API.
-4.  **Type hints**: The `.pyi` stub files provide full type information to your IDE and tools like `mypy`, giving you autocompletion and static analysis, even for the compiled Rust code.
+1. **The build**: `maturin develop` compiles all the Rust code into a single native library, `nautilus_trader/_libnautilus.so`.
+2. **The facade**: The `nautilus_trader/__init__.py` file imports all the functionality from the `_libnautilus.so` file.
+3. **The submodules**: Each subdirectory (e.g., `nautilus_trader/model/`) uses its `__init__.py` to re-export the relevant components from `_libnautilus`, creating a clean, organized public API.
+4. **Type hints**: The `.pyi` stub files provide full type information to your IDE and tools like `mypy`, giving you autocompletion and static analysis, even for the compiled Rust code.
 
 ## Usage
 

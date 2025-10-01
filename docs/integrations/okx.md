@@ -49,6 +49,7 @@ OKX uses specific symbol conventions for different instrument types. All instrum
 ### Symbol format by instrument type
 
 #### SPOT
+
 Format: `{BaseCurrency}-{QuoteCurrency}`
 
 Examples:

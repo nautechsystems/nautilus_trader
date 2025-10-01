@@ -276,6 +276,7 @@ For SPOT trading, the fee currency depends on the order side and whether the fee
 - **SELL orders**: Fee is charged in the **quote currency** (e.g., USDT for BTCUSDT)
 
 #### Maker rebates (negative fees)
+
 When maker fees are negative (rebates), the currency logic is **inverted**:
 
 - **BUY orders with maker rebate**: Rebate is paid in the **quote currency** (e.g., USDT for BTCUSDT)

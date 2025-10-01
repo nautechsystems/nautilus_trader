@@ -373,6 +373,7 @@ To search for contract information, use the [IB Contract Information Center](htt
 There are two primary methods for loading instruments:
 
 #### 1. Using `load_ids` (recommended)
+
 Use `symbology_method=SymbologyMethod.IB_SIMPLIFIED` (default) with `load_ids` for clean, intuitive instrument identification:
 
 ```python
@@ -392,6 +393,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 ```
 
 #### 2. Using `load_contracts` (for complex instruments)
+
 Use `load_contracts` with `IBContract` instances for complex scenarios like options/futures chains:
 
 ```python

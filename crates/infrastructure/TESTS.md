@@ -3,6 +3,7 @@
 This directory contains infrastructure integration tests that require external services.
 
 ## Service Requirements
+
 All required services are defined in `.docker/docker-compose.yml`.
 
 The integration tests require the following services to be running:
@@ -17,6 +18,7 @@ The integration tests require the following services to be running:
 - **PgAdmin** (Optional): Available at `http://localhost:5051` (<admin@mail.com> / admin)
 
 ## Running Integration Test Services
+
 Use the following make targets to manage the services:
 
 ### Initial Setup
@@ -41,6 +43,7 @@ make purge-services  # Remove everything including data volumes
 4. Clean slate: `make purge-services` then `make init-services`
 
 ## Running Tests
+
 Once services are running (and Nautilus Trader installed by `uv` or `make`):
 
 ### Python Infrastructure Integration Tests
@@ -55,6 +58,7 @@ uv run --no-sync pytest tests/integration_tests/infrastructure/test_cache_databa
 ```
 
 ### Rust Infrastructure Integration Tests
+
 The Rust integration tests are located in `crates/infrastructure/tests/` and require the same services.
 
 ```bash
