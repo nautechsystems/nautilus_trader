@@ -39,6 +39,10 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# Strategy config params
+symbol = "ETHUSDT-PERP"
+instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
+order_qty = Decimal("0.02")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -123,23 +127,21 @@ config_node = TradingNodeConfig(
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
-order_qty = Decimal("0.020")
-
 # Configure your strategy
 strat_config = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     order_qty=order_qty,
-    order_params={"price_match": "QUEUE_5"},
+    # order_params={"price_match": "QUEUE_5"},
     # open_position_on_start_qty=order_qty,
     # tob_offset_ticks=0,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
     use_post_only=True,
     # close_positions_on_stop=False,
+    # log_rejected_due_post_only_as_warning=False,
+    # test_reject_post_only=True,
     log_data=False,
-    log_rejected_due_post_only_as_warning=False,
-    test_reject_post_only=False,
 )
 
 # Instantiate your strategy
