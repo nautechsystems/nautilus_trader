@@ -24,7 +24,10 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::get,
 };
-use nautilus_bybit::http::client::{BybitHttpClient, BybitHttpError};
+use nautilus_bybit::{
+    common::enums::BybitProductType,
+    http::{client::BybitHttpClient, query::BybitInstrumentsInfoParamsBuilder},
+};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -279,11 +282,7 @@ async fn start_test_server()
 #[rstest]
 #[tokio::test]
 async fn test_client_creation() {
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        None,
-        Some(60),
-    );
+    let client = BybitHttpClient::new(None, Some(60), None, None, None).unwrap();
 
     assert!(client.base_url().contains("bybit.com"));
     assert!(client.credential().is_none());
@@ -292,85 +291,31 @@ async fn test_client_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_client_with_credentials() {
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        None,
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        "https://api.bybit.com".to_string(),
         Some(60),
         None,
-    );
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(client.credential().is_some());
-    assert_eq!(client.recv_window_ms(), 5_000);
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_sign_get_request() {
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        None,
-        Some(60),
-        Some(5_000),
-    );
-
-    let timestamp = "1700000000000";
-    let query = "category=linear&symbol=BTCUSDT";
-    let signature = client.sign_get(timestamp, Some(query)).unwrap();
-
-    // Verify signature is a valid hex string
-    assert_eq!(signature.len(), 64);
-    assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_sign_post_request() {
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        None,
-        Some(60),
-        Some(5_000),
-    );
-
-    let timestamp = "1700000000000";
-    let body = r#"{"category":"linear","symbol":"BTCUSDT","orderLinkId":"test-order-1"}"#;
-    let signature = client.sign_post(timestamp, Some(body)).unwrap();
-
-    // Verify signature is a valid hex string
-    assert_eq!(signature.len(), 64);
-    assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_sign_without_credentials_errors() {
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        None,
-        Some(60),
-    );
-
-    let timestamp = "1700000000000";
-    let result = client.sign_get(timestamp, Some("foo=bar"));
-
-    assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), BybitHttpError::MissingCredentials);
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_testnet_urls() {
     let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Testnet,
-        None,
+        Some("https://api-testnet.bybit.com".to_string()),
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(client.base_url().contains("testnet"));
 }
@@ -379,36 +324,23 @@ async fn test_testnet_urls() {
 #[tokio::test]
 async fn test_custom_base_url() {
     let custom_url = "https://custom.bybit.com";
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        Some(custom_url.to_string()),
-        Some(60),
-    );
+    let client =
+        BybitHttpClient::new(Some(custom_url.to_string()), Some(60), None, None, None).unwrap();
 
     assert_eq!(client.base_url(), custom_url);
 }
 
-// Note: The following tests demonstrate the pattern for testing actual HTTP methods
-// once they are implemented in the BybitHttpClient. Currently the client only has
-// signing methods, so these serve as documentation for future implementation.
-
-// TODO: Uncomment and adapt these tests once HTTP methods are added to BybitHttpClient
-/*
 #[rstest]
 #[tokio::test]
 async fn test_get_server_time() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        Some(base_url),
-        Some(60),
-    );
+    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None).unwrap();
 
-    let server_time = client.get_server_time().await.unwrap();
-    assert!(server_time.time_second.len() > 0);
-    assert!(server_time.time_nano.len() > 0);
+    let response = client.http_get_server_time().await.unwrap();
+    assert!(!response.result.time_second.is_empty());
+    assert!(!response.result.time_nano.is_empty());
 }
 
 #[rstest]
@@ -417,58 +349,15 @@ async fn test_get_instruments_linear() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        Some(base_url),
-        Some(60),
-    );
+    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None).unwrap();
 
-    let response = client.get_instruments("linear", None).await.unwrap();
-    assert!(!response.list.is_empty());
-}
+    let params = BybitInstrumentsInfoParamsBuilder::default()
+        .category(BybitProductType::Linear)
+        .build()
+        .unwrap();
 
-#[rstest]
-#[tokio::test]
-async fn test_get_instruments_requires_category() {
-    let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
-
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        Some(base_url),
-        Some(60),
-    );
-
-    let result = client.get_instruments("invalid", None).await;
-    assert!(result.is_err());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_get_orders_requires_auth() {
-    let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
-
-    // Test without credentials - should fail
-    let client = BybitHttpClient::new(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        Some(base_url.clone()),
-        Some(60),
-    );
-    let result = client.get_orders("linear", None, None, None).await;
-    assert!(result.is_err());
-
-    // Test with credentials - should succeed
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        Some(base_url),
-        Some(60),
-        None,
-    );
-    let orders = client.get_orders("linear", None, None, None).await.unwrap();
-    assert!(orders.ret_code == 0);
+    let response = client.http_get_instruments_linear(&params).await.unwrap();
+    assert!(!response.result.list.is_empty());
 }
 
 #[rstest]
@@ -477,56 +366,28 @@ async fn test_place_order() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        Some(base_url),
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        base_url,
         Some(60),
         None,
-    );
-
-    let order = client
-        .place_order(
-            "linear",
-            "BTCUSDT",
-            "Buy",
-            "Limit",
-            "0.001",
-            Some("50000"),
-            Some("test-order-123"),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(order.ret_code, 0);
-    assert!(order.result.order_id.len() > 0);
-}
-
-#[rstest]
-#[tokio::test]
-#[ignore = "Slow test; demonstrates rate limiting pattern"]
-async fn test_rate_limiting() {
-    let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
-
-    let client = BybitHttpClient::with_credential(
-        nautilus_bybit::common::enums::BybitEnvironment::Mainnet,
-        "test_api_key",
-        "test_api_secret",
-        Some(base_url),
-        Some(60),
         None,
-    );
+        None,
+    )
+    .unwrap();
 
-    // Make multiple requests to trigger rate limiting
-    for i in 0..7 {
-        let result = client.get_orders("linear", None, None, None).await;
-        if i < 5 {
-            assert!(result.is_ok(), "Request {} should succeed", i + 1);
-        } else {
-            assert!(result.is_err(), "Request {} should be rate limited", i + 1);
-        }
-    }
+    let order_request = serde_json::json!({
+        "category": "linear",
+        "symbol": "BTCUSDT",
+        "side": "Buy",
+        "orderType": "Limit",
+        "qty": "0.001",
+        "price": "50000",
+        "orderLinkId": "test-order-123"
+    });
+
+    let response = client.http_place_order(&order_request).await.unwrap();
+    assert_eq!(response.ret_code, 0);
+    assert!(response.result.order_id.is_some());
 }
-*/

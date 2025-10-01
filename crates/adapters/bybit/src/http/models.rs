@@ -158,22 +158,38 @@ pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 
 /// Kline/candlestick entry returned by `GET /v5/market/kline`.
 ///
+/// Bybit returns klines as arrays with 7 elements:
+/// [startTime, openPrice, highPrice, lowPrice, closePrice, volume, turnover]
+///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/market/kline>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Serialize)]
 pub struct BybitKline {
     pub start: String,
-    pub end: String,
-    pub interval: String,
     pub open: String,
-    pub close: String,
     pub high: String,
     pub low: String,
+    pub close: String,
     pub volume: String,
     pub turnover: String,
-    pub confirm: bool,
-    pub timestamp: String,
+}
+
+impl<'de> Deserialize<'de> for BybitKline {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let arr: [String; 7] = Deserialize::deserialize(deserializer)?;
+        Ok(Self {
+            start: arr[0].clone(),
+            open: arr[1].clone(),
+            high: arr[2].clone(),
+            low: arr[3].clone(),
+            close: arr[4].clone(),
+            volume: arr[5].clone(),
+            turnover: arr[6].clone(),
+        })
+    }
 }
 
 /// Kline list result returned by Bybit.

@@ -97,6 +97,461 @@ nautilus_trader/adapters/your_adapter/
 - **String interning**: Use `ustr::Ustr` for any non-unique strings the platform stores repeatedly (venues, symbols, instrument IDs) to minimise allocations and comparisons.
 - **Testing helpers (`common/testing.rs`)**: Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests. This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
 
+## HTTP client patterns
+
+Adapters use a two-layer HTTP client structure to enable efficient cloning for Python bindings while keeping the actual HTTP logic in a single place.
+
+### Client structure
+
+Use an inner/outer client pattern with `Arc` wrapping:
+
+```rust
+use std::sync::Arc;
+use nautilus_network::http::HttpClient;
+
+// Inner client - contains actual HTTP logic
+pub struct BybitHttpInnerClient {
+    base_url: String,
+    client: HttpClient,  // Use nautilus_network::http::HttpClient, not reqwest directly
+    credential: Option<Credential>,
+    retry_manager: RetryManager<BybitHttpError>,
+    cancellation_token: CancellationToken,
+}
+
+// Outer client - wraps inner with Arc for cheap cloning (needed for Python)
+pub struct BybitHttpClient {
+    pub(crate) inner: Arc<BybitHttpInnerClient>,
+}
+```
+
+**Key points:**
+
+- Inner client (`*HttpInnerClient`) contains all HTTP logic and state.
+- Outer client (`*HttpClient`) wraps the inner client in an `Arc` for efficient cloning.
+- Use `nautilus_network::http::HttpClient` instead of `reqwest::Client` directly - this provides rate limiting, retry logic, and consistent error handling.
+- The outer client delegates all methods to the inner client.
+
+### Method naming and organization
+
+Organize HTTP methods into two distinct sections:
+
+```rust
+impl BybitHttpInnerClient {
+    // =========================================================================
+    // Low-level HTTP API methods
+    // =========================================================================
+
+    /// Low-level methods that directly call venue endpoints.
+    /// These are prefixed with `http_` and mirror the venue API structure.
+    pub async fn http_get_server_time(&self) -> Result<ServerTimeResponse, Error> {
+        self.send_request(Method::GET, "/v5/market/time", None, false).await
+    }
+
+    pub async fn http_get_instruments<T: DeserializeOwned>(
+        &self,
+        params: &InstrumentsParams,
+    ) -> Result<T, Error> {
+        let path = Self::build_path("/v5/market/instruments-info", params)?;
+        self.send_request(Method::GET, &path, None, false).await
+    }
+
+    pub async fn http_place_order(
+        &self,
+        request: &serde_json::Value,
+    ) -> Result<PlaceOrderResponse, Error> {
+        let body = serde_json::to_vec(request)?;
+        self.send_request(Method::POST, "/v5/order/create", Some(body), true).await
+    }
+
+    // =========================================================================
+    // High-level methods using Nautilus domain objects
+    // =========================================================================
+
+    /// High-level methods that take Nautilus domain types and convert them
+    /// to venue-specific types before calling the http_* methods.
+    pub async fn submit_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        // ... other Nautilus domain types
+    ) -> Result<VenueOrderId, Error> {
+        // Convert Nautilus domain objects to venue-specific types
+        let request = self.build_order_request(instrument_id, client_order_id, order_side)?;
+
+        // Call low-level http_* method
+        let response = self.http_place_order(&request).await?;
+
+        // Convert response back to Nautilus domain types
+        Ok(VenueOrderId::new(response.order_id))
+    }
+}
+```
+
+**Naming conventions:**
+
+- **Low-level API methods**: Prefix with `http_` and place near the top of the impl block (e.g., `http_get_instruments`, `http_place_order`).
+- **High-level domain methods**: No prefix, placed in a separate section (e.g., `submit_order`, `cancel_order`).
+- Low-level methods take venue-specific types (builders, JSON values).
+- High-level methods take Nautilus domain objects (InstrumentId, ClientOrderId, OrderSide, etc.).
+
+### Query parameter builders
+
+Use the `derive_builder` crate with proper defaults and ergonomic Option handling:
+
+```rust
+use derive_builder::Builder;
+
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(setter(into, strip_option), default)]
+pub struct InstrumentsInfoParams {
+    pub category: ProductType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl Default for InstrumentsInfoParams {
+    fn default() -> Self {
+        Self {
+            category: ProductType::Linear,
+            symbol: None,
+            limit: None,
+        }
+    }
+}
+```
+
+**Key attributes:**
+
+- `#[builder(setter(into, strip_option), default)]` - enables clean API: `.symbol("BTCUSDT")` instead of `.symbol(Some("BTCUSDT".to_string()))`.
+- `#[serde(skip_serializing_if = "Option::is_none")]` - omits optional fields from query strings.
+- Always implement `Default` for builder parameters.
+
+### Request signing and authentication
+
+Keep signing logic in the inner client:
+
+```rust
+impl BybitHttpInnerClient {
+    fn sign_request(
+        &self,
+        timestamp: &str,
+        params: Option<&str>,
+    ) -> Result<HashMap<String, String>, Error> {
+        let credential = self.credential.as_ref()
+            .ok_or(Error::MissingCredentials)?;
+
+        let signature = credential.sign_with_payload(timestamp, self.recv_window_ms, params);
+
+        let mut headers = HashMap::new();
+        headers.insert("X-BAPI-API-KEY".to_string(), credential.api_key().to_string());
+        headers.insert("X-BAPI-TIMESTAMP".to_string(), timestamp.to_string());
+        headers.insert("X-BAPI-SIGN".to_string(), signature);
+        headers.insert("X-BAPI-RECV-WINDOW".to_string(), self.recv_window_ms.to_string());
+
+        Ok(headers)
+    }
+}
+```
+
+### Error handling and retry logic
+
+Use the `RetryManager` from `nautilus_network` for consistent retry behavior:
+
+```rust
+impl BybitHttpInnerClient {
+    async fn send_request<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+    ) -> Result<T, Error> {
+        let operation = || async {
+            let mut headers = Self::default_headers();
+
+            if authenticate {
+                let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
+                let auth_headers = self.sign_request(&timestamp, None)?;
+                headers.extend(auth_headers);
+            }
+
+            let response = self.client
+                .request(method, url, Some(headers), body, None, Some(rate_limit_keys))
+                .await?;
+
+            // Parse and validate response
+            let result: T = serde_json::from_slice(&response.body)?;
+            Ok(result)
+        };
+
+        let should_retry = |error: &Error| -> bool {
+            matches!(error, Error::NetworkError(_) | Error::UnexpectedStatus { status, .. } if *status >= 500)
+        };
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                endpoint,
+                operation,
+                should_retry,
+                |msg| Error::NetworkError(msg),
+                &self.cancellation_token,
+            )
+            .await
+    }
+}
+```
+
+### Rate limiting
+
+Configure rate limiting through `HttpClient`:
+
+```rust
+use nautilus_network::ratelimiter::quota::Quota;
+
+static BYBIT_REST_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+
+impl BybitHttpInnerClient {
+    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
+        vec![("bybit:global".to_string(), *BYBIT_REST_QUOTA)]
+    }
+
+    fn rate_limit_keys(endpoint: &str) -> Vec<String> {
+        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
+        vec![
+            "bybit:global".to_string(),
+            format!("bybit:{normalized}"),
+        ]
+    }
+
+    pub fn new(...) -> Result<Self, Error> {
+        Ok(Self {
+            client: HttpClient::new(
+                Self::default_headers(),
+                vec![],
+                Self::rate_limiter_quotas(),
+                Some(*BYBIT_REST_QUOTA),
+                timeout_secs,
+            ),
+            // ... other fields
+        })
+    }
+}
+```
+
+## WebSocket client patterns
+
+WebSocket clients handle real-time streaming data and require careful management of connection state, authentication, subscriptions, and reconnection logic.
+
+### Client structure
+
+WebSocket clients typically don't need the inner/outer pattern since they're not frequently cloned. Use a single struct with clear state management:
+
+```rust
+pub struct BybitWebSocketClient {
+    key: String,
+    base_url: String,
+    handler: Arc<dyn MessageHandler>,
+    stream: Option<WebSocketStream>,
+    subscription_state: Arc<Mutex<SubscriptionState>>,
+    cancellation_token: CancellationToken,
+}
+
+struct SubscriptionState {
+    is_authenticated: bool,
+    active_subscriptions: HashSet<String>,
+    pending_subscriptions: HashSet<String>,
+}
+```
+
+### Authentication
+
+Handle authentication separately from subscriptions:
+
+```rust
+impl BybitWebSocketClient {
+    async fn authenticate(&self) -> Result<(), Error> {
+        let timestamp = get_atomic_clock_realtime().get_time_ms();
+        let signature = self.credential.sign_for_websocket(timestamp);
+
+        let auth_msg = json!({
+            "op": "auth",
+            "args": [self.credential.api_key(), timestamp, signature]
+        });
+
+        self.send_message(&auth_msg).await?;
+
+        // Wait for auth confirmation
+        // Update subscription_state.is_authenticated = true
+        Ok(())
+    }
+}
+```
+
+### Subscription management
+
+Track subscriptions in three states: pending, active, and explicitly unsubscribed:
+
+```rust
+impl BybitWebSocketClient {
+    pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), Error> {
+        {
+            let mut state = self.subscription_state.lock().unwrap();
+            state.pending_subscriptions.extend(topics.clone());
+        }
+
+        let sub_msg = json!({
+            "op": "subscribe",
+            "args": topics
+        });
+
+        self.send_message(&sub_msg).await?;
+        Ok(())
+    }
+
+    fn handle_subscription_ack(&self, topics: Vec<String>) {
+        let mut state = self.subscription_state.lock().unwrap();
+        for topic in topics {
+            state.pending_subscriptions.remove(&topic);
+            state.active_subscriptions.insert(topic);
+        }
+    }
+
+    pub async fn unsubscribe(&self, topics: Vec<String>) -> Result<(), Error> {
+        {
+            let mut state = self.subscription_state.lock().unwrap();
+            for topic in &topics {
+                state.active_subscriptions.remove(topic);
+                state.pending_subscriptions.remove(topic);
+            }
+        }
+
+        let unsub_msg = json!({
+            "op": "unsubscribe",
+            "args": topics
+        });
+
+        self.send_message(&unsub_msg).await?;
+        Ok(())
+    }
+}
+```
+
+### Reconnection logic
+
+On reconnection, restore authentication and public subscriptions, but skip private channels that were explicitly unsubscribed:
+
+```rust
+impl BybitWebSocketClient {
+    async fn handle_reconnect(&self) -> Result<(), Error> {
+        // Re-authenticate if credentials exist
+        if self.credential.is_some() {
+            self.authenticate().await?;
+        }
+
+        // Restore active subscriptions (not pending or unsubscribed)
+        let subscriptions = {
+            let state = self.subscription_state.lock().unwrap();
+            state.active_subscriptions.clone()
+        };
+
+        if !subscriptions.is_empty() {
+            self.subscribe(subscriptions.into_iter().collect()).await?;
+        }
+
+        Ok(())
+    }
+}
+```
+
+### Ping/Pong handling
+
+Support both control frame pings and application-level pings:
+
+```rust
+impl BybitWebSocketClient {
+    async fn handle_message(&self, msg: Message) -> Result<(), Error> {
+        match msg {
+            Message::Ping(data) => {
+                // Respond to control frame ping
+                self.stream.send(Message::Pong(data)).await?;
+            }
+            Message::Text(text) => {
+                let parsed: serde_json::Value = serde_json::from_str(&text)?;
+
+                // Handle application-level ping
+                if parsed.get("op") == Some(&json!("ping")) {
+                    let pong = json!({"op": "pong"});
+                    self.send_message(&pong).await?;
+                }
+
+                // Route other messages to handler
+                self.handler.handle_message(parsed).await?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+```
+
+### Message routing
+
+Route different message types to appropriate handlers:
+
+```rust
+impl BybitWebSocketClient {
+    async fn route_message(&self, msg: serde_json::Value) -> Result<(), Error> {
+        match msg.get("op").and_then(|v| v.as_str()) {
+            Some("auth") => self.handle_auth_response(msg),
+            Some("subscribe") => self.handle_subscription_ack(msg),
+            Some("unsubscribe") => self.handle_unsubscribe_ack(msg),
+            _ => {
+                // Data message - parse topic and route to handler
+                if let Some(topic) = msg.get("topic").and_then(|v| v.as_str()) {
+                    self.handler.handle_data(topic, msg).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+### Error handling
+
+Classify errors to determine retry behavior:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum WebSocketError {
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
+
+    #[error("Authentication failed: {0}")]
+    AuthenticationFailed(String),
+
+    #[error("Subscription failed: {0}")]
+    SubscriptionFailed(String),
+
+    #[error("Message parse error: {0}")]
+    ParseError(String),
+}
+
+impl BybitWebSocketClient {
+    fn should_reconnect(&self, error: &WebSocketError) -> bool {
+        matches!(
+            error,
+            WebSocketError::ConnectionFailed(_)
+        )
+    }
+}
+```
+
 ## Modeling venue payloads
 
 Use the following conventions when mirroring upstream schemas in Rust.

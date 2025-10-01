@@ -61,13 +61,16 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_repr = { workspace = true }
+serde_urlencoded = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
@@ -83,6 +86,11 @@ rstest = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
 axum = { workspace = true }
+
+# Run with `cargo run -p nautilus-bybit --bin bybit-http`.
+[[bin]]
+name = "bybit-http"
+path = "bin/http.rs"
 
 # Run with `cargo run -p nautilus-bybit --bin bybit-ws-data`.
 [[bin]]

@@ -405,7 +405,7 @@ impl BybitError {
 
 // Re-export existing error types for backward compatibility
 pub use crate::{
-    http::client::BybitHttpError,
+    http::error::BybitHttpError,
     websocket::error::{BybitWsError, BybitWsResult},
 };
 
@@ -430,6 +430,23 @@ impl From<BybitHttpError> for BybitError {
             BybitHttpError::MissingCredentials => {
                 Self::Config("API credentials not configured".to_string())
             }
+            BybitHttpError::BybitError {
+                error_code,
+                message,
+            } => Self::Config(format!("Bybit error {error_code}: {message}")),
+            BybitHttpError::JsonError(msg) => Self::Json {
+                message: msg,
+                raw: None,
+            },
+            BybitHttpError::ValidationError(msg) => {
+                Self::Config(format!("Validation error: {msg}"))
+            }
+            BybitHttpError::BuildError(e) => Self::Config(format!("Build error: {e}")),
+            BybitHttpError::NetworkError(msg) => Self::Config(format!("Network error: {msg}")),
+            BybitHttpError::UnexpectedStatus { status, body } => Self::Json {
+                message: format!("HTTP {status}: {body}"),
+                raw: Some(body),
+            },
         }
     }
 }

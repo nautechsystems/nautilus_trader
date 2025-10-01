@@ -31,6 +31,7 @@ use crate::common::enums::{
 /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
+#[builder(setter(into, strip_option), default)]
 pub struct BybitInstrumentsInfoParams {
     pub category: BybitProductType,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,6 +44,19 @@ pub struct BybitInstrumentsInfoParams {
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+}
+
+impl Default for BybitInstrumentsInfoParams {
+    fn default() -> Self {
+        Self {
+            category: BybitProductType::Linear,
+            symbol: None,
+            status: None,
+            base_coin: None,
+            limit: None,
+            cursor: None,
+        }
+    }
 }
 
 /// Query parameters for `GET /v5/market/tickers`.
@@ -67,6 +81,7 @@ pub struct BybitTickersParams {
 /// - <https://bybit-exchange.github.io/docs/v5/market/kline>
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
+#[builder(setter(into, strip_option), default)]
 pub struct BybitKlinesParams {
     pub category: BybitProductType,
     pub symbol: String,
@@ -79,12 +94,26 @@ pub struct BybitKlinesParams {
     pub limit: Option<u32>,
 }
 
+impl Default for BybitKlinesParams {
+    fn default() -> Self {
+        Self {
+            category: BybitProductType::Linear,
+            symbol: String::new(),
+            interval: BybitKlineInterval::Minute1,
+            start: None,
+            end: None,
+            limit: None,
+        }
+    }
+}
+
 /// Query parameters for `GET /v5/market/recent-trade`.
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
+#[builder(setter(into, strip_option), default)]
 pub struct BybitTradesParams {
     pub category: BybitProductType,
     pub symbol: String,
@@ -94,6 +123,18 @@ pub struct BybitTradesParams {
     pub option_type: Option<BybitOptionType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+}
+
+impl Default for BybitTradesParams {
+    fn default() -> Self {
+        Self {
+            category: BybitProductType::Linear,
+            symbol: String::new(),
+            base_coin: None,
+            option_type: None,
+            limit: None,
+        }
+    }
 }
 
 /// Query parameters for `GET /v5/asset/coin/query-info`.
