@@ -830,25 +830,23 @@ impl PoolProfiler {
     /// Updates position state when accumulated fees are collected. Finds the
     /// position and delegates fee collection to the position object.
     ///
+    /// Note: Tick validation is intentionally skipped to match Uniswap V3 behavior.
+    /// Invalid positions have no fees to collect, so they're silently ignored.
+    ///
     /// # Errors
     ///
     /// This function returns an error if:
     /// - Pool is not initialized.
-    /// - Tick range is invalid.
-    /// - Position does not exist.
     fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
-        self.validate_ticks(collect.tick_lower, collect.tick_upper)?;
 
         let position_key =
             PoolPosition::get_position_key(&collect.owner, collect.tick_lower, collect.tick_upper);
         if let Some(position) = self.positions.get_mut(&position_key) {
             position.collect_fees(collect.amount0, collect.amount1);
-
-            Ok(())
-        } else {
-            anyhow::bail!("Position {} not found", position_key)
         }
+
+        Ok(())
     }
 
     /// Updates position state and tick maps when liquidity changes.
