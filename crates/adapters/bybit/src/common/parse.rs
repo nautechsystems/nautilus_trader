@@ -21,14 +21,19 @@ use anyhow::{Context, Result, anyhow};
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
-    enums::{AggressorSide, AssetClass, CurrencyType, OptionKind},
-    identifiers::{Symbol, TradeId},
+    enums::{
+        AccountType, AggressorSide, AssetClass, CurrencyType, LiquiditySide, OptionKind, OrderSide,
+        PositionSideSpecified,
+    },
+    events::account::state::AccountState,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
         option_contract::OptionContract,
     },
-    types::{Currency, Price, Quantity},
+    reports::{FillReport, PositionStatusReport},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -39,8 +44,9 @@ use crate::{
         symbol::BybitSymbol,
     },
     http::models::{
-        BybitFeeRate, BybitInstrumentInverse, BybitInstrumentLinear, BybitInstrumentOption,
-        BybitInstrumentSpot, BybitKline, BybitTrade,
+        BybitExecution, BybitFeeRate, BybitInstrumentInverse, BybitInstrumentLinear,
+        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitPosition, BybitTrade,
+        BybitWalletBalance,
     },
 };
 
@@ -468,6 +474,241 @@ pub fn parse_kline_bar(
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit kline entry")
+}
+
+/// Parses a Bybit execution into a Nautilus FillReport.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - Required price or quantity fields cannot be parsed.
+/// - The execution timestamp cannot be parsed.
+/// - Numeric conversions fail.
+pub fn parse_fill_report(
+    execution: &BybitExecution,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> Result<FillReport> {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let trade_id = TradeId::new_checked(execution.exec_id.as_str())
+        .context("invalid execId in Bybit execution payload")?;
+
+    let order_side: OrderSide = execution.side.into();
+
+    let last_px = parse_price_with_precision(
+        &execution.exec_price,
+        instrument.price_precision(),
+        "execution.execPrice",
+    )?;
+
+    let last_qty = parse_quantity_with_precision(
+        &execution.exec_qty,
+        instrument.size_precision(),
+        "execution.execQty",
+    )?;
+
+    // Parse commission (Bybit returns positive fee, Nautilus uses negative for costs)
+    let fee_f64 = execution
+        .exec_fee
+        .parse::<f64>()
+        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
+    let commission = Money::new(-fee_f64, Currency::from(execution.fee_currency.as_str()));
+
+    // Determine liquidity side from is_maker flag
+    let liquidity_side = if execution.is_maker {
+        LiquiditySide::Maker
+    } else {
+        LiquiditySide::Taker
+    };
+
+    let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
+
+    // Parse client_order_id if present
+    let client_order_id = if execution.order_link_id.is_empty() {
+        None
+    } else {
+        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+    };
+
+    Ok(FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        client_order_id,
+        None, // venue_position_id not provided by Bybit executions
+        ts_event,
+        ts_init,
+        None, // Will generate a new UUID4
+    ))
+}
+
+/// Parses a Bybit position into a Nautilus PositionStatusReport.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - Position quantity or price fields cannot be parsed.
+/// - The position timestamp cannot be parsed.
+/// - Numeric conversions fail.
+pub fn parse_position_status_report(
+    position: &BybitPosition,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> Result<PositionStatusReport> {
+    let instrument_id = instrument.id();
+
+    // Parse position size
+    let size_f64 = position
+        .size
+        .parse::<f64>()
+        .with_context(|| format!("Failed to parse position size '{}'", position.size))?;
+
+    // Determine position side and quantity
+    let (position_side, quantity) = match position.side {
+        crate::common::enums::BybitPositionSide::Buy => {
+            let qty = Quantity::new(size_f64, instrument.size_precision());
+            (PositionSideSpecified::Long, qty)
+        }
+        crate::common::enums::BybitPositionSide::Sell => {
+            let qty = Quantity::new(size_f64, instrument.size_precision());
+            (PositionSideSpecified::Short, qty)
+        }
+        crate::common::enums::BybitPositionSide::Flat => {
+            let qty = Quantity::new(0.0, instrument.size_precision());
+            (PositionSideSpecified::Flat, qty)
+        }
+    };
+
+    // Parse average entry price
+    let avg_px_open = if position.avg_price.is_empty() || position.avg_price == "0" {
+        None
+    } else {
+        Some(Decimal::from_str(&position.avg_price)?)
+    };
+
+    // Parse timestamps
+    let ts_last = parse_millis_timestamp(&position.updated_time, "position.updatedTime")?;
+
+    Ok(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        quantity,
+        ts_last,
+        ts_init,
+        None, // Will generate a new UUID4
+        None, // venue_position_id not used for now
+        avg_px_open,
+    ))
+}
+
+/// Parses a Bybit wallet balance into a Nautilus account state.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Balance data cannot be parsed.
+/// - Currency is invalid.
+pub fn parse_account_state(
+    wallet_balance: &BybitWalletBalance,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let mut balances = Vec::new();
+
+    // Parse each coin balance
+    for coin in &wallet_balance.coin {
+        let currency = Currency::from_str(&coin.coin)?;
+
+        let total_f64 = if coin.wallet_balance.is_empty() {
+            0.0
+        } else {
+            coin.wallet_balance.parse::<f64>()?
+        };
+
+        let locked_f64 = if coin.locked.is_empty() {
+            0.0
+        } else {
+            coin.locked.parse::<f64>()?
+        };
+
+        let total = Money::new(total_f64, currency);
+        let locked = Money::new(locked_f64, currency);
+
+        // Calculate free balance
+        let free = if total.raw >= locked.raw {
+            Money::from_raw(total.raw - locked.raw, currency)
+        } else {
+            Money::new(0.0, currency)
+        };
+
+        balances.push(AccountBalance::new(total, locked, free));
+    }
+
+    let mut margins = Vec::new();
+
+    // Parse margin balances for each coin with position margin data
+    for coin in &wallet_balance.coin {
+        let currency = Currency::from_str(&coin.coin)?;
+
+        let initial_margin_f64 = if coin.total_position_im.is_empty() {
+            0.0
+        } else {
+            coin.total_position_im.parse::<f64>()?
+        };
+
+        let maintenance_margin_f64 = if coin.total_position_mm.is_empty() {
+            0.0
+        } else {
+            coin.total_position_mm.parse::<f64>()?
+        };
+
+        // Only create margin balance if there are actual margin requirements
+        if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {
+            let initial_margin = Money::new(initial_margin_f64, currency);
+            let maintenance_margin = Money::new(maintenance_margin_f64, currency);
+
+            // Create a synthetic instrument_id for account-level margins
+            let margin_instrument_id = InstrumentId::new(
+                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin.coin)),
+                Venue::new("BYBIT"),
+            );
+
+            margins.push(MarginBalance::new(
+                initial_margin,
+                maintenance_margin,
+                margin_instrument_id,
+            ));
+        }
+    }
+
+    let account_type = AccountType::Margin;
+    let is_reported = true;
+    let event_id = nautilus_core::uuid::UUID4::new();
+
+    // Use current time as ts_event since Bybit doesn't provide this in wallet balance
+    let ts_event = ts_init;
+
+    Ok(AccountState::new(
+        account_id,
+        account_type,
+        balances,
+        margins,
+        is_reported,
+        event_id,
+        ts_event,
+        ts_init,
+        None,
+    ))
 }
 
 pub(crate) fn parse_price_with_precision(value: &str, precision: u8, field: &str) -> Result<Price> {

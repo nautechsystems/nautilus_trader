@@ -69,6 +69,7 @@ pub enum BybitPositionIdx {
 /// Account type enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, eq_int))]
 pub enum BybitAccountType {
     Unified,
 }

@@ -30,9 +30,10 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{BarAggregation, OrderSide, OrderType, TimeInForce},
+    events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    reports::OrderStatusReport,
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
 use nautilus_network::{
@@ -70,9 +71,9 @@ use crate::common::{
     },
     models::BybitResponse,
     parse::{
-        parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
-        parse_option_instrument, parse_order_status_report, parse_spot_instrument,
-        parse_trade_tick,
+        parse_account_state, parse_fill_report, parse_inverse_instrument, parse_kline_bar,
+        parse_linear_instrument, parse_option_instrument, parse_order_status_report,
+        parse_position_status_report, parse_spot_instrument, parse_trade_tick,
     },
     urls::bybit_http_base_url,
 };
@@ -574,6 +575,23 @@ impl BybitHttpInnerClient {
         self.send_request(Method::GET, &path, None, true).await
     }
 
+    /// Fetches trading fee rates for symbols.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
+    pub async fn http_get_fee_rate(
+        &self,
+        params: &super::query::BybitFeeRateParams,
+    ) -> Result<super::models::BybitFeeRateResponse, BybitHttpError> {
+        let path = Self::build_path("/v5/account/fee-rate", params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
     /// Fetches tickers for market data.
     ///
     /// # Errors
@@ -608,23 +626,25 @@ impl BybitHttpInnerClient {
         self.send_request(Method::GET, &path, None, true).await
     }
 
-    // TODO: Add position information endpoint once position models are defined
-    // /// Fetches position information (requires authentication).
-    // ///
-    // /// # Errors
-    // ///
-    // /// Returns an error if the request fails or the response cannot be parsed.
-    // ///
-    // /// # References
-    // ///
-    // /// - <https://bybit-exchange.github.io/docs/v5/position/position>
-    // pub async fn http_get_positions(
-    //     &self,
-    //     params: &super::query::BybitPositionListParams,
-    // ) -> Result<super::models::BybitPositionListResponse, BybitHttpError> {
-    //     let path = Self::build_path("/v5/position/list", params)?;
-    //     self.send_request(Method::GET, &path, None, true).await
-    // }
+    /// Fetches position information (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    pub async fn http_get_positions(
+        &self,
+        params: &super::query::BybitPositionListParams,
+    ) -> Result<super::models::BybitPositionListResponse, BybitHttpError> {
+        let path = Self::build_path("/v5/position/list", params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
 
     /// Returns the base URL used for requests.
     #[must_use]
@@ -1136,9 +1156,7 @@ impl BybitHttpInnerClient {
                 let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
                 fee_params.category(product_type);
                 let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
-                let fee_response: super::models::BybitFeeRateResponse =
-                    self.send_request(Method::GET, &path, None, true).await?;
+                let fee_response = self.http_get_fee_rate(&fee_params).await?;
 
                 let fee_map: std::collections::HashMap<_, _> = fee_response
                     .result
@@ -1163,9 +1181,7 @@ impl BybitHttpInnerClient {
                 let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
                 fee_params.category(product_type);
                 let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
-                let fee_response: super::models::BybitFeeRateResponse =
-                    self.send_request(Method::GET, &path, None, true).await?;
+                let fee_response = self.http_get_fee_rate(&fee_params).await?;
 
                 let fee_map: std::collections::HashMap<_, _> = fee_response
                     .result
@@ -1190,9 +1206,7 @@ impl BybitHttpInnerClient {
                 let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
                 fee_params.category(product_type);
                 let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let path = Self::build_path("/v5/account/fee-rate", &fee_params)?;
-                let fee_response: super::models::BybitFeeRateResponse =
-                    self.send_request(Method::GET, &path, None, true).await?;
+                let fee_response = self.http_get_fee_rate(&fee_params).await?;
 
                 let fee_map: std::collections::HashMap<_, _> = fee_response
                     .result
@@ -1333,6 +1347,173 @@ impl BybitHttpInnerClient {
         }
 
         Ok(bars)
+    }
+
+    /// Fetches execution history (fills) for the account and returns a list of [`FillReport`]s.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Required instruments are not cached.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/order/execution>
+    pub async fn request_fill_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let account_id = AccountId::new("BYBIT");
+
+        // Build query parameters
+        let symbol = instrument_id.map(|id| id.symbol.as_str().to_string());
+        let params = super::query::BybitTradeHistoryParams {
+            category: product_type,
+            symbol,
+            base_coin: None,
+            order_id: None,
+            order_link_id: None,
+            start_time: start,
+            end_time: end,
+            exec_type: None,
+            limit,
+            cursor: None,
+        };
+
+        let response = self.http_get_trade_history(&params).await?;
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        for execution in response.result.list {
+            // Get instrument for this execution
+            let symbol_str = execution.symbol.as_str();
+            let instrument = self.instrument_from_cache(symbol_str)?;
+
+            if let Ok(report) = parse_fill_report(&execution, account_id, &instrument, ts_init) {
+                reports.push(report);
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Fetches position information for the account and returns a list of [`PositionStatusReport`]s.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Required instruments are not cached.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    pub async fn request_position_status_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let account_id = AccountId::new("BYBIT");
+
+        // Build query parameters
+        let symbol = instrument_id.map(|id| id.symbol.as_str().to_string());
+        let params = super::query::BybitPositionListParams {
+            category: product_type,
+            symbol,
+            base_coin: None,
+            settle_coin: None,
+            limit: None,
+            cursor: None,
+        };
+
+        let response = self.http_get_positions(&params).await?;
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        for position in response.result.list {
+            // Get instrument for this position
+            let symbol_str = position.symbol.as_str();
+            let instrument = self.instrument_from_cache(symbol_str)?;
+
+            if let Ok(report) =
+                parse_position_status_report(&position, account_id, &instrument, ts_init)
+            {
+                reports.push(report);
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests the current account state for the specified account type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
+    pub async fn request_account_state(
+        &self,
+        account_type: crate::common::enums::BybitAccountType,
+    ) -> anyhow::Result<AccountState> {
+        let account_id = AccountId::new("BYBIT");
+
+        let params = super::query::BybitWalletBalanceParams {
+            account_type,
+            coin: None,
+        };
+
+        let response = self.http_get_wallet_balance(&params).await?;
+        let ts_init = self.generate_ts_init();
+
+        // Take the first wallet balance from the list
+        let wallet_balance = response
+            .result
+            .list
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No wallet balance found in response"))?;
+
+        parse_account_state(wallet_balance, account_id, ts_init)
+    }
+
+    /// Requests trading fee rates for the specified product type and optional filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
+    pub async fn request_fee_rates(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+    ) -> anyhow::Result<Vec<super::models::BybitFeeRate>> {
+        let params = super::query::BybitFeeRateParams {
+            category: product_type,
+            symbol,
+            base_coin,
+        };
+
+        let response = self.http_get_fee_rate(&params).await?;
+        Ok(response.result.list)
     }
 }
 
@@ -1845,6 +2026,95 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<Bar>> {
         self.inner
             .request_bars(product_type, bar_type, start, end, limit)
+            .await
+    }
+
+    /// Fetches execution history (fills) for the account.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Required instruments are not cached.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/order/execution>
+    pub async fn request_fill_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        self.inner
+            .request_fill_reports(product_type, instrument_id, start, end, limit)
+            .await
+    }
+
+    /// Fetches position information for the account.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - Required instruments are not cached.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    pub async fn request_position_status_reports(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        self.inner
+            .request_position_status_reports(product_type, instrument_id)
+            .await
+    }
+
+    /// Requests the current account state for the specified account type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
+    pub async fn request_account_state(
+        &self,
+        account_type: crate::common::enums::BybitAccountType,
+    ) -> anyhow::Result<AccountState> {
+        self.inner.request_account_state(account_type).await
+    }
+
+    /// Requests trading fee rates for the specified product type and optional filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
+    pub async fn request_fee_rates(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+    ) -> anyhow::Result<Vec<super::models::BybitFeeRate>> {
+        self.inner
+            .request_fee_rates(product_type, symbol, base_coin)
             .await
     }
 }

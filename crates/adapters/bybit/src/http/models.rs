@@ -22,8 +22,9 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitCancelType, BybitContractType, BybitExecType, BybitInnovationFlag,
         BybitInstrumentStatus, BybitMarginTrading, BybitOptionType, BybitOrderSide,
-        BybitOrderStatus, BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce,
-        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide, BybitProductType,
+        BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+        BybitTriggerType,
     },
     models::{
         BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -363,12 +364,44 @@ pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrument
 /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct BybitFeeRate {
     pub symbol: Ustr,
     pub taker_fee_rate: String,
     pub maker_fee_rate: String,
     #[serde(default)]
     pub base_coin: Option<Ustr>,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitFeeRate {
+    #[getter]
+    #[must_use]
+    pub fn symbol(&self) -> &str {
+        self.symbol.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn taker_fee_rate(&self) -> &str {
+        &self.taker_fee_rate
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn maker_fee_rate(&self) -> &str {
+        &self.maker_fee_rate
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn base_coin(&self) -> Option<&str> {
+        self.base_coin.as_ref().map(|u| u.as_str())
+    }
 }
 
 /// Response alias for fee rate requests.
@@ -568,6 +601,53 @@ pub struct BybitExecution {
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
 pub type BybitTradeHistoryResponse = BybitListResponse<BybitExecution>;
+
+/// Represents a position returned by the Bybit API.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitPosition {
+    pub position_idx: BybitPositionIdx,
+    pub risk_id: i32,
+    pub risk_limit_value: String,
+    pub symbol: Ustr,
+    pub side: BybitPositionSide,
+    pub size: String,
+    pub avg_price: String,
+    pub position_value: String,
+    pub trade_mode: i32,
+    pub position_status: String,
+    pub auto_add_margin: i32,
+    pub adl_rank_indicator: i32,
+    pub leverage: String,
+    pub position_balance: String,
+    pub mark_price: String,
+    pub liq_price: String,
+    pub bust_price: String,
+    pub position_mm: String,
+    pub position_im: String,
+    pub tpsl_mode: String,
+    pub take_profit: String,
+    pub stop_loss: String,
+    pub trailing_stop: String,
+    pub unrealised_pnl: String,
+    pub cur_realised_pnl: String,
+    pub cum_realised_pnl: String,
+    pub seq: i64,
+    pub is_reduce_only: bool,
+    pub mmr_sys_update_time: String,
+    pub leverage_sys_updated_time: String,
+    pub created_time: String,
+    pub updated_time: String,
+}
+
+/// Response alias for position list requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+pub type BybitPositionListResponse = BybitCursorListResponse<BybitPosition>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

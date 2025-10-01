@@ -30,6 +30,7 @@ use crate::common::consts::BYBIT_NAUTILUS_BROKER_ID;
 #[rustfmt::skip]
 pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
+    m.add_class::<crate::common::enums::BybitAccountType>()?;
     m.add_class::<crate::common::enums::BybitProductType>()?;
     m.add_class::<crate::http::client::BybitHttpClient>()?;
     Ok(())
