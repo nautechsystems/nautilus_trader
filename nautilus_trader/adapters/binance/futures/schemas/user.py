@@ -224,6 +224,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     ss: int  # ignore
     rp: str  # Realized Profit of the trade
     gtd: int  # TIF GTD order auto cancel time
+    W: int | None = None  # Working Time (when order was added to the book)
+    V: str | None = None  # Self-Trade Prevention Mode
 
     def parse_to_order_status_report(
         self,

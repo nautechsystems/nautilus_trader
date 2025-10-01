@@ -17,8 +17,10 @@ import pkgutil
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteMsg
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -59,3 +61,24 @@ class TestBinanceWebSocketParsing:
 
         # Assert
         assert data.s == "ETHUSDT"
+
+    def test_parse_spot_execution_report_binance_us(self):
+        # Arrange: Load Binance US execution report with W and V fields
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_binance_us.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert
+        assert wrapper.data.e.value == "executionReport"
+        assert wrapper.data.s == "BTCUSD"
+        assert wrapper.data.x == BinanceExecutionType.TRADE
+        assert wrapper.data.l == "0.00042000"
+        assert wrapper.data.L == "117290.77000000"
+        assert wrapper.data.W == 1759347763167  # Working time field
+        assert wrapper.data.V == "EXPIRE_MAKER"  # Self-Trade Prevention Mode

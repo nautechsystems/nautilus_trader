@@ -159,6 +159,8 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     Z: str  # Cumulative quote asset transacted quantity
     Y: str  # Last quote asset transacted quantity (i.e. lastPrice * lastQty)
     Q: str  # Quote Order Qty
+    W: int | None = None  # Working Time (when order was added to the book)
+    V: str | None = None  # Self-Trade Prevention Mode
 
     def parse_to_order_status_report(
         self,
@@ -246,8 +248,8 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
 
             # Determine commission
-            commission_asset: str = self.N
-            commission_amount: str = self.n
+            commission_asset = self.N
+            commission_amount = self.n
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
