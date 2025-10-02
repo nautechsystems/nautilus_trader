@@ -91,8 +91,9 @@ config_strat = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
-    # open_position_on_start_qty=order_qty,
-    tob_offset_ticks=0,
+    open_position_on_start_qty=order_qty,
+    use_post_only=True,
+    # tob_offset_ticks=0,
     # log_data=False,
 )
 

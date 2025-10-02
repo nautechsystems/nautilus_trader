@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
 - Implemented Hyperliquid DataClient in Rust (#2999), thanks @nicolad
 - Implemented Hyperliquid ExecutionClient in Python (#3003), thanks @nicolad
+- Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved socket reconnect sequence and tighten client setup and testing
