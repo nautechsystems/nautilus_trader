@@ -105,6 +105,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    fs_rust_storage_options : dict[str, str], optional
+        Storage-specific configuration options for the rust backend.
+        Defaults to what is used for fs_storage_options if not specified.
     max_rows_per_group : int, default 5000
         The maximum number of rows per group. If the value is greater than 0,
         then the dataset writer may split up large incoming batches into
@@ -129,7 +132,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: PathLike[str] | str,
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
-        dataset_kwargs: dict | None = None,
+        fs_rust_storage_options: dict | None = None,
         max_rows_per_group: int = 5_000,
         show_query_paths: bool = False,
     ) -> None:
@@ -144,8 +147,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             self.fs_protocol,
             **self.fs_storage_options,
         )
+        self.fs_rust_storage_options = fs_rust_storage_options or self.fs_storage_options
         self.serializer = ArrowSerializer()
-        self.dataset_kwargs = dataset_kwargs or {}
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
@@ -188,7 +191,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     def from_uri(
         cls,
         uri: str,
-        storage_options: dict[str, str] | None = None,
+        fs_storage_options: dict[str, str] | None = None,
+        fs_rust_storage_options: dict[str, str] | None = None,
     ) -> ParquetDataCatalog:
         """
         Create a data catalog instance from the given `uri` with optional storage
@@ -198,11 +202,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         uri : str
             The URI string for the backing path.
-        storage_options : dict[str, str], optional
+        fs_storage_options : dict[str, str], optional
             Storage-specific configuration options.
             For S3: endpoint_url, region, access_key_id, secret_access_key, session_token, etc.
             For GCS: service_account_path, service_account_key, project_id, etc.
             For Azure: account_name, account_key, sas_token, etc.
+        fs_rust_storage_options : dict[str, str], optional
+            Storage-specific configuration options for the rust backend.
+            Defaults to what is used for fs_storage_options if not specified.
 
         Returns
         -------
@@ -219,12 +226,17 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Merge parsed storage options with provided storage options
         # Provided storage options take precedence
-        merged_storage_options = parsed.copy()
+        merged_fs_storage_options = parsed.copy()
 
-        if storage_options:
-            merged_storage_options.update(storage_options)
+        if fs_storage_options:
+            merged_fs_storage_options.update(fs_storage_options)
 
-        return cls(path=path, fs_protocol=protocol, fs_storage_options=merged_storage_options)
+        return cls(
+            path=path,
+            fs_protocol=protocol,
+            fs_storage_options=merged_fs_storage_options,
+            fs_rust_storage_options=fs_rust_storage_options,
+        )
 
     # -- WRITING ----------------------------------------------------------------------------------
 
@@ -1734,7 +1746,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         try:
             # Register object store using the Rust implementation with storage options
-            session.register_object_store_from_uri(catalog_uri, self.fs_storage_options)
+            session.register_object_store_from_uri(catalog_uri, self.fs_rust_storage_options)
 
         except Exception as e:
             # Log the error but don't fail - DataFusion might still work with built-in support

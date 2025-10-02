@@ -507,6 +507,7 @@ class NautilusKernel:
                     path=catalog_config.path,
                     fs_protocol=catalog_config.fs_protocol,
                     fs_storage_options=catalog_config.fs_storage_options,
+                    fs_rust_storage_options=catalog_config.fs_rust_storage_options,
                 )
                 used_catalog_name = catalog_config.name
 
