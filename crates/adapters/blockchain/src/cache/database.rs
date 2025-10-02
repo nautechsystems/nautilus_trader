@@ -471,18 +471,19 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut dex_names: Vec<String> = Vec::with_capacity(pools.len());
-        let mut creation_blocks: Vec<i64> = Vec::with_capacity(pools.len());
-        let mut token0_chains: Vec<i32> = Vec::with_capacity(pools.len());
-        let mut token0_addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut token1_chains: Vec<i32> = Vec::with_capacity(pools.len());
-        let mut token1_addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut fees: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(pools.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(pools.len());
+        let len = pools.len();
+        let mut addresses: Vec<String> = Vec::with_capacity(len);
+        let mut dex_names: Vec<String> = Vec::with_capacity(len);
+        let mut creation_blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut token0_chains: Vec<i32> = Vec::with_capacity(len);
+        let mut token0_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut token1_chains: Vec<i32> = Vec::with_capacity(len);
+        let mut token1_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut fees: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from pools
         for pool in pools {
@@ -552,20 +553,23 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(swaps.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(swaps.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(swaps.len());
-        let mut senders: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut recipients: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut sides: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut sizes: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut prices: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(swaps.len());
+        let len = swaps.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut senders: Vec<String> = Vec::with_capacity(len);
+        let mut recipients: Vec<String> = Vec::with_capacity(len);
+        let mut sides: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut sizes: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut prices: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(len);
+        let mut liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut ticks: Vec<i32> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from swaps
         for swap in swaps {
@@ -639,20 +643,21 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(updates.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(updates.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(updates.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut event_types: Vec<String> = Vec::with_capacity(updates.len());
-        let mut senders: Vec<Option<String>> = Vec::with_capacity(updates.len());
-        let mut owners: Vec<String> = Vec::with_capacity(updates.len());
-        let mut position_liquidities: Vec<String> = Vec::with_capacity(updates.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(updates.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(updates.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(updates.len());
+        let len = updates.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut event_types: Vec<String> = Vec::with_capacity(len);
+        let mut senders: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut position_liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from updates
         for update in updates {
@@ -1134,17 +1139,18 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(collects.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(collects.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(collects.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut owners: Vec<String> = Vec::with_capacity(collects.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(collects.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(collects.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(collects.len());
+        let len = collects.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from collects
         for collect in collects {
@@ -1211,16 +1217,17 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(positions.len());
-        let mut owners: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(positions.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(positions.len());
-        let mut liquidities: Vec<String> = Vec::with_capacity(positions.len());
-        let mut fee_growth_inside_0_lasts: Vec<String> = Vec::with_capacity(positions.len());
-        let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(positions.len());
-        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(positions.len());
+        let len = positions.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_inside_0_lasts: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(len);
+        let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(len);
+        let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(len);
+        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(len);
 
         // Fill vectors from positions
         for (pool_address, position) in positions {
