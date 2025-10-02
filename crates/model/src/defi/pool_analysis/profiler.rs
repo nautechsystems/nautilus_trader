@@ -33,6 +33,7 @@ use crate::defi::{
         },
     },
 };
+use crate::defi::tick_map::liquidity_math::liquidity_math_add;
 
 /// A comprehensive DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
@@ -381,16 +382,14 @@ impl PoolProfiler {
                         },
                     );
 
-                    // If we're moving leftward, we interpret liquidityNet as the opposite sign
-                    let adjusted_liquidity_net = if zero_for_one {
-                        -liquidity_net
+                    // Apply liquidity change based on crossing direction
+                    // When crossing down (zeroForOne = true), negate liquidity_net before adding
+                    // When crossing up (zeroForOne = false), use liquidity_net as-is without negation
+                    self.tick_map.liquidity = if zero_for_one {
+                        liquidity_math_add(self.tick_map.liquidity, -liquidity_net)
                     } else {
-                        liquidity_net
+                        liquidity_math_add(self.tick_map.liquidity, liquidity_net)
                     };
-
-                    // Update current liquidity
-                    self.tick_map.liquidity =
-                        ((self.tick_map.liquidity as i128) + adjusted_liquidity_net) as u128;
                 }
 
                 current_tick = if zero_for_one {

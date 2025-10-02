@@ -1205,6 +1205,132 @@ fn test_collect_with_invalid_ticks_does_not_panic(mut uni_pool_profiler: PoolPro
     assert_eq!(position_after.tokens_owed_0, initial_tokens_owed_0);
 }
 
+// ---------- ACTIVE LIQUIDITY AND TICK CROSSING TESTS WHEN SWAPING ----------
+
+#[rstest]
+fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolProfiler) {
+    // Initial state: current tick is -23028, liquidity is 3161
+    let initial_liquidity = uni_pool_profiler.get_active_liquidity();
+    let initial_tick = uni_pool_profiler.current_tick.unwrap();
+    assert_eq!(initial_liquidity, 3161);
+    assert_eq!(initial_tick, -23028);
+
+    // Mint a position that extends from below current price to MAX_TICK
+    // Position range: [-23040, MAX_TICK] - upper tick at max ensures swap won't exit the position
+    // Tick spacing is 60, so ticks must be multiples of 60
+    let upper_tick = -23040; // Just below current tick -23028
+    let lower_tick = Tick::get_min_tick(TICK_SPACING);
+    let position_liquidity = 50000u128;
+
+    let mint_event = create_mint_event(lower_tick, upper_tick, position_liquidity);
+    uni_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Position is inactive (current tick -23028 is below upper tick -23040), so active liquidity unchanged
+    assert_eq!(uni_pool_profiler.get_active_liquidity(), initial_liquidity);
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
+
+    // Execute swap: token0 for token1 to move price down into the position range
+    let amount0_in = U256::from(expand_to_18_decimals(1));
+    let _ = uni_pool_profiler
+        .swap_exact0_for_1(
+            user_address(),
+            user_address(),
+            create_block_position(),
+            amount0_in,
+            None,
+        )
+        .unwrap();
+
+    // Verify price moved down past the upper tick of the position
+    let new_tick = uni_pool_profiler.current_tick.unwrap();
+    assert!(
+        new_tick <= upper_tick,
+        "Price should have crossed to or below tick {}, got {}",
+        upper_tick,
+        new_tick
+    );
+
+    // When crossing tick -23040 downward (cross_tick_down):
+    // - liquidity_net at upper_tick is -50000 (negative, it's upper bound)
+    // - We negate it: -(-50000) = +50000
+    // - Active liquidity should increase by position_liquidity
+    let final_liquidity = uni_pool_profiler.get_active_liquidity();
+    assert_eq!(
+        final_liquidity,
+        initial_liquidity + position_liquidity,
+        "Liquidity should increase when crossing into position range downward"
+    );
+
+    // Verify the position is now active
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 2);
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0);
+}
+
+#[rstest]
+fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProfiler) {
+    // Initial state: current tick is -23028, liquidity is 3161
+    let initial_liquidity = uni_pool_profiler.get_active_liquidity();
+    let initial_tick = uni_pool_profiler.current_tick.unwrap();
+    assert_eq!(initial_liquidity, 3161);
+    assert_eq!(initial_tick, -23028);
+
+    // Mint a position above current price that will become active when price moves up
+    // Position range: [-22980, MAX_TICK] - upper tick at max ensures swap won't exit the position
+    // Tick spacing is 60, so ticks must be multiples of 60
+    let lower_tick = -22980;
+    let upper_tick = Tick::get_max_tick(TICK_SPACING);
+    let position_liquidity = 40000u128;
+
+    let mint_event = create_mint_event(lower_tick, upper_tick, position_liquidity);
+    uni_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Position is inactive (below current price), so active liquidity unchanged
+    assert_eq!(uni_pool_profiler.get_active_liquidity(), initial_liquidity);
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
+
+    // Execute large swap: token1 for token0 to move price up, crossing tick -22980
+    let amount1_in = U256::from(expand_to_18_decimals(1000));
+    let _ = uni_pool_profiler
+        .swap_exact1_for_0(
+            user_address(),
+            user_address(),
+            create_block_position(),
+            amount1_in,
+            None,
+        )
+        .unwrap();
+
+    // Verify price moved up past the lower tick of the position
+    let new_tick = uni_pool_profiler.current_tick.unwrap();
+    assert!(
+        new_tick >= lower_tick,
+        "Price should have crossed above or at tick {}, got {}",
+        lower_tick,
+        new_tick
+    );
+
+    // When crossing tick -22980 upward (cross_tick_up):
+    // - liquidity_net at lower_tick is +40000 (positive, it's lower bound)
+    // - We add it directly: +40000
+    // - Active liquidity should increase by position_liquidity
+    let final_liquidity = uni_pool_profiler.get_active_liquidity();
+    assert_eq!(
+        final_liquidity,
+        initial_liquidity + position_liquidity,
+        "Liquidity should increase when crossing into position range upward"
+    );
+
+    // Verify the position is now active
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 2);
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0);
+}
+
 // ----------- SWAP TESTING ----------
 // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.swaps.spec.ts
 
