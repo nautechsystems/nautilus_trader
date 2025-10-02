@@ -2410,6 +2410,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
         new_price,
+        1000u128,
+        0i32,
         Some(OrderSide::Buy),
         Some(Quantity::from("1000")),
         Some(Price::from("500")),
