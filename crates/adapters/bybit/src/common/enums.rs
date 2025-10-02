@@ -77,6 +77,7 @@ pub enum BybitAccountType {
 /// Environments supported by the Bybit API stack.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, eq_int))]
 pub enum BybitEnvironment {
     /// Live trading environment.
     Mainnet,

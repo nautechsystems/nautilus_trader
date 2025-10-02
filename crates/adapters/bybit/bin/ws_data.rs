@@ -97,6 +97,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     BybitWebSocketMessage::Kline(msg) => {
                         tracing::info!(topic = %msg.topic, bars = msg.data.len(), "kline update");
                     }
+                    BybitWebSocketMessage::AccountOrder(msg) => {
+                        tracing::info!(topic = %msg.topic, orders = msg.data.len(), "account order update");
+                    }
+                    BybitWebSocketMessage::AccountExecution(msg) => {
+                        tracing::info!(topic = %msg.topic, executions = msg.data.len(), "account execution update");
+                    }
+                    BybitWebSocketMessage::AccountWallet(msg) => {
+                        tracing::info!(topic = %msg.topic, wallets = msg.data.len(), "account wallet update");
+                    }
+                    BybitWebSocketMessage::AccountPosition(msg) => {
+                        tracing::info!(topic = %msg.topic, positions = msg.data.len(), "account position update");
+                    }
                 }
             }
             _ = &mut shutdown => {

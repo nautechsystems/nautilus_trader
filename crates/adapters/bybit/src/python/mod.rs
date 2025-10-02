@@ -16,6 +16,8 @@
 //! Python bindings from `pyo3`.
 
 pub mod http;
+pub mod urls;
+pub mod websocket;
 
 use pyo3::prelude::*;
 
@@ -32,6 +34,13 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
     m.add_class::<crate::common::enums::BybitAccountType>()?;
     m.add_class::<crate::common::enums::BybitProductType>()?;
+    m.add_class::<crate::common::enums::BybitEnvironment>()?;
     m.add_class::<crate::http::client::BybitHttpClient>()?;
+    m.add_class::<crate::websocket::client::BybitWebSocketClient>()?;
+    m.add_class::<crate::websocket::messages::BybitWebSocketError>()?;
+    m.add_function(wrap_pyfunction!(urls::py_get_bybit_http_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_public, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_private, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_trade, m)?)?;
     Ok(())
 }

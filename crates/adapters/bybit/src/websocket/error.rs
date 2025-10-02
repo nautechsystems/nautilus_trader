@@ -43,6 +43,10 @@ pub enum BybitWsError {
     /// Authentication handshake failed or timed out.
     #[error("Authentication error: {0}")]
     Authentication(String),
+
+    /// Client-side validation or logic error.
+    #[error("Client error: {0}")]
+    ClientError(String),
 }
 
 impl From<SendError> for BybitWsError {

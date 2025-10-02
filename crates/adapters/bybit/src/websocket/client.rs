@@ -29,6 +29,11 @@ use std::{
 use dashmap::DashMap;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_model::{
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    types::{Price, Quantity},
+};
 use nautilus_network::{
     RECONNECTED,
     websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
@@ -41,16 +46,22 @@ use crate::{
     common::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG},
         credential::Credential,
-        enums::{BybitEnvironment, BybitProductType},
+        enums::{
+            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
+            BybitWsOrderRequestOp,
+        },
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
     websocket::{
         auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
         error::{BybitWsError, BybitWsResult},
         messages::{
-            BybitWebSocketError, BybitWebSocketMessage, BybitWsAuthResponse, BybitWsKlineMsg,
-            BybitWsOrderbookDepthMsg, BybitWsResponse, BybitWsSubscriptionMsg,
-            BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
+            BybitWebSocketError, BybitWebSocketMessage, BybitWsAccountExecutionMsg,
+            BybitWsAccountOrderMsg, BybitWsAccountPositionMsg, BybitWsAccountWalletMsg,
+            BybitWsAmendOrderParams, BybitWsAuthResponse, BybitWsCancelOrderParams, BybitWsHeader,
+            BybitWsKlineMsg, BybitWsOrderbookDepthMsg, BybitWsPlaceOrderParams, BybitWsRequest,
+            BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinearMsg,
+            BybitWsTickerOptionMsg, BybitWsTradeMsg,
         },
     },
 };
@@ -62,6 +73,7 @@ const PONG_MESSAGE: &str = r#"{"op":"pong"}"#;
 const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
 
 /// Public/market data WebSocket client for Bybit.
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct BybitWebSocketClient {
     url: String,
     environment: BybitEnvironment,
@@ -88,6 +100,26 @@ impl fmt::Debug for BybitWebSocketClient {
             .field("heartbeat", &self.heartbeat)
             .field("active_subscriptions", &self.subscriptions.len())
             .finish()
+    }
+}
+
+impl Clone for BybitWebSocketClient {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            environment: self.environment,
+            product_type: self.product_type,
+            credential: self.credential.clone(),
+            requires_auth: self.requires_auth,
+            auth_tracker: self.auth_tracker.clone(),
+            heartbeat: self.heartbeat,
+            inner: Arc::clone(&self.inner),
+            rx: None, // Each clone gets its own receiver
+            signal: Arc::clone(&self.signal),
+            task_handle: None, // Each clone gets its own task handle
+            subscriptions: Arc::clone(&self.subscriptions),
+            is_authenticated: Arc::clone(&self.is_authenticated),
+        }
     }
 }
 
@@ -339,6 +371,29 @@ impl BybitWebSocketClient {
         guard.as_ref().is_some_and(WebSocketClient::is_active)
     }
 
+    /// Waits until the WebSocket client becomes active or times out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is exceeded before the client becomes active.
+    pub async fn wait_until_active(&self, timeout_secs: f64) -> BybitWsResult<()> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+
+        tokio::time::timeout(timeout, async {
+            while !self.is_active().await {
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            BybitWsError::ClientError(format!(
+                "WebSocket connection timeout after {timeout_secs} seconds"
+            ))
+        })?;
+
+        Ok(())
+    }
+
     /// Subscribe to the provided topic strings.
     pub async fn subscribe(&self, topics: Vec<String>) -> BybitWsResult<()> {
         if topics.is_empty() {
@@ -409,6 +464,501 @@ impl BybitWebSocketClient {
     #[must_use]
     pub fn subscription_count(&self) -> usize {
         self.subscriptions.len()
+    }
+
+    /// Subscribes to orderbook updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>
+    pub async fn subscribe_orderbook(
+        &self,
+        symbol: impl Into<String>,
+        depth: u32,
+    ) -> BybitWsResult<()> {
+        let topic = format!("orderbook.{}.{}", depth, symbol.into());
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from orderbook updates for a specific instrument.
+    pub async fn unsubscribe_orderbook(
+        &self,
+        symbol: impl Into<String>,
+        depth: u32,
+    ) -> BybitWsResult<()> {
+        let topic = format!("orderbook.{}.{}", depth, symbol.into());
+        self.unsubscribe(vec![topic]).await
+    }
+
+    /// Subscribes to public trade updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/trade>
+    pub async fn subscribe_trades(&self, symbol: impl Into<String>) -> BybitWsResult<()> {
+        let topic = format!("publicTrade.{}", symbol.into());
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from public trade updates for a specific instrument.
+    pub async fn unsubscribe_trades(&self, symbol: impl Into<String>) -> BybitWsResult<()> {
+        let topic = format!("publicTrade.{}", symbol.into());
+        self.unsubscribe(vec![topic]).await
+    }
+
+    /// Subscribes to ticker updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/ticker>
+    pub async fn subscribe_ticker(&self, symbol: impl Into<String>) -> BybitWsResult<()> {
+        let topic = format!("tickers.{}", symbol.into());
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from ticker updates for a specific instrument.
+    pub async fn unsubscribe_ticker(&self, symbol: impl Into<String>) -> BybitWsResult<()> {
+        let topic = format!("tickers.{}", symbol.into());
+        self.unsubscribe(vec![topic]).await
+    }
+
+    /// Subscribes to kline/candlestick updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/kline>
+    pub async fn subscribe_klines(
+        &self,
+        symbol: impl Into<String>,
+        interval: impl Into<String>,
+    ) -> BybitWsResult<()> {
+        let topic = format!("kline.{}.{}", interval.into(), symbol.into());
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from kline/candlestick updates for a specific instrument.
+    pub async fn unsubscribe_klines(
+        &self,
+        symbol: impl Into<String>,
+        interval: impl Into<String>,
+    ) -> BybitWsResult<()> {
+        let topic = format!("kline.{}.{}", interval.into(), symbol.into());
+        self.unsubscribe(vec![topic]).await
+    }
+
+    /// Subscribes to order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/order>
+    pub async fn subscribe_orders(&self) -> BybitWsResult<()> {
+        if !self.requires_auth {
+            return Err(BybitWsError::Authentication(
+                "Order subscription requires authentication".to_string(),
+            ));
+        }
+        self.subscribe(vec!["order".to_string()]).await
+    }
+
+    /// Unsubscribes from order updates.
+    pub async fn unsubscribe_orders(&self) -> BybitWsResult<()> {
+        self.unsubscribe(vec!["order".to_string()]).await
+    }
+
+    /// Subscribes to execution/fill updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/execution>
+    pub async fn subscribe_executions(&self) -> BybitWsResult<()> {
+        if !self.requires_auth {
+            return Err(BybitWsError::Authentication(
+                "Execution subscription requires authentication".to_string(),
+            ));
+        }
+        self.subscribe(vec!["execution".to_string()]).await
+    }
+
+    /// Unsubscribes from execution/fill updates.
+    pub async fn unsubscribe_executions(&self) -> BybitWsResult<()> {
+        self.unsubscribe(vec!["execution".to_string()]).await
+    }
+
+    /// Subscribes to position updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/position>
+    pub async fn subscribe_positions(&self) -> BybitWsResult<()> {
+        if !self.requires_auth {
+            return Err(BybitWsError::Authentication(
+                "Position subscription requires authentication".to_string(),
+            ));
+        }
+        self.subscribe(vec!["position".to_string()]).await
+    }
+
+    /// Unsubscribes from position updates.
+    pub async fn unsubscribe_positions(&self) -> BybitWsResult<()> {
+        self.unsubscribe(vec!["position".to_string()]).await
+    }
+
+    /// Subscribes to wallet/balance updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/wallet>
+    pub async fn subscribe_wallet(&self) -> BybitWsResult<()> {
+        if !self.requires_auth {
+            return Err(BybitWsError::Authentication(
+                "Wallet subscription requires authentication".to_string(),
+            ));
+        }
+        self.subscribe(vec!["wallet".to_string()]).await
+    }
+
+    /// Unsubscribes from wallet/balance updates.
+    pub async fn unsubscribe_wallet(&self) -> BybitWsResult<()> {
+        self.unsubscribe(vec!["wallet".to_string()]).await
+    }
+
+    /// Places an order via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/trade/guideline>
+    pub async fn place_order(&self, params: BybitWsPlaceOrderParams) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to place orders".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::Create,
+            header: BybitWsHeader::now(),
+            args: vec![params],
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Amends an existing order via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the amend request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/trade/guideline>
+    pub async fn amend_order(&self, params: BybitWsAmendOrderParams) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to amend orders".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::Amend,
+            header: BybitWsHeader::now(),
+            args: vec![params],
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Cancels an order via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cancel request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/trade/guideline>
+    pub async fn cancel_order(&self, params: BybitWsCancelOrderParams) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to cancel orders".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::Cancel,
+            header: BybitWsHeader::now(),
+            args: vec![params],
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Batch creates multiple orders via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/trade/guideline>
+    pub async fn batch_place_orders(
+        &self,
+        orders: Vec<BybitWsPlaceOrderParams>,
+    ) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to place orders".to_string(),
+            ));
+        }
+
+        if orders.len() > 20 {
+            return Err(BybitWsError::ClientError(
+                "Batch order limit is 20 orders per request".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::CreateBatch,
+            header: BybitWsHeader::now(),
+            args: orders,
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Batch amends multiple orders via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch request fails or if not authenticated.
+    pub async fn batch_amend_orders(
+        &self,
+        orders: Vec<BybitWsAmendOrderParams>,
+    ) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to amend orders".to_string(),
+            ));
+        }
+
+        if orders.len() > 20 {
+            return Err(BybitWsError::ClientError(
+                "Batch amend limit is 20 orders per request".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::AmendBatch,
+            header: BybitWsHeader::now(),
+            args: orders,
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Batch cancels multiple orders via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch request fails or if not authenticated.
+    pub async fn batch_cancel_orders(
+        &self,
+        orders: Vec<BybitWsCancelOrderParams>,
+    ) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to cancel orders".to_string(),
+            ));
+        }
+
+        if orders.len() > 20 {
+            return Err(BybitWsError::ClientError(
+                "Batch cancel limit is 20 orders per request".to_string(),
+            ));
+        }
+
+        let request = BybitWsRequest {
+            op: BybitWsOrderRequestOp::CancelBatch,
+            header: BybitWsHeader::now(),
+            args: orders,
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+        Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Submits an order using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if order submission fails or if not authenticated.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+    ) -> BybitWsResult<()> {
+        let bybit_side = match order_side {
+            OrderSide::Buy => BybitOrderSide::Buy,
+            OrderSide::Sell => BybitOrderSide::Sell,
+            _ => {
+                return Err(BybitWsError::ClientError(format!(
+                    "Invalid order side: {order_side:?}"
+                )));
+            }
+        };
+
+        let bybit_order_type = match order_type {
+            OrderType::Market => BybitOrderType::Market,
+            OrderType::Limit => BybitOrderType::Limit,
+            _ => {
+                return Err(BybitWsError::ClientError(format!(
+                    "Unsupported order type: {order_type:?}"
+                )));
+            }
+        };
+
+        // If post_only is true, use PostOnly time in force, otherwise use provided time_in_force
+        let bybit_tif = if post_only == Some(true) {
+            Some(BybitTimeInForce::PostOnly)
+        } else if let Some(tif) = time_in_force {
+            Some(match tif {
+                TimeInForce::Gtc => BybitTimeInForce::Gtc,
+                TimeInForce::Ioc => BybitTimeInForce::Ioc,
+                TimeInForce::Fok => BybitTimeInForce::Fok,
+                _ => {
+                    return Err(BybitWsError::ClientError(format!(
+                        "Unsupported time in force: {tif:?}"
+                    )));
+                }
+            })
+        } else {
+            None
+        };
+
+        let params = BybitWsPlaceOrderParams {
+            category: product_type,
+            symbol: instrument_id.symbol.to_string(),
+            side: bybit_side,
+            order_type: bybit_order_type,
+            qty: quantity.to_string(),
+            price: price.map(|p| p.to_string()),
+            time_in_force: bybit_tif,
+            order_link_id: Some(client_order_id.to_string()),
+            reduce_only,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+        };
+
+        self.place_order(params).await
+    }
+
+    /// Modifies an existing order using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if modification fails or if not authenticated.
+    pub async fn modify_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> BybitWsResult<()> {
+        let params = BybitWsAmendOrderParams {
+            category: product_type,
+            symbol: instrument_id.symbol.to_string(),
+            order_id: venue_order_id.map(|id| id.to_string()),
+            order_link_id: client_order_id.map(|id| id.to_string()),
+            qty: quantity.map(|q| q.to_string()),
+            price: price.map(|p| p.to_string()),
+            trigger_price: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+        };
+
+        self.amend_order(params).await
+    }
+
+    /// Cancels an order using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cancellation fails or if not authenticated.
+    pub async fn cancel_order_by_id(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> BybitWsResult<()> {
+        let params = BybitWsCancelOrderParams {
+            category: product_type,
+            symbol: instrument_id.symbol.to_string(),
+            order_id: venue_order_id.map(|id| id.to_string()),
+            order_link_id: client_order_id.map(|id| id.to_string()),
+        };
+
+        self.cancel_order(params).await
     }
 
     fn default_headers() -> Vec<(String, String)> {
@@ -615,6 +1165,23 @@ impl BybitWebSocketClient {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerLinearMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::TickerLinear(msg));
                 }
+            } else if topic == "order" || topic.starts_with("order.") {
+                if let Ok(msg) = serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
+                    return Some(BybitWebSocketMessage::AccountOrder(msg));
+                }
+            } else if topic == "execution" || topic.starts_with("execution.") {
+                if let Ok(msg) = serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone())
+                {
+                    return Some(BybitWebSocketMessage::AccountExecution(msg));
+                }
+            } else if (topic == "wallet" || topic.starts_with("wallet."))
+                && let Ok(msg) = serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone())
+            {
+                return Some(BybitWebSocketMessage::AccountWallet(msg));
+            } else if (topic == "position" || topic.starts_with("position."))
+                && let Ok(msg) = serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone())
+            {
+                return Some(BybitWebSocketMessage::AccountPosition(msg));
             }
         }
 

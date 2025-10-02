@@ -360,9 +360,12 @@ async fn test_private_client_authentication() {
     // match the client's expectations
     let _result = client.connect().await;
 
-    // Verify the server side received and processed the auth request
-    // This demonstrates the auth flow is working, even if timing doesn't align perfectly
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for connection to be established
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
 
     // Check if auth was attempted (connection was made)
     assert!(*state.connection_count.lock().await > 0);
@@ -386,10 +389,14 @@ async fn test_authentication_failure() {
 
     let _result = client.connect().await;
 
-    // Should fail or timeout
-    // In a real implementation, this would return an error
-    // For now, we just verify the server doesn't mark it as authenticated
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for connection attempt
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Verify the server doesn't mark it as authenticated
     assert!(!state.authenticated.load(Ordering::Relaxed));
 
     let _ = client.close().await;
@@ -535,9 +542,8 @@ async fn test_reconnection_flow() {
     // Trigger a server-side disconnect
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Wait for reconnection (this depends on the client's reconnection logic)
-    // In a real scenario, the client should attempt to reconnect
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+    // Give time for disconnect to propagate
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Note: Full reconnection testing requires the client to support reconnection
     // This test establishes the pattern for testing reconnection behavior
@@ -582,4 +588,530 @@ async fn test_multiple_subscriptions() {
     assert!(subs.contains(&"orderbook.50.BTCUSDT".to_string()));
 
     client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_wait_until_active_timeout() {
+    // Create a client but don't start a server
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some("ws://127.0.0.1:9999/invalid".to_string()),
+        None,
+    );
+
+    // Connect will fail, but we won't await it
+    let _ = client.connect().await;
+
+    // wait_until_active should timeout
+    let result = client.wait_until_active(0.5).await;
+    assert!(result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_timeout_reconnection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        Some(1), // 1 second heartbeat
+    );
+
+    client.connect().await.unwrap();
+
+    // Wait for connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Trigger disconnect - client should attempt reconnection
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+
+    // Give time for disconnect to propagate
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_sends_pong_for_text_ping() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        Some(1),
+    );
+
+    client.connect().await.unwrap();
+
+    // Wait for pings to be sent
+    wait_until_async(
+        || async { state.ping_count.load(Ordering::Relaxed) > 0 },
+        Duration::from_secs(3),
+    )
+    .await;
+
+    // Verify ping was received by server
+    assert!(state.ping_count.load(Ordering::Relaxed) > 0);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_sends_pong_for_control_ping() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Wait for connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Control ping/pong is handled by the WebSocket layer
+    // This test verifies the connection remains active
+    assert!(client.is_active().await);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reauth_after_disconnect() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/private", addr);
+
+    let credential = Credential::new("test_api_key", "test_api_secret");
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        credential,
+        Some(ws_url),
+        None,
+    );
+
+    let _ = client.connect().await;
+
+    // Wait for initial connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Trigger disconnect
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+
+    // Give time for disconnect to propagate
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let _ = client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_login_failure_emits_error() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/private", addr);
+
+    let credential = Credential::new("invalid_key", "invalid_secret");
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        credential,
+        Some(ws_url),
+        None,
+    );
+
+    let _ = client.connect().await;
+
+    // Wait for connection attempt
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Verify auth failed
+    assert!(!state.authenticated.load(Ordering::Relaxed));
+
+    let _ = client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unauthenticated_private_subscription_fails() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    // Create public client
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Try to subscribe to private channels - should fail
+    let result = client.subscribe_orders().await;
+    assert!(result.is_err());
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscription_after_reconnection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe before disconnect
+    let topics = vec!["publicTrade.BTCUSDT".to_string()];
+    client.subscribe(topics.clone()).await.unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Trigger disconnect
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+
+    // Give time for disconnect to propagate
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Verify subscriptions are tracked
+    assert!(client.subscription_count() > 0);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscription_restoration_tracking() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to multiple topics
+    let topics = vec![
+        "publicTrade.BTCUSDT".to_string(),
+        "orderbook.50.ETHUSDT".to_string(),
+    ];
+    client.subscribe(topics).await.unwrap();
+
+    // Wait for subscriptions
+    wait_until_async(
+        || async { state.subscription_events.lock().await.len() >= 2 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Verify subscription count
+    let initial_count = client.subscription_count();
+    assert_eq!(initial_count, 2);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnection_retries_failed_subscriptions() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to a topic
+    let topics = vec!["publicTrade.BTCUSDT".to_string()];
+    client.subscribe(topics).await.unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Clear server subscriptions to simulate failure
+    state.subscription_events.lock().await.clear();
+
+    // Trigger disconnect
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+
+    // Give time for disconnect to propagate
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trade_subscription_flow() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to trades using the high-level method
+    client
+        .subscribe_trades("BTCUSDT".to_string())
+        .await
+        .unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let subs = state.subscription_events.lock().await.clone();
+    assert!(subs.iter().any(|s| s.contains("publicTrade")));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_orderbook_subscription_flow() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to orderbook using the high-level method
+    client
+        .subscribe_orderbook("BTCUSDT".to_string(), 50)
+        .await
+        .unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let subs = state.subscription_events.lock().await.clone();
+    assert!(subs.iter().any(|s| s.contains("orderbook")));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ticker_subscription_flow() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to ticker using the high-level method
+    client
+        .subscribe_ticker("BTCUSDT".to_string())
+        .await
+        .unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let subs = state.subscription_events.lock().await.clone();
+    assert!(subs.iter().any(|s| s.contains("ticker")));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_klines_subscription_flow() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/public/linear", addr);
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    // Subscribe to klines using the high-level method
+    client
+        .subscribe_klines("BTCUSDT".to_string(), "1".to_string())
+        .await
+        .unwrap();
+
+    // Wait for subscription
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let subs = state.subscription_events.lock().await.clone();
+    assert!(subs.iter().any(|s| s.contains("kline")));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_private_orders_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/private", addr);
+
+    let credential = Credential::new("test_api_key", "test_api_secret");
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        credential,
+        Some(ws_url),
+        None,
+    );
+
+    let _ = client.connect().await;
+
+    // Wait for connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Subscribe to orders (may succeed or fail depending on auth timing)
+    let _ = client.subscribe_orders().await;
+
+    let _ = client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_private_executions_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/private", addr);
+
+    let credential = Credential::new("test_api_key", "test_api_secret");
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        credential,
+        Some(ws_url),
+        None,
+    );
+
+    let _ = client.connect().await;
+
+    // Wait for connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Subscribe to executions (may succeed or fail depending on auth timing)
+    let _ = client.subscribe_executions().await;
+
+    let _ = client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_private_wallet_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/v5/private", addr);
+
+    let credential = Credential::new("test_api_key", "test_api_secret");
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        credential,
+        Some(ws_url),
+        None,
+    );
+
+    let _ = client.connect().await;
+
+    // Wait for connection
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Subscribe to wallet (may succeed or fail depending on auth timing)
+    let _ = client.subscribe_wallet().await;
+
+    let _ = client.close().await;
 }

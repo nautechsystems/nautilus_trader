@@ -21,7 +21,7 @@ use ustr::Ustr;
 use crate::common::enums::{
     BybitCancelType, BybitCreateType, BybitExecType, BybitOrderSide, BybitOrderStatus,
     BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
-    BybitTriggerDirection, BybitTriggerType,
+    BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
 };
 
 /// High level message emitted by the Bybit WebSocket client.
@@ -43,6 +43,14 @@ pub enum BybitWebSocketMessage {
     TickerLinear(BybitWsTickerLinearMsg),
     /// Option ticker update.
     TickerOption(BybitWsTickerOptionMsg),
+    /// Order updates from private channel.
+    AccountOrder(BybitWsAccountOrderMsg),
+    /// Execution/fill updates from private channel.
+    AccountExecution(BybitWsAccountExecutionMsg),
+    /// Wallet/balance updates from private channel.
+    AccountWallet(BybitWsAccountWalletMsg),
+    /// Position updates from private channel.
+    AccountPosition(BybitWsAccountPositionMsg),
     /// Error received from the venue or client lifecycle.
     Error(BybitWebSocketError),
     /// Raw message payload that does not yet have a typed representation.
@@ -56,6 +64,7 @@ pub enum BybitWebSocketMessage {
 /// Represents an error event surfaced by the WebSocket client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct BybitWebSocketError {
     /// Error/return code reported by Bybit.
     pub code: i64,
@@ -105,6 +114,107 @@ impl BybitWebSocketError {
     pub fn from_message(message: impl Into<String>) -> Self {
         Self::new(-1, message)
     }
+}
+
+/// Generic WebSocket request for Bybit trading commands.
+#[derive(Debug, Clone, Serialize)]
+pub struct BybitWsRequest<T> {
+    /// Operation type (order.create, order.amend, order.cancel, etc.).
+    pub op: BybitWsOrderRequestOp,
+    /// Request header containing timestamp and other metadata.
+    pub header: BybitWsHeader,
+    /// Arguments payload for the operation.
+    pub args: Vec<T>,
+}
+
+/// Header for WebSocket trade requests.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "SCREAMING-KEBAB-CASE")]
+pub struct BybitWsHeader {
+    /// Timestamp in milliseconds.
+    pub x_bapi_timestamp: String,
+}
+
+impl BybitWsHeader {
+    /// Creates a new header with the current timestamp.
+    #[must_use]
+    pub fn now() -> Self {
+        use nautilus_core::time::get_atomic_clock_realtime;
+        Self {
+            x_bapi_timestamp: get_atomic_clock_realtime().get_time_ms().to_string(),
+        }
+    }
+}
+
+/// Parameters for placing an order via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsPlaceOrderParams {
+    pub category: BybitProductType,
+    pub symbol: String,
+    pub side: BybitOrderSide,
+    pub order_type: BybitOrderType,
+    pub qty: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in_force: Option<BybitTimeInForce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_link_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_on_trigger: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub take_profit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_loss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_by: Option<BybitTriggerType>,
+}
+
+/// Parameters for amending an order via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsAmendOrderParams {
+    pub category: BybitProductType,
+    pub symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_link_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub take_profit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_loss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_by: Option<BybitTriggerType>,
+}
+
+/// Parameters for canceling an order via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsCancelOrderParams {
+    pub category: BybitProductType,
+    pub symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_link_id: Option<String>,
 }
 
 /// Subscription acknowledgement returned by Bybit.
@@ -506,6 +616,53 @@ pub struct BybitWsAccountWalletMsg {
     pub id: String,
     pub creation_time: i64,
     pub data: Vec<BybitWsAccountWallet>,
+}
+
+/// Position data from private position stream.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsAccountPosition {
+    pub position_idx: i32,
+    pub risk_id: i64,
+    pub risk_limit_value: String,
+    pub symbol: Ustr,
+    pub side: String,
+    pub size: String,
+    pub avg_price: String,
+    pub position_value: String,
+    pub trade_mode: i32,
+    pub position_status: String,
+    pub auto_add_margin: i32,
+    pub adl_rank_indicator: i32,
+    pub leverage: String,
+    pub position_balance: String,
+    pub mark_price: String,
+    pub liq_price: String,
+    pub bust_price: String,
+    pub position_mm: String,
+    pub position_im: String,
+    pub tpsl_mode: String,
+    pub take_profit: String,
+    pub stop_loss: String,
+    pub trailing_stop: String,
+    pub unrealised_pnl: String,
+    pub cur_realised_pnl: String,
+    pub cum_realised_pnl: String,
+    pub seq: i64,
+    #[serde(default)]
+    pub is_reduce_only: bool,
+    pub created_time: String,
+    pub updated_time: String,
+}
+
+/// Envelope for position updates on private streams.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsAccountPositionMsg {
+    pub topic: String,
+    pub id: String,
+    pub creation_time: i64,
+    pub data: Vec<BybitWsAccountPosition>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
