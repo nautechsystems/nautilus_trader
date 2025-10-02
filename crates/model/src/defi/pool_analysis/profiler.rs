@@ -34,19 +34,20 @@ use crate::defi::{
     },
 };
 
-/// A comprehensive DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
+/// A DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
 /// The `PoolProfiler` provides complete pool state management including:
-/// - Liquidity position tracking and management
-/// - Tick crossing and price movement simulation
-/// - Fee accumulation and distribution tracking
-/// - Protocol fee calculation
-/// - Pool state validation and maintenance
+/// - Liquidity position tracking and management.
+/// - Tick crossing and price movement simulation.
+/// - Fee accumulation and distribution tracking.
+/// - Protocol fee calculation.
+/// - Pool state validation and maintenance.
 ///
 /// This profiler can both process historical events and execute new operations,
 /// making it suitable for both backtesting and simulation scenarios.
 ///
 /// # Usage
+///
 /// Create a new profiler with a pool definition, initialize it with a starting price,
 /// then either process historical events or execute new pool operations to simulate
 /// trading activity and analyze pool behavior.
@@ -111,7 +112,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if any of the following occur:
+    /// This function panics if:
     /// - Pool is already initialized.
     /// - Calculated tick does not match the pool's initial tick (if set).
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
@@ -176,6 +177,7 @@ impl PoolProfiler {
     }
 
     /// Processes a swap event.
+    ///
     /// Updates the current tick and crosses any ticks in between.
     ///
     /// # Errors
@@ -184,7 +186,11 @@ impl PoolProfiler {
     /// - Pool initialization checks fail.
     /// - Fee growth calculations overflow when scaled by liquidity.
     /// - Tick map updates fail because of inconsistent state.
-    fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool has not been initialized (current_tick is None).
+    pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
 
         let old_tick = self.current_tick.expect("Pool should be initialized");
@@ -624,7 +630,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid or not properly spaced.
     /// - Position updates fail.
-    fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+    pub fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
         self.add_liquidity(
@@ -734,7 +740,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Position updates fail.
-    fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+    pub fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
 
@@ -837,7 +843,7 @@ impl PoolProfiler {
     ///
     /// This function returns an error if:
     /// - Pool is not initialized.
-    fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+    pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
 
         let position_key =
