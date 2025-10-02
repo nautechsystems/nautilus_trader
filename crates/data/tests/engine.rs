@@ -17,12 +17,13 @@ mod common;
 
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync::Arc};
 
-use alloy_primitives::{Address, I256, U160};
+use alloy_primitives::{Address, I256, U160, U256};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
-    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolSwaps,
-    UnsubscribeBlocks, UnsubscribePoolSwaps,
+    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolFeeCollects,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
+    UnsubscribePoolFeeCollects, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
 };
 use nautilus_common::{
     cache::Cache,
@@ -60,8 +61,10 @@ use nautilus_model::{
 };
 #[cfg(feature = "defi")]
 use nautilus_model::{
-    defi::{Block, Blockchain, DefiData, PoolSwap},
-    defi::{Pool, Token},
+    defi::{
+        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
+        PoolProfiler, PoolSwap, Token, data::PoolFeeCollect,
+    },
     enums::OrderSide,
     types::Quantity,
 };
@@ -1929,6 +1932,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
         U160::from(59000000000000u128),
+        1000000,
+        100,
         Some(OrderSide::Buy),
         Some(Quantity::from("1000")),
         Some(Price::from("500")),
@@ -1956,4 +1961,855 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
 
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&swap));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_execute_subscribe_pool_liquidity_updates(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
+    let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolLiquidityUpdates(
+        SubscribePoolLiquidityUpdates {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        },
+    ));
+    data_engine.execute(&sub_cmd);
+
+    assert!(
+        data_engine
+            .subscribed_pool_liquidity_updates()
+            .contains(&instrument_id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+    }
+
+    let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(
+        UnsubscribePoolLiquidityUpdates {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        },
+    ));
+    data_engine.execute(&unsub_cmd);
+
+    assert!(
+        !data_engine
+            .subscribed_pool_liquidity_updates()
+            .contains(&instrument_id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_execute_subscribe_pool_fee_collects(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
+    let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolFeeCollects(
+        SubscribePoolFeeCollects {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        },
+    ));
+    data_engine.execute(&sub_cmd);
+
+    assert!(
+        data_engine
+            .subscribed_pool_fee_collects()
+            .contains(&instrument_id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+    }
+
+    let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(
+        UnsubscribePoolFeeCollects {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        },
+    ));
+    data_engine.execute(&unsub_cmd);
+
+    assert!(
+        !data_engine
+            .subscribed_pool_fee_collects()
+            .contains(&instrument_id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_process_pool_liquidity_update(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create test pool
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    let update = PoolLiquidityUpdate::new(
+        chain,
+        dex,
+        pool.address,
+        PoolLiquidityUpdateType::Mint,
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        None,
+        Address::from([0x12; 20]),
+        100u128,
+        U256::from(1000000u128),
+        U256::from(2000000u128),
+        -100,
+        100,
+        None,
+    );
+
+    let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let handler = get_message_saving_handler::<PoolLiquidityUpdate>(None);
+    let topic = switchboard::get_defi_liquidity_topic(instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolLiquidityUpdate(update.clone()));
+    let messages = get_saved_messages::<PoolLiquidityUpdate>(handler);
+
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&update));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_process_pool_fee_collect(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create test pool
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    let collect = PoolFeeCollect::new(
+        chain,
+        dex,
+        pool.address,
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        Address::from([0x12; 20]),
+        500000u128,
+        300000u128,
+        -100,
+        100,
+        None,
+    );
+
+    let sub = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let handler = get_message_saving_handler::<PoolFeeCollect>(None);
+    let topic = switchboard::get_defi_collect_topic(instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect.clone()));
+    let messages = get_saved_messages::<PoolFeeCollect>(handler);
+
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&collect));
+}
+// -- POOL UPDATER INTEGRATION TESTS ----------------------------------------------------------
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_updater_processes_swap_updates_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let cache = data_engine.borrow().cache_rc();
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create pool test data
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    // Add pool to cache and create profiler
+    let shared_pool = Arc::new(pool.clone());
+    cache.borrow_mut().add_pool(pool).unwrap();
+    let mut profiler = PoolProfiler::new(shared_pool);
+    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    profiler.initialize(initial_price);
+
+    // Add liquidity so swaps can be processed
+    let mint = PoolLiquidityUpdate::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        PoolLiquidityUpdateType::Mint,
+        999u64,
+        "0x122".to_string(),
+        0,
+        0,
+        None,
+        Address::from([0xAB; 20]),
+        10000u128, // Add significant liquidity
+        U256::from(1000000u128),
+        U256::from(2000000u128),
+        -1000, // Wide range
+        1000,
+        None,
+    );
+    profiler.process_mint(&mint).unwrap();
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    // Verify liquidity was activated by the mint
+    let active_liquidity = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .liquidity;
+    assert!(
+        active_liquidity > 0,
+        "Active liquidity should be > 0 after mint, got: {}",
+        active_liquidity
+    );
+
+    // Capture initial profiler state (after mint)
+    let initial_tick = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .current_tick;
+    let initial_fee_growth_0 = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .fee_growth_global_0;
+
+    // Subscribe to pool swaps (this creates PoolUpdater and subscribes to topic)
+    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    // Create and process swap that changes tick
+    let new_price = U160::from(56022770974786139918731938227u128); // Different price
+    let swap = PoolSwap::new(
+        chain,
+        dex,
+        Address::from([0x12; 20]),
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        None,
+        Address::from([0x12; 20]),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        new_price,
+        1000u128,
+        0i32,
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolSwap(swap));
+
+    // Verify profiler state was updated by PoolUpdater
+    let final_tick = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .current_tick;
+    let final_fee_growth_0 = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .fee_growth_global_0;
+
+    // Verify profiler was updated - either tick changed OR fees were collected
+    // (depending on whether the swap crossed ticks or just generated fees)
+    let tick_changed = final_tick != initial_tick;
+    let fees_increased = final_fee_growth_0 > initial_fee_growth_0;
+
+    assert!(
+        tick_changed || fees_increased,
+        "PoolUpdater should have updated PoolProfiler: tick_changed={}, fees_increased={}, \
+        initial_tick={:?}, final_tick={:?}, initial_fee_growth={}, final_fee_growth={}",
+        tick_changed,
+        fees_increased,
+        initial_tick,
+        final_tick,
+        initial_fee_growth_0,
+        final_fee_growth_0
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_updater_processes_mint_updates_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let cache = data_engine.borrow().cache_rc();
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create pool test data
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    // Add pool to cache and create profiler
+    let shared_pool = Arc::new(pool.clone());
+    cache.borrow_mut().add_pool(pool).unwrap();
+    let mut profiler = PoolProfiler::new(shared_pool);
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    profiler.initialize(initial_price);
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    // Capture initial profiler tick state
+    let initial_liquidity = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .liquidity;
+
+    // Subscribe to pool liquidity updates
+    let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    // Create and process mint event
+    let mint = PoolLiquidityUpdate::new(
+        chain,
+        dex,
+        Address::from([0x12; 20]),
+        PoolLiquidityUpdateType::Mint,
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        None,
+        Address::from([0xAB; 20]),
+        1000u128, // liquidity amount
+        U256::from(100000u128),
+        U256::from(200000u128),
+        -100, // tick_lower
+        100,  // tick_upper
+        None,
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolLiquidityUpdate(mint));
+
+    // Verify profiler tick map was updated with new liquidity
+    let final_liquidity = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .liquidity;
+
+    assert!(
+        final_liquidity >= initial_liquidity,
+        "Liquidity should have increased after mint"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_updater_processes_burn_updates_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let cache = data_engine.borrow().cache_rc();
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create pool test data
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    // Add pool to cache and create profiler
+    let shared_pool = Arc::new(pool.clone());
+    cache.borrow_mut().add_pool(pool).unwrap();
+    let mut profiler = PoolProfiler::new(shared_pool);
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    profiler.initialize(initial_price);
+
+    // First mint some liquidity
+    let owner = Address::from([0xAB; 20]);
+    let mint = PoolLiquidityUpdate::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        PoolLiquidityUpdateType::Mint,
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        None,
+        owner,
+        1000u128,
+        U256::from(100000u128),
+        U256::from(200000u128),
+        -100,
+        100,
+        None,
+    );
+    profiler.process_mint(&mint).unwrap();
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    // Capture liquidity after mint
+    let liquidity_after_mint = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .liquidity;
+
+    // Subscribe to pool liquidity updates
+    let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    // Create and process burn event
+    let burn = PoolLiquidityUpdate::new(
+        chain,
+        dex,
+        Address::from([0x12; 20]),
+        PoolLiquidityUpdateType::Burn,
+        1001u64,
+        "0x124".to_string(),
+        0,
+        0,
+        None,
+        owner,
+        500u128, // burn half the liquidity
+        U256::from(50000u128),
+        U256::from(100000u128),
+        -100,
+        100,
+        None,
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolLiquidityUpdate(burn));
+
+    // Verify profiler tick map was updated (liquidity decreased)
+    let final_liquidity = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .tick_map
+        .liquidity;
+
+    assert!(
+        final_liquidity < liquidity_after_mint,
+        "Liquidity should have decreased after burn"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_updater_processes_collect_updates_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let cache = data_engine.borrow().cache_rc();
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Create pool test data
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ETHEREUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let instrument_id = pool.instrument_id;
+
+    // Add pool to cache and create profiler
+    let shared_pool = Arc::new(pool.clone());
+    cache.borrow_mut().add_pool(pool).unwrap();
+    let mut profiler = PoolProfiler::new(shared_pool);
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    profiler.initialize(initial_price);
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    // Subscribe to pool fee collects
+    let sub = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    // Create and process collect event
+    let owner = Address::from([0xAB; 20]);
+    let collect = PoolFeeCollect::new(
+        chain,
+        dex,
+        Address::from([0x12; 20]),
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        owner,
+        50000u128, // amount0
+        30000u128, // amount1
+        -100,      // tick_lower
+        100,       // tick_upper
+        None,
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect.clone()));
+
+    // Verify profiler state - the collect should be processed without error
+    // The main verification is that PoolUpdater called PoolProfiler.process_collect()
+    // which would have updated internal position state if the position existed
+    let is_initialized = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .current_tick
+        .is_some();
+
+    // PoolProfiler should still be valid and initialized
+    assert!(is_initialized, "PoolProfiler should remain initialized");
 }

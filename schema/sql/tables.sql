@@ -358,6 +358,8 @@ CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     size TEXT NOT NULL,
     price TEXT NOT NULL,
     sqrt_price_x96 U160 NOT NULL,
+    liquidity U128 NOT NULL,
+    tick INTEGER NOT NULL,
     amount0 I256 NOT NULL,
     amount1 I256 NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),

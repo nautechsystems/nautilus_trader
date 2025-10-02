@@ -59,6 +59,7 @@ tabled = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
+tracing = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }

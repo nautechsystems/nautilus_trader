@@ -471,18 +471,19 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut dex_names: Vec<String> = Vec::with_capacity(pools.len());
-        let mut creation_blocks: Vec<i64> = Vec::with_capacity(pools.len());
-        let mut token0_chains: Vec<i32> = Vec::with_capacity(pools.len());
-        let mut token0_addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut token1_chains: Vec<i32> = Vec::with_capacity(pools.len());
-        let mut token1_addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut fees: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(pools.len());
-        let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(pools.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(pools.len());
+        let len = pools.len();
+        let mut addresses: Vec<String> = Vec::with_capacity(len);
+        let mut dex_names: Vec<String> = Vec::with_capacity(len);
+        let mut creation_blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut token0_chains: Vec<i32> = Vec::with_capacity(len);
+        let mut token0_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut token1_chains: Vec<i32> = Vec::with_capacity(len);
+        let mut token1_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut fees: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(len);
+        let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from pools
         for pool in pools {
@@ -552,20 +553,23 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(swaps.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(swaps.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(swaps.len());
-        let mut senders: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut recipients: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut sides: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut sizes: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut prices: Vec<Option<String>> = Vec::with_capacity(swaps.len());
-        let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(swaps.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(swaps.len());
+        let len = swaps.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut senders: Vec<String> = Vec::with_capacity(len);
+        let mut recipients: Vec<String> = Vec::with_capacity(len);
+        let mut sides: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut sizes: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut prices: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(len);
+        let mut liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut ticks: Vec<i32> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from swaps
         for swap in swaps {
@@ -581,6 +585,8 @@ impl BlockchainCacheDatabase {
             sizes.push(swap.size.map(|size| size.to_string()));
             prices.push(swap.price.map(|price| price.to_string()));
             sqrt_price_x96s.push(swap.sqrt_price_x96.to_string());
+            liquidities.push(swap.liquidity.to_string());
+            ticks.push(swap.tick);
             amount0s.push(swap.amount0.to_string());
             amount1s.push(swap.amount1.to_string());
         }
@@ -590,17 +596,17 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
+                log_index, sender, recipient, side, size, price, sqrt_price_x96, liquidity, tick, amount0, amount1
             )
             SELECT
-                chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, recipient, side, size, price, sqrt_price_x96::u160, amount0::i256, amount1::i256
+                chain_id, pool_address, block, transaction_hash, transaction_index, log_index, sender, recipient,
+                side, size, price, sqrt_price_x96::U160, liquidity::U128, tick, amount0::I256, amount1::I256
             FROM UNNEST(
-                $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
-                $6::int4[], $7::text[], $8::text[], $9::text[], $10::text[],
-                $11::text[], $12::text[], $13::text[], $14::text[]
+                $1::INT[], $2::TEXT[], $3::INT[], $4::TEXT[], $5::INT[], $6::INT[],
+                $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::TEXT[],
+                $12::TEXT[], $13::TEXT[], $14::INT[], $15::TEXT[], $16::TEXT[]
             ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
-                   log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1)
+                   log_index, sender, recipient, side, size, price, sqrt_price_x96, liquidity, tick, amount0, amount1)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
            ",
         )
@@ -616,6 +622,8 @@ impl BlockchainCacheDatabase {
         .bind(&sizes[..])
         .bind(&prices[..])
         .bind(&sqrt_price_x96s[..])
+        .bind(&liquidities[..])
+        .bind(&ticks[..])
         .bind(&amount0s[..])
         .bind(&amount1s[..])
         .execute(&self.pool)
@@ -639,20 +647,21 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(updates.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(updates.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(updates.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut event_types: Vec<String> = Vec::with_capacity(updates.len());
-        let mut senders: Vec<Option<String>> = Vec::with_capacity(updates.len());
-        let mut owners: Vec<String> = Vec::with_capacity(updates.len());
-        let mut position_liquidities: Vec<String> = Vec::with_capacity(updates.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(updates.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(updates.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(updates.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(updates.len());
+        let len = updates.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut event_types: Vec<String> = Vec::with_capacity(len);
+        let mut senders: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut position_liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from updates
         for update in updates {
@@ -683,11 +692,11 @@ impl BlockchainCacheDatabase {
             SELECT
                 chain_id, pool_address, block, transaction_hash, transaction_index,
                 log_index, event_type, sender, owner, position_liquidity::u128,
-                amount0::u256, amount1::u256, tick_lower, tick_upper
+                amount0::U256, amount1::U256, tick_lower, tick_upper
             FROM UNNEST(
-                $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
-                $6::int4[], $7::text[], $8::text[], $9::text[], $10::text[],
-                $11::text[], $12::text[], $13::int4[], $14::int4[]
+                $1::INT[], $2::TEXT[], $3::INT[], $4::TEXT[], $5::INT[],
+                $6::INT[], $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::TEXT[],
+                $11::TEXT[], $12::TEXT[], $13::INT[], $14::INT[]
             ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
                    log_index, event_type, sender, owner, position_liquidity,
                    amount0, amount1, tick_lower, tick_upper)
@@ -1134,17 +1143,18 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(collects.len());
-        let mut blocks: Vec<i64> = Vec::with_capacity(collects.len());
-        let mut transaction_hashes: Vec<String> = Vec::with_capacity(collects.len());
-        let mut transaction_indices: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut log_indices: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut owners: Vec<String> = Vec::with_capacity(collects.len());
-        let mut amount0s: Vec<String> = Vec::with_capacity(collects.len());
-        let mut amount1s: Vec<String> = Vec::with_capacity(collects.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(collects.len());
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(collects.len());
+        let len = collects.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from collects
         for collect in collects {
@@ -1170,10 +1180,10 @@ impl BlockchainCacheDatabase {
             )
             SELECT
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, owner, amount0::u256, amount1::u256, tick_lower, tick_upper
+                log_index, owner, amount0::U256, amount1::U256, tick_lower, tick_upper
             FROM UNNEST(
-                $1::int4[], $2::text[], $3::int8[], $4::text[], $5::int4[],
-                $6::int4[], $7::text[], $8::text[], $9::text[], $10::int4[], $11::int4[]
+                $1::INT[], $2::TEXT[], $3::INT[], $4::TEXT[], $5::INT[],
+                $6::INT[], $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::INT[], $11::INT[]
             ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
                    log_index, owner, amount0, amount1, tick_lower, tick_upper)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
@@ -1211,16 +1221,17 @@ impl BlockchainCacheDatabase {
         }
 
         // Prepare vectors for each column
-        let mut pool_addresses: Vec<String> = Vec::with_capacity(positions.len());
-        let mut owners: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tick_lowers: Vec<i32> = Vec::with_capacity(positions.len());
-        let mut tick_uppers: Vec<i32> = Vec::with_capacity(positions.len());
-        let mut liquidities: Vec<String> = Vec::with_capacity(positions.len());
-        let mut fee_growth_inside_0_lasts: Vec<String> = Vec::with_capacity(positions.len());
-        let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(positions.len());
-        let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(positions.len());
-        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(positions.len());
+        let len = positions.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut owners: Vec<String> = Vec::with_capacity(len);
+        let mut tick_lowers: Vec<i32> = Vec::with_capacity(len);
+        let mut tick_uppers: Vec<i32> = Vec::with_capacity(len);
+        let mut liquidities: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_inside_0_lasts: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(len);
+        let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(len);
+        let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(len);
+        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(len);
 
         // Fill vectors from positions
         for (pool_address, position) in positions {
@@ -1246,12 +1257,11 @@ impl BlockchainCacheDatabase {
             )
             SELECT
                 $1, pool_address, owner, tick_lower, tick_upper,
-                liquidity::u128, fee_growth_inside_0_last::u256, fee_growth_inside_1_last::u256,
-                tokens_owed_0::u128, tokens_owed_1::u128, last_updated_block
+                liquidity::U128, fee_growth_inside_0_last::U256, fee_growth_inside_1_last::U256,
+                tokens_owed_0::U128, tokens_owed_1::U128, last_updated_block
             FROM UNNEST(
-                $2::text[], $3::text[], $4::int4[], $5::int4[],
-                $6::text[], $7::text[], $8::text[],
-                $9::text[], $10::text[], $11::int8[]
+                $2::TEXT[], $3::TEXT[], $4::INT[], $5::INT[], $6::TEXT[], $7::TEXT[],
+                $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::INT[]
             ) AS t(pool_address, owner, tick_lower, tick_upper,
                    liquidity, fee_growth_inside_0_last, fee_growth_inside_1_last,
                    tokens_owed_0, tokens_owed_1, last_updated_block)
@@ -1341,19 +1351,21 @@ impl BlockchainCacheDatabase {
                 log_index,
                 sender,
                 recipient,
-                NULL::text as owner,
+                NULL::TEXT as owner,
                 side,
                 size,
                 price,
-                sqrt_price_x96::text,
-                amount0::text as swap_amount0,
-                amount1::text as swap_amount1,
-                NULL::text as position_liquidity,
-                NULL::text as amount0,
-                NULL::text as amount1,
-                NULL::integer as tick_lower,
-                NULL::integer as tick_upper,
-                NULL::text as liquidity_event_type
+                sqrt_price_x96::TEXT,
+                liquidity::TEXT as swap_liquidity,
+                tick as swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_address = $2)
 
@@ -1368,19 +1380,21 @@ impl BlockchainCacheDatabase {
                 transaction_index,
                 log_index,
                 sender,
-                NULL::text as recipient,
+                NULL::TEXT as recipient,
                 owner,
-                NULL::text as side,
-                NULL::text as size,
+                NULL::TEXT as side,
+                NULL::TEXT as size,
                 NULL::text as price,
                 NULL::text as sqrt_price_x96,
-                amount0::text as swap_amount0,
-                amount1::text as swap_amount1,
-                position_liquidity::text,
-                amount0::text,
-                amount1::text,
-                tick_lower::integer,
-                tick_upper::integer,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT as swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                position_liquidity::TEXT,
+                amount0::TEXT,
+                amount1::TEXT,
+                tick_lower::INT,
+                tick_upper::INT,
                 event_type as liquidity_event_type
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_address = $2)
@@ -1395,21 +1409,23 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
-                NULL::text as sender,
-                NULL::text as recipient,
+                NULL::TEXT as sender,
+                NULL::TEXT as recipient,
                 owner,
-                NULL::text as side,
-                NULL::text as size,
-                NULL::text as price,
-                NULL::text as sqrt_price_x96,
-                amount0::text as swap_amount0,
-                amount1::text as swap_amount1,
-                NULL::text as position_liquidity,
-                amount0::text,
-                amount1::text,
-                tick_lower::integer,
-                tick_upper::integer,
-                NULL::text as liquidity_event_type
+                NULL::TEXT as side,
+                NULL::TEXT as size,
+                NULL::TEXT as price,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                amount0::TEXT,
+                amount1::TEXT,
+                tick_lower::INT,
+                tick_upper::INT,
+                NULL::TEXT as liquidity_event_type
             FROM pool_collect_event
             WHERE chain_id = $1 AND pool_address = $2)
 

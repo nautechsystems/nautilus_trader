@@ -172,6 +172,12 @@ impl DataEngine {
         self.cache.borrow()
     }
 
+    /// Returns the `Rc<RefCell<Cache>>` used by this engine.
+    #[must_use]
+    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        Rc::clone(&self.cache)
+    }
+
     /// Registers the `catalog` with the engine with an optional specific `name`.
     ///
     /// # Panics
@@ -493,6 +499,13 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which fee collect subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_fee_collects(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_fee_collects)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -575,6 +588,9 @@ impl DataEngine {
             DefiSubscribeCommand::Pool(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolSwaps(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id);
+            }
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
                 self.setup_pool_updater(&cmd.instrument_id);
             }
             _ => {}
@@ -980,7 +996,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
     }
@@ -990,7 +1006,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
 
         Ok(())
     }
@@ -1059,7 +1075,7 @@ impl DataEngine {
                 .expect(FAILED);
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
 
         Ok(())
     }
@@ -1248,7 +1264,7 @@ impl DataEngine {
     // -- INTERNAL --------------------------------------------------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    fn setup_order_book(
+    fn setup_book_updater(
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
@@ -1290,7 +1306,7 @@ impl DataEngine {
         let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
         let handler = ShareableMessageHandler(updater.clone());
 
-        // Subscribe to pool swaps and liquidity updates
+        // Subscribe to pool swaps, liquidity updates, and fee collects
         let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
         if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
@@ -1302,7 +1318,16 @@ impl DataEngine {
 
         let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
         if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(liquidity_topic.into(), handler, Some(self.msgbus_priority));
+            msgbus::subscribe(
+                liquidity_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let collect_topic = switchboard::get_defi_collect_topic(*instrument_id);
+        if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(collect_topic.into(), handler, Some(self.msgbus_priority));
         }
 
         self.pool_updaters.insert(*instrument_id, updater);

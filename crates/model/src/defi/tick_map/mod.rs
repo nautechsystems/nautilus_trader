@@ -18,7 +18,9 @@ use std::collections::HashMap;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::{
-    liquidity_math::tick_spacing_to_max_liquidity_per_tick, tick::Tick, tick_bitmap::TickBitmap,
+    liquidity_math::{liquidity_math_add, tick_spacing_to_max_liquidity_per_tick},
+    tick::Tick,
+    tick_bitmap::TickBitmap,
 };
 
 pub mod bit_math;
@@ -222,8 +224,8 @@ impl TickMap {
                 self.fee_growth_global_1,
             );
 
-            // When crossing down, add liquidity_net (moving from above to below the tick)
-            self.liquidity = self.liquidity.saturating_add_signed(liquidity_net);
+            // When crossing down (zeroForOne = true), negate liquidity_net before adding
+            self.liquidity = liquidity_math_add(self.liquidity, -liquidity_net);
 
             current_tick = next_tick - 1; // Move below the crossed tick
         }
@@ -248,8 +250,8 @@ impl TickMap {
                 self.fee_growth_global_1,
             );
 
-            // When crossing up, subtract liquidity_net (moving from below to above the tick)
-            self.liquidity = self.liquidity.saturating_add_signed(-liquidity_net);
+            // When crossing up (zeroForOne = false), use liquidity_net as-is without negation
+            self.liquidity = liquidity_math_add(self.liquidity, liquidity_net);
 
             current_tick = next_tick;
         }

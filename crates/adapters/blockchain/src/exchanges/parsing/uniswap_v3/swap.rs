@@ -88,6 +88,8 @@ pub fn parse_swap_event(dex: SharedDex, log: Log) -> anyhow::Result<SwapEvent> {
             decoded.amount0,
             decoded.amount1,
             decoded.sqrt_price_x96,
+            decoded.liquidity,
+            decoded.tick.as_i32(),
         ))
     } else {
         Err(anyhow::anyhow!("Missing data in swap event log"))

@@ -57,6 +57,10 @@ pub struct PoolSwap {
     pub amount0: I256,
     /// The amount of token1 involved in the swap.
     pub amount1: I256,
+    /// The liquidity of the pool after the swap occurred.
+    pub liquidity: u128,
+    /// The current tick of the pool after the swap occurred.
+    pub tick: i32,
     /// The direction of the swap from the perspective of the base token.
     pub side: Option<OrderSide>,
     /// The amount of tokens swapped.
@@ -87,6 +91,8 @@ impl PoolSwap {
         amount0: I256,
         amount1: I256,
         sqrt_price_x96: U160,
+        liquidity: u128,
+        tick: i32,
         side: Option<OrderSide>,
         size: Option<Quantity>,
         price: Option<Price>,
@@ -105,6 +111,8 @@ impl PoolSwap {
             amount0,
             amount1,
             sqrt_price_x96,
+            liquidity,
+            tick,
             side,
             size,
             price,

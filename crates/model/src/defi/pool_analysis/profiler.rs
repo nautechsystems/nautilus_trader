@@ -26,6 +26,7 @@ use crate::defi::{
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
+        liquidity_math::liquidity_math_add,
         sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
         tick::Tick,
         tick_math::{
@@ -34,19 +35,20 @@ use crate::defi::{
     },
 };
 
-/// A comprehensive DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
+/// A DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
 /// The `PoolProfiler` provides complete pool state management including:
-/// - Liquidity position tracking and management
-/// - Tick crossing and price movement simulation
-/// - Fee accumulation and distribution tracking
-/// - Protocol fee calculation
-/// - Pool state validation and maintenance
+/// - Liquidity position tracking and management.
+/// - Tick crossing and price movement simulation.
+/// - Fee accumulation and distribution tracking.
+/// - Protocol fee calculation.
+/// - Pool state validation and maintenance.
 ///
 /// This profiler can both process historical events and execute new operations,
 /// making it suitable for both backtesting and simulation scenarios.
 ///
 /// # Usage
+///
 /// Create a new profiler with a pool definition, initialize it with a starting price,
 /// then either process historical events or execute new pool operations to simulate
 /// trading activity and analyze pool behavior.
@@ -111,7 +113,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if any of the following occur:
+    /// This function panics if:
     /// - Pool is already initialized.
     /// - Calculated tick does not match the pool's initial tick (if set).
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
@@ -176,6 +178,7 @@ impl PoolProfiler {
     }
 
     /// Processes a swap event.
+    ///
     /// Updates the current tick and crosses any ticks in between.
     ///
     /// # Errors
@@ -184,7 +187,11 @@ impl PoolProfiler {
     /// - Pool initialization checks fail.
     /// - Fee growth calculations overflow when scaled by liquidity.
     /// - Tick map updates fail because of inconsistent state.
-    fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool has not been initialized (current_tick is None).
+    pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
 
         let old_tick = self.current_tick.expect("Pool should be initialized");
@@ -212,9 +219,27 @@ impl PoolProfiler {
             self.cross_ticks_between(old_tick, new_tick);
         }
 
-        // Update pool state
+        // Update pool state with simulated values
         self.current_tick = Some(new_tick);
         self.price_sqrt_ratio_x96 = Some(swap.sqrt_price_x96);
+
+        // Verify simulation against event data - correct with event values if mismatch detected
+        if swap.tick != new_tick {
+            tracing::error!(
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
+                new_tick,
+                swap.tick
+            );
+            self.current_tick = Some(swap.tick);
+        }
+        if swap.liquidity != self.tick_map.liquidity {
+            tracing::error!(
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {}",
+                self.tick_map.liquidity,
+                swap.liquidity
+            );
+            self.tick_map.liquidity = swap.liquidity;
+        }
 
         Ok(())
     }
@@ -378,16 +403,14 @@ impl PoolProfiler {
                         },
                     );
 
-                    // If we're moving leftward, we interpret liquidityNet as the opposite sign
-                    let adjusted_liquidity_net = if zero_for_one {
-                        -liquidity_net
+                    // Apply liquidity change based on crossing direction
+                    // When crossing down (zeroForOne = true), negate liquidity_net before adding
+                    // When crossing up (zeroForOne = false), use liquidity_net as-is without negation
+                    self.tick_map.liquidity = if zero_for_one {
+                        liquidity_math_add(self.tick_map.liquidity, -liquidity_net)
                     } else {
-                        liquidity_net
+                        liquidity_math_add(self.tick_map.liquidity, liquidity_net)
                     };
-
-                    // Update current liquidity
-                    self.tick_map.liquidity =
-                        ((self.tick_map.liquidity as i128) + adjusted_liquidity_net) as u128;
                 }
 
                 current_tick = if zero_for_one {
@@ -446,6 +469,8 @@ impl PoolProfiler {
             amount0,
             amount1,
             current_sqrt_price,
+            self.tick_map.liquidity,
+            self.current_tick.unwrap(),
             None,
             None,
             None,
@@ -624,7 +649,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid or not properly spaced.
     /// - Position updates fail.
-    fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+    pub fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
         self.add_liquidity(
@@ -734,7 +759,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Position updates fail.
-    fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+    pub fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
 
@@ -837,7 +862,7 @@ impl PoolProfiler {
     ///
     /// This function returns an error if:
     /// - Pool is not initialized.
-    fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+    pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
 
         let position_key =
@@ -973,18 +998,33 @@ impl PoolProfiler {
         (fee_amount0, fee_amount1)
     }
 
-    /// Gets the current liquidity at the current tick.
-    /// Calculates active liquidity by summing all positions that span the current tick.
+    /// Returns the pool's active liquidity tracked by the tick map.
+    ///
+    /// This represents the effective liquidity available for trading at the current price.
+    /// The tick map maintains this value efficiently by updating it during tick crossings
+    /// as the price moves through different ranges.
+    ///
+    /// # Returns
+    /// The active liquidity (u128) at the current tick from the tick map
+    #[must_use]
+    pub fn get_active_liquidity(&self) -> u128 {
+        self.tick_map.liquidity
+    }
+
+    /// Calculates total liquidity by summing all individual positions at the current tick.
+    ///
+    /// This computes liquidity by iterating through all positions and summing those that
+    /// span the current tick. Unlike [`Self::get_active_liquidity`], which returns the maintained
+    /// tick map value, this method performs a fresh calculation from position data.
     ///
     /// # Panics
     ///
-    /// Panics if `current_tick` is `None`.
+    /// Panics if `current_tick` is `None` (pool not initialized).
     #[must_use]
-    pub fn get_active_liquidity(&self) -> u128 {
+    pub fn get_total_liquidity_from_active_positions(&self) -> u128 {
         let current_tick = self.current_tick.unwrap();
 
-        let active_liquidity: u128 = self
-            .positions
+        self.positions
             .values()
             .filter(|position| {
                 position.liquidity > 0
@@ -992,9 +1032,7 @@ impl PoolProfiler {
                     && current_tick < position.tick_upper
             })
             .map(|position| position.liquidity)
-            .sum();
-
-        active_liquidity
+            .sum()
     }
 
     /// Gets a list of all initialized tick values.
