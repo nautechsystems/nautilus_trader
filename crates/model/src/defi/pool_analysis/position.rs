@@ -15,6 +15,8 @@
 
 use alloy_primitives::{Address, U256};
 
+use crate::defi::tick_map::full_math::{FullMath, Q128};
+
 /// Represents a concentrated liquidity position in a DEX pool.
 ///
 /// This struct tracks a specific liquidity provider's position within a price range,
@@ -90,19 +92,24 @@ impl PoolPosition {
     /// Updates the last known fee growth values for future calculations.
     pub fn update_fees(&mut self, fee_growth_inside_0: U256, fee_growth_inside_1: U256) {
         if self.liquidity > 0 {
-            let tokens_owed_0_delta: U256 = ((fee_growth_inside_0 - self.fee_growth_inside_0_last)
-                * U256::from(self.liquidity))
-                >> 128;
-            let tokens_owed_1_delta: U256 = ((fee_growth_inside_1 - self.fee_growth_inside_1_last)
-                * U256::from(self.liquidity))
-                >> 128;
+            // Calculate fee deltas
+            let fee_delta_0 = fee_growth_inside_0.saturating_sub(self.fee_growth_inside_0_last);
+            let fee_delta_1 = fee_growth_inside_1.saturating_sub(self.fee_growth_inside_1_last);
+
+            let tokens_owed_0_full =
+                FullMath::mul_div(fee_delta_0, U256::from(self.liquidity), Q128)
+                    .unwrap_or(U256::ZERO);
+
+            let tokens_owed_1_full =
+                FullMath::mul_div(fee_delta_1, U256::from(self.liquidity), Q128)
+                    .unwrap_or(U256::ZERO);
 
             self.tokens_owed_0 = self
                 .tokens_owed_0
-                .saturating_add(tokens_owed_0_delta.to::<u128>());
+                .wrapping_add(FullMath::truncate_to_u128(tokens_owed_0_full));
             self.tokens_owed_1 = self
                 .tokens_owed_1
-                .saturating_add(tokens_owed_1_delta.to::<u128>());
+                .wrapping_add(FullMath::truncate_to_u128(tokens_owed_1_full));
         }
 
         self.fee_growth_inside_0_last = fee_growth_inside_0;
@@ -134,8 +141,12 @@ impl PoolPosition {
             self.total_amount0_deposited += amount0;
             self.total_amount1_deposited += amount1;
         } else {
-            self.tokens_owed_0 += amount0.to::<u128>();
-            self.tokens_owed_1 += amount1.to::<u128>();
+            self.tokens_owed_0 = self
+                .tokens_owed_0
+                .wrapping_add(FullMath::truncate_to_u128(amount0));
+            self.tokens_owed_1 = self
+                .tokens_owed_1
+                .wrapping_add(FullMath::truncate_to_u128(amount1));
         }
     }
 

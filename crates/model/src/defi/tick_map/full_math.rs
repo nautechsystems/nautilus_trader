@@ -263,6 +263,16 @@ impl FullMath {
 
         z
     }
+
+    /// Truncates a U256 value to u128 by extracting the lower 128 bits.
+    ///
+    /// This matches Solidity's `uint128(value)` cast behavior, which discards
+    /// the upper 128 bits. If the value is larger than `u128::MAX`, the upper
+    /// bits are lost.
+    #[must_use]
+    pub fn truncate_to_u128(value: U256) -> u128 {
+        (value & U256::from(u128::MAX)).to::<u128>()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -717,5 +727,29 @@ mod tests {
             FullMath::mul_div_rounding_up(U256::MAX, U256::from(1), U256::from(1)).unwrap(),
             U256::MAX
         );
+    }
+
+    #[rstest]
+    fn test_truncate_to_u128_preserves_small_values() {
+        // Small value (fits in u128) should be preserved exactly
+        let value = U256::from(12345u128);
+        assert_eq!(FullMath::truncate_to_u128(value), 12345u128);
+
+        // u128::MAX should be preserved
+        let max_value = U256::from(u128::MAX);
+        assert_eq!(FullMath::truncate_to_u128(max_value), u128::MAX);
+    }
+
+    #[rstest]
+    fn test_truncate_to_u128_discards_upper_bits() {
+        // Value = u128::MAX + 1 (sets bit 128)
+        // Lower 128 bits = 0, so result should be 0
+        let value = U256::from(u128::MAX) + U256::from(1);
+        assert_eq!(FullMath::truncate_to_u128(value), 0);
+
+        // Value with both high and low bits set:
+        // High 128 bits = 0xFFFF...FFFF, Low 128 bits = 0x1234
+        let value = (U256::from(u128::MAX) << 128) | U256::from(0x1234u128);
+        assert_eq!(FullMath::truncate_to_u128(value), 0x1234u128);
     }
 }
