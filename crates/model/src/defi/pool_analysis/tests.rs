@@ -646,6 +646,11 @@ fn test_uni_pool_profiler_initial_state(uni_pool_profiler: PoolProfiler) {
     assert_eq!(position.total_amount0_deposited, U256::from(9996u32));
     assert_eq!(position.total_amount1_deposited, U256::from(1000u32));
     assert_eq!(uni_pool_profiler.get_active_liquidity(), 3161);
+    assert_eq!(
+        uni_pool_profiler.get_active_liquidity(),
+        uni_pool_profiler.get_total_liquidity_from_active_positions(),
+        "Tick map liquidity should match sum of active positions"
+    );
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0);
 }
@@ -1263,6 +1268,11 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
         initial_liquidity + position_liquidity,
         "Liquidity should increase when crossing into position range downward"
     );
+    assert_eq!(
+        uni_pool_profiler.get_active_liquidity(),
+        uni_pool_profiler.get_total_liquidity_from_active_positions(),
+        "Tick map liquidity should match sum of active positions after crossing"
+    );
 
     // Verify the position is now active
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 2);
@@ -1324,6 +1334,11 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
         final_liquidity,
         initial_liquidity + position_liquidity,
         "Liquidity should increase when crossing into position range upward"
+    );
+    assert_eq!(
+        uni_pool_profiler.get_active_liquidity(),
+        uni_pool_profiler.get_total_liquidity_from_active_positions(),
+        "Tick map liquidity should match sum of active positions after crossing"
     );
 
     // Verify the position is now active

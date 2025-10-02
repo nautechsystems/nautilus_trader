@@ -992,15 +992,41 @@ impl PoolProfiler {
         (fee_amount0, fee_amount1)
     }
 
-    /// Gets the current liquidity at the current tick.
-    /// Calculates active liquidity by summing all positions that span the current tick.
+    /// Returns the pool's active liquidity tracked by the tick map.
     ///
-    /// # Panics
+    /// This represents the effective liquidity available for trading at the current price.
+    /// The tick map maintains this value efficiently by updating it during tick crossings
+    /// as the price moves through different ranges.
     ///
-    /// Panics if `current_tick` is `None`.
+    /// # Returns
+    /// The active liquidity (u128) at the current tick from the tick map
     #[must_use]
     pub fn get_active_liquidity(&self) -> u128 {
         self.tick_map.liquidity
+    }
+
+    /// Calculates total liquidity by summing all individual positions at the current tick.
+    ///
+    /// This computes liquidity by iterating through all positions and summing those that
+    /// span the current tick. Unlike [`Self::get_active_liquidity`], which returns the maintained
+    /// tick map value, this method performs a fresh calculation from position data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `current_tick` is `None` (pool not initialized).
+    #[must_use]
+    pub fn get_total_liquidity_from_active_positions(&self) -> u128 {
+        let current_tick = self.current_tick.unwrap();
+
+        self.positions
+            .values()
+            .filter(|position| {
+                position.liquidity > 0
+                    && position.tick_lower <= current_tick
+                    && current_tick < position.tick_upper
+            })
+            .map(|position| position.liquidity)
+            .sum()
     }
 
     /// Gets a list of all initialized tick values.
