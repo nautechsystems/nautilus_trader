@@ -1254,4 +1254,17 @@ impl PoolProfiler {
 
         total_amount1 + total_fees_1_left
     }
+
+    /// Sets the global fee growth for both tokens.
+    ///
+    /// This is primarily used for testing to simulate specific fee growth scenarios.
+    /// In production, fee growth is updated through swap operations.
+    ///
+    /// # Arguments
+    /// * `fee_growth_global_0` - New global fee growth for token0
+    /// * `fee_growth_global_1` - New global fee growth for token1
+    pub fn set_fee_growth_global(&mut self, fee_growth_global_0: U256, fee_growth_global_1: U256) {
+        self.tick_map
+            .set_global_fee_growth(fee_growth_global_0, fee_growth_global_1);
+    }
 }
