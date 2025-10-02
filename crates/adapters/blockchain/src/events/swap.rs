@@ -52,6 +52,10 @@ pub struct SwapEvent {
     /// The square root of the price ratio encoded as a Q64.96 fixed-point number.
     /// This represents the price of token1 in terms of token0 after the swap.
     pub sqrt_price_x96: U160,
+    /// The liquidity of the pool after the swap occurred.
+    pub liquidity: u128,
+    /// The current tick of the pool after the swap occurred.
+    pub tick: i32,
 }
 
 impl SwapEvent {
@@ -70,6 +74,8 @@ impl SwapEvent {
         amount0: I256,
         amount1: I256,
         sqrt_price_x96: U160,
+        liquidity: u128,
+        tick: i32,
     ) -> Self {
         Self {
             dex,
@@ -83,6 +89,8 @@ impl SwapEvent {
             amount0,
             amount1,
             sqrt_price_x96,
+            liquidity,
+            tick,
         }
     }
 
@@ -112,6 +120,8 @@ impl SwapEvent {
             self.amount0,
             self.amount1,
             self.sqrt_price_x96,
+            self.liquidity,
+            self.tick,
             normalized_side,
             normalized_quantity,
             normalized_price,

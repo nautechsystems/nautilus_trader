@@ -2277,6 +2277,8 @@ mod tests {
             I256::from_str("1000000000000000000").unwrap(),
             I256::from_str("400000000000000").unwrap(),
             U160::from(59000000000000u128),
+            1000000,
+            100,
             Some(nautilus_model::enums::OrderSide::Buy),
             Some(Quantity::from("1000")),
             Some(Price::from("1.0")),

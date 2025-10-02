@@ -26,6 +26,7 @@ use crate::defi::{
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
+        liquidity_math::liquidity_math_add,
         sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
         tick::Tick,
         tick_math::{
@@ -218,9 +219,27 @@ impl PoolProfiler {
             self.cross_ticks_between(old_tick, new_tick);
         }
 
-        // Update pool state
+        // Update pool state with simulated values
         self.current_tick = Some(new_tick);
         self.price_sqrt_ratio_x96 = Some(swap.sqrt_price_x96);
+
+        // Verify simulation against event data - correct with event values if mismatch detected
+        if swap.tick != new_tick {
+            tracing::error!(
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
+                new_tick,
+                swap.tick
+            );
+            self.current_tick = Some(swap.tick);
+        }
+        if swap.liquidity != self.tick_map.liquidity {
+            tracing::error!(
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {}",
+                self.tick_map.liquidity,
+                swap.liquidity
+            );
+            self.tick_map.liquidity = swap.liquidity;
+        }
 
         Ok(())
     }
@@ -384,16 +403,14 @@ impl PoolProfiler {
                         },
                     );
 
-                    // If we're moving leftward, we interpret liquidityNet as the opposite sign
-                    let adjusted_liquidity_net = if zero_for_one {
-                        -liquidity_net
+                    // Apply liquidity change based on crossing direction
+                    // When crossing down (zeroForOne = true), negate liquidity_net before adding
+                    // When crossing up (zeroForOne = false), use liquidity_net as-is without negation
+                    self.tick_map.liquidity = if zero_for_one {
+                        liquidity_math_add(self.tick_map.liquidity, -liquidity_net)
                     } else {
-                        liquidity_net
+                        liquidity_math_add(self.tick_map.liquidity, liquidity_net)
                     };
-
-                    // Update current liquidity
-                    self.tick_map.liquidity =
-                        ((self.tick_map.liquidity as i128) + adjusted_liquidity_net) as u128;
                 }
 
                 current_tick = if zero_for_one {
@@ -452,6 +469,8 @@ impl PoolProfiler {
             amount0,
             amount1,
             current_sqrt_price,
+            self.tick_map.liquidity,
+            self.current_tick.unwrap(),
             None,
             None,
             None,
@@ -979,18 +998,33 @@ impl PoolProfiler {
         (fee_amount0, fee_amount1)
     }
 
-    /// Gets the current liquidity at the current tick.
-    /// Calculates active liquidity by summing all positions that span the current tick.
+    /// Returns the pool's active liquidity tracked by the tick map.
+    ///
+    /// This represents the effective liquidity available for trading at the current price.
+    /// The tick map maintains this value efficiently by updating it during tick crossings
+    /// as the price moves through different ranges.
+    ///
+    /// # Returns
+    /// The active liquidity (u128) at the current tick from the tick map
+    #[must_use]
+    pub fn get_active_liquidity(&self) -> u128 {
+        self.tick_map.liquidity
+    }
+
+    /// Calculates total liquidity by summing all individual positions at the current tick.
+    ///
+    /// This computes liquidity by iterating through all positions and summing those that
+    /// span the current tick. Unlike [`Self::get_active_liquidity`], which returns the maintained
+    /// tick map value, this method performs a fresh calculation from position data.
     ///
     /// # Panics
     ///
-    /// Panics if `current_tick` is `None`.
+    /// Panics if `current_tick` is `None` (pool not initialized).
     #[must_use]
-    pub fn get_active_liquidity(&self) -> u128 {
+    pub fn get_total_liquidity_from_active_positions(&self) -> u128 {
         let current_tick = self.current_tick.unwrap();
 
-        let active_liquidity: u128 = self
-            .positions
+        self.positions
             .values()
             .filter(|position| {
                 position.liquidity > 0
@@ -998,9 +1032,7 @@ impl PoolProfiler {
                     && current_tick < position.tick_upper
             })
             .map(|position| position.liquidity)
-            .sum();
-
-        active_liquidity
+            .sum()
     }
 
     /// Gets a list of all initialized tick values.
