@@ -659,7 +659,7 @@ impl PoolProfiler {
             update.position_liquidity,
             update.amount0,
             update.amount1,
-        );
+        )?;
         Ok(())
     }
 
@@ -675,7 +675,7 @@ impl PoolProfiler {
         liquidity: u128,
         amount0: U256,
         amount1: U256,
-    ) {
+    ) -> anyhow::Result<()> {
         self.update_position(
             owner,
             tick_lower,
@@ -683,11 +683,13 @@ impl PoolProfiler {
             liquidity as i128,
             amount0,
             amount1,
-        );
+        )?;
 
         // Track deposited amounts
         self.total_amount0_deposited += amount0;
         self.total_amount1_deposited += amount1;
+
+        Ok(())
     }
 
     /// Executes a simulated mint (liquidity addition) operation.
@@ -724,7 +726,7 @@ impl PoolProfiler {
         );
         self.add_liquidity(
             &recipient, tick_lower, tick_upper, liquidity, amount0, amount1,
-        );
+        )?;
 
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
@@ -771,7 +773,7 @@ impl PoolProfiler {
             -(update.position_liquidity as i128),
             update.amount0,
             update.amount1,
-        );
+        )?;
 
         // Track withdrawn amounts
         self.total_amount0_withdrawn += update.amount0;
@@ -822,7 +824,7 @@ impl PoolProfiler {
             -(liquidity as i128),
             amount0,
             amount1,
-        );
+        )?;
 
         // Track withdrawn amounts
         self.total_amount0_withdrawn += amount0;
@@ -886,13 +888,25 @@ impl PoolProfiler {
         liquidity_delta: i128,
         amount0: U256,
         amount1: U256,
-    ) {
+    ) -> anyhow::Result<()> {
         let current_tick = self.current_tick.expect("Pool should be initialized");
         let position_key = PoolPosition::get_position_key(owner, tick_lower, tick_upper);
         let position = self
             .positions
             .entry(position_key)
             .or_insert(PoolPosition::new(*owner, tick_lower, tick_upper, 0));
+
+        // Only validate when burning (negative liquidity_delta)
+        if liquidity_delta < 0 {
+            let burn_amount = liquidity_delta.unsigned_abs();
+            if position.liquidity < burn_amount {
+                return Err(anyhow::anyhow!(
+                    "Position liquidity {} is less than the requested burn amount of {}",
+                    position.liquidity,
+                    burn_amount
+                ));
+            }
+        }
 
         // Update tickmaps.
         let flipped_lower = self
@@ -921,6 +935,8 @@ impl PoolProfiler {
         if liquidity_delta < 0 && flipped_upper {
             self.tick_map.clear(tick_upper)
         }
+
+        Ok(())
     }
 
     /// Validates tick range for position operations.
