@@ -666,6 +666,7 @@ class BacktestNode:
             path=config.catalog_path,
             fs_protocol=config.catalog_fs_protocol,
             fs_storage_options=config.catalog_fs_storage_options,
+            fs_rust_storage_options=config.catalog_fs_rust_storage_options,
         )
 
     def _load_engine_data(self, engine: BacktestEngine, result: CatalogDataResult) -> None:
