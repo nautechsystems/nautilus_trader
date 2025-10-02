@@ -217,7 +217,7 @@ pub fn get_defi_collect_topic(instrument_id: InstrumentId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_pool_liquidity_topic(instrument_id)
+        .get_defi_pool_collect_topic(instrument_id)
 }
 
 /// Represents a switchboard of built-in messaging endpoint names.
@@ -565,7 +565,7 @@ impl MessagingSwitchboard {
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_pool_collect_topics(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+    pub fn get_defi_pool_collect_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
         *self
             .defi_pool_collect_topics
             .entry(instrument_id)

@@ -43,6 +43,7 @@ pub use chain::{Blockchain, Chain, SharedChain};
 pub use data::{
     DefiData,
     block::Block,
+    collect::PoolFeeCollect,
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
     swap::PoolSwap,
     transaction::Transaction,

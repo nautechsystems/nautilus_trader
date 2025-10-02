@@ -30,7 +30,9 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
+use nautilus_model::defi::{
+    Block, Blockchain, Pool, PoolFeeCollect, PoolLiquidityUpdate, PoolSwap,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -383,6 +385,12 @@ impl DataActor for PyDataActor {
     fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.py_on_pool_liquidity_update(update.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
+    }
+
+    #[cfg(feature = "defi")]
+    fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+        self.py_on_pool_fee_collect(collect.clone())
+            .map_err(|e| anyhow::anyhow!("Python on_pool_fee_collect failed: {e}"))
     }
 
     fn on_historical_data(&mut self, _data: &dyn Any) -> anyhow::Result<()> {
@@ -820,6 +828,19 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_pool_fee_collect")]
+    fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) -> PyResult<()> {
+        // Dispatch to Python instance's on_pool_fee_collect method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool_fee_collect", (update.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
     #[pyo3(name = "subscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_subscribe_data(
@@ -1032,6 +1053,19 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         self.subscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_pool_fee_collects(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1371,6 +1405,19 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         self.unsubscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_pool_fee_collects(instrument_id, client_id, params);
         Ok(())
     }
 

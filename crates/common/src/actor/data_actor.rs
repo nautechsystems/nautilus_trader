@@ -28,7 +28,9 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 #[cfg(feature = "defi")]
-use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
+use nautilus_model::defi::{
+    Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap, data::PoolFeeCollect,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -49,7 +51,8 @@ use super::{
 };
 #[cfg(feature = "defi")]
 use crate::msgbus::switchboard::{
-    get_defi_blocks_topic, get_defi_liquidity_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
+    get_defi_blocks_topic, get_defi_collect_topic, get_defi_liquidity_topic,
+    get_defi_pool_swaps_topic, get_defi_pool_topic,
 };
 use crate::{
     cache::Cache,
@@ -418,6 +421,17 @@ pub trait DataActor:
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Actions to be performed when receiving a pool fee collect event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the pool fee collect fails.
+    #[allow(unused_variables)]
+    fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving historical data.
     ///
     /// # Errors
@@ -728,6 +742,21 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_pool_liquidity_update(update) {
+            log_error(&e);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles a received pool fee collect.
+    fn handle_pool_fee_collect(&mut self, collect: &PoolFeeCollect) {
+        log_received(&collect);
+
+        if self.not_running() {
+            log_not_running(&collect);
+            return;
+        }
+
+        if let Err(e) = self.on_pool_fee_collect(collect) {
             log_error(&e);
         }
     }
@@ -1251,6 +1280,35 @@ pub trait DataActor:
         );
     }
 
+    #[cfg(feature = "defi")]
+    /// Subscribe to streaming [`PoolFeeCollect`] data for the `instrument_id`.
+    fn subscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_defi_collect_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |collect: &PoolFeeCollect| {
+                get_actor_unchecked::<Self>(&actor_id).handle_pool_fee_collect(collect);
+            },
+        )));
+
+        DataActorCore::subscribe_pool_fee_collects(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
     /// Unsubscribe from streaming `data_type` data.
     fn unsubscribe_data(
         &mut self,
@@ -1464,6 +1522,19 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_pool_liquidity_updates(self, instrument_id, client_id, params);
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribe from streaming [`PoolFeeCollect`] data for the `instrument_id`.
+    fn unsubscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_pool_fee_collects(self, instrument_id, client_id, params);
     }
 
     /// Request historical custom data of the given `data_type`.
@@ -2514,6 +2585,33 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
+    #[cfg(feature = "defi")]
+    /// Helper method for registering pool fee collect subscriptions from the trait.
+    pub fn subscribe_pool_fee_collects(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiSubscribeCommand, SubscribePoolFeeCollects};
+
+        self.check_registered();
+
+        self.add_subscription(topic, handler);
+
+        let command = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
+            instrument_id,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+    }
+
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
         &mut self,
@@ -2931,6 +3029,32 @@ impl DataActorCore {
                 ts_init: self.timestamp_ns(),
                 params,
             });
+
+        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+    }
+
+    #[cfg(feature = "defi")]
+    /// Helper method for unsubscribing from pool fee collects.
+    pub fn unsubscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolFeeCollects};
+
+        self.check_registered();
+
+        let topic = get_defi_collect_topic(instrument_id);
+        self.remove_subscription(topic);
+
+        let command = DefiUnsubscribeCommand::PoolFeeCollects(UnsubscribePoolFeeCollects {
+            instrument_id,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
 
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }

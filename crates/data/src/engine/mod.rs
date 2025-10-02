@@ -746,8 +746,8 @@ impl DataEngine {
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
-                if let Err(err) = self.cache.borrow_mut().add_pool(pool.clone()) {
-                    log::error!("Failed to add Pool to cache: {err}");
+                if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                    log::error!("Failed to add Pool to cache: {e}");
                 }
 
                 let topic = switchboard::get_defi_pool_topic(pool.instrument_id);

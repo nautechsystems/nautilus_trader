@@ -86,11 +86,17 @@ impl Display for DefiData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Block(b) => write!(f, "{b}"),
+            Self::Pool(p) => write!(f, "{p}"),
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::PoolFeeCollect(c) => write!(f, "{c}"),
-            Self::Pool(p) => write!(f, "{p}"),
         }
+    }
+}
+
+impl From<Pool> for DefiData {
+    fn from(value: Pool) -> Self {
+        Self::Pool(value)
     }
 }
 
@@ -103,12 +109,6 @@ impl From<PoolSwap> for DefiData {
 impl From<PoolLiquidityUpdate> for DefiData {
     fn from(value: PoolLiquidityUpdate) -> Self {
         Self::PoolLiquidityUpdate(value)
-    }
-}
-
-impl From<Pool> for DefiData {
-    fn from(value: Pool) -> Self {
-        Self::Pool(value)
     }
 }
 
