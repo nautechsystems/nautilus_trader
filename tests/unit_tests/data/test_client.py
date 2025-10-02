@@ -304,7 +304,6 @@ class TestMarketDataClient:
         self.client._handle_bars_py(
             TestDataStubs.bartype_gbpusd_1sec_mid(),
             [],
-            None,
             UUID4(),
             pd.Timestamp("2023-01-01"),
             pd.Timestamp("2023-01-02"),

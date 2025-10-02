@@ -692,7 +692,6 @@ fn test_execute_subscribe_bars(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
@@ -1701,7 +1700,6 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
         venue,
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));

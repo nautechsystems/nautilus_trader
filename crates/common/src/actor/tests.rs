@@ -700,7 +700,7 @@ fn test_subscribe_and_receive_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
@@ -721,7 +721,7 @@ fn test_unsubscribe_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();

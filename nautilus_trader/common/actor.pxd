@@ -181,7 +181,7 @@ cdef class Actor(Component):
     cpdef void subscribe_mark_prices(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_index_prices(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_funding_rates(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial=*, bint update_catalog=*, dict[str, object] params=*)
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint update_catalog=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)

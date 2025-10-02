@@ -1796,7 +1796,6 @@ cdef class Actor(Component):
         self,
         BarType bar_type,
         ClientId client_id = None,
-        bint await_partial = False,
         bint update_catalog = False,
         dict[str, object] params = None,
     ):
@@ -1813,9 +1812,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        await_partial : bool, default False
-            If the bar aggregator should await the arrival of a historical partial bar prior
-            to actively aggregating new bars.
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
             Only useful when downloading data during a backtest.
@@ -1836,7 +1832,6 @@ cdef class Actor(Component):
 
         cdef SubscribeBars command = SubscribeBars(
             bar_type=bar_type,
-            await_partial=await_partial,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             command_id=UUID4(),
