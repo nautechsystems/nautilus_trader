@@ -165,9 +165,10 @@ pub fn transform_row_to_dex_pool_data(
             })?;
 
             let swap_liquidity_str = row.try_get::<String, _>("swap_liquidity")?;
-            let swap_liquidity = u128::from_str(&swap_liquidity_str).map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+            let swap_liquidity = u128::from_str(&swap_liquidity_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
 
-            let swap_tick = row.try_get::<i32,_>("swap_tick")?;
+            let swap_tick = row.try_get::<i32, _>("swap_tick")?;
 
             let swap_amount0_str = row
                 .try_get::<Option<String>, _>("swap_amount0")?

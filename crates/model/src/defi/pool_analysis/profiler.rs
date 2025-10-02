@@ -212,7 +212,10 @@ impl PoolProfiler {
             self.cross_ticks_between(old_tick, new_tick);
         }
 
-        // Update pool state
+        // Update pool state - use liquidity from swap event instead of reconstructing it
+        // The swap event contains the pool's active liquidity after the swap, which is the
+        // authoritative value emitted by the smart contract
+        self.tick_map.liquidity = swap.liquidity;
         self.current_tick = Some(new_tick);
         self.price_sqrt_ratio_x96 = Some(swap.sqrt_price_x96);
 
@@ -446,6 +449,8 @@ impl PoolProfiler {
             amount0,
             amount1,
             current_sqrt_price,
+            self.tick_map.liquidity,
+            self.current_tick.unwrap(),
             None,
             None,
             None,
@@ -981,20 +986,7 @@ impl PoolProfiler {
     /// Panics if `current_tick` is `None`.
     #[must_use]
     pub fn get_active_liquidity(&self) -> u128 {
-        let current_tick = self.current_tick.unwrap();
-
-        let active_liquidity: u128 = self
-            .positions
-            .values()
-            .filter(|position| {
-                position.liquidity > 0
-                    && position.tick_lower <= current_tick
-                    && current_tick < position.tick_upper
-            })
-            .map(|position| position.liquidity)
-            .sum();
-
-        active_liquidity
+        self.tick_map.liquidity
     }
 
     /// Gets a list of all initialized tick values.

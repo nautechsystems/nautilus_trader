@@ -1929,6 +1929,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
         U160::from(59000000000000u128),
+        1000000,
+        100,
         Some(OrderSide::Buy),
         Some(Quantity::from("1000")),
         Some(Price::from("500")),
