@@ -26,6 +26,7 @@ use crate::defi::{
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
+        liquidity_math::liquidity_math_add,
         sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
         tick::Tick,
         tick_math::{
@@ -33,7 +34,6 @@ use crate::defi::{
         },
     },
 };
-use crate::defi::tick_map::liquidity_math::liquidity_math_add;
 
 /// A comprehensive DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
@@ -213,12 +213,27 @@ impl PoolProfiler {
             self.cross_ticks_between(old_tick, new_tick);
         }
 
-        // Update pool state - use liquidity from swap event instead of reconstructing it
-        // The swap event contains the pool's active liquidity after the swap, which is the
-        // authoritative value emitted by the smart contract
-        self.tick_map.liquidity = swap.liquidity;
+        // Update pool state with simulated values
         self.current_tick = Some(new_tick);
         self.price_sqrt_ratio_x96 = Some(swap.sqrt_price_x96);
+
+        // Verify simulation against event data - correct with event values if mismatch detected
+        if swap.tick != new_tick {
+            tracing::error!(
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
+                new_tick,
+                swap.tick
+            );
+            self.current_tick = Some(swap.tick);
+        }
+        if swap.liquidity != self.tick_map.liquidity {
+            tracing::error!(
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {}",
+                self.tick_map.liquidity,
+                swap.liquidity
+            );
+            self.tick_map.liquidity = swap.liquidity;
+        }
 
         Ok(())
     }

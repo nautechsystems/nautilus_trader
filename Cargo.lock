@@ -5083,6 +5083,7 @@ dependencies = [
  "tabled",
  "thiserror 2.0.17",
  "thousands",
+ "tracing",
  "ustr",
 ]
 
