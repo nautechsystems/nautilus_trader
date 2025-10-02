@@ -58,6 +58,9 @@ pub mod websocket;
 pub mod python;
 
 pub use crate::{
-    config::HyperliquidDataClientConfig, data::HyperliquidDataClient,
-    http::client::HyperliquidHttpClient, websocket::client::HyperliquidWebSocketClient,
+    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    data::HyperliquidDataClient,
+    execution::HyperliquidExecutionClient,
+    http::client::HyperliquidHttpClient,
+    websocket::client::HyperliquidWebSocketClient,
 };
