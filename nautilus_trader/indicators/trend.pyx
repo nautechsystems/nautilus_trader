@@ -137,14 +137,10 @@ cdef class ArcherMovingAveragesTrends(Indicator):
             self._slow_ma_price.append(self._slow_ma.value)
 
             self.long_run = (self._fast_ma_price[-1] - self._fast_ma_price[0] > 0 and \
-                self._slow_ma_price[-1] - self._slow_ma_price[0] < 0 )
-            self.long_run = (self._fast_ma_price[-1] - self._fast_ma_price[0] > 0 and \
-                self._slow_ma_price[-1] - self._slow_ma_price[0] > 0 ) or self.long_run
+                self._slow_ma_price[-1] - self._slow_ma_price[0] > 0 )
 
             self.short_run = (self._fast_ma_price[-1] - self._fast_ma_price[0] < 0 and \
-                self._slow_ma_price[-1] - self._slow_ma_price[0] > 0 )
-            self.short_run = (self._fast_ma_price[-1] - self._fast_ma_price[0] < 0 and \
-                self._slow_ma_price[-1] - self._slow_ma_price[0] < 0 ) or self.short_run
+                self._slow_ma_price[-1] - self._slow_ma_price[0] < 0 )
 
         # Initialization logic
         if not self.initialized:
