@@ -227,13 +227,20 @@ pub struct ModifyRequest {
     pub order: OrderRequest,
 }
 
+/// Subscription response data wrapper
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubscriptionResponseData {
+    pub method: String,
+    pub subscription: SubscriptionRequest,
+}
+
 /// Inbound WebSocket message from Hyperliquid server
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "channel")]
 #[serde(rename_all = "camelCase")]
 pub enum HyperliquidWsMessage {
     /// Subscription confirmation
-    SubscriptionResponse { data: SubscriptionRequest },
+    SubscriptionResponse { data: SubscriptionResponseData },
     /// Post request response
     Post { data: PostResponse },
     /// All mid prices
