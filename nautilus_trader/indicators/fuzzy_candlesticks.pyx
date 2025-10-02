@@ -197,7 +197,7 @@ cdef class FuzzyCandlesticks(Indicator):
             self._upper_wick_percents.append(0.0)
             self._lower_wick_percents.append(0.0)
         else:
-            self._body_percents.append(fabs(open - low / self._lengths[0]))
+            self._body_percents.append(fabs(open - close / self._lengths[0]))
             self._upper_wick_percents.append((high - max(open, close)) / self._lengths[0])
             self._lower_wick_percents.append((min(open, close) - low) / self._lengths[0])
 
