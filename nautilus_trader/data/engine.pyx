@@ -1941,7 +1941,7 @@ cdef class DataEngine(Component):
             elif grouped_response.data_type.type == TradeTick:
                 self._handle_trade_ticks(grouped_response.data)
             elif grouped_response.data_type.type == Bar:
-                self._handle_bars(grouped_response.data, grouped_response.data_type.metadata.get("partial"))
+                self._handle_bars(grouped_response.data)
             elif grouped_response.data_type.type == OrderBookDepth10:
                 self._handle_order_book_depths(grouped_response.data)
             # Note: custom data will use the callback submitted by the user in actor.request_data
@@ -2129,24 +2129,8 @@ cdef class DataEngine(Component):
             # Individual depths are handled by _handle_order_book_depth which publishes to msgbus
             self._handle_order_book_depth(depth)
 
-    cpdef void _handle_bars(self, list bars, Bar partial):
+    cpdef void _handle_bars(self, list bars):
         self._cache.add_bars(bars)
-        cdef BarAggregator aggregator
-
-        if partial is not None and partial.bar_type.is_internally_aggregated():
-            # Update partial time bar
-            aggregator = self._bar_aggregators.get(partial.bar_type)
-
-            if aggregator is not None:
-                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}")
-                aggregator.set_await_partial(False)
-                aggregator.set_partial(partial)
-            else:
-                if self._fsm.state == ComponentState.RUNNING:
-                    # Only log this error if the component is running, because
-                    # there may have been an immediate stop called after start
-                    # - with the partial bar being for a now removed aggregator.
-                    self._log.error("No aggregator for partial bar update")
 
     cpdef dict _handle_aggregated_bars(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
@@ -2431,9 +2415,6 @@ cdef class DataEngine(Component):
         if aggregator is None:
             aggregator = self._create_bar_aggregator(instrument, command.bar_type, command.params)
 
-        # Set if awaiting initial partial bar
-        aggregator.set_await_partial(command.await_partial)
-
         # Add aggregator
         self._bar_aggregators[command.bar_type.standard()] = aggregator
         self._log.debug(f"Added {aggregator} for {command.bar_type} bars")
@@ -2452,7 +2433,6 @@ cdef class DataEngine(Component):
                 venue=command.venue,
                 command_id=command.id,
                 ts_init=command.ts_init,
-                await_partial=command.await_partial,
                 params=command.params
             )
             self._handle_subscribe_bars(client, subscribe)

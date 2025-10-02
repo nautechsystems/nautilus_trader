@@ -41,40 +41,32 @@ use nautilus_model::{
 
 /// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
 ///
-/// Implementors receive updates and produce completed bars via handlers, with support for partial and batch updates.
+/// Implementors receive updates and produce completed bars via handlers, with support for batch updates.
 pub trait BarAggregator: Any + Debug {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
     fn is_running(&self) -> bool;
-    fn set_await_partial(&mut self, value: bool);
-    /// Enables or disables awaiting a partial bar before full aggregation.
-    fn set_is_running(&mut self, value: bool);
     /// Sets the running state of the aggregator (receiving updates when `true`).
+    fn set_is_running(&mut self, value: bool);
     /// Updates the aggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos);
     /// Updates the aggregator with the given quote.
     fn handle_quote(&mut self, quote: QuoteTick) {
         let spec = self.bar_type().spec();
-        if !self.await_partial() {
-            self.update(
-                quote.extract_price(spec.price_type),
-                quote.extract_size(spec.price_type),
-                quote.ts_init,
-            );
-        }
+        self.update(
+            quote.extract_price(spec.price_type),
+            quote.extract_size(spec.price_type),
+            quote.ts_init,
+        );
     }
     /// Updates the aggregator with the given trade.
     fn handle_trade(&mut self, trade: TradeTick) {
-        if !self.await_partial() {
-            self.update(trade.price, trade.size, trade.ts_init);
-        }
+        self.update(trade.price, trade.size, trade.ts_init);
     }
     /// Updates the aggregator with the given bar.
     fn handle_bar(&mut self, bar: Bar) {
-        if !self.await_partial() {
-            self.update_bar(bar, bar.volume, bar.ts_init);
-        }
+        self.update_bar(bar, bar.volume, bar.ts_init);
     }
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
     /// Incorporates an existing bar and its volume into aggregation at the given init timestamp.
@@ -82,10 +74,6 @@ pub trait BarAggregator: Any + Debug {
     /// Starts batch mode, sending bars to the supplied handler for the given time context.
     fn stop_batch_update(&mut self);
     /// Stops batch mode and restores the standard bar handler.
-    fn await_partial(&self) -> bool;
-    /// Returns `true` if awaiting a partial bar before processing updates.
-    /// Sets the initial values for a partially completed bar.
-    fn set_partial(&mut self, partial_bar: Bar);
     /// Stop the aggregator, e.g., cancel timers. Default is no-op.
     fn stop(&mut self) {}
 }
@@ -110,7 +98,6 @@ pub struct BarBuilder {
     initialized: bool,
     ts_last: UnixNanos,
     count: usize,
-    partial_set: bool,
     last_close: Option<Price>,
     open: Option<Price>,
     high: Option<Price>,
@@ -144,7 +131,6 @@ impl BarBuilder {
             initialized: false,
             ts_last: UnixNanos::default(),
             count: 0,
-            partial_set: false,
             last_close: None,
             open: None,
             high: None,
@@ -152,40 +138,6 @@ impl BarBuilder {
             close: None,
             volume: Quantity::zero(size_precision),
         }
-    }
-
-    /// Set the initial values for a partially completed bar.
-    ///
-    /// # Panics
-    ///
-    /// Panics if internal values for `high` or `low` are unexpectedly missing.
-    pub fn set_partial(&mut self, partial_bar: Bar) {
-        if self.partial_set {
-            return; // Already updated
-        }
-
-        self.open = Some(partial_bar.open);
-
-        if self.high.is_none() || partial_bar.high > self.high.unwrap() {
-            self.high = Some(partial_bar.high);
-        }
-
-        if self.low.is_none() || partial_bar.low < self.low.unwrap() {
-            self.low = Some(partial_bar.low);
-        }
-
-        if self.close.is_none() {
-            self.close = Some(partial_bar.close);
-        }
-
-        self.volume = partial_bar.volume;
-
-        if self.ts_last == 0 {
-            self.ts_last = partial_bar.ts_init;
-        }
-
-        self.partial_set = true;
-        self.initialized = true;
     }
 
     /// Updates the builder state with the given price, size, and init timestamp.
@@ -317,7 +269,6 @@ where
     handler: H,
     handler_backup: Option<H>,
     batch_handler: Option<Box<dyn FnMut(Bar)>>,
-    await_partial: bool,
     is_running: bool,
     batch_mode: bool,
 }
@@ -327,7 +278,6 @@ impl<H: FnMut(Bar)> Debug for BarAggregatorCore<H> {
         f.debug_struct(stringify!(BarAggregatorCore))
             .field("bar_type", &self.bar_type)
             .field("builder", &self.builder)
-            .field("await_partial", &self.await_partial)
             .field("is_running", &self.is_running)
             .field("batch_mode", &self.batch_mode)
             .finish()
@@ -345,43 +295,21 @@ where
     /// This function panics if:
     /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
-    pub fn new(
-        bar_type: BarType,
-        price_precision: u8,
-        size_precision: u8,
-        handler: H,
-        await_partial: bool,
-    ) -> Self {
+    pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8, handler: H) -> Self {
         Self {
             bar_type,
             builder: BarBuilder::new(bar_type, price_precision, size_precision),
             handler,
             handler_backup: None,
             batch_handler: None,
-            await_partial,
             is_running: false,
             batch_mode: false,
         }
     }
 
-    /// Sets whether to await a partial bar before processing new updates.
-    pub const fn set_await_partial(&mut self, value: bool) {
-        self.await_partial = value;
-    }
-
     /// Sets the running state of the aggregator (receives updates when `true`).
     pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
-    }
-
-    /// Returns `true` if the aggregator is awaiting a partial bar to complete before aggregation.
-    pub const fn await_partial(&self) -> bool {
-        self.await_partial
-    }
-
-    /// Initializes builder state with a partially completed bar.
-    pub fn set_partial(&mut self, partial_bar: Bar) {
-        self.builder.set_partial(partial_bar);
     }
 
     fn apply_update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -453,21 +381,9 @@ where
     /// This function panics if:
     /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
-    pub fn new(
-        bar_type: BarType,
-        price_precision: u8,
-        size_precision: u8,
-        handler: H,
-        await_partial: bool,
-    ) -> Self {
+    pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8, handler: H) -> Self {
         Self {
-            core: BarAggregatorCore::new(
-                bar_type,
-                price_precision,
-                size_precision,
-                handler,
-                await_partial,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             cum_value: 0.0,
         }
     }
@@ -485,16 +401,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.set_await_partial(value);
-    }
-
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
-    }
-
-    fn await_partial(&self) -> bool {
-        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -546,10 +454,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-
-    fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar);
-    }
 }
 
 /// Provides a means of building volume bars aggregated from quote and trades.
@@ -579,20 +483,13 @@ where
     /// This function panics if:
     /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
-    pub fn new(
-        bar_type: BarType,
-        price_precision: u8,
-        size_precision: u8,
-        handler: H,
-        await_partial: bool,
-    ) -> Self {
+    pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8, handler: H) -> Self {
         Self {
             core: BarAggregatorCore::new(
                 bar_type.standard(),
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
             ),
         }
     }
@@ -610,16 +507,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.set_await_partial(value);
-    }
-
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
-    }
-
-    fn await_partial(&self) -> bool {
-        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -684,10 +573,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-
-    fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar);
-    }
 }
 
 /// Provides a means of building value bars aggregated from quote and trades.
@@ -722,20 +607,13 @@ where
     /// This function panics if:
     /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
-    pub fn new(
-        bar_type: BarType,
-        price_precision: u8,
-        size_precision: u8,
-        handler: H,
-        await_partial: bool,
-    ) -> Self {
+    pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8, handler: H) -> Self {
         Self {
             core: BarAggregatorCore::new(
                 bar_type.standard(),
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
             ),
             cum_value: 0.0,
         }
@@ -760,16 +638,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.set_await_partial(value);
-    }
-
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
-    }
-
-    fn await_partial(&self) -> bool {
-        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -836,10 +706,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-
-    fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar);
-    }
 }
 
 /// Provides a means of building Renko bars aggregated from quote and trades.
@@ -883,7 +749,6 @@ where
         size_precision: u8,
         price_increment: Price,
         handler: H,
-        await_partial: bool,
     ) -> Self {
         // Calculate brick size in raw price units (step * price_increment.raw)
         let brick_size = bar_type.spec().step.get() as PriceRaw * price_increment.raw;
@@ -894,7 +759,6 @@ where
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
             ),
             brick_size,
             last_close: None,
@@ -914,16 +778,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.set_await_partial(value);
-    }
-
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
-    }
-
-    fn await_partial(&self) -> bool {
-        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -1057,11 +913,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-
-    fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar);
-        self.last_close = Some(partial_bar.close);
-    }
 }
 
 /// Provides a means of building time bars aggregated from quote and trades.
@@ -1154,7 +1005,6 @@ where
         size_precision: u8,
         clock: Rc<RefCell<dyn Clock>>,
         handler: H,
-        await_partial: bool,
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
@@ -1172,7 +1022,6 @@ where
             price_precision,
             size_precision,
             handler,
-            await_partial,
         );
 
         Self {
@@ -1409,17 +1258,10 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.set_await_partial(value);
-    }
-
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
 
-    fn await_partial(&self) -> bool {
-        self.core.await_partial()
-    }
     /// Stop time-based aggregator by canceling its timer.
     fn stop(&mut self) {
         Self::stop(self);
@@ -1478,10 +1320,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-
-    fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar);
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1521,42 +1359,6 @@ mod tests {
         assert!(!builder.initialized);
         assert_eq!(builder.ts_last, 0);
         assert_eq!(builder.count, 0);
-    }
-
-    #[rstest]
-    fn test_set_partial_update(equity_aapl: Equity) {
-        let instrument = InstrumentAny::Equity(equity_aapl);
-        let bar_type = BarType::new(
-            instrument.id(),
-            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
-            AggregationSource::Internal,
-        );
-        let mut builder = BarBuilder::new(
-            bar_type,
-            instrument.price_precision(),
-            instrument.size_precision(),
-        );
-
-        let partial_bar = Bar::new(
-            bar_type,
-            Price::from("101.00"),
-            Price::from("102.00"),
-            Price::from("100.00"),
-            Price::from("101.00"),
-            Quantity::from(100),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
-
-        builder.set_partial(partial_bar);
-        let bar = builder.build_now();
-
-        assert_eq!(bar.open, partial_bar.open);
-        assert_eq!(bar.high, partial_bar.high);
-        assert_eq!(bar.low, partial_bar.low);
-        assert_eq!(bar.close, partial_bar.close);
-        assert_eq!(bar.volume, partial_bar.volume);
-        assert_eq!(builder.ts_last, 2);
     }
 
     #[rstest]
@@ -1616,95 +1418,6 @@ mod tests {
 
         assert_eq!(builder.ts_last, 1_000);
         assert_eq!(builder.count, 1);
-    }
-
-    #[rstest]
-    fn test_bar_builder_set_partial_updates_bar_to_expected_properties(audusd_sim: CurrencyPair) {
-        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-        let bar_type = BarType::new(
-            instrument.id(),
-            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
-            AggregationSource::Internal,
-        );
-        let mut builder = BarBuilder::new(
-            bar_type,
-            instrument.price_precision(),
-            instrument.size_precision(),
-        );
-
-        let partial_bar = Bar::new(
-            bar_type,
-            Price::from("1.00001"),
-            Price::from("1.00010"),
-            Price::from("1.00000"),
-            Price::from("1.00002"),
-            Quantity::from(1),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(2_000_000_000),
-        );
-
-        builder.set_partial(partial_bar);
-        let bar = builder.build_now();
-
-        assert_eq!(bar.open, Price::from("1.00001"));
-        assert_eq!(bar.high, Price::from("1.00010"));
-        assert_eq!(bar.low, Price::from("1.00000"));
-        assert_eq!(bar.close, Price::from("1.00002"));
-        assert_eq!(bar.volume, Quantity::from(1));
-        assert_eq!(bar.ts_init, 2_000_000_000);
-        assert_eq!(builder.ts_last, 2_000_000_000);
-    }
-
-    #[rstest]
-    fn test_bar_builder_set_partial_when_already_set_does_not_update(audusd_sim: CurrencyPair) {
-        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-        let bar_type = BarType::new(
-            instrument.id(),
-            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
-            AggregationSource::Internal,
-        );
-        let mut builder = BarBuilder::new(
-            bar_type,
-            instrument.price_precision(),
-            instrument.size_precision(),
-        );
-
-        let partial_bar1 = Bar::new(
-            bar_type,
-            Price::from("1.00001"),
-            Price::from("1.00010"),
-            Price::from("1.00000"),
-            Price::from("1.00002"),
-            Quantity::from(1),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_000_000_000),
-        );
-
-        let partial_bar2 = Bar::new(
-            bar_type,
-            Price::from("2.00001"),
-            Price::from("2.00010"),
-            Price::from("2.00000"),
-            Price::from("2.00002"),
-            Quantity::from(2),
-            UnixNanos::from(3_000_000_000),
-            UnixNanos::from(3_000_000_000),
-        );
-
-        builder.set_partial(partial_bar1);
-        builder.set_partial(partial_bar2);
-        let bar = builder.build(
-            UnixNanos::from(4_000_000_000),
-            UnixNanos::from(4_000_000_000),
-        );
-
-        assert_eq!(bar.open, Price::from("1.00001"));
-        assert_eq!(bar.high, Price::from("1.00010"));
-        assert_eq!(bar.low, Price::from("1.00000"));
-        assert_eq!(bar.close, Price::from("1.00002"));
-        assert_eq!(bar.volume, Quantity::from(1));
-        assert_eq!(bar.ts_init, 4_000_000_000);
-        assert_eq!(builder.ts_last, 1_000_000_000);
     }
 
     #[rstest]
@@ -1902,7 +1615,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         let trade = TradeTick::default();
@@ -1928,7 +1640,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         let trade = TradeTick::default();
@@ -1964,7 +1675,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         aggregator.update(
@@ -2010,7 +1720,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         aggregator.update(
@@ -2064,7 +1773,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         aggregator.update(
@@ -2097,7 +1805,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Updates to reach value threshold: 100 * 5 + 100 * 5 = $1000
@@ -2134,7 +1841,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Single large update: $100 * 25 = $2500 (should create 2 bars)
@@ -2169,7 +1875,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
             true,  // build_with_no_updates
             false, // timestamp_on_close
             BarIntervalType::LeftOpen,
@@ -2220,9 +1925,8 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
-            true,  // build_with_no_updates
-            true,  // timestamp_on_close - changed to true to verify left-open behavior
+            true, // build_with_no_updates
+            true, // timestamp_on_close - changed to true to verify left-open behavior
             BarIntervalType::LeftOpen,
             None,
             15,
@@ -2281,9 +1985,8 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
-            true,  // build_with_no_updates
-            true,  // timestamp_on_close
+            true, // build_with_no_updates
+            true, // timestamp_on_close
             BarIntervalType::RightOpen,
             None,
             15,
@@ -2345,7 +2048,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
             false, // build_with_no_updates disabled
             true,  // timestamp_on_close
             BarIntervalType::LeftOpen,
@@ -2376,7 +2078,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
             true, // build_with_no_updates enabled
             true, // timestamp_on_close
             BarIntervalType::LeftOpen,
@@ -2429,9 +2130,8 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
-            true,  // build_with_no_updates
-            true,  // timestamp_on_close
+            true, // build_with_no_updates
+            true, // timestamp_on_close
             BarIntervalType::RightOpen,
             None,
             15,
@@ -2472,9 +2172,8 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false, // await_partial
-            true,  // build_with_no_updates
-            true,  // timestamp_on_close
+            true, // build_with_no_updates
+            true, // timestamp_on_close
             BarIntervalType::LeftOpen,
             None,
             15,
@@ -2514,12 +2213,10 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         assert_eq!(aggregator.bar_type(), bar_type);
         assert!(!aggregator.is_running());
-        assert!(!aggregator.await_partial());
         // 10 pips * price_increment.raw (depends on precision mode)
         let expected_brick_size = 10 * instrument.price_increment().raw;
         assert_eq!(aggregator.brick_size, expected_brick_size);
@@ -2542,7 +2239,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Small price movement (5 pips, less than 10 pip brick size)
@@ -2578,7 +2274,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Price movement exceeding brick size (15 pips)
@@ -2623,7 +2318,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Large price movement creating multiple bricks (25 pips = 2 bricks)
@@ -2671,7 +2365,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Start at higher price and move down
@@ -2714,7 +2407,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Create a bar with small price movement (5 pips)
@@ -2756,7 +2448,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // First bar to establish baseline
@@ -2822,7 +2513,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // First bar to establish baseline
@@ -2893,7 +2583,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // First bar to establish baseline
@@ -2961,7 +2650,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(_bar);
             },
-            false,
         );
 
         // 5 pips * price_increment.raw (depends on precision mode)
@@ -2982,7 +2670,6 @@ mod tests {
                 let mut handler_guard = handler2_clone.lock().unwrap();
                 handler_guard.push(_bar);
             },
-            false,
         );
 
         // 20 pips * price_increment.raw (depends on precision mode)
@@ -3007,7 +2694,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Sequential updates creating multiple bars
@@ -3070,7 +2756,6 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
         );
 
         // Mixed direction movement: up then down

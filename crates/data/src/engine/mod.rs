@@ -1369,7 +1369,6 @@ impl DataEngine {
                 size_precision,
                 clock,
                 handler,
-                false, // await_partial
                 config.time_bars_build_with_no_updates,
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
@@ -1384,21 +1383,18 @@ impl DataEngine {
                     price_precision,
                     size_precision,
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Value => Box::new(ValueBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
                     bar_type,
@@ -1406,7 +1402,6 @@ impl DataEngine {
                     size_precision,
                     instrument.price_increment(),
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
                     "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
