@@ -36,6 +36,8 @@ use std::{
 use pyo3::{Bound, Python, ffi};
 use ustr::Ustr;
 
+use crate::ffi::abort_on_panic;
+
 #[cfg(feature = "python")]
 /// Returns an owned string from a valid Python object pointer.
 ///
@@ -162,9 +164,11 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 /// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };
-    drop(cstring);
+    abort_on_panic(|| {
+        assert!(!ptr.is_null(), "`ptr` was NULL");
+        let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };
+        drop(cstring);
+    })
 }
 
 ////////////////////////////////////////////////////////////////////////////////
