@@ -1928,59 +1928,19 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
 // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.swaps.spec.ts
 
 #[derive(Debug, Clone)]
-pub struct Position {
+struct Position {
     tick_lower: i32,
     tick_upper: i32,
     liquidity: u128,
 }
 
-impl Position {
-    pub fn get_amount0(&self, initial_sqrt_price_x96: U160) -> U256 {
-        let (amount0, _) = get_amounts_for_liquidity(
-            initial_sqrt_price_x96,
-            self.tick_lower,
-            self.tick_upper,
-            self.liquidity,
-            true,
-        );
-        amount0
-    }
-
-    pub fn get_amount1(&self, initial_sqrt_price_x96: U160) -> U256 {
-        let (_, amount1) = get_amounts_for_liquidity(
-            initial_sqrt_price_x96,
-            self.tick_lower,
-            self.tick_upper,
-            self.liquidity,
-            true,
-        );
-        amount1
-    }
-}
-
 #[derive(Debug)]
-pub struct PoolTestCase {
-    pub tick_spacing: i32,
-    pub fee_amount: u32,
-    pub starting_price: U160,
-    pub positions: Vec<Position>,
-    pub tests: Vec<(SwapTestCase, ExpectedSwapResult)>,
-}
-
-impl PoolTestCase {
-    pub fn get_initial_amount0(&self, initial_sqrt_price_x96: U160) -> U256 {
-        self.positions
-            .iter()
-            .map(|position| position.get_amount0(initial_sqrt_price_x96))
-            .sum()
-    }
-
-    pub fn get_initial_amount1(&self, initial_sqrt_price_x96: U160) -> U256 {
-        self.positions
-            .iter()
-            .map(|position| position.get_amount1(initial_sqrt_price_x96))
-            .sum()
-    }
+struct PoolTestCase {
+    tick_spacing: i32,
+    fee_amount: u32,
+    starting_price: U160,
+    positions: Vec<Position>,
+    tests: Vec<(SwapTestCase, ExpectedSwapResult)>,
 }
 
 #[derive(Debug)]
@@ -2010,25 +1970,18 @@ pub enum SwapTestCase {
 }
 
 #[derive(Debug)]
-pub struct ExpectedSwapResult {
-    pub amount0_before: U256,
-    pub amount0_delta: I256,
-    pub amount1_before: U256,
-    pub amount1_delta: I256,
-    pub pool_price_before: String,
-    pub pool_price_after: String,
-    pub tick_after: i32,
-    pub tick_before: i32,
-    pub fee_growth_global_0: U256,
-    pub fee_growth_global_1: U256,
-    pub execution_price: String,
-}
-
-#[derive(Debug)]
-pub struct TestCombination {
-    pub pool: PoolTestCase,
-    pub swap: SwapTestCase,
-    pub expected_result: ExpectedSwapResult,
+struct ExpectedSwapResult {
+    amount0_before: U256,
+    amount0_delta: I256,
+    amount1_before: U256,
+    amount1_delta: I256,
+    pool_price_before: String,
+    pool_price_after: String,
+    tick_after: i32,
+    tick_before: i32,
+    fee_growth_global_0: U256,
+    fee_growth_global_1: U256,
+    execution_price: String,
 }
 
 fn execute_swap(pool_profiler: &mut PoolProfiler, test: SwapTestCase) -> anyhow::Result<PoolSwap> {
