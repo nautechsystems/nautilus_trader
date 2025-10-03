@@ -32,6 +32,35 @@ pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 /// Number of nanoseconds in one microsecond.
 pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
+// Compile-time checks for time constants to prevent accidental modification
+#[cfg(test)]
+mod compile_time_checks {
+    use static_assertions::const_assert_eq;
+
+    use super::*;
+
+    // [STATIC_ASSERT] Core time constant relationships
+    const_assert_eq!(NANOSECONDS_IN_SECOND, 1_000_000_000);
+    const_assert_eq!(NANOSECONDS_IN_MILLISECOND, 1_000_000);
+    const_assert_eq!(NANOSECONDS_IN_MICROSECOND, 1_000);
+    const_assert_eq!(MILLISECONDS_IN_SECOND, 1_000);
+
+    // [STATIC_ASSERT] Mathematical relationships between constants
+    const_assert_eq!(
+        NANOSECONDS_IN_SECOND,
+        MILLISECONDS_IN_SECOND * NANOSECONDS_IN_MILLISECOND
+    );
+    const_assert_eq!(
+        NANOSECONDS_IN_MILLISECOND,
+        NANOSECONDS_IN_MICROSECOND * 1_000
+    );
+    const_assert_eq!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MILLISECOND, 1_000);
+    const_assert_eq!(
+        NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND,
+        1_000_000
+    );
+}
+
 /// List of weekdays (Monday to Friday).
 pub const WEEKDAYS: [Weekday; 5] = [
     Weekday::Mon,

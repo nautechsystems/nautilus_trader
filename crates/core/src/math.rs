@@ -89,6 +89,25 @@ pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
 ///
 /// Returns the index of the largest element in `xs` that is less than `x`,
 /// clamped to the valid range `[0, xs.len() - 1]`.
+///
+/// # Edge Cases
+///
+/// - For single-element arrays, always returns index 0, regardless of whether `x > xs[0]`
+/// - For values below the minimum, returns 0
+/// - For values at or above the maximum, returns `xs.len() - 1`
+///
+/// # Examples
+///
+/// ```
+/// use nautilus_core::math::pos_search;
+///
+/// // Normal case: find position between elements
+/// assert_eq!(pos_search(2.5, &[1.0, 2.0, 3.0, 4.0]), 1); // Between indices 1 and 2
+///
+/// // Single element: always returns 0
+/// assert_eq!(pos_search(5.0, &[10.0]), 0); // Even though x < xs[0]
+/// assert_eq!(pos_search(15.0, &[10.0]), 0); // Even though x > xs[0]
+/// ```
 #[inline]
 #[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
