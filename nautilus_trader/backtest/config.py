@@ -212,6 +212,8 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The `fsspec` filesystem protocol for the catalog.
     catalog_fs_storage_options : dict, optional
         The `fsspec` storage options.
+    catalog_fs_rust_storage_options : dict, optional
+        The `fsspec` storage options for the Rust backend.
     instrument_id : InstrumentId | str, optional
         The instrument ID for the data configuration.
     start_time : str or int, optional
@@ -242,6 +244,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     data_cls: str
     catalog_fs_protocol: str | None = None
     catalog_fs_storage_options: dict | None = None
+    catalog_fs_rust_storage_options: dict | None = None
     instrument_id: InstrumentId | None = None
     start_time: str | int | None = None
     end_time: str | int | None = None
