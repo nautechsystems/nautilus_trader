@@ -74,7 +74,7 @@ pub struct BitmexInstrument {
     pub state: BitmexInstrumentState,
     #[serde(rename = "typ")]
     pub instrument_type: BitmexInstrumentType,
-    pub listing: DateTime<Utc>,
+    pub listing: Option<DateTime<Utc>>,
     pub front: Option<DateTime<Utc>>,
     pub expiry: Option<DateTime<Utc>>,
     pub settle: Option<DateTime<Utc>>,

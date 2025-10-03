@@ -26,10 +26,12 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     ----------
     api_key : str, [default=None]
         The BitMEX API public key.
-        If ``None`` then will source the `BITMEX_API_KEY` environment variable.
+        If ``None`` then will source the `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY`
+        environment variable (depending on the `testnet` setting).
     api_secret : str, [default=None]
         The BitMEX API secret key.
-        If ``None`` then will source the `BITMEX_API_SECRET` environment variable.
+        If ``None`` then will source the `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET`
+        environment variable (depending on the `testnet` setting).
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.
@@ -71,10 +73,12 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     ----------
     api_key : str, [default=None]
         The BitMEX API public key.
-        If ``None`` then will source the `BITMEX_API_KEY` environment variable.
+        If ``None`` then will source the `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY`
+        environment variable (depending on the `testnet` setting).
     api_secret : str, [default=None]
         The BitMEX API secret key.
-        If ``None`` then will source the `BITMEX_API_SECRET` environment variable.
+        If ``None`` then will source the `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET`
+        environment variable (depending on the `testnet` setting).
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.

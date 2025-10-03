@@ -125,6 +125,9 @@ pub enum BitmexWsMessage {
         heartbeat_enabled: bool,
         /// Rate limit information.
         limit: BitmexRateLimit,
+        /// Application name (testnet only).
+        #[serde(rename = "appName")]
+        app_name: Option<String>,
     },
     /// Subscription response messages.
     Subscription {
@@ -159,7 +162,7 @@ pub struct BitmexHttpRequest {
 #[derive(Debug, Deserialize)]
 pub struct BitmexRateLimit {
     /// Number of requests remaining in the current time window.
-    pub remaining: i32,
+    pub remaining: Option<i32>,
 }
 
 /// Represents table-based messages.

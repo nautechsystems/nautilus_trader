@@ -1228,7 +1228,7 @@ impl BitmexFeedHandler {
                                         tracing::info!(
                                             version = version,
                                             heartbeat = heartbeat_enabled,
-                                            rate_limit = limit.remaining,
+                                            rate_limit = ?limit.remaining,
                                             "Welcome to the BitMEX Realtime API:",
                                         );
                                     }

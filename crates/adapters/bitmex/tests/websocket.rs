@@ -126,6 +126,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         "version": "2024-06-12T21:37:02.000Z",
         "timestamp": "2025-01-05T12:00:00.000Z",
         "docs": "https://www.bitmex.com/app/wsAPI",
+        "heartbeatEnabled": false,
         "limit": {
             "remaining": 40
         }

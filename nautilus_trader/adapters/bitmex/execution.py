@@ -139,6 +139,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             api_secret=config.api_secret,
             account_id=self.pyo3_account_id,
             heartbeat=30,
+            testnet=config.testnet,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)

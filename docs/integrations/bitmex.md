@@ -356,8 +356,10 @@ BitMEX exposes the current allowance via response headers:
 
 BitMEX API credentials can be provided either directly in the configuration or via environment variables:
 
-- `BITMEX_API_KEY`: Your BitMEX API key.
-- `BITMEX_API_SECRET`: Your BitMEX API secret.
+- `BITMEX_API_KEY`: Your BitMEX API key for production.
+- `BITMEX_API_SECRET`: Your BitMEX API secret for production.
+- `BITMEX_TESTNET_API_KEY`: Your BitMEX API key for testnet (when `testnet=True`).
+- `BITMEX_TESTNET_API_SECRET`: Your BitMEX API secret for testnet (when `testnet=True`).
 
 To generate API keys:
 
@@ -365,6 +367,15 @@ To generate API keys:
 2. Navigate to Account & Security → API Keys.
 3. Create a new API key with appropriate permissions.
 4. For testnet, use [testnet.bitmex.com](https://testnet.bitmex.com).
+
+:::note
+**Testnet API endpoints**:
+
+- REST API: `https://testnet.bitmex.com/api/v1`
+- WebSocket: `wss://ws.testnet.bitmex.com/realtime`
+
+The adapter automatically routes requests to the correct endpoints when `testnet=True` is configured.
+:::
 
 ### Data client configuration options
 

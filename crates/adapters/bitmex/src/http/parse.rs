@@ -369,7 +369,12 @@ pub fn parse_futures_instrument(
     ));
     let is_inverse = definition.is_inverse;
 
-    let activation_ns = UnixNanos::from(definition.listing);
+    let ts_event = UnixNanos::from(definition.timestamp);
+    let activation_ns = definition
+        .listing
+        .as_ref()
+        .map(|dt| UnixNanos::from(*dt))
+        .unwrap_or(ts_event);
     let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
     let price_increment = Price::from(definition.tick_size.to_string());
 
@@ -418,8 +423,6 @@ pub fn parse_futures_instrument(
         .max_price
         .map(|price| Price::from(price.to_string()));
     let min_price = None;
-    let ts_event = UnixNanos::from(definition.timestamp);
-
     let instrument = CryptoFuture::new(
         instrument_id,
         raw_symbol,
@@ -1770,9 +1773,11 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Spot,
-            listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                     .unwrap()
@@ -1876,9 +1881,11 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::PerpetualContract,
-            listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                     .unwrap()
@@ -1991,9 +1998,11 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Futures,
-            listing: DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2024-12-27T12:00:00.000Z")
                     .unwrap()

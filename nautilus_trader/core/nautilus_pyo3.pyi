@@ -6643,6 +6643,7 @@ class BitmexWebSocketClient:
         api_secret: str | None = None,
         account_id: AccountId | None = None,
         heartbeat: int | None = None,
+        testnet: bool = False,
     ) -> None: ...
     @property
     def url(self) -> str: ...

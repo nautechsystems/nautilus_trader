@@ -45,7 +45,8 @@ def get_bitmex_http_client(
     Cache and return a BitMEX HTTP client with the given key and secret.
 
     If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
-    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET``.
+    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET`` for production,
+    or ``BITMEX_TESTNET_API_KEY`` and ``BITMEX_TESTNET_API_SECRET`` when ``testnet=True``.
 
     Parameters
     ----------

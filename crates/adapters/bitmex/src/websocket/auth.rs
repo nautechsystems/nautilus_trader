@@ -47,7 +47,10 @@ impl AuthTracker {
 
         if let Ok(mut guard) = self.tx.lock() {
             if let Some(old) = guard.take() {
+                tracing::warn!("New authentication request superseding previous pending request");
                 let _ = old.send(Err("Authentication attempt superseded".to_string()));
+            } else {
+                tracing::debug!("Starting new authentication request");
             }
             *guard = Some(sender);
         }
