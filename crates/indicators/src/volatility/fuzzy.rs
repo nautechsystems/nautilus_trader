@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{ Debug, Display };
+use std::fmt::{Debug, Display};
 
-use arraydeque::{ ArrayDeque, Wrapping };
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 use strum::Display;
 
@@ -103,11 +103,7 @@ impl Display for FuzzyCandle {
         write!(
             f,
             "{}({},{},{},{})",
-            self.direction,
-            self.size,
-            self.body_size,
-            self.lower_wick_size,
-            self.upper_wick_size
+            self.direction, self.size, self.body_size, self.lower_wick_size, self.upper_wick_size
         )
     }
 }
@@ -119,7 +115,7 @@ impl FuzzyCandle {
         size: CandleSize,
         body_size: CandleBodySize,
         upper_wick_size: CandleWickSize,
-        lower_wick_size: CandleWickSize
+        lower_wick_size: CandleWickSize,
     ) -> Self {
         Self {
             direction,
@@ -192,7 +188,7 @@ impl Indicator for FuzzyCandlesticks {
             (&bar.open).into(),
             (&bar.high).into(),
             (&bar.low).into(),
-            (&bar.close).into()
+            (&bar.close).into(),
         );
     }
 
@@ -228,7 +224,7 @@ impl FuzzyCandlesticks {
         threshold1: f64,
         threshold2: f64,
         threshold3: f64,
-        threshold4: f64
+        threshold4: f64,
     ) -> Self {
         assert!(period <= MAX_CAPACITY);
         Self {
@@ -243,7 +239,7 @@ impl FuzzyCandlesticks {
                 CandleSize::None,
                 CandleBodySize::None,
                 CandleWickSize::None,
-                CandleWickSize::None
+                CandleWickSize::None,
             ),
             has_inputs: false,
             initialized: false,
@@ -300,8 +296,10 @@ impl FuzzyCandlesticks {
 
         let mean_length = self.lengths.iter().sum::<f64>() / (self.period as f64);
         let mean_body_percent = self.body_percents.iter().sum::<f64>() / (self.period as f64);
-        let mean_upper_percent = self.upper_wick_percents.iter().sum::<f64>() / (self.period as f64);
-        let mean_lower_percent = self.lower_wick_percents.iter().sum::<f64>() / (self.period as f64);
+        let mean_upper_percent =
+            self.upper_wick_percents.iter().sum::<f64>() / (self.period as f64);
+        let mean_lower_percent =
+            self.lower_wick_percents.iter().sum::<f64>() / (self.period as f64);
 
         let sd_length = Self::std_dev(&self.lengths, mean_length);
         let sd_body = Self::std_dev(&self.body_percents, mean_body_percent);
@@ -316,7 +314,7 @@ impl FuzzyCandlesticks {
             self.fuzzify_size(total, mean_length, sd_length),
             self.fuzzify_body_size(latest_body, mean_body_percent, sd_body),
             self.fuzzify_wick_size(latest_upper, mean_upper_percent, sd_upper),
-            self.fuzzify_wick_size(latest_lower, mean_lower_percent, sd_lower)
+            self.fuzzify_wick_size(latest_lower, mean_lower_percent, sd_lower),
         );
 
         self.vector = vec![
@@ -324,7 +322,7 @@ impl FuzzyCandlesticks {
             self.value.size as i32,
             self.value.body_size as i32,
             self.value.upper_wick_size as i32,
-            self.value.lower_wick_size as i32
+            self.value.lower_wick_size as i32,
         ];
     }
 
@@ -338,7 +336,7 @@ impl FuzzyCandlesticks {
             CandleSize::None,
             CandleBodySize::None,
             CandleWickSize::None,
-            CandleWickSize::None
+            CandleWickSize::None,
         );
         self.vector = Vec::new();
         self.last_open = 0.0;
@@ -360,7 +358,6 @@ impl FuzzyCandlesticks {
     }
 
     fn fuzzify_size(&self, length: f64, mean_length: f64, sd_lengths: f64) -> CandleSize {
-        // 非有限数或零长度都当作 "None"
         if !length.is_finite() || length == 0.0 {
             return CandleSize::None;
         }
@@ -391,7 +388,7 @@ impl FuzzyCandlesticks {
         &self,
         body_percent: f64,
         mean_body_percent: f64,
-        sd_body_percent: f64
+        sd_body_percent: f64,
     ) -> CandleBodySize {
         if body_percent == 0.0 {
             return CandleBodySize::None;
@@ -421,7 +418,7 @@ impl FuzzyCandlesticks {
         &self,
         wick_percent: f64,
         mean_wick_percent: f64,
-        sd_wick_percents: f64
+        sd_wick_percents: f64,
     ) -> CandleWickSize {
         if wick_percent == 0.0 {
             return CandleWickSize::None;
@@ -445,14 +442,14 @@ impl FuzzyCandlesticks {
         if buffer.is_empty() {
             return 0.0;
         }
-        let variance =
-            buffer
-                .iter()
-                .map(|v| {
-                    let d = v - mean;
-                    d * d
-                })
-                .sum::<f64>() / (buffer.len() as f64);
+        let variance = buffer
+            .iter()
+            .map(|v| {
+                let d = v - mean;
+                d * d
+            })
+            .sum::<f64>()
+            / (buffer.len() as f64);
         variance.sqrt()
     }
 }
@@ -465,7 +462,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{ stubs::fuzzy_candlesticks_10, stubs::fuzzy_candlesticks_1, stubs::fuzzy_candlesticks_3, volatility::fuzzy::FuzzyCandlesticks };
+    use crate::{
+        stubs::{fuzzy_candlesticks_1, fuzzy_candlesticks_3, fuzzy_candlesticks_10},
+        volatility::fuzzy::FuzzyCandlesticks,
+    };
 
     #[rstest]
     fn test_psl_initialized(fuzzy_candlesticks_10: FuzzyCandlesticks) {
@@ -476,7 +476,7 @@ mod tests {
         assert!(!fuzzy_candlesticks_10.has_inputs);
     }
 
-     #[rstest]
+    #[rstest]
     fn test_value_with_one_input(mut fuzzy_candlesticks_1: FuzzyCandlesticks) {
         //fix: When period = 1, the standard deviation is 0, and all fuzzy divisions based on mean ± threshold * sd become invalid.
         fuzzy_candlesticks_1.update_raw(123.90, 135.79, 117.09, 125.09);
@@ -526,12 +526,14 @@ mod tests {
         fuzzy_candlesticks_10.update_raw(98.0, 101.0, 96.0, 100.0);
 
         assert_eq!(fuzzy_candlesticks_10.vector.len(), 0);
-        assert!(!fuzzy_candlesticks_10.initialized, "Should not be initialized before period");
+        assert!(
+            !fuzzy_candlesticks_10.initialized,
+            "Should not be initialized before period"
+        );
         assert!(fuzzy_candlesticks_10.has_inputs, "Should  has inputs");
         assert_eq!(fuzzy_candlesticks_10.lengths.len(), 3);
         assert_eq!(fuzzy_candlesticks_10.body_percents.len(), 3);
     }
-
 
     #[rstest]
     fn test_value_with_ten_inputs(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
@@ -549,8 +551,14 @@ mod tests {
         assert_eq!(fuzzy_candlesticks_10.value.direction, CandleDirection::Bear);
         assert_eq!(fuzzy_candlesticks_10.value.size, CandleSize::VerySmall);
         assert_eq!(fuzzy_candlesticks_10.value.body_size, CandleBodySize::Small);
-        assert_eq!(fuzzy_candlesticks_10.value.upper_wick_size, CandleWickSize::Large);
-        assert_eq!(fuzzy_candlesticks_10.value.lower_wick_size, CandleWickSize::Small);
+        assert_eq!(
+            fuzzy_candlesticks_10.value.upper_wick_size,
+            CandleWickSize::Large
+        );
+        assert_eq!(
+            fuzzy_candlesticks_10.value.lower_wick_size,
+            CandleWickSize::Small
+        );
 
         let expected_vec = vec![-1, 1, 1, 3, 1];
         assert_eq!(fuzzy_candlesticks_10.vector, expected_vec);
@@ -567,8 +575,14 @@ mod tests {
         assert_eq!(fuzzy_candlesticks_10.value.direction, CandleDirection::None);
         assert_eq!(fuzzy_candlesticks_10.value.size, CandleSize::None);
         assert_eq!(fuzzy_candlesticks_10.value.body_size, CandleBodySize::None);
-        assert_eq!(fuzzy_candlesticks_10.value.upper_wick_size, CandleWickSize::None);
-        assert_eq!(fuzzy_candlesticks_10.value.lower_wick_size, CandleWickSize::None);
+        assert_eq!(
+            fuzzy_candlesticks_10.value.upper_wick_size,
+            CandleWickSize::None
+        );
+        assert_eq!(
+            fuzzy_candlesticks_10.value.lower_wick_size,
+            CandleWickSize::None
+        );
         assert_eq!(fuzzy_candlesticks_10.vector.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.last_open, 0.0);
         assert_eq!(fuzzy_candlesticks_10.last_low, 0.0);
@@ -582,8 +596,14 @@ mod tests {
         fuzzy_candlesticks_1.update_raw(100.0, 100.0, 100.0, 100.0); // high == low
         assert_eq!(fuzzy_candlesticks_1.value.size, CandleSize::None);
         assert_eq!(fuzzy_candlesticks_1.value.body_size, CandleBodySize::None);
-        assert_eq!(fuzzy_candlesticks_1.value.upper_wick_size, CandleWickSize::None);
-        assert_eq!(fuzzy_candlesticks_1.value.lower_wick_size, CandleWickSize::None);
+        assert_eq!(
+            fuzzy_candlesticks_1.value.upper_wick_size,
+            CandleWickSize::None
+        );
+        assert_eq!(
+            fuzzy_candlesticks_1.value.lower_wick_size,
+            CandleWickSize::None
+        );
         assert_eq!(fuzzy_candlesticks_1.value.direction, CandleDirection::None);
     }
 
@@ -596,22 +616,15 @@ mod tests {
             fuzzy_candlesticks_1.lengths.iter().all(|&v| v == 20.0),
             true
         );
-        assert!(
-            matches!(
-                fuzzy_candlesticks_1.value.size,
-                CandleSize::VerySmall | CandleSize::Small | CandleSize::Medium
-            )
-        );
+        assert!(matches!(
+            fuzzy_candlesticks_1.value.size,
+            CandleSize::VerySmall | CandleSize::Small | CandleSize::Medium
+        ));
     }
-    
+
     #[rstest]
     fn test_nan_inf_safety(mut fuzzy_candlesticks_1: FuzzyCandlesticks) {
-        fuzzy_candlesticks_1.update_raw(
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::INFINITY
-        );
+        fuzzy_candlesticks_1.update_raw(f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::INFINITY);
         fuzzy_candlesticks_1.update_raw(f64::NAN, f64::NAN, f64::NAN, f64::NAN);
         assert_eq!(fuzzy_candlesticks_1.value.direction, CandleDirection::None);
     }
@@ -648,9 +661,18 @@ mod tests {
         let actual_upper = fuzzy_candlesticks_1.upper_wick_percents[0];
         let actual_lower = fuzzy_candlesticks_1.lower_wick_percents[0];
 
-        assert!((actual_body - expected_body).abs() < 1e-6, "Body percent mismatch");
-        assert!((actual_upper - expected_upper_wick).abs() < 1e-6, "Upper wick percent mismatch");
-        assert!((actual_lower - expected_lower_wick).abs() < 1e-6, "Lower wick percent mismatch");
+        assert!(
+            (actual_body - expected_body).abs() < 1e-6,
+            "Body percent mismatch"
+        );
+        assert!(
+            (actual_upper - expected_upper_wick).abs() < 1e-6,
+            "Upper wick percent mismatch"
+        );
+        assert!(
+            (actual_lower - expected_lower_wick).abs() < 1e-6,
+            "Lower wick percent mismatch"
+        );
     }
 
     #[rstest]
@@ -694,7 +716,10 @@ mod tests {
         // lower_wick_percent = 10.0 / 15.0 ≈ 66.7%
 
         // Value is significantly above mean + 0.15*sd → should be Large
-        assert_eq!(fuzzy_candlesticks_3.value.lower_wick_size, CandleWickSize::Large);
+        assert_eq!(
+            fuzzy_candlesticks_3.value.lower_wick_size,
+            CandleWickSize::Large
+        );
     }
 
     #[rstest]
@@ -717,6 +742,9 @@ mod tests {
         // upper_wick_percent = 9.0 / 11.0 ≈ 81.8%
 
         // Should be classified as Large due to high relative size
-        assert_eq!(fuzzy_candlesticks_3.value.upper_wick_size, CandleWickSize::Large);
+        assert_eq!(
+            fuzzy_candlesticks_3.value.upper_wick_size,
+            CandleWickSize::Large
+        );
     }
 }

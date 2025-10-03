@@ -318,4 +318,3 @@ pub fn fuzzy_candlesticks_1() -> FuzzyCandlesticks {
 pub fn fuzzy_candlesticks_3() -> FuzzyCandlesticks {
     FuzzyCandlesticks::new(3, 0.1, 0.15, 0.2, 0.3)
 }
-
