@@ -1023,7 +1023,6 @@ pub trait DataActor:
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
@@ -1036,15 +1035,7 @@ pub trait DataActor:
                 get_actor_unchecked::<Self>(&actor_id).handle_bar(bar);
             })));
 
-        DataActorCore::subscribe_bars(
-            self,
-            topic,
-            handler,
-            bar_type,
-            client_id,
-            await_partial,
-            params,
-        );
+        DataActorCore::subscribe_bars(self, topic, handler, bar_type, client_id, params);
     }
 
     /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
@@ -2332,7 +2323,6 @@ impl DataActorCore {
         handler: ShareableMessageHandler,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
@@ -2345,7 +2335,6 @@ impl DataActorCore {
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
-            await_partial,
             params,
         });
 

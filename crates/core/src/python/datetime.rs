@@ -164,19 +164,29 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 /// ------
 /// ValueError
 ///     If `timestamp_ns` is invalid.
-#[must_use]
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(
     name = "unix_nanos_to_iso8601",
     signature = (timestamp_ns, nanos_precision=Some(true))
 )]
-pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64, nanos_precision: Option<bool>) -> String {
-    let unix_nanos = timestamp_ns.into();
-    if nanos_precision.unwrap_or(true) {
+pub fn py_unix_nanos_to_iso8601(
+    timestamp_ns: u64,
+    nanos_precision: Option<bool>,
+) -> PyResult<String> {
+    if timestamp_ns > i64::MAX as u64 {
+        return Err(to_pyvalue_err(
+            "timestamp_ns is out of range for conversion",
+        ));
+    }
+
+    let unix_nanos = UnixNanos::from(timestamp_ns);
+    let formatted = if nanos_precision.unwrap_or(true) {
         unix_nanos_to_iso8601(unix_nanos)
     } else {
         unix_nanos_to_iso8601_millis(unix_nanos)
-    }
+    };
+
+    Ok(formatted)
 }
 
 /// Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
@@ -233,4 +243,21 @@ pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
 #[pyfunction(name = "is_within_last_24_hours")]
 pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
     is_within_last_24_hours(UnixNanos::from(timestamp_ns)).map_err(to_pyvalue_err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_py_unix_nanos_to_iso8601_errors_on_out_of_range_timestamp() {
+        let result = py_unix_nanos_to_iso8601((i64::MAX as u64) + 1, Some(true));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_py_unix_nanos_to_iso8601_formats_valid_timestamp() {
+        let output = py_unix_nanos_to_iso8601(0, Some(false)).unwrap();
+        assert_eq!(output, "1970-01-01T00:00:00.000Z");
+    }
 }

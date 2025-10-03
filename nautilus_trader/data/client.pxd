@@ -183,5 +183,5 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
     cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
     cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_bars(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
     cpdef void _handle_order_book_depths(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)

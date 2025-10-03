@@ -944,15 +944,14 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "subscribe_bars")]
-    #[pyo3(signature = (bar_type, client_id=None, await_partial=false, params=None))]
+    #[pyo3(signature = (bar_type, client_id=None, params=None))]
     fn py_subscribe_bars(
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_bars(bar_type, client_id, await_partial, params);
+        self.subscribe_bars(bar_type, client_id, params);
         Ok(())
     }
 

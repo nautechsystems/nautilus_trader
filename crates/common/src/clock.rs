@@ -1559,14 +1559,26 @@ mod tests {
             .unwrap();
 
         wait_for_events(&events, 2, Duration::from_millis(250));
-        events.lock().unwrap().clear();
 
         clock.reset();
 
+        // Wait for any in-flight events to arrive
+        let start = std::time::Instant::now();
         wait_until(
-            || events.lock().unwrap().is_empty(),
-            Duration::from_millis(500),
+            || start.elapsed() >= Duration::from_millis(50),
+            Duration::from_secs(2),
         );
+
+        // Clear any events that arrived before reset took effect
+        events.lock().unwrap().clear();
+
+        // Verify no new events arrive (timer should be stopped)
+        let start = std::time::Instant::now();
+        wait_until(
+            || start.elapsed() >= Duration::from_millis(50),
+            Duration::from_secs(2),
+        );
+        assert!(events.lock().unwrap().is_empty());
     }
 
     #[rstest]

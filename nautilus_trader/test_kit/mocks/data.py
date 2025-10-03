@@ -126,7 +126,6 @@ class MockMarketDataClient(MarketDataClient):
         self._handle_bars_py(
             request.bar_type,
             self.bars,
-            None,
             request.id,
             request.start,
             request.end,

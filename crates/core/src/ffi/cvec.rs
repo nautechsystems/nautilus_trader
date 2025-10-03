@@ -55,8 +55,22 @@ pub struct CVec {
     pub cap: usize,
 }
 
-/// Empty derivation for Send to satisfy `pyclass` requirements
-/// however this is only designed for single threaded use for now
+// SAFETY: CVec is marked as Send to satisfy PyO3's PyCapsule requirements, which need
+// to transfer ownership across the Python/Rust boundary. However, CVec contains raw
+// pointers and is only safe to use in single-threaded contexts or with external
+// synchronization guarantees.
+//
+// The Send impl is required for:
+// 1. PyO3's PyCapsule::new_with_destructor which has a Send bound
+// 2. Transferring CVec ownership to Python (which runs on a single GIL-protected thread)
+//
+// IMPORTANT: Do not send CVec instances across threads without ensuring:
+// - The underlying data type T is itself Send + Sync
+// - Proper external synchronization (e.g., mutex) protects concurrent access
+// - The CVec is consumed on the same thread where it will be reconstructed
+//
+// In practice, CVec usage in this codebase is confined to the Python FFI boundary
+// where the Python GIL provides the necessary synchronization.
 unsafe impl Send for CVec {}
 
 impl CVec {

@@ -187,6 +187,7 @@ serde_json = { version = "1.0.145", default-features = false, features = ["std"]
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
 simple_logger = "5.0.0"
+static_assertions = "1.1.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
   "postgres",
   "runtime-tokio",
@@ -194,7 +195,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "derive",
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = { version = "0.37.1", default-features = false, features = ["system"] }
+sysinfo = { version = "0.37.2", default-features = false, features = ["system"] }
 tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
 thiserror = "2.0.17"
 thousands = "0.2.0"

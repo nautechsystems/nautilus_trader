@@ -132,9 +132,8 @@ class MyActor(Actor):
         self.subscribe_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            client_id=None,       # ClientId, optional
-            await_partial=False,  # bool, default False
-            params=None,          # dict[str, Any], optional
+            client_id=None,  # ClientId, optional
+            params=None,     # dict[str, Any], optional
         )
 
     def on_historical_data(self, data: Data) -> None:

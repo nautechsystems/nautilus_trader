@@ -260,7 +260,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_order_book_depths(self, list depths)
-    cpdef void _handle_bars(self, list bars, Bar partial)
+    cpdef void _handle_bars(self, list bars)
     cpdef dict _handle_aggregated_bars(self, DataResponse response)
     cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 

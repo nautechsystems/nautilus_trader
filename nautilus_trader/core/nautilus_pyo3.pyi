@@ -263,7 +263,6 @@ class DataActor:
         self,
         bar_type: BarType,
         client_id: ClientId | None = None,
-        await_partial: bool = False,
         params: dict[str, str] | None = None,
     ) -> None:
         ...
