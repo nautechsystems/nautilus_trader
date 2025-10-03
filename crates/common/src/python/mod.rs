@@ -48,6 +48,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::cache::CacheConfig>()?;
     m.add_class::<crate::cache::Cache>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
+    m.add_class::<crate::python::cache::PyCache>()?;
     m.add_class::<crate::python::clock::PyClock>()?;
     m.add_class::<crate::python::logging::PyLogger>()?;
     m.add_class::<crate::python::handler::PythonMessageHandler>()?;

@@ -1848,12 +1848,12 @@ pub struct DataActorCore {
     clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
     cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
     state: ComponentState,
+    topic_handlers: AHashMap<MStr<Topic>, ShareableMessageHandler>,
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
-    topic_handlers: AHashMap<MStr<Topic>, ShareableMessageHandler>,
 }
 
 impl Debug for DataActorCore {
@@ -1911,12 +1911,12 @@ impl DataActorCore {
             clock: None,     // None until registered
             cache: None,     // None until registered
             state: ComponentState::default(),
+            topic_handlers: AHashMap::new(),
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
             #[cfg(feature = "indicators")]
             indicators: Indicators::default(),
-            topic_handlers: AHashMap::new(),
         }
     }
 
@@ -1990,6 +1990,30 @@ impl DataActorCore {
                 )
             })
             .borrow()
+    }
+
+    /// Returns a read-only reference to the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered (cache is `None`).
+    pub fn cache(&self) -> Ref<'_, Cache> {
+        self.cache
+            .as_ref()
+            .expect("DataActor must be registered before accessing cache")
+            .borrow()
+    }
+
+    /// Returns a clone of the reference-counted cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered (cache is `None`).
+    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        self.cache
+            .as_ref()
+            .expect("DataActor must be registered before accessing cache")
+            .clone()
     }
 
     // -- REGISTRATION ----------------------------------------------------------------------------

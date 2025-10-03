@@ -56,7 +56,7 @@ use crate::{
     clock::Clock,
     component::Component,
     enums::ComponentState,
-    python::{clock::PyClock, logging::PyLogger},
+    python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -447,6 +447,18 @@ impl PyDataActor {
             ))
         } else {
             Ok(self.clock.clone())
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "cache")]
+    fn py_cache(&self) -> PyResult<PyCache> {
+        if !self.core.is_registered() {
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Actor must be registered with a trader before accessing cache",
+            ))
+        } else {
+            Ok(PyCache::from_rc(self.core.cache_rc()))
         }
     }
 
