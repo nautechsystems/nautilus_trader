@@ -1054,10 +1054,20 @@ class DYDXDataClient(LiveMarketDataClient):
             )
 
         if all_bars:
-            # For historical data, the last bar might be partial, don't include it
+            # Filter out incomplete bars where close_time >= current_time
+            # dYdX may return the current forming bar which should be excluded from historical data
+            current_time_ns = self._clock.timestamp_ns()
+            complete_bars = [bar for bar in all_bars if bar.ts_event < current_time_ns]
+
+            if not complete_bars:
+                self._log.warning(
+                    f"No complete bars available for {request.bar_type} (all bars were incomplete)",
+                )
+                return
+
             self._handle_bars_py(
                 request.bar_type,
-                all_bars,
+                complete_bars,
                 request.id,
                 request.start,
                 request.end,

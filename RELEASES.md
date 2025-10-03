@@ -29,6 +29,7 @@ This will be the final release with support for Python 3.11.
 - Added Polymarket native market orders support
 
 ### Breaking Changes
+- Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
 ### Internal Improvements

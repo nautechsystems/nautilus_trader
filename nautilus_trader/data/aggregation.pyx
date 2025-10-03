@@ -115,7 +115,6 @@ cdef class BarBuilder:
         Condition.not_none(price, "price")
         Condition.not_none(size, "size")
 
-        # TODO: What happens if the first tick updates before a partial bar is applied?
         if ts_init < self.ts_last:
             return  # Not applicable
 
@@ -147,7 +146,6 @@ cdef class BarBuilder:
         """
         Condition.not_none(bar, "bar")
 
-        # TODO: What happens if the first bar updates before a partial bar is applied?
         if ts_init < self.ts_last:
             return  # Not applicable
 
@@ -703,8 +701,7 @@ cdef class RenkoBarAggregator(BarAggregator):
 
             # Update last_close to the final brick close
             self._last_close = current_close
-        # For Renko bars, we don't build partial bars
-        # If price movement is less than brick size, we just accumulate in the builder
+        # If price movement is less than brick size, we accumulate in the builder
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         # Initialize last_close if this is the first update
@@ -759,8 +756,7 @@ cdef class RenkoBarAggregator(BarAggregator):
 
             # Update last_close to the final brick close
             self._last_close = current_close
-        # For Renko bars, we don't build partial bars
-        # If price movement is less than brick size, we just accumulate in the builder
+        # If price movement is less than brick size, we accumulate in the builder
 
 
 cdef class TimeBarAggregator(BarAggregator):

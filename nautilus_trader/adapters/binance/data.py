@@ -666,10 +666,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=request.limit if request.limit > 0 else None,
             )
 
-        # Binance always returns the *last* bar as an unfinished / partial bar
-        # which we publish separately from the historical series.  When the
-        # query returned no data we avoid raising ``IndexError`` by checking
-        # for an empty collection first.
         if not bars:
             self._log.warning(
                 f"No bars returned for {request.bar_type} between "
@@ -677,9 +673,20 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
+        # Filter out incomplete bars where close_time >= current_time
+        # Binance may return the current forming bar which should be excluded from historical data
+        current_time_ns = self._clock.timestamp_ns()
+        complete_bars = [bar for bar in bars if bar.ts_event < current_time_ns]
+
+        if not complete_bars:
+            self._log.warning(
+                f"No complete bars available for {request.bar_type} (all bars were incomplete)",
+            )
+            return
+
         self._handle_bars(
             request.bar_type,
-            bars,
+            complete_bars,
             request.id,
             request.start,
             request.end,

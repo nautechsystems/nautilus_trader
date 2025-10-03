@@ -301,14 +301,13 @@ class TestDYDXDataClientBarPartitioning:
                 mock_handle.assert_called_once()
 
     # =====================================================================================
-    # PARTIAL BAR HANDLING TESTS
+    # BAR AGGREGATION TESTS
     # =====================================================================================
 
     @pytest.mark.asyncio
-    async def test_all_bars_included_in_final_result(self):
+    async def test_partial_bar_exclusion_from_final_result(self):
         """
-        Test that all bars are included in the final result (partial bar concept
-        removed).
+        Test that partial bars (where close_time >= current time) are excluded.
         """
         # Arrange
         start_time = datetime(2024, 1, 1, tzinfo=UTC)
@@ -321,11 +320,17 @@ class TestDYDXDataClientBarPartitioning:
             limit=0,
         )
 
-        # Create mock candles
+        # Create mock candles: 59 complete bars + 1 partial bar with future timestamp
         mock_candles = [
             self.create_mock_candle(start_time + timedelta(minutes=i), 100.0 + i)
-            for i in range(60)  # 60 bars
+            for i in range(59)  # 59 complete bars in the past
         ]
+
+        # Add one partial bar with a timestamp far in the future (still forming)
+        future_time = datetime.now(UTC) + timedelta(hours=1)
+        mock_candles.append(
+            self.create_mock_candle(future_time, 159.0, is_partial=True),
+        )
 
         mock_response = DYDXCandlesResponse(candles=mock_candles)
 
@@ -342,8 +347,8 @@ class TestDYDXDataClientBarPartitioning:
                 call_args = mock_handle.call_args
                 bars = call_args[0][1]  # The bars argument
 
-                # All bars should be included
-                assert len(bars) == 60
+                # Should have only 59 complete bars, partial bar excluded
+                assert len(bars) == 59
 
     # =====================================================================================
     # ERROR HANDLING AND RESILIENCE TESTS
