@@ -34,6 +34,7 @@ dotenvy = { workspace = true }
 log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
+alloy-primitives = { workspace = true }
 
 [[bin]]
 name = "nautilus"

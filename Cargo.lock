@@ -4714,6 +4714,7 @@ dependencies = [
 name = "nautilus-cli"
 version = "0.51.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "clap",
  "dotenvy",
