@@ -12,6 +12,7 @@ This will be the final release with support for Python 3.11.
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
 - Added `convert_quote_qty_to_base` config option to `ExecEngineConfig` (default `True` to retain current behavior) allows adapters to keep quote-denominated sizes when needed
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
+- Added `fs_rust_storage_options` to Python catalog (#3008), thanks @faysou and @Johnkhk
 - Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
@@ -65,6 +66,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded `databento` crate to v0.34.1
 - Upgraded `datafusion` crate to v50.1.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
+- Upgraded `redis` crate to v0.32.7
 
 ### Fixes
 - Fixed reduce-only order panic when quantity exceeds position
@@ -76,6 +78,9 @@ This will be the final release with support for Python 3.11.
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed `SandboxExecutionClient` instrument data handling
 - Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
+- Fixed safe encoded symbols (#2964), thanks @ms32035
+- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
+- Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed BitMEX testnet support
@@ -84,13 +89,11 @@ This will be the final release with support for Python 3.11.
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
-- Fixed Polymarket market order submission to use native CLOB market orders (#2984)
+- Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
 - Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
-- Fixed safe encoded symbols (#2964), thanks @ms32035
-- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
@@ -1058,7 +1061,7 @@ For an explanation on compiling with or without high-precision mode, see the [pr
 - Changed `TradeTick` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
 - Changed `Bar` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
 - Changed `BettingInstrument` default `min_notional` to `None`
-- Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271)
+- Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271), thanks @ryantam626
 - Changed `GATEIO` Tardis venue to `GATE_IO` for consistency with `CRYPTO_COM` and `BLOCKCHAIN_COM`
 - Removed `max_ws_reconnection_tries` for dYdX configs (no longer applicable with infinite retries and exponential backoff)
 - Removed `max_ws_reconnection_tries` for Bybit configs (no longer applicable with infinite retries and exponential backoff)
@@ -3780,7 +3783,7 @@ Released on 12th September 2021.
 ### Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363)
 - Fixed behavior of `reduce_only` orders for both submission and filling (#437)
-- Fixed PnL calculation for `CASH` accounts when commission negative (#436)
+- Fixed PnL calculation for `CASH` accounts when commission negative (#436), thanks for reporting @imcu
 
 ---
 
