@@ -49,6 +49,14 @@ repos:
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
         files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
 
+      - id: check-non-latin-text
+        name: check non-Latin text
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        entry: .pre-commit-hooks/check_non_latin_text.sh
+        language: script
+        types: [text]
+        files: '\.(rs|py|pyx|md|toml|yaml|yml)$'
+
       - id: check-toml-codegen
         name: check toml-codegen
         description: Ensures TOML files don't contain the 'codegen-backend' keyword

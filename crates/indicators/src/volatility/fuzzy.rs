@@ -640,13 +640,11 @@ mod tests {
 
     #[rstest]
     fn test_body_and_wick_percentages(mut fuzzy_candlesticks_1: FuzzyCandlesticks) {
-        // 构造一个典型K线
         let open: f64 = 100.0;
         let close: f64 = 110.0;
         let high: f64 = 120.0;
         let low: f64 = 90.0;
 
-        // 手工计算预期比例
         let total = high - low; // 30
         let expected_body = (close - open).abs() / total; // 10 / 30 = 0.3333
         let expected_upper_wick = (high - close.max(open)) / total; // (120 - 110) / 30 = 0.3333
