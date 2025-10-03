@@ -380,13 +380,6 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
-            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            if instrument is None:
-                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
-
-            price_precision = instrument.price_precision
-            size_precision = instrument.size_precision
-
             if order.order_type == OrderType.TRAILING_STOP_MARKET:
                 exec_client.generate_order_updated(
                     strategy_id=strategy_id,
