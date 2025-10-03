@@ -30,11 +30,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-]
+ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",

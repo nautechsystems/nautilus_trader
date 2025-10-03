@@ -18,7 +18,7 @@ name = "nautilus_infrastructure"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["redis"]  # redis needed by `nautilus_trader` by default for now
+default = ["redis"] # redis needed by `nautilus_trader` by default for now
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",

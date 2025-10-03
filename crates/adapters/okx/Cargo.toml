@@ -75,7 +75,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }  # Needed for example binaries
+tracing-subscriber = { workspace = true } # Needed for example binaries
 ustr = { workspace = true }
 zeroize = { workspace = true }
 

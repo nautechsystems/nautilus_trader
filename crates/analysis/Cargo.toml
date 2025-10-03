@@ -25,11 +25,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-python = [
-  "nautilus-core/python",
-  "nautilus-model/python",
-  "pyo3",
-]
+python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
 
 [package.metadata.docs.rs]
 all-features = true

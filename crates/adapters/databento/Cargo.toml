@@ -25,22 +25,15 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-live = [
-  "nautilus-live",
-  "nautilus-system",
-  "dotenvy",
-  "tracing-subscriber",
-]
+live = ["nautilus-live", "nautilus-system", "dotenvy", "tracing-subscriber"]
 python = [
-  "nautilus-core/ffi",  # Temporary as python currently relies on the ffi CVec
+  "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
-high-precision = [
-  "nautilus-model/high-precision",
-]
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true

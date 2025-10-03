@@ -41,11 +41,7 @@ python = [
   "pyo3",
 ]
 high-precision = ["nautilus-model/high-precision"]
-defi = [
-  "nautilus-common/defi",
-  "nautilus-model/defi",
-  "alloy-primitives",
-]
+defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
 all-features = true

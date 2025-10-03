@@ -28,6 +28,11 @@ repos:
     hooks:
       - id: gitlint
 
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:

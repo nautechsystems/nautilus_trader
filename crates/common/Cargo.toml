@@ -26,11 +26,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = [
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-  "cbindgen",
-]
+ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "cbindgen"]
 indicators = ["nautilus-indicators"]
 python = [
   "nautilus-core/python",
@@ -38,10 +34,7 @@ python = [
   "pyo3",
   "pyo3-async-runtimes",
 ]
-defi = [
-  "nautilus-model/defi",
-  "alloy-primitives",
-]
+defi = ["nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
 all-features = true
