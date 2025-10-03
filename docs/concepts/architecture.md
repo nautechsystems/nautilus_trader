@@ -26,7 +26,7 @@ The major architectural techniques and design patterns employed by NautilusTrade
 - [Event-driven architecture](https://en.wikipedia.org/wiki/Event-driven_programming)
 - [Messaging patterns](https://en.wikipedia.org/wiki/Messaging_pattern) (Pub/Sub, Req/Rep, point-to-point)
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
-- [Crash-only design](https://en.wikipedia.org/wiki/Crash-only_software)
+- [Crash-only design](#crash-only-design)
 
 These techniques have been utilized to assist in achieving certain architectural quality attributes.
 
@@ -42,6 +42,101 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 - Testability
 - Maintainability
 - Deployability
+
+### Crash-only design
+
+NautilusTrader embraces [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software),
+a philosophy where *"the only way to stop the system is to crash it"*, and *"the only way to bring it
+up is to recover from a crash"*. This approach simplifies state management and improves reliability
+by eliminating the complexity of graceful shutdown code paths that are rarely tested.
+
+Key principles:
+
+- **Single code path** - Recovery from crash is the primary (and only) initialization path, ensuring it is well-tested.
+- **No graceful shutdown** - The system does not attempt complex cleanup procedures that may fail or hang.
+- **Externalized state** - Critical state is persisted externally (database, message bus) so crashes do not lose data.
+- **Fast restart** - The system is designed to restart quickly after a crash, minimizing downtime.
+- **Idempotent operations** - Operations are designed to be safely retried after restart.
+
+This design complements the [fail-fast policy](#data-integrity-and-fail-fast-policy), where
+unrecoverable errors (data corruption, invariant violations) result in immediate process termination
+rather than attempting to continue in a compromised state.
+
+**References:**
+
+- [Crash-Only Software](https://www.usenix.org/conference/hotos-ix/crash-only-software) - Candea & Fox, HotOS 2003 (original research paper)
+- [Microreboot—A Technique for Cheap Recovery](https://www.usenix.org/conference/osdi-04/microreboot—-technique-cheap-recovery) - Candea et al., OSDI 2004
+- [The properties of crash-only software](https://brooker.co.za/blog/2012/01/22/crash-only.html) - Marc Brooker's blog
+- [Crash-only software: More than meets the eye](https://lwn.net/Articles/191059/) - LWN.net article
+- [Recovery-Oriented Computing (ROC) Project](http://roc.cs.berkeley.edu/) - UC Berkeley/Stanford research
+
+### Data integrity and fail-fast policy
+
+NautilusTrader prioritizes data integrity over availability for trading operations. The system employs
+a strict fail-fast policy for arithmetic operations and data handling to prevent silent data corruption
+that could lead to incorrect trading decisions.
+
+#### Fail-fast principles
+
+The system will fail fast (panic or return an error) when encountering:
+
+- Arithmetic overflow or underflow in operations on timestamps, prices, or quantities that exceed valid ranges.
+- Invalid data during deserialization including NaN, Infinity, or out-of-range values in market data or configuration.
+- Type conversion failures such as negative values where only positive values are valid (timestamps, quantities).
+- Malformed input parsing for prices, timestamps, or precision values.
+
+Rationale:
+
+In trading systems, corrupt data is worse than no data. A single incorrect price, timestamp, or quantity
+can cascade through the system, resulting in:
+
+- Incorrect position sizing or risk calculations.
+- Orders placed at wrong prices.
+- Backtests producing misleading results.
+- Silent financial losses.
+
+By crashing immediately on invalid data, NautilusTrader ensures:
+
+1. **No silent corruption** - Invalid data never propagates through the system.
+2. **Immediate feedback** - Issues are discovered during development and testing, not in production.
+3. **Audit trail** - Crash logs clearly identify the source of invalid data.
+4. **Deterministic behavior** - The same invalid input always produces the same failure.
+
+#### When fail-fast applies
+
+Panics are used for:
+
+- Programmer errors (logic bugs, incorrect API usage).
+- Data that violates fundamental invariants (negative timestamps, NaN prices).
+- Arithmetic that would silently produce incorrect results.
+
+Results or Options are used for:
+
+- Expected runtime failures (network errors, file I/O).
+- Business logic validation (order constraints, risk limits).
+- User input validation.
+- Library APIs exposed to downstream crates where callers need explicit error handling without relying on panics for control flow.
+
+#### Example scenarios
+
+```rust
+// CORRECT: Panics on overflow - prevents data corruption
+let total_ns = timestamp1 + timestamp2; // Panics if result > u64::MAX
+
+// CORRECT: Rejects NaN during deserialization
+let price = serde_json::from_str("NaN"); // Error: "must be finite"
+
+// CORRECT: Explicit overflow handling when needed
+let total_ns = timestamp1.checked_add(timestamp2)?; // Returns Option<UnixNanos>
+```
+
+This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
+and ensures that NautilusTrader maintains the highest standards of data correctness for production trading.
+
+In production deployments, the system is typically configured with `panic = abort` in release builds,
+ensuring that any panic results in a clean process termination that can be handled by process supervisors
+or orchestration systems. This aligns with the [crash-only design](#crash-only-design) principle, where unrecoverable errors
+lead to immediate restart rather than attempting to continue in a potentially corrupted state.
 
 ## System architecture
 
