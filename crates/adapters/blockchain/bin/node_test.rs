@@ -36,6 +36,7 @@ use nautilus_model::{
     defi::{Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
     identifiers::{ClientId, InstrumentId, TraderId},
 };
+
 // Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
 // To see additional tracing logs `export RUST_LOG=debug,h2=off`
@@ -57,8 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     // let from_block = Some(22_735_000_u64); // Ethereum
-    // let from_block = Some(348_860_000_u64); // Arbitrum
-    let from_block = None; // No sync
+    let from_block = Some(350_000_000_u64); // Arbitrum
+    // let from_block = None; // No sync
 
     let dex_pool_filter = DexPoolFilters::new(Some(true));
 
@@ -141,6 +142,14 @@ impl BlockchainSubscriberActorConfig {
         Self::new(client_id, chain, pools)
     }
 
+    /// Returns a string representation of the configuration.
+    fn __repr__(&self) -> String {
+        format!(
+            "BlockchainSubscriberActorConfig(client_id={}, chain={:?}, pools={:?})",
+            self.client_id, self.chain, self.pools
+        )
+    }
+
     /// Returns the client ID.
     #[getter]
     const fn client_id(&self) -> ClientId {
@@ -157,14 +166,6 @@ impl BlockchainSubscriberActorConfig {
     #[getter]
     fn pools(&self) -> Vec<InstrumentId> {
         self.pools.clone()
-    }
-
-    /// Returns a string representation of the configuration.
-    fn __repr__(&self) -> String {
-        format!(
-            "BlockchainSubscriberActorConfig(client_id={}, chain={:?}, pools={:?})",
-            self.client_id, self.chain, self.pools
-        )
     }
 }
 
@@ -256,6 +257,16 @@ impl DataActor for BlockchainSubscriberActor {
         log_info!("Received {block}", color = LogColor::Cyan);
 
         self.received_blocks.push(block.clone());
+
+        {
+            let cache = self.cache();
+
+            for pool_id in &self.config.pools {
+                let pool_profiler = cache.pool_profiler(pool_id);
+                log_info!("{pool_profiler:?}", color = LogColor::Magenta);
+            }
+        }
+
         Ok(())
     }
 

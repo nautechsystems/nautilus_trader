@@ -2311,7 +2311,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         "USDC".to_string(),
         6,
     );
-    let pool = Pool::new(
+    let mut pool = Pool::new(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
@@ -2323,13 +2323,14 @@ fn test_pool_updater_processes_swap_updates_profiler(
         UnixNanos::from(1),
     );
 
+    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
     profiler.initialize(initial_price);
 
     // Add liquidity so swaps can be processed
@@ -2487,7 +2488,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         "USDC".to_string(),
         6,
     );
-    let pool = Pool::new(
+    let mut pool = Pool::new(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
@@ -2499,13 +2500,14 @@ fn test_pool_updater_processes_mint_updates_profiler(
         UnixNanos::from(1),
     );
 
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    let initial_price = U160::from(79228162514264337593543950336u128);
     profiler.initialize(initial_price);
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
@@ -2604,7 +2606,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         "USDC".to_string(),
         6,
     );
-    let pool = Pool::new(
+    let mut pool = Pool::new(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
@@ -2616,13 +2618,14 @@ fn test_pool_updater_processes_burn_updates_profiler(
         UnixNanos::from(1),
     );
 
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    let initial_price = U160::from(79228162514264337593543950336u128);
     profiler.initialize(initial_price);
 
     // First mint some liquidity
@@ -2743,7 +2746,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         "USDC".to_string(),
         6,
     );
-    let pool = Pool::new(
+    let mut pool = Pool::new(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
@@ -2755,13 +2758,14 @@ fn test_pool_updater_processes_collect_updates_profiler(
         UnixNanos::from(1),
     );
 
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    let initial_price = U160::from(79228162514264337593543950336u128);
     profiler.initialize(initial_price);
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 

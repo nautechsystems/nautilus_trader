@@ -108,6 +108,10 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(block), LogColor.CYAN)
 
+        for pool_id in self.pools:
+            pool = self.cache.pool_profiler(pool_id)
+            self.log.info(repr(pool), LogColor.MAGENTA)
+
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """
         Actions to be performed on receiving a pool swap.

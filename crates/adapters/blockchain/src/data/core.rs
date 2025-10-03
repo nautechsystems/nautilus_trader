@@ -21,7 +21,8 @@ use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
-    SharedPool, Token, data::PoolFeeCollect,
+    SharedPool, Token,
+    data::{DefiData, DexPoolData, PoolFeeCollect},
 };
 
 use crate::{
@@ -967,8 +968,15 @@ impl BlockchainDataClientCore {
             }
         }
 
-        self.cache.add_pools_batch(pools).await?;
+        self.cache.add_pools_batch(pools.clone()).await?;
         pool_buffer.clear();
+
+        // Send each pool as a data event so profilers can be created
+        for pool in pools {
+            let data = DataEvent::DeFi(DefiData::Pool(pool));
+            self.send_data(data);
+        }
+
         Ok(())
     }
 
@@ -1026,7 +1034,18 @@ impl BlockchainDataClientCore {
             tracing::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
 
             self.cache.add_dex(dex_extended.dex.clone()).await?;
-            self.cache.load_pools(&dex_id).await?;
+            let loaded_pools = self.cache.load_pools(&dex_id).await?;
+
+            // Send each loaded pool as a data event
+            for pool in loaded_pools.clone() {
+                let data = DataEvent::DeFi(DefiData::Pool(pool));
+                self.send_data(data);
+            }
+
+            // Replay historical events for each pool to hydrate profilers
+            for pool in loaded_pools {
+                self.replay_pool_events(&pool, &dex_extended.dex).await?;
+            }
 
             self.subscription_manager.register_dex_for_subscriptions(
                 dex_id,
@@ -1039,6 +1058,63 @@ impl BlockchainDataClientCore {
         } else {
             anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name)
         }
+    }
+
+    /// Replays historical events for a pool to hydrate its profiler state.
+    ///
+    /// Streams all historical swap, liquidity, and fee collect events from the database
+    /// and sends them through the normal data event pipeline to build up pool profiler state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database streaming fails or event processing fails.
+    async fn replay_pool_events(&self, pool: &Pool, dex: &SharedDex) -> anyhow::Result<()> {
+        if let Some(database) = &self.cache.database {
+            tracing::info!(
+                "Replaying historical events for pool {} to hydrate profiler",
+                pool.instrument_id
+            );
+
+            let mut event_stream =
+                database.stream_pool_events(self.chain.clone(), dex.clone(), &pool.address);
+            let mut event_count = 0;
+
+            while let Some(event_result) = event_stream.next().await {
+                match event_result {
+                    Ok(event) => {
+                        let data_event = match event {
+                            DexPoolData::Swap(swap) => DataEvent::DeFi(DefiData::PoolSwap(swap)),
+                            DexPoolData::LiquidityUpdate(update) => {
+                                DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))
+                            }
+                            DexPoolData::FeeCollect(collect) => {
+                                DataEvent::DeFi(DefiData::PoolFeeCollect(collect))
+                            }
+                        };
+                        self.send_data(data_event);
+                        event_count += 1;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Error streaming event for pool {}: {e}",
+                            pool.instrument_id
+                        );
+                    }
+                }
+            }
+
+            tracing::info!(
+                "Replayed {event_count} historical events for pool {}",
+                pool.instrument_id
+            );
+        } else {
+            tracing::debug!(
+                "No database available, skipping event replay for pool {}",
+                pool.instrument_id
+            );
+        }
+
+        Ok(())
     }
 
     /// Determines the starting block for syncing operations.

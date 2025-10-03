@@ -204,10 +204,14 @@ impl BlockchainCache {
 
     /// Loads DEX exchange pools from the database into the in-memory cache.
     ///
+    /// Returns the loaded pools.
+    ///
     /// # Errors
     ///
     /// Returns an error if the DEX has not been registered or if database operations fail.
-    pub async fn load_pools(&mut self, dex_id: &DexType) -> anyhow::Result<()> {
+    pub async fn load_pools(&mut self, dex_id: &DexType) -> anyhow::Result<Vec<Pool>> {
+        let mut loaded_pools = Vec::new();
+
         if let Some(database) = &self.database {
             let dex = self
                 .get_dex(dex_id)
@@ -270,11 +274,12 @@ impl BlockchainCache {
                     }
                 }
 
-                // Add pool to cache
+                // Add pool to cache and loaded pools list
+                loaded_pools.push(pool.clone());
                 self.pools.insert(pool.address, Arc::new(pool));
             }
         }
-        Ok(())
+        Ok(loaded_pools)
     }
 
     /// Loads block timestamps from the database starting `from_block` number
