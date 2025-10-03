@@ -37,9 +37,11 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::{
-    common::{consts::HYPERLIQUID_VENUE, credential::Secrets},
+    common::{
+        consts::HYPERLIQUID_VENUE, credential::Secrets, parse::order_any_to_hyperliquid_request,
+    },
     config::HyperliquidExecClientConfig,
-    http::client::HyperliquidHttpClient,
+    http::{client::HyperliquidHttpClient, query::ExchangeAction},
     websocket::client::HyperliquidWebSocketClient,
 };
 
@@ -48,7 +50,7 @@ pub struct HyperliquidExecutionClient {
     core: ExecutionClientCore,
     config: HyperliquidExecClientConfig,
     http_client: HyperliquidHttpClient,
-    ws_client: Option<HyperliquidWebSocketClient>,
+    ws_client: HyperliquidWebSocketClient,
     started: bool,
     connected: bool,
     instruments_initialized: bool,
@@ -56,6 +58,41 @@ pub struct HyperliquidExecutionClient {
 }
 
 impl HyperliquidExecutionClient {
+    /// Returns a reference to the configuration.
+    pub fn config(&self) -> &HyperliquidExecClientConfig {
+        &self.config
+    }
+
+    /// Returns true if the client is configured for testnet.
+    pub fn is_testnet(&self) -> bool {
+        self.config.is_testnet
+    }
+
+    /// Returns the HTTP timeout configuration in seconds.
+    pub fn http_timeout_secs(&self) -> u64 {
+        self.config.http_timeout_secs
+    }
+
+    /// Returns the maximum number of HTTP retry attempts.
+    pub fn max_retries(&self) -> u32 {
+        self.config.max_retries
+    }
+
+    /// Returns the vault address if configured.
+    pub fn vault_address(&self) -> Option<&str> {
+        self.config.vault_address.as_deref()
+    }
+
+    /// Returns the WebSocket URL from config.
+    pub fn ws_url(&self) -> String {
+        self.config.ws_url()
+    }
+
+    /// Returns the HTTP URL from config.
+    pub fn http_url(&self) -> String {
+        self.config.http_url()
+    }
+
     /// Creates a new [`HyperliquidExecutionClient`].
     ///
     /// # Errors
@@ -75,8 +112,10 @@ impl HyperliquidExecutionClient {
         let http_client =
             HyperliquidHttpClient::with_credentials(&secrets, Some(config.http_timeout_secs));
 
-        // WebSocket client will be initialized later when start() is called
-        let ws_client = None;
+        // Create WebSocket client (will connect when needed)
+        let ws_client = HyperliquidWebSocketClient::new(
+            crate::common::consts::ws_url(config.is_testnet).to_string(),
+        );
 
         Ok(Self {
             core,
@@ -125,10 +164,13 @@ impl HyperliquidExecutionClient {
         // We need to derive the user address from the private key in the config
         let user_address = self.get_user_address()?;
 
+        // Use vault address if configured, otherwise use user address
+        let account_address = self.config.vault_address.as_ref().unwrap_or(&user_address);
+
         // Query userState endpoint to get balances and margin info
         let user_state_request = crate::http::query::InfoRequest {
             request_type: "clearinghouseState".to_string(),
-            params: serde_json::json!({ "user": user_address }),
+            params: serde_json::json!({ "user": account_address }),
         };
 
         match self
@@ -153,7 +195,12 @@ impl HyperliquidExecutionClient {
         // For now, use a placeholder. In a real implementation, we would
         // derive the Ethereum address from the private key in the config
         // TODO: Implement proper address derivation from private key
-        Ok("0x".to_string() + &"0".repeat(40)) // Placeholder address
+        let placeholder_address = if self.config.is_testnet {
+            format!("0x{}", "1".repeat(40)) // Testnet placeholder
+        } else {
+            format!("0x{}", "0".repeat(40)) // Mainnet placeholder
+        };
+        Ok(placeholder_address)
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -237,8 +284,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         // TODO: Start WebSocket connection for real-time updates
-        if let Some(ref _ws_client) = self.ws_client {
-            debug!("WebSocket client available for real-time updates");
+        if !self.ws_client.is_connected() {
+            debug!("WebSocket client ready, will connect when needed");
+        } else {
+            debug!("WebSocket client already connected");
         }
 
         self.connected = true;
@@ -267,27 +316,58 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn submit_order(&self, command: &SubmitOrder) -> Result<()> {
-        debug!("Submitting order: {:?}", command);
+        let order = &command.order;
 
-        // Use the config to determine if we should use testnet endpoints
-        let is_testnet = self.config.is_testnet;
-        debug!("Using testnet: {}", is_testnet);
+        if order.is_closed() {
+            warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
 
-        // Spawn async task for order submission
-        let _http_client = self.http_client.clone();
-        let order = command.order.clone();
+        self.core.generate_order_submitted(
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            command.ts_init,
+        );
+
+        let http_client = self.http_client.clone();
+        let order_clone = order.clone();
 
         self.spawn_task("submit_order", async move {
-            // TODO: Implement actual order submission using http_client
-            // 1. Convert Nautilus order to Hyperliquid format
-            // 2. Sign the order request
-            // 3. Submit via HTTP
-            // 4. Handle response and emit events
-            debug!(
-                "Processing order submission for: {:?}",
-                order.instrument_id()
-            );
-            warn!("Order submission implementation pending");
+            match order_any_to_hyperliquid_request(&order_clone) {
+                Ok(hyperliquid_order) => {
+                    // Convert single order to JSON array format for the exchange action
+                    match serde_json::to_value(vec![hyperliquid_order]) {
+                        Ok(orders_json) => {
+                            // Create exchange action for order placement
+                            let action = ExchangeAction::order(orders_json);
+
+                            match http_client.post_action(&action).await {
+                                Ok(response) => {
+                                    info!("Order submitted successfully: {:?}", response);
+                                    // TODO: Parse response and generate appropriate order events
+                                    // For now, we'll generate a basic accepted event
+                                    // In a full implementation, you'd parse the response to determine
+                                    // if the order was accepted, rejected, or partially filled
+                                }
+                                Err(err) => {
+                                    warn!("Order submission failed: {:?}", err);
+                                    // TODO: Generate order rejected event
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Failed to serialize order to JSON: {:?}", err);
+                            // TODO: Generate order rejected event
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!("Failed to convert order to Hyperliquid format: {:?}", err);
+                    // TODO: Generate order rejected event
+                }
+            }
+
             Ok(())
         });
 

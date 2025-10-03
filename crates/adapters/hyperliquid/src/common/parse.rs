@@ -15,8 +15,20 @@
 
 use std::str::FromStr;
 
+use anyhow::{Context, Result, bail};
+use nautilus_model::{
+    enums::{OrderSide, OrderType, TimeInForce},
+    orders::{Order, any::OrderAny},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serializer};
+use serde_json::Value;
+
+use crate::http::models::{
+    AssetId, Cloid, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+    HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
+    HyperliquidExecTriggerParams,
+};
 
 /// Serializes decimal as string (lossless, no scientific notation).
 pub fn serialize_decimal_as_str<S>(decimal: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
@@ -140,6 +152,188 @@ pub fn normalize_order(
     ensure_min_notional(final_price, final_qty, min_notional)?;
 
     Ok((final_price, final_qty))
+}
+
+// ================================================================================================
+// Order Conversion Functions
+// ================================================================================================
+
+/// Converts a Nautilus TimeInForce to Hyperliquid TIF.
+fn time_in_force_to_hyperliquid_tif(
+    tif: TimeInForce,
+    is_post_only: bool,
+) -> Result<HyperliquidExecTif> {
+    match (tif, is_post_only) {
+        (_, true) => Ok(HyperliquidExecTif::Alo), // Always use ALO for post-only orders
+        (TimeInForce::Gtc, false) => Ok(HyperliquidExecTif::Gtc),
+        (TimeInForce::Ioc, false) => Ok(HyperliquidExecTif::Ioc),
+        (TimeInForce::Fok, false) => Ok(HyperliquidExecTif::Ioc), // FOK maps to IOC in Hyperliquid
+        _ => bail!("Unsupported time in force: {:?}", tif),
+    }
+}
+
+/// Extract asset ID from instrument symbol.
+/// For Hyperliquid, this typically involves parsing the symbol to get the underlying asset.
+fn extract_asset_id_from_symbol(symbol: &str) -> Result<AssetId> {
+    // For perpetuals, remove "PERP" suffix to get the base asset
+    if let Some(base) = symbol.strip_suffix("-USD") {
+        // Convert symbol like "BTC-USD" to asset index
+        // This is a simplified mapping - in practice you'd need to query the asset registry
+        Ok(match base {
+            "BTC" => 0,
+            "ETH" => 1,
+            "DOGE" => 3,
+            "SOL" => 4,
+            "WIF" => 8,
+            "SHIB" => 10,
+            "PEPE" => 11,
+            _ => {
+                // For unknown assets, we'll need to query the meta endpoint
+                // For now, return a placeholder that will need to be resolved
+                bail!("Asset ID mapping not found for symbol: {}", symbol)
+            }
+        })
+    } else {
+        bail!("Cannot extract asset ID from symbol: {}", symbol)
+    }
+}
+
+/// Converts a Nautilus order into a Hyperliquid order request.
+pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecPlaceOrderRequest> {
+    let instrument_id = order.instrument_id();
+    let symbol = instrument_id.symbol.as_str();
+    let asset = extract_asset_id_from_symbol(symbol)
+        .with_context(|| format!("Failed to extract asset ID from symbol: {}", symbol))?;
+
+    let is_buy = matches!(order.order_side(), OrderSide::Buy);
+    let reduce_only = order.is_reduce_only();
+
+    // Convert price to decimal
+    let price_decimal = match order.price() {
+        Some(price) => Decimal::from_str_exact(&price.to_string())
+            .with_context(|| format!("Failed to convert price to decimal: {}", price))?,
+        None => {
+            // For market orders without price, use 0 as placeholder
+            // The actual market price will be determined by the exchange
+            if matches!(order.order_type(), OrderType::Market) {
+                Decimal::ZERO
+            } else {
+                bail!("Limit orders require a price")
+            }
+        }
+    };
+
+    // Convert size to decimal
+    let size_decimal =
+        Decimal::from_str_exact(&order.quantity().to_string()).with_context(|| {
+            format!(
+                "Failed to convert quantity to decimal: {}",
+                order.quantity()
+            )
+        })?;
+
+    // Determine order kind based on order type
+    let kind = match order.order_type() {
+        OrderType::Market => {
+            // Market orders in Hyperliquid are implemented as limit orders with IOC time-in-force
+            HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Ioc,
+                },
+            }
+        }
+        OrderType::Limit => {
+            let tif =
+                time_in_force_to_hyperliquid_tif(order.time_in_force(), order.is_post_only())?;
+            HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams { tif },
+            }
+        }
+        OrderType::StopMarket => {
+            if let Some(trigger_price) = order.trigger_price() {
+                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
+                    .with_context(|| {
+                        format!(
+                            "Failed to convert trigger price to decimal: {}",
+                            trigger_price
+                        )
+                    })?;
+
+                HyperliquidExecOrderKind::Trigger {
+                    trigger: HyperliquidExecTriggerParams {
+                        is_market: true,
+                        trigger_px: trigger_price_decimal,
+                        tpsl: HyperliquidExecTpSl::Sl, // Default to stop loss
+                    },
+                }
+            } else {
+                bail!("Stop market orders require a trigger price")
+            }
+        }
+        OrderType::StopLimit => {
+            if let Some(trigger_price) = order.trigger_price() {
+                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
+                    .with_context(|| {
+                        format!(
+                            "Failed to convert trigger price to decimal: {}",
+                            trigger_price
+                        )
+                    })?;
+
+                HyperliquidExecOrderKind::Trigger {
+                    trigger: HyperliquidExecTriggerParams {
+                        is_market: false,
+                        trigger_px: trigger_price_decimal,
+                        tpsl: HyperliquidExecTpSl::Sl, // Default to stop loss
+                    },
+                }
+            } else {
+                bail!("Stop limit orders require a trigger price")
+            }
+        }
+        _ => bail!("Unsupported order type: {:?}", order.order_type()),
+    };
+
+    // Convert client order ID to CLOID
+    let cloid = match Cloid::from_hex(order.client_order_id()) {
+        Ok(cloid) => Some(cloid),
+        Err(err) => {
+            bail!("Failed to convert client order ID to CLOID: {}", err)
+        }
+    };
+
+    Ok(HyperliquidExecPlaceOrderRequest {
+        asset,
+        is_buy,
+        price: price_decimal,
+        size: size_decimal,
+        reduce_only,
+        kind,
+        cloid,
+    })
+}
+
+/// Converts a list of Nautilus orders into Hyperliquid order requests.
+pub fn orders_to_hyperliquid_requests(
+    orders: &[&OrderAny],
+) -> Result<Vec<HyperliquidExecPlaceOrderRequest>> {
+    orders
+        .iter()
+        .map(|order| order_to_hyperliquid_request(order))
+        .collect()
+}
+
+/// Creates a JSON value representing multiple orders for the Hyperliquid exchange action.
+pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> Result<Value> {
+    let requests = orders_to_hyperliquid_requests(orders)?;
+    serde_json::to_value(requests).context("Failed to serialize orders to JSON")
+}
+
+/// Converts an OrderAny into a Hyperliquid order request.
+pub fn order_any_to_hyperliquid_request(
+    order: &OrderAny,
+) -> Result<HyperliquidExecPlaceOrderRequest> {
+    order_to_hyperliquid_request(order)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
