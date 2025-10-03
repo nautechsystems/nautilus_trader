@@ -612,10 +612,7 @@ mod tests {
         for _ in 0..10 {
             fuzzy_candlesticks_1.update_raw(100.0, 110.0, 90.0, 105.0);
         }
-        assert_eq!(
-            fuzzy_candlesticks_1.lengths.iter().all(|&v| v == 20.0),
-            true
-        );
+        assert!(fuzzy_candlesticks_1.lengths.iter().all(|&v| v == 20.0));
         assert!(matches!(
             fuzzy_candlesticks_1.value.size,
             CandleSize::VerySmall | CandleSize::Small | CandleSize::Medium

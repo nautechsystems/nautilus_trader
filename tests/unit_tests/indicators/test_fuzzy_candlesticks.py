@@ -29,6 +29,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestFuzzyCandlesticks:
+
     def setup(self):
         # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)
@@ -200,12 +201,13 @@ class TestFuzzyCandlesticks:
         # Assert
         assert self.fc.initialized is False  # No assertion errors.
 
-
     def test_body_percent_calculation_issue(self):
         """
-        This test exposes the operator precedence issue in the original body_percent calculation.
+        Exposes the operator precedence issue in the original body_percent calculation.
+
         The expression 'open - close / length' was incorrectly parsed as 'open - (close / length)',
         instead of the correct form '(open - close) / length'.
+
         """
         # Arrange: Small price fluctuation, but not a Doji
         self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
@@ -216,14 +218,15 @@ class TestFuzzyCandlesticks:
 
         # Assert: If the code is incorrect, body_percent will be very small or even negative.
         # The correct logic should classify body_size as SMALL or MEDIUM.
-        assert result_candle.body_size in (CandleBodySize.BODY_SMALL, CandleBodySize.BODY_MEDIUM), \
-            f"Body percent calculation error exposed, vector={result_vector}"
-
+        assert result_candle.body_size in (
+            CandleBodySize.BODY_SMALL,
+            CandleBodySize.BODY_MEDIUM,
+        ), f"Body percent calculation error exposed, vector={result_vector}"
 
     def test_length_indexing_issue(self):
         """
-        This test reveals the bug where the original code used _lengths[0]
-        instead of the latest candle length _lengths[-1].
+        Reveals the bug where the original code used _lengths[0] instead of the latest
+        candle length _lengths[-1].
         """
         # Arrange: First update a large candle
         self.fc.update_raw(1.0, 1.01, 0.99, 1.005)  # Large candle
@@ -235,9 +238,9 @@ class TestFuzzyCandlesticks:
         result_vector = self.fc.vector
 
         # Assert: If _lengths[0] is used, the small candle will be misclassified as large
-        assert result_candle.size != CandleSize.SIZE_LARGE, \
-            f"Length indexing bug exposed, vector={result_vector}"
-
+        assert (
+            result_candle.size != CandleSize.SIZE_LARGE
+        ), f"Length indexing bug exposed, vector={result_vector}"
 
     def test_doji_bar_body_zero_issue(self):
         """
@@ -249,5 +252,6 @@ class TestFuzzyCandlesticks:
         result_vector = self.fc.vector
 
         # Assert: If body_percent != 0, it will be incorrectly classified as non-Doji
-        assert result_candle.body_size == CandleBodySize.BODY_NONE, \
-            f"Doji body detection failed, vector={result_vector}"
+        assert (
+            result_candle.body_size == CandleBodySize.BODY_NONE
+        ), f"Doji body detection failed, vector={result_vector}"
