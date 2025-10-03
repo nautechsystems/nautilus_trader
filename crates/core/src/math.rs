@@ -92,6 +92,7 @@ pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
 ///
 /// # Edge Cases
 ///
+/// - For empty arrays, returns 0
 /// - For single-element arrays, always returns index 0, regardless of whether `x > xs[0]`
 /// - For values below the minimum, returns 0
 /// - For values at or above the maximum, returns `xs.len() - 1`
@@ -111,6 +112,10 @@ pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
 #[inline]
 #[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
+    if xs.is_empty() {
+        return 0;
+    }
+
     let n_elem = xs.len();
     let pos = xs.partition_point(|&val| val < x);
     std::cmp::min(std::cmp::max(pos.saturating_sub(1), 0), n_elem - 1)
@@ -322,6 +327,12 @@ mod tests {
         // Two element array
         let result = pos_search(1.5, &[1.0, 2.0]);
         assert_eq!(result, 0);
+    }
+
+    #[rstest]
+    fn test_pos_search_empty_slice() {
+        let empty: &[f64] = &[];
+        assert_eq!(pos_search(42.0, empty), 0);
     }
 
     #[rstest]
