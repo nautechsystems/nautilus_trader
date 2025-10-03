@@ -197,6 +197,10 @@ cdef class CryptoFuture(Instrument):
 
         self.underlying = underlying
         self.settlement_currency = settlement_currency
+        if settlement_currency != quote_currency and settlement_currency != underlying:
+            self.is_quanto = True
+        else:
+            self.is_quanto = False
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
 
@@ -247,6 +251,79 @@ cdef class CryptoFuture(Instrument):
 
         """
         return self.settlement_currency
+
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = underlying (base currency)
+        - Quanto instruments = settlement_currency
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.underlying
+        elif self.is_quanto:
+            return self.settlement_currency
+        else:
+            return self.quote_currency
+
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+    ):
+        """
+        Calculate the notional value.
+
+        Result will be in quote currency for standard instruments, underlying
+        currency for inverse instruments, or settlement currency for quanto
+        instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        price : Price
+            The price for the calculation.
+        use_quote_for_inverse : bool
+            For inverse instruments only: if True, treats the quantity as already representing
+            notional value in quote currency and returns it directly without calculation.
+            This is useful when quantity already represents a USD value that doesn't need
+            conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        if self.is_inverse:
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
+                return Money(quantity, self.quote_currency)
+
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
+                self.underlying,
+            )
+        elif self.is_quanto:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.settlement_currency,
+            )
+        else:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.quote_currency,
+            )
 
     @property
     def activation_utc(self) -> pd.Timestamp:

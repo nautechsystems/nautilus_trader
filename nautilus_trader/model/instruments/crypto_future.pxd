@@ -24,6 +24,8 @@ cdef class CryptoFuture(Instrument):
     """The underlying asset for the contract.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
     """The settlement currency for the contract.\n\n:returns: `Currency`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `bool`"""
     cdef readonly uint64_t activation_ns
     """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
