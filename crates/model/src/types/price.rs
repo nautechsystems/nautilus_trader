@@ -1072,12 +1072,38 @@ mod property_tests {
             100_000.0..1_000_000.0,
             // Small negative values (for spreads, etc.)
             -1_000.0..0.0,
+            // Boundary values close to the extremes
+            Just(PRICE_MIN / 2.0),
+            Just(PRICE_MAX / 2.0),
+        ]
+    }
+
+    fn float_precision_upper_bound() -> u8 {
+        FIXED_PRECISION.min(crate::types::fixed::MAX_FLOAT_PRECISION)
+    }
+
+    /// Strategy to exercise both typical and extreme precision values.
+    fn precision_strategy() -> impl Strategy<Value = u8> {
+        let upper = float_precision_upper_bound();
+        prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
+    }
+
+    fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
+        let upper = float_precision_upper_bound().max(1);
+        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
+    }
+
+    fn price_raw_strategy() -> impl Strategy<Value = PriceRaw> {
+        prop_oneof![
+            Just(PRICE_RAW_MIN),
+            Just(PRICE_RAW_MAX),
+            PRICE_RAW_MIN..=PRICE_RAW_MAX,
         ]
     }
 
     /// Strategy to generate valid precision values for float-based constructors.
     fn float_precision_strategy() -> impl Strategy<Value = u8> {
-        0..=FIXED_PRECISION
+        precision_strategy()
     }
 
     proptest! {
@@ -1085,7 +1111,7 @@ mod property_tests {
         #[rstest]
         fn prop_price_serde_round_trip(
             value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
+            precision in precision_strategy()
         ) {
             let original = Price::new(value, precision);
 
@@ -1108,7 +1134,7 @@ mod property_tests {
             a in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
             b in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
             c in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+            precision in precision_strategy()
         ) {
             let p_a = Price::new(a, precision);
             let p_b = Price::new(b, precision);
@@ -1134,7 +1160,7 @@ mod property_tests {
         fn prop_price_addition_subtraction_inverse(
             base in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
             delta in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+            precision in precision_strategy()
         ) {
             let p_base = Price::new(base, precision);
             let p_delta = Price::new(delta, precision);
@@ -1171,10 +1197,12 @@ mod property_tests {
         fn prop_price_string_parsing_precision(
             integral in 0u32..1000000,
             fractional in 0u32..1000000,
-            precision in 1u8..=6
+            precision in precision_strategy_non_zero()
         ) {
             // Create a decimal string with exactly 'precision' decimal places
-            let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
+            let pow = 10u128.pow(u32::from(precision));
+            let fractional_mod = (fractional as u128) % pow;
+            let fractional_str = format!("{:0width$}", fractional_mod, width = precision as usize);
             let price_str = format!("{integral}.{fractional_str}");
 
             let parsed: Price = price_str.parse().unwrap();
@@ -1190,8 +1218,8 @@ mod property_tests {
         #[rstest]
         fn prop_price_precision_information_preservation(
             value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
-            precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
-            precision2 in 1u8..=6u8
+            precision1 in precision_strategy_non_zero(),
+            precision2 in precision_strategy_non_zero()
         ) {
             // Skip cases where precisions are equal (trivial case)
             prop_assume!(precision1 != precision2);
@@ -1239,6 +1267,19 @@ mod property_tests {
                 prop_assert!(diff.as_f64().is_finite());
                 prop_assert!(!diff.is_undefined());
             }
+        }
+    }
+
+    proptest! {
+        /// Property: constructing from raw bounds preserves raw/precision fields
+        #[rstest]
+        fn prop_price_from_raw_round_trip(
+            raw in price_raw_strategy(),
+            precision in precision_strategy()
+        ) {
+            let price = Price::from_raw(raw, precision);
+            prop_assert_eq!(price.raw, raw);
+            prop_assert_eq!(price.precision, precision);
         }
     }
 }

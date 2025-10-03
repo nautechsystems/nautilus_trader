@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -36,7 +36,7 @@ use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 use crate::types::{
     Currency,
-    fixed::{FIXED_PRECISION, FIXED_SCALAR},
+    fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision},
 };
 
 // -----------------------------------------------------------------------------
@@ -161,8 +161,22 @@ impl Money {
     }
 
     /// Creates a new [`Money`] instance from the given `raw` fixed-point value and the specified `currency`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `raw` is outside the representable range [`MONEY_RAW_MIN`, `MONEY_RAW_MAX`].
+    /// Panics if `currency.precision` exceeds [`FIXED_PRECISION`].
     #[must_use]
     pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
+        check_predicate_true(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            &format!(
+                "`raw` value {raw} exceeded bounds [{}, {}] for Money",
+                MONEY_RAW_MIN, MONEY_RAW_MAX
+            ),
+        )
+        .expect(FAILED);
+        check_fixed_precision(currency.precision).expect(FAILED);
         Self { raw, currency }
     }
 
@@ -875,6 +889,14 @@ mod tests {
         assert_eq!(money, deserialized);
     }
 
+    #[rstest]
+    #[should_panic(expected = "`raw` value")]
+    fn test_money_from_raw_out_of_range_panics() {
+        let usd = Currency::USD();
+        let raw = MONEY_RAW_MAX.saturating_add(1);
+        let _ = Money::from_raw(raw, usd);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Property-based testing
     ////////////////////////////////////////////////////////////////////////////////
@@ -910,13 +932,18 @@ mod tests {
             // Use smaller values than MONEY_MAX to avoid overflow in arithmetic operations
             Just(MONEY_MIN / 2.0),
             Just(MONEY_MAX / 2.0),
+            Just(MONEY_MIN + 1.0),
+            Just(MONEY_MAX - 1.0),
+            Just(MONEY_MIN),
+            Just(MONEY_MAX),
         ]
     }
 
     fn money_strategy() -> impl Strategy<Value = Money> {
-        (money_amount_strategy(), currency_strategy()).prop_map(|(amount, currency)| {
-            Money::new_checked(amount, currency).unwrap_or_else(|_| Money::zero(currency))
-        })
+        (money_amount_strategy(), currency_strategy())
+            .prop_filter_map("constructible money", |(amount, currency)| {
+                Money::new_checked(amount, currency).ok()
+            })
     }
 
     proptest! {
@@ -982,9 +1009,14 @@ mod tests {
                         sum1.checked_add(money3.raw),
                         money1.raw.checked_add(sum2)
                     ) {
-                        let left_result = Money::from_raw(left, money1.currency);
-                        let right_result = Money::from_raw(right, money1.currency);
-                        prop_assert_eq!(left_result, right_result, "Addition should be associative");
+                        // Check if results are within bounds before constructing Money
+                        if (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&left)
+                            && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&right)
+                        {
+                            let left_result = Money::from_raw(left, money1.currency);
+                            let right_result = Money::from_raw(right, money1.currency);
+                            prop_assert_eq!(left_result, right_result, "Addition should be associative");
+                        }
                     }
             }
         }
@@ -997,11 +1029,12 @@ mod tests {
             // Subtraction should be the inverse of addition for same currency
             if money1.currency == money2.currency {
                 // Test (a + b) - b == a, avoiding overflow
-                if let Some(sum_raw) = money1.raw.checked_add(money2.raw) {
-                    let sum = Money::from_raw(sum_raw, money1.currency);
-                    let diff = sum - money2;
-                    prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
-                }
+                if let Some(sum_raw) = money1.raw.checked_add(money2.raw)
+                    && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
+                        let sum = Money::from_raw(sum_raw, money1.currency);
+                        let diff = sum - money2;
+                        prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
+                    }
             }
         }
 
@@ -1023,10 +1056,11 @@ mod tests {
             prop_assert_eq!(negated.currency, money.currency, "Negation preserves currency");
 
             // Test additive inverse property (if no overflow)
-            if let Some(sum_raw) = money.raw.checked_add(negated.raw) {
-                let sum = Money::from_raw(sum_raw, money.currency);
-                prop_assert!(sum.is_zero(), "Money + (-Money) should equal zero");
-            }
+            if let Some(sum_raw) = money.raw.checked_add(negated.raw)
+                && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
+                    let sum = Money::from_raw(sum_raw, money.currency);
+                    prop_assert!(sum.is_zero(), "Money + (-Money) should equal zero");
+                }
         }
 
         #[rstest]

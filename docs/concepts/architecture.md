@@ -43,6 +43,28 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 - Maintainability
 - Deployability
 
+### Assurance-driven engineering
+
+NautilusTrader is incrementally adopting a high-assurance mindset: critical code
+paths should carry executable invariants that verify behaviour matches the
+business requirements. Practically this means we:
+
+- Identify the components whose failure has the highest blast radius (core
+  domain types, risk and execution flows) and write down their invariants in
+  plain language.
+- Codify those invariants as executable checks (unit tests, property tests,
+  fuzzers, static assertions) that run in CI, keeping the feedback loop light.
+- Prefer zero-cost safety techniques built into Rust (ownership, `Result`
+  surfaces, `panic = abort`) and add targeted formal tools only where they pay
+  for themselves.
+- Track “assurance debt” alongside feature work so new integrations extend the
+  safety net rather than bypass it.
+
+This approach preserves the platform’s delivery cadence while giving mission
+critical flows the additional scrutiny they need.
+
+Further reading: [High Assurance Rust](https://highassurance.rs/).
+
 ### Crash-only design
 
 NautilusTrader embraces [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software),
