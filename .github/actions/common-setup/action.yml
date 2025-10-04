@@ -67,10 +67,7 @@ runs:
     # setup-rust-toolchain should handle this with override: true, but doesn't seem to work.
     - name: Reset and update Rust toolchain
       shell: bash
-      run: |
-        if command -v rustup &> /dev/null; then
-          rustup update --force
-        fi
+      run: bash scripts/ci/install-rust.sh
 
     - name: Get Rust toolchain version
       id: rust-toolchain
