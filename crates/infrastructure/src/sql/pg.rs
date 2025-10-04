@@ -321,7 +321,14 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .await
     {
         Ok(_) => log::info!("Dropped owned objects by role {database}"),
-        Err(e) => log::error!("Error dropping owned by role {database}: {e:?}"),
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("2BP01") || err_msg.contains("required by the database system") {
+                log::warn!("Skipping system-required objects for role {database}");
+            } else {
+                log::error!("Error dropping owned by role {database}: {e:?}");
+            }
+        }
     }
 
     // Revoke connect
@@ -359,7 +366,14 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .await
     {
         Ok(_) => log::info!("Dropped role {database}"),
-        Err(e) => log::error!("Error dropping role {database}: {e:?}"),
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("55006") || err_msg.contains("current user cannot be dropped") {
+                log::warn!("Cannot drop currently connected role {database}");
+            } else {
+                log::error!("Error dropping role {database}: {e:?}");
+            }
+        }
     }
     Ok(())
 }
