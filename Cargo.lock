@@ -4726,6 +4726,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-coinbase"
+version = "0.51.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-lc-rs",
+ "base64",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "http",
+ "indexmap 2.11.4",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-cryptography",
+ "nautilus-model",
+ "nautilus-network",
+ "pem",
+ "pkcs8",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rand 0.8.5",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "rustls",
+ "sec1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-coinbase-intx"
 version = "0.51.0"
 dependencies = [
@@ -5237,6 +5278,7 @@ dependencies = [
  "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-bybit",
+ "nautilus-coinbase",
  "nautilus-coinbase-intx",
  "nautilus-common",
  "nautilus-core",

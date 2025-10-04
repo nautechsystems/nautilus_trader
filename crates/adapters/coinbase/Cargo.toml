@@ -1,0 +1,79 @@
+[package]
+name = "nautilus-coinbase"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+readme = "README.md"
+description = "NautilusTrader adapter for Coinbase Advanced Trade API"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "nautilus_coinbase"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-cryptography = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+http = { workspace = true }
+indexmap = { workspace = true }
+log = { workspace = true }
+pem = "3"
+pkcs8 = { version = "0.10", features = ["std", "pem"] }
+rand = "0.8"
+sec1 = { version = "0.7", features = ["pem", "pkcs8"] }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+ustr = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+rustls = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread", "macros"] }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python", "nautilus-model/python"]
+extension-module = ["python", "pyo3/extension-module"]
+
+[[example]]
+name = "test_http"
+path = "examples/test_http.rs"
+required-features = []
+
+[[example]]
+name = "test_websocket"
+path = "examples/test_websocket.rs"
+required-features = []
+
+[[example]]
+name = "test_orderbook"
+path = "examples/test_orderbook.rs"
+required-features = []
+

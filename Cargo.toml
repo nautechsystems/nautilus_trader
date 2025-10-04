@@ -5,6 +5,7 @@ members = [
     "crates/adapters/bitmex",
     "crates/adapters/blockchain",
     "crates/adapters/bybit",
+    "crates/adapters/coinbase",
     "crates/adapters/coinbase_intx",
     "crates/adapters/databento",
     "crates/adapters/hyperliquid",
@@ -73,6 +74,7 @@ nautilus-trading = { path = "crates/trading", version = "0.51.0" }
 # Adapters
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.51.0" }
 nautilus-bybit = { path = "crates/adapters/bybit", version = "0.51.0" }
+nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.51.0" }
 nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.51.0" }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.51.0" }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.51.0" }
