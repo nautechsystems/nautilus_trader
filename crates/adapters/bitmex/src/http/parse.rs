@@ -47,6 +47,21 @@ use crate::common::{
     },
 };
 
+/// Returns the appropriate position multiplier for a BitMEX instrument.
+///
+/// For inverse contracts, BitMEX uses `underlyingToSettleMultiplier` to define contract sizing,
+/// with fallback to `underlyingToPositionMultiplier` for older historical data.
+/// For linear contracts, BitMEX uses `underlyingToPositionMultiplier`.
+fn get_position_multiplier(definition: &BitmexInstrument) -> Option<f64> {
+    if definition.is_inverse {
+        definition
+            .underlying_to_settle_multiplier
+            .or(definition.underlying_to_position_multiplier)
+    } else {
+        definition.underlying_to_position_multiplier
+    }
+}
+
 /// Attempts to convert a BitMEX instrument record into a Nautilus instrument by type.
 #[must_use]
 pub fn parse_instrument_any(
@@ -177,10 +192,8 @@ pub fn parse_spot_instrument(
     let price_increment = Price::from(definition.tick_size.to_string());
 
     let max_scale = FIXED_PRECISION as u32;
-    let (contract_decimal, size_increment) = derive_contract_decimal_and_increment(
-        definition.underlying_to_position_multiplier,
-        max_scale,
-    )?;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
 
     let min_quantity = convert_contract_quantity(
         definition.lot_size,
@@ -275,10 +288,8 @@ pub fn parse_perpetual_instrument(
     let price_increment = Price::from(definition.tick_size.to_string());
 
     let max_scale = FIXED_PRECISION as u32;
-    let (contract_decimal, size_increment) = derive_contract_decimal_and_increment(
-        definition.underlying_to_position_multiplier,
-        max_scale,
-    )?;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
 
     let lot_size =
         convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
@@ -379,10 +390,8 @@ pub fn parse_futures_instrument(
     let price_increment = Price::from(definition.tick_size.to_string());
 
     let max_scale = FIXED_PRECISION as u32;
-    let (contract_decimal, size_increment) = derive_contract_decimal_and_increment(
-        definition.underlying_to_position_multiplier,
-        max_scale,
-    )?;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
 
     let lot_size =
         convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
@@ -1872,6 +1881,10 @@ mod tests {
             min_tick: None,
             funding_base_rate: None,
             funding_quote_rate: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 
@@ -1900,10 +1913,10 @@ mod tests {
             underlying_symbol: Some(Ustr::from("XBT=")),
             reference: Some(Ustr::from("BMEX")),
             reference_symbol: Some(Ustr::from(".BXBT")),
-            lot_size: Some(1.0),
+            lot_size: Some(100.0),
             tick_size: 0.5,
-            multiplier: -1.0,
-            settl_currency: Some(Ustr::from("XBT")),
+            multiplier: -100000000.0,
+            settl_currency: Some(Ustr::from("XBt")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -1950,9 +1963,9 @@ mod tests {
             calc_interval: None,
             publish_interval: None,
             publish_time: None,
-            underlying_to_position_multiplier: Some(1.0),
-            underlying_to_settle_multiplier: None,
-            quote_to_settle_multiplier: Some(0.00000001),
+            underlying_to_position_multiplier: None,
+            underlying_to_settle_multiplier: Some(-100000000.0),
+            quote_to_settle_multiplier: None,
             init_margin: Some(0.01),
             maint_margin: Some(0.005),
             risk_limit: Some(20000000000.0),
@@ -1989,6 +2002,10 @@ mod tests {
             settled_price: None,
             instant_pnl: false,
             min_tick: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 
@@ -2025,10 +2042,10 @@ mod tests {
             underlying_symbol: Some(Ustr::from("XBT=")),
             reference: Some(Ustr::from("BMEX")),
             reference_symbol: Some(Ustr::from(".BXBT30M")),
-            lot_size: Some(1.0),
+            lot_size: Some(100.0),
             tick_size: 0.5,
-            multiplier: -1.0,
-            settl_currency: Some(Ustr::from("XBT")),
+            multiplier: -100000000.0,
+            settl_currency: Some(Ustr::from("XBt")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -2067,9 +2084,9 @@ mod tests {
             calc_interval: None,
             publish_interval: None,
             publish_time: None,
-            underlying_to_position_multiplier: Some(1.0),
-            underlying_to_settle_multiplier: None,
-            quote_to_settle_multiplier: Some(0.00000001),
+            underlying_to_position_multiplier: None,
+            underlying_to_settle_multiplier: Some(-100000000.0),
+            quote_to_settle_multiplier: None,
             init_margin: Some(0.02),
             maint_margin: Some(0.01),
             risk_limit: Some(20000000000.0),
@@ -2106,6 +2123,10 @@ mod tests {
             settled_price: None,
             instant_pnl: false,
             min_tick: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 

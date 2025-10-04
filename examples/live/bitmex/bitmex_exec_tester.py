@@ -41,7 +41,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Futures: XBTZ25 (Bitcoin futures expiring December 2025)
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
-testnet = False  # If clients use the testnet API
+testnet = True  # If clients use the testnet API
 symbol = "XBTUSD"  # Bitcoin perpetual swap
 order_qty = Decimal("100")  # Contract size in USD
 
@@ -104,7 +104,7 @@ config_tester = ExecTesterConfig(
     use_post_only=True,
     tob_offset_ticks=0,
     # modify_orders_to_maintain_tob_offset=True,
-    # open_position_on_start_qty=order_qty,
+    open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.IOC,  # Market orders must be IOC
     close_positions_time_in_force=TimeInForce.IOC,  # Market orders must be IOC
     # enable_stop_buys=True,

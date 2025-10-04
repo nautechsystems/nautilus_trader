@@ -121,15 +121,21 @@ pub struct BitmexInstrument {
     pub prev_close_price: Option<f64>,
     pub limit_down_price: Option<f64>,
     pub limit_up_price: Option<f64>,
+    pub prev_total_volume: Option<f64>,
     pub total_volume: Option<f64>,
     pub volume: Option<f64>,
+    #[serde(rename = "volume24h")]
     pub volume_24h: Option<f64>,
     pub prev_total_turnover: Option<f64>,
     pub total_turnover: Option<f64>,
     pub turnover: Option<f64>,
+    #[serde(rename = "turnover24h")]
     pub turnover_24h: Option<f64>,
+    #[serde(rename = "homeNotional24h")]
     pub home_notional_24h: Option<f64>,
+    #[serde(rename = "foreignNotional24h")]
     pub foreign_notional_24h: Option<f64>,
+    #[serde(rename = "prevPrice24h")]
     pub prev_price_24h: Option<f64>,
     pub vwap: Option<f64>,
     pub high_price: Option<f64>,
@@ -160,6 +166,9 @@ pub struct BitmexInstrument {
     pub min_tick: Option<f64>,
     pub funding_base_rate: Option<f64>,
     pub funding_quote_rate: Option<f64>,
+    pub capped: Option<bool>,
+    pub opening_timestamp: Option<DateTime<Utc>>,
+    pub closing_timestamp: Option<DateTime<Utc>>,
     pub timestamp: DateTime<Utc>,
 }
 
