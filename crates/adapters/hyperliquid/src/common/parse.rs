@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Parsing utilities that convert Hyperliquid payloads into Nautilus domain models.
+
 use std::str::FromStr;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     orders::{Order, any::OrderAny},
@@ -25,9 +27,9 @@ use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 
 use crate::http::models::{
-    AssetId, Cloid, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
-    HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
-    HyperliquidExecTriggerParams,
+    AssetId, Cloid, HyperliquidExchangeResponse, HyperliquidExecCancelByCloidRequest,
+    HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
+    HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
 };
 
 /// Serializes decimal as string (lossless, no scientific notation).
@@ -158,8 +160,12 @@ pub fn normalize_order(
 // Order Conversion Functions
 // ================================================================================================
 
-/// Converts a Nautilus TimeInForce to Hyperliquid TIF.
-fn time_in_force_to_hyperliquid_tif(
+/// Converts a Nautilus `TimeInForce` to Hyperliquid TIF.
+///
+/// # Errors
+///
+/// Returns an error if the time in force is not supported.
+pub fn time_in_force_to_hyperliquid_tif(
     tif: TimeInForce,
     is_post_only: bool,
 ) -> Result<HyperliquidExecTif> {
@@ -168,14 +174,20 @@ fn time_in_force_to_hyperliquid_tif(
         (TimeInForce::Gtc, false) => Ok(HyperliquidExecTif::Gtc),
         (TimeInForce::Ioc, false) => Ok(HyperliquidExecTif::Ioc),
         (TimeInForce::Fok, false) => Ok(HyperliquidExecTif::Ioc), // FOK maps to IOC in Hyperliquid
-        _ => bail!("Unsupported time in force: {:?}", tif),
+        _ => anyhow::bail!("Unsupported time in force for Hyperliquid: {tif:?}"),
     }
 }
 
-/// Extract asset ID from instrument symbol.
+/// Extracts asset ID from instrument symbol.
+///
 /// For Hyperliquid, this typically involves parsing the symbol to get the underlying asset.
-fn extract_asset_id_from_symbol(symbol: &str) -> Result<AssetId> {
-    // For perpetuals, remove "PERP" suffix to get the base asset
+/// Currently supports a hardcoded mapping for common assets.
+///
+/// # Errors
+///
+/// Returns an error if the symbol format is unsupported or the asset is not found.
+pub fn extract_asset_id_from_symbol(symbol: &str) -> Result<AssetId> {
+    // For perpetuals, remove "-USD" suffix to get the base asset
     if let Some(base) = symbol.strip_suffix("-USD") {
         // Convert symbol like "BTC-USD" to asset index
         // This is a simplified mapping - in practice you'd need to query the asset registry
@@ -190,11 +202,11 @@ fn extract_asset_id_from_symbol(symbol: &str) -> Result<AssetId> {
             _ => {
                 // For unknown assets, we'll need to query the meta endpoint
                 // For now, return a placeholder that will need to be resolved
-                bail!("Asset ID mapping not found for symbol: {}", symbol)
+                anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
             }
         })
     } else {
-        bail!("Cannot extract asset ID from symbol: {}", symbol)
+        anyhow::bail!("Cannot extract asset ID from symbol: {symbol}")
     }
 }
 
@@ -218,7 +230,7 @@ pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecP
             if matches!(order.order_type(), OrderType::Market) {
                 Decimal::ZERO
             } else {
-                bail!("Limit orders require a price")
+                anyhow::bail!("Limit orders require a price")
             }
         }
     };
@@ -267,7 +279,7 @@ pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecP
                     },
                 }
             } else {
-                bail!("Stop market orders require a trigger price")
+                anyhow::bail!("Stop market orders require a trigger price")
             }
         }
         OrderType::StopLimit => {
@@ -288,17 +300,24 @@ pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecP
                     },
                 }
             } else {
-                bail!("Stop limit orders require a trigger price")
+                anyhow::bail!("Stop limit orders require a trigger price")
             }
         }
-        _ => bail!("Unsupported order type: {:?}", order.order_type()),
+        _ => anyhow::bail!(
+            "Unsupported order type for Hyperliquid: {:?}",
+            order.order_type()
+        ),
     };
 
     // Convert client order ID to CLOID
     let cloid = match Cloid::from_hex(order.client_order_id()) {
         Ok(cloid) => Some(cloid),
         Err(err) => {
-            bail!("Failed to convert client order ID to CLOID: {}", err)
+            anyhow::bail!(
+                "Failed to convert client order ID '{}' to CLOID: {}",
+                order.client_order_id(),
+                err
+            )
         }
     };
 
@@ -334,6 +353,60 @@ pub fn order_any_to_hyperliquid_request(
     order: &OrderAny,
 ) -> Result<HyperliquidExecPlaceOrderRequest> {
     order_to_hyperliquid_request(order)
+}
+
+/// Converts a client order ID to a Hyperliquid cancel request.
+///
+/// # Errors
+///
+/// Returns an error if the symbol cannot be parsed or the client order ID is invalid.
+pub fn client_order_id_to_cancel_request(
+    client_order_id: &str,
+    symbol: &str,
+) -> Result<HyperliquidExecCancelByCloidRequest> {
+    let asset = extract_asset_id_from_symbol(symbol)
+        .with_context(|| format!("Failed to extract asset ID from symbol: {}", symbol))?;
+
+    let cloid = Cloid::from_hex(client_order_id).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to convert client order ID '{}' to CLOID: {}",
+            client_order_id,
+            e
+        )
+    })?;
+
+    Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
+}
+
+/// Creates a JSON value representing cancel requests for the Hyperliquid exchange action.
+pub fn cancel_requests_to_hyperliquid_action_value(
+    requests: &[HyperliquidExecCancelByCloidRequest],
+) -> Result<Value> {
+    serde_json::to_value(requests).context("Failed to serialize cancel requests to JSON")
+}
+
+/// Checks if a Hyperliquid exchange response indicates success.
+pub fn is_response_successful(response: &HyperliquidExchangeResponse) -> bool {
+    matches!(response, HyperliquidExchangeResponse::Status { status, .. } if status == "ok")
+}
+
+/// Extracts error message from a Hyperliquid exchange response.
+pub fn extract_error_message(response: &HyperliquidExchangeResponse) -> String {
+    match response {
+        HyperliquidExchangeResponse::Status { status, response } => {
+            if status == "ok" {
+                "Operation successful".to_string()
+            } else {
+                // Try to extract error message from response data
+                if let Some(error_msg) = response.get("error").and_then(|v| v.as_str()) {
+                    error_msg.to_string()
+                } else {
+                    format!("Request failed with status: {}", status)
+                }
+            }
+        }
+        HyperliquidExchangeResponse::Error { error } => error.clone(),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

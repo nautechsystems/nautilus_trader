@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Live execution client implementation for the Hyperliquid adapter.
+
 use std::sync::Mutex;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
@@ -27,9 +29,9 @@ use nautilus_core::UnixNanos;
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::OmsType,
+    enums::{OmsType, OrderType},
     identifiers::{AccountId, ClientId, Venue},
-    orders::Order,
+    orders::{Order, any::OrderAny},
     types::{AccountBalance, MarginBalance},
 };
 use serde_json;
@@ -38,7 +40,12 @@ use tracing::{debug, info, warn};
 
 use crate::{
     common::{
-        consts::HYPERLIQUID_VENUE, credential::Secrets, parse::order_any_to_hyperliquid_request,
+        consts::HYPERLIQUID_VENUE,
+        credential::Secrets,
+        parse::{
+            client_order_id_to_cancel_request, extract_error_message, is_response_successful,
+            order_any_to_hyperliquid_request,
+        },
     },
     config::HyperliquidExecClientConfig,
     http::{client::HyperliquidHttpClient, query::ExchangeAction},
@@ -63,34 +70,45 @@ impl HyperliquidExecutionClient {
         &self.config
     }
 
-    /// Returns true if the client is configured for testnet.
-    pub fn is_testnet(&self) -> bool {
-        self.config.is_testnet
-    }
+    /// Validates order before submission to catch issues early.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order cannot be submitted to Hyperliquid.
+    fn validate_order_submission(&self, order: &OrderAny) -> Result<()> {
+        // Check if instrument symbol is supported
+        let symbol = order.instrument_id().symbol.to_string();
+        if !symbol.ends_with("-USD") {
+            anyhow::bail!("Unsupported instrument symbol format for Hyperliquid: {symbol}");
+        }
 
-    /// Returns the HTTP timeout configuration in seconds.
-    pub fn http_timeout_secs(&self) -> u64 {
-        self.config.http_timeout_secs
-    }
+        // Check if order type is supported
+        match order.order_type() {
+            OrderType::Market | OrderType::Limit | OrderType::StopMarket | OrderType::StopLimit => {
+            }
+            _ => anyhow::bail!(
+                "Unsupported order type for Hyperliquid: {:?}",
+                order.order_type()
+            ),
+        }
 
-    /// Returns the maximum number of HTTP retry attempts.
-    pub fn max_retries(&self) -> u32 {
-        self.config.max_retries
-    }
+        // Check if stop orders have trigger price
+        if matches!(
+            order.order_type(),
+            OrderType::StopMarket | OrderType::StopLimit
+        ) && order.trigger_price().is_none()
+        {
+            anyhow::bail!("Stop orders require a trigger price for Hyperliquid");
+        }
 
-    /// Returns the vault address if configured.
-    pub fn vault_address(&self) -> Option<&str> {
-        self.config.vault_address.as_deref()
-    }
+        // Check if limit orders have price
+        if matches!(order.order_type(), OrderType::Limit | OrderType::StopLimit)
+            && order.price().is_none()
+        {
+            anyhow::bail!("Limit orders require a price for Hyperliquid");
+        }
 
-    /// Returns the WebSocket URL from config.
-    pub fn ws_url(&self) -> String {
-        self.config.ws_url()
-    }
-
-    /// Returns the HTTP URL from config.
-    pub fn http_url(&self) -> String {
-        self.config.http_url()
+        Ok(())
     }
 
     /// Creates a new [`HyperliquidExecutionClient`].
@@ -100,7 +118,7 @@ impl HyperliquidExecutionClient {
     /// Returns an error if either the HTTP or WebSocket client fail to construct.
     pub fn new(core: ExecutionClientCore, config: HyperliquidExecClientConfig) -> Result<Self> {
         if !config.has_credentials() {
-            bail!("Hyperliquid execution client requires private key");
+            anyhow::bail!("Hyperliquid execution client requires private key");
         }
 
         let secrets = Secrets::from_json(&format!(
@@ -323,6 +341,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
+        // Validate order before submission
+        if let Err(err) = self.validate_order_submission(order) {
+            self.core.generate_order_rejected(
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                &format!("validation-error: {err}"),
+                command.ts_init,
+                false,
+            );
+            return Err(err);
+        }
+
         self.core.generate_order_submitted(
             order.strategy_id(),
             order.instrument_id(),
@@ -344,27 +375,31 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
                             match http_client.post_action(&action).await {
                                 Ok(response) => {
-                                    info!("Order submitted successfully: {:?}", response);
-                                    // TODO: Parse response and generate appropriate order events
-                                    // For now, we'll generate a basic accepted event
-                                    // In a full implementation, you'd parse the response to determine
-                                    // if the order was accepted, rejected, or partially filled
+                                    if is_response_successful(&response) {
+                                        info!("Order submitted successfully: {:?}", response);
+                                        // TODO: Generate order accepted event via callback/channel
+                                        // For now, just log success - events will be handled via WebSocket
+                                    } else {
+                                        let error_msg = extract_error_message(&response);
+                                        warn!("Order submission rejected: {}", error_msg);
+                                        // TODO: Generate order rejected event via callback/channel
+                                    }
                                 }
                                 Err(err) => {
                                     warn!("Order submission failed: {:?}", err);
-                                    // TODO: Generate order rejected event
+                                    // TODO: Generate order rejected event via callback/channel
                                 }
                             }
                         }
                         Err(err) => {
                             warn!("Failed to serialize order to JSON: {:?}", err);
-                            // TODO: Generate order rejected event
+                            // TODO: Generate order rejected event via callback/channel
                         }
                     }
                 }
                 Err(err) => {
                     warn!("Failed to convert order to Hyperliquid format: {:?}", err);
-                    // TODO: Generate order rejected event
+                    // TODO: Generate order rejected event via callback/channel
                 }
             }
 
@@ -390,8 +425,53 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
     fn cancel_order(&self, command: &CancelOrder) -> Result<()> {
         debug!("Cancelling order: {:?}", command);
-        // TODO: Implement order cancellation
-        warn!("Order cancellation not yet implemented");
+
+        let http_client = self.http_client.clone();
+        let client_order_id = command.client_order_id.to_string();
+        let symbol = command.instrument_id.symbol.to_string();
+
+        self.spawn_task("cancel_order", async move {
+            match client_order_id_to_cancel_request(&client_order_id, &symbol) {
+                Ok(cancel_request) => {
+                    // Convert single cancel request to JSON array format for the exchange action
+                    match serde_json::to_value(vec![cancel_request]) {
+                        Ok(cancels_json) => {
+                            // Create exchange action for order cancellation
+                            let action = ExchangeAction::cancel_by_cloid(cancels_json);
+                            match http_client.post_action(&action).await {
+                                Ok(response) => {
+                                    if is_response_successful(&response) {
+                                        info!("Order cancelled successfully: {:?}", response);
+                                        // TODO: Generate order cancelled event
+                                        // This requires more implementation in the core
+                                    } else {
+                                        let error_msg = extract_error_message(&response);
+                                        warn!("Order cancellation rejected: {}", error_msg);
+                                        // TODO: Generate cancel rejected event
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("Order cancellation failed: {:?}", err);
+                                    // TODO: Generate cancel rejected event
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Failed to serialize cancel request to JSON: {:?}", err);
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to convert order to Hyperliquid cancel format: {:?}",
+                        err
+                    );
+                }
+            }
+
+            Ok(())
+        });
+
         Ok(())
     }
 
