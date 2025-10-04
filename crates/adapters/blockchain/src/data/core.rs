@@ -968,14 +968,8 @@ impl BlockchainDataClientCore {
             }
         }
 
-        self.cache.add_pools_batch(pools.clone()).await?;
+        self.cache.add_pools_batch(pools).await?;
         pool_buffer.clear();
-
-        // Send each pool as a data event so profilers can be created
-        for pool in pools {
-            let data = DataEvent::DeFi(DefiData::Pool(pool));
-            self.send_data(data);
-        }
 
         Ok(())
     }
@@ -1034,18 +1028,7 @@ impl BlockchainDataClientCore {
             tracing::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
 
             self.cache.add_dex(dex_extended.dex.clone()).await?;
-            let loaded_pools = self.cache.load_pools(&dex_id).await?;
-
-            // Send each loaded pool as a data event
-            for pool in loaded_pools.clone() {
-                let data = DataEvent::DeFi(DefiData::Pool(pool));
-                self.send_data(data);
-            }
-
-            // Replay historical events for each pool to hydrate profilers
-            for pool in loaded_pools {
-                self.replay_pool_events(&pool, &dex_extended.dex).await?;
-            }
+            let _ = self.cache.load_pools(&dex_id).await?;
 
             self.subscription_manager.register_dex_for_subscriptions(
                 dex_id,
@@ -1068,6 +1051,7 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if database streaming fails or event processing fails.
+    #[allow(dead_code)]
     async fn replay_pool_events(&self, pool: &Pool, dex: &SharedDex) -> anyhow::Result<()> {
         if let Some(database) = &self.cache.database {
             tracing::info!(
