@@ -529,7 +529,7 @@ The NautilusTrader data catalog is built on a dual-backend architecture that com
 - **PyArrow backend**: Flexible fallback for custom data types and advanced filtering.
 - **fsspec integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
 
-**Key benefits:**
+**Key benefits**:
 
 - **Performance**: Rust backend provides optimized query performance for core market data types.
 - **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios.
@@ -1240,14 +1240,14 @@ greeks_data = catalog.query(
 
 The NautilusTrader data catalog provides comprehensive market data management:
 
-**Core features:**
+**Core features**:
 
 - **Dual Backend**: Rust performance + Python flexibility.
 - **Multi-Protocol**: Local, S3, GCS, Azure storage.
 - **Streaming**: Feather → Parquet conversion pipeline.
 - **Operations**: Reset file names, consolidate data, period-based organization.
 
-**Key use cases:**
+**Key use cases**:
 
 - **Backtesting**: Pre-configured data loading via BacktestDataConfig.
 - **Live Trading**: On-demand data access via DataCatalogConfig.
