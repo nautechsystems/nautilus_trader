@@ -29,34 +29,27 @@ use crate::common::enums::{
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
-#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
-#[builder(setter(into, strip_option), default)]
+#[builder(default)]
+#[builder(setter(into))]
 pub struct BybitInstrumentsInfoParams {
     pub category: BybitProductType,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<BybitInstrumentStatus>,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_coin: Option<String>,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
-}
-
-impl Default for BybitInstrumentsInfoParams {
-    fn default() -> Self {
-        Self {
-            category: BybitProductType::Linear,
-            symbol: None,
-            status: None,
-            base_coin: None,
-            limit: None,
-            cursor: None,
-        }
-    }
 }
 
 /// Query parameters for `GET /v5/market/tickers`.
@@ -152,12 +145,16 @@ pub struct BybitCoinInfoParams {
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
-#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
+#[builder(default)]
+#[builder(setter(into))]
 pub struct BybitFeeRateParams {
     pub category: BybitProductType,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    #[builder(setter(strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_coin: Option<String>,
 }

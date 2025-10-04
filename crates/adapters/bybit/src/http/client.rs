@@ -1137,13 +1137,14 @@ impl BybitHttpInnerClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
-        let mut params_builder = super::query::BybitInstrumentsInfoParamsBuilder::default();
-        params_builder.category(product_type);
-        if let Some(symbol_str) = symbol {
-            params_builder.symbol(symbol_str);
-        }
-
-        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let params = super::query::BybitInstrumentsInfoParams {
+            category: product_type,
+            symbol,
+            status: None,
+            base_coin: None,
+            limit: None,
+            cursor: None,
+        };
 
         let mut instruments = Vec::new();
 

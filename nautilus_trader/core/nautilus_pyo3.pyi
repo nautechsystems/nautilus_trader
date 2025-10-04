@@ -5633,10 +5633,10 @@ class BybitAccountType(Enum):
     Unified = "Unified"
 
 class BybitProductType(Enum):
-    Spot = "Spot"
-    Linear = "Linear"
-    Inverse = "Inverse"
-    Option = "Option"
+    SPOT = "spot"
+    LINEAR = "linear"
+    INVERSE = "inverse"
+    OPTION = "option"
 
 class BybitEnvironment(Enum):
     Mainnet = "Mainnet"
@@ -5672,6 +5672,12 @@ class BybitHttpClient:
     def base_url(self) -> str: ...
     @property
     def api_key(self) -> str | None: ...
+    def add_instrument(self, instrument: Instrument) -> None: ...
+    async def request_instruments(
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+    ) -> list[Instrument]: ...
 
 class BybitWebSocketClient:
     @staticmethod

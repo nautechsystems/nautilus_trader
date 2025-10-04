@@ -15,6 +15,7 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod enums;
 pub mod http;
 pub mod urls;
 pub mod websocket;

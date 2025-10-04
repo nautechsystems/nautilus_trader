@@ -1057,4 +1057,44 @@ mod tests {
         assert_eq!(bar.volume, instrument.make_qty(123.45, None));
         assert_eq!(bar.ts_event, UnixNanos::new(1_709_891_679_000_000_000));
     }
+
+    #[rstest]
+    fn parse_http_position_short_into_position_status_report() {
+        use nautilus_model::{enums::PositionSide, identifiers::AccountId};
+
+        use crate::http::models::BybitPositionListResponse;
+
+        let json = load_test_json("http_get_positions.json");
+        let response: BybitPositionListResponse = serde_json::from_str(&json).unwrap();
+
+        // Get the short position (ETHUSDT, side="Sell", size="5.0")
+        let short_position = &response.result.list[1];
+        assert_eq!(short_position.symbol.as_str(), "ETHUSDT");
+        assert_eq!(
+            short_position.side,
+            crate::common::enums::BybitPositionSide::Sell
+        );
+
+        // Create ETHUSDT instrument for parsing
+        let eth_json = load_test_json("http_get_instruments_linear.json");
+        let eth_response: BybitInstrumentLinearResponse = serde_json::from_str(&eth_json).unwrap();
+        let eth_def = &eth_response.result.list[1]; // ETHUSDT is second in the list
+        let fee_rate = sample_fee_rate("ETHUSDT", "0.00055", "0.0001", Some("ETH"));
+        let eth_instrument = parse_linear_instrument(eth_def, &fee_rate, TS, TS).unwrap();
+
+        let account_id = AccountId::new("BYBIT-001");
+        let report =
+            parse_position_status_report(short_position, account_id, &eth_instrument, TS).unwrap();
+
+        // Verify short position is correctly parsed
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id.symbol.as_str(), "ETHUSDT-LINEAR");
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.quantity, eth_instrument.make_qty(5.0, None));
+        assert_eq!(
+            report.avg_px_open,
+            Some(Decimal::try_from(3000.00).unwrap())
+        );
+        assert_eq!(report.ts_last, UnixNanos::new(1_697_673_700_112_000_000));
+    }
 }

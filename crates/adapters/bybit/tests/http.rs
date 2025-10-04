@@ -257,6 +257,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/market/kline", get(handle_get_klines))
         .route("/v5/market/recent-trade", get(handle_get_trades))
         .route("/v5/order/history", get(handle_get_orders))
+        .route("/v5/order/realtime", get(handle_get_orders))
         .route("/v5/order/create", axum::routing::post(handle_post_order))
         .with_state(state)
 }
@@ -390,4 +391,58 @@ async fn test_place_order() {
     let response = client.http_place_order(&order_request).await.unwrap();
     assert_eq!(response.ret_code, 0);
     assert!(response.result.order_id.is_some());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_authenticated_endpoint_requires_credentials() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    // Create client without credentials
+    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None).unwrap();
+
+    // Should fail when trying to call authenticated endpoint without credentials
+    let result = client
+        .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .await;
+    assert!(result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rate_limiting_returns_error() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Make multiple requests to trigger rate limit (mock server limits after 5)
+    let mut last_error = None;
+    for _ in 0..10 {
+        match client
+            .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+            .await
+        {
+            Ok(_) => continue,
+            Err(err) => {
+                last_error = Some(err);
+                break;
+            }
+        }
+    }
+
+    // Verify rate limit was triggered
+    assert!(last_error.is_some());
+    let error = last_error.unwrap();
+    assert!(error.to_string().contains("10006") || error.to_string().contains("Too many"));
 }

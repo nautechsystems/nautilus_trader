@@ -35,6 +35,38 @@
         "unifiedMarginTrade": true,
         "fundingInterval": 8,
         "settleCoin": "USDT"
+      },
+      {
+        "symbol": "ETHUSDT",
+        "contractType": "LinearPerpetual",
+        "status": "Trading",
+        "baseCoin": "ETH",
+        "quoteCoin": "USDT",
+        "launchTime": "1699990000000",
+        "deliveryTime": "1702592000000",
+        "deliveryFeeRate": "0.0005",
+        "priceScale": "2",
+        "leverageFilter": {
+          "minLeverage": "1",
+          "maxLeverage": "100",
+          "leverageStep": "1"
+        },
+        "priceFilter": {
+          "minPrice": "0.1",
+          "maxPrice": "100000",
+          "tickSize": "0.05"
+        },
+        "lotSizeFilter": {
+          "maxOrderQty": "1000.0",
+          "minOrderQty": "0.01",
+          "qtyStep": "0.01",
+          "postOnlyMaxOrderQty": "1000.0",
+          "maxMktOrderQty": "500.0",
+          "minNotionalValue": "5"
+        },
+        "unifiedMarginTrade": true,
+        "fundingInterval": 8,
+        "settleCoin": "USDT"
       }
     ]
   },
