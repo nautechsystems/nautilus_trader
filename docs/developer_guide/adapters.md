@@ -15,8 +15,8 @@ NautilusTrader adapters follow a layered architecture pattern with:
 Good references for consistent patterns are currently:
 
 - BitMEX
+- Bybit
 - OKX
-- Databento
 
 ### Rust core (`crates/adapters/your_adapter/`)
 
@@ -111,21 +111,21 @@ use std::sync::Arc;
 use nautilus_network::http::HttpClient;
 
 // Inner client - contains actual HTTP logic
-pub struct BybitHttpInnerClient {
+pub struct MyHttpInnerClient {
     base_url: String,
     client: HttpClient,  // Use nautilus_network::http::HttpClient, not reqwest directly
     credential: Option<Credential>,
-    retry_manager: RetryManager<BybitHttpError>,
+    retry_manager: RetryManager<MyHttpError>,
     cancellation_token: CancellationToken,
 }
 
 // Outer client - wraps inner with Arc for cheap cloning (needed for Python)
-pub struct BybitHttpClient {
-    pub(crate) inner: Arc<BybitHttpInnerClient>,
+pub struct MyHttpClient {
+    pub(crate) inner: Arc<MyHttpInnerClient>,
 }
 ```
 
-**Key points:**
+**Key points**:
 
 - Inner client (`*HttpInnerClient`) contains all HTTP logic and state.
 - Outer client (`*HttpClient`) wraps the inner client in an `Arc` for efficient cloning.
@@ -150,58 +150,8 @@ Place parsing helpers (`parse_price_with_precision`, `parse_timestamp`) in the s
 
 Organize HTTP methods into two distinct sections:
 
-```rust
-impl BybitHttpInnerClient {
-    // =========================================================================
-    // Low-level HTTP API methods
-    // =========================================================================
-
-    /// Low-level methods that directly call venue endpoints.
-    /// These are prefixed with `http_` and mirror the venue API structure.
-    pub async fn http_get_server_time(&self) -> Result<ServerTimeResponse, Error> {
-        self.send_request(Method::GET, "/v5/market/time", None, false).await
-    }
-
-    pub async fn http_get_instruments<T: DeserializeOwned>(
-        &self,
-        params: &InstrumentsParams,
-    ) -> Result<T, Error> {
-        let path = Self::build_path("/v5/market/instruments-info", params)?;
-        self.send_request(Method::GET, &path, None, false).await
-    }
-
-    pub async fn http_place_order(
-        &self,
-        request: &serde_json::Value,
-    ) -> Result<PlaceOrderResponse, Error> {
-        let body = serde_json::to_vec(request)?;
-        self.send_request(Method::POST, "/v5/order/create", Some(body), true).await
-    }
-
-    // =========================================================================
-    // High-level methods using Nautilus domain objects
-    // =========================================================================
-
-    /// High-level methods that take Nautilus domain types and convert them
-    /// to venue-specific types before calling the http_* methods.
-    pub async fn submit_order(
-        &self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        // ... other Nautilus domain types
-    ) -> Result<VenueOrderId, Error> {
-        // Convert Nautilus domain objects to venue-specific types
-        let request = self.build_order_request(instrument_id, client_order_id, order_side)?;
-
-        // Call low-level http_* method
-        let response = self.http_place_order(&request).await?;
-
-        // Convert response back to Nautilus domain types
-        Ok(VenueOrderId::new(response.order_id))
-    }
-}
-```
+- Low-level direct API calls.
+- High-level domain methods.
 
 **Naming conventions:**
 
@@ -253,116 +203,15 @@ impl Default for InstrumentsInfoParams {
 
 ### Request signing and authentication
 
-Keep signing logic in the inner client:
-
-```rust
-impl BybitHttpInnerClient {
-    fn sign_request(
-        &self,
-        timestamp: &str,
-        params: Option<&str>,
-    ) -> Result<HashMap<String, String>, Error> {
-        let credential = self.credential.as_ref()
-            .ok_or(Error::MissingCredentials)?;
-
-        let signature = credential.sign_with_payload(timestamp, self.recv_window_ms, params);
-
-        let mut headers = HashMap::new();
-        headers.insert("X-BAPI-API-KEY".to_string(), credential.api_key().to_string());
-        headers.insert("X-BAPI-TIMESTAMP".to_string(), timestamp.to_string());
-        headers.insert("X-BAPI-SIGN".to_string(), signature);
-        headers.insert("X-BAPI-RECV-WINDOW".to_string(), self.recv_window_ms.to_string());
-
-        Ok(headers)
-    }
-}
-```
+Keep signing logic in the inner client.
 
 ### Error handling and retry logic
 
-Use the `RetryManager` from `nautilus_network` for consistent retry behavior:
-
-```rust
-impl BybitHttpInnerClient {
-    async fn send_request<T: DeserializeOwned>(
-        &self,
-        method: Method,
-        endpoint: &str,
-        body: Option<Vec<u8>>,
-        authenticate: bool,
-    ) -> Result<T, Error> {
-        let operation = || async {
-            let mut headers = Self::default_headers();
-
-            if authenticate {
-                let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
-                let auth_headers = self.sign_request(&timestamp, None)?;
-                headers.extend(auth_headers);
-            }
-
-            let response = self.client
-                .request(method, url, Some(headers), body, None, Some(rate_limit_keys))
-                .await?;
-
-            // Parse and validate response
-            let result: T = serde_json::from_slice(&response.body)?;
-            Ok(result)
-        };
-
-        let should_retry = |error: &Error| -> bool {
-            matches!(error, Error::NetworkError(_) | Error::UnexpectedStatus { status, .. } if *status >= 500)
-        };
-
-        self.retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint,
-                operation,
-                should_retry,
-                |msg| Error::NetworkError(msg),
-                &self.cancellation_token,
-            )
-            .await
-    }
-}
-```
+Use the `RetryManager` from `nautilus_network` for consistent retry behavior.
 
 ### Rate limiting
 
-Configure rate limiting through `HttpClient`:
-
-```rust
-use nautilus_network::ratelimiter::quota::Quota;
-
-static BYBIT_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
-
-impl BybitHttpInnerClient {
-    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
-        vec![("bybit:global".to_string(), *BYBIT_REST_QUOTA)]
-    }
-
-    fn rate_limit_keys(endpoint: &str) -> Vec<String> {
-        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
-        vec![
-            "bybit:global".to_string(),
-            format!("bybit:{normalized}"),
-        ]
-    }
-
-    pub fn new(...) -> Result<Self, Error> {
-        Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*BYBIT_REST_QUOTA),
-                timeout_secs,
-            ),
-            // ... other fields
-        })
-    }
-}
-```
+Configure rate limiting through `HttpClient`.
 
 ## WebSocket client patterns
 
@@ -370,178 +219,63 @@ WebSocket clients handle real-time streaming data and require careful management
 
 ### Client structure
 
-WebSocket clients typically don't need the inner/outer pattern since they're not frequently cloned. Use a single struct with clear state management:
-
-```rust
-pub struct BybitWebSocketClient {
-    key: String,
-    base_url: String,
-    handler: Arc<dyn MessageHandler>,
-    stream: Option<WebSocketStream>,
-    subscription_state: Arc<Mutex<SubscriptionState>>,
-    cancellation_token: CancellationToken,
-}
-
-struct SubscriptionState {
-    is_authenticated: bool,
-    active_subscriptions: HashSet<String>,
-    pending_subscriptions: HashSet<String>,
-}
-```
+WebSocket clients typically don't need the inner/outer pattern since they're not frequently cloned. Use a single struct with clear state management.
 
 ### Authentication
 
-Handle authentication separately from subscriptions:
-
-```rust
-impl BybitWebSocketClient {
-    async fn authenticate(&self) -> Result<(), Error> {
-        let timestamp = get_atomic_clock_realtime().get_time_ms();
-        let signature = self.credential.sign_for_websocket(timestamp);
-
-        let auth_msg = json!({
-            "op": "auth",
-            "args": [self.credential.api_key(), timestamp, signature]
-        });
-
-        self.send_message(&auth_msg).await?;
-
-        // Wait for auth confirmation
-        // Update subscription_state.is_authenticated = true
-        Ok(())
-    }
-}
-```
+Handle authentication separately from subscriptions.
 
 ### Subscription management
 
-Track subscriptions in three states: pending, active, and explicitly unsubscribed:
+#### Subscription lifecycle
 
-```rust
-impl BybitWebSocketClient {
-    pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), Error> {
-        {
-            let mut state = self.subscription_state.lock().unwrap();
-            state.pending_subscriptions.extend(topics.clone());
-        }
+A **subscription** represents any topic in one of two states:
 
-        let sub_msg = json!({
-            "op": "subscribe",
-            "args": topics
-        });
+| State         | Description |
+|---------------|-------------|
+| **Pending**   | Subscription request sent to venue, awaiting acknowledgment |
+| **Confirmed** | Venue acknowledged subscription and is actively streaming data |
 
-        self.send_message(&sub_msg).await?;
-        Ok(())
-    }
+State transitions follow this lifecycle:
 
-    fn handle_subscription_ack(&self, topics: Vec<String>) {
-        let mut state = self.subscription_state.lock().unwrap();
-        for topic in topics {
-            state.pending_subscriptions.remove(&topic);
-            state.active_subscriptions.insert(topic);
-        }
-    }
+| Trigger           | Method Called        | From State | To State  | Notes |
+|-------------------|----------------------|------------|-----------|-------|
+| User subscribes   | `mark_subscribe()`   | —          | Pending   | Topic added to pending set |
+| Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed |
+| Venue rejects     | `mark_failure()`     | Pending    | Pending   | Stays pending for retry on reconnect |
+| User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack |
+| Unsubscribe ack   | `clear_pending()`    | Pending    | Removed   | Topic fully removed |
 
-    pub async fn unsubscribe(&self, topics: Vec<String>) -> Result<(), Error> {
-        {
-            let mut state = self.subscription_state.lock().unwrap();
-            for topic in &topics {
-                state.active_subscriptions.remove(topic);
-                state.pending_subscriptions.remove(topic);
-            }
-        }
+**Key principles**:
 
-        let unsub_msg = json!({
-            "op": "unsubscribe",
-            "args": topics
-        });
+- `subscription_count()` reports **only confirmed subscriptions**, not pending ones.
+- Failed subscriptions remain pending and are automatically retried on reconnect.
+- Both confirmed and pending subscriptions are restored after reconnection.
+- Unsubscribe operations must check the `op` field in acknowledgments to avoid re-confirming topics.
 
-        self.send_message(&unsub_msg).await?;
-        Ok(())
-    }
-}
-```
+#### Topic format patterns
+
+Adapters use venue-specific delimiters to structure subscription topics:
+
+| Adapter    | Delimiter | Example                | Pattern                      |
+|------------|-----------|------------------------|------------------------------|
+| **BitMEX** | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
+| **OKX**    | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
+| **Bybit**  | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
+
+Parse topics using `split_once()` with the appropriate delimiter to extract channel and symbol components.
 
 ### Reconnection logic
 
-On reconnection, restore authentication and public subscriptions, but skip private channels that were explicitly unsubscribed:
-
-```rust
-impl BybitWebSocketClient {
-    async fn handle_reconnect(&self) -> Result<(), Error> {
-        // Re-authenticate if credentials exist
-        if self.credential.is_some() {
-            self.authenticate().await?;
-        }
-
-        // Restore active subscriptions (not pending or unsubscribed)
-        let subscriptions = {
-            let state = self.subscription_state.lock().unwrap();
-            state.active_subscriptions.clone()
-        };
-
-        if !subscriptions.is_empty() {
-            self.subscribe(subscriptions.into_iter().collect()).await?;
-        }
-
-        Ok(())
-    }
-}
-```
+On reconnection, restore authentication and public subscriptions, but skip private channels that were explicitly unsubscribed.
 
 ### Ping/Pong handling
 
-Support both control frame pings and application-level pings:
-
-```rust
-impl BybitWebSocketClient {
-    async fn handle_message(&self, msg: Message) -> Result<(), Error> {
-        match msg {
-            Message::Ping(data) => {
-                // Respond to control frame ping
-                self.stream.send(Message::Pong(data)).await?;
-            }
-            Message::Text(text) => {
-                let parsed: serde_json::Value = serde_json::from_str(&text)?;
-
-                // Handle application-level ping
-                if parsed.get("op") == Some(&json!("ping")) {
-                    let pong = json!({"op": "pong"});
-                    self.send_message(&pong).await?;
-                }
-
-                // Route other messages to handler
-                self.handler.handle_message(parsed).await?;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-}
-```
+Support both control frame pings and application-level pings.
 
 ### Message routing
 
-Route different message types to appropriate handlers:
-
-```rust
-impl BybitWebSocketClient {
-    async fn route_message(&self, msg: serde_json::Value) -> Result<(), Error> {
-        match msg.get("op").and_then(|v| v.as_str()) {
-            Some("auth") => self.handle_auth_response(msg),
-            Some("subscribe") => self.handle_subscription_ack(msg),
-            Some("unsubscribe") => self.handle_unsubscribe_ack(msg),
-            _ => {
-                // Data message - parse topic and route to handler
-                if let Some(topic) = msg.get("topic").and_then(|v| v.as_str()) {
-                    self.handler.handle_data(topic, msg).await?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-```
+Route different message types to appropriate handlers.
 
 ### Error handling
 
@@ -563,7 +297,7 @@ pub enum WebSocketError {
     ParseError(String),
 }
 
-impl BybitWebSocketClient {
+impl MyWebSocketClient {
     fn should_reconnect(&self, error: &WebSocketError) -> bool {
         matches!(
             error,
