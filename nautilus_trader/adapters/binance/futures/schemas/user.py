@@ -281,8 +281,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
-
         strategy_id = None
+
         if client_order_id:
             strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
 
@@ -301,7 +301,9 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
 
         instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
         if instrument is None:
-            raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
+            raise ValueError(
+                f"Cannot process event for {instrument_id}: instrument not found in cache",
+            )
 
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision

@@ -225,6 +225,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
         strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+
         if strategy_id is None:
             report = self.parse_to_order_status_report(
                 account_id=exec_client.account_id,
@@ -236,7 +237,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 enum_parser=exec_client._enum_parser,
             )
             exec_client._send_order_status_report(report)
-        elif self.x == BinanceExecutionType.NEW:
+            return
+
+        if self.x == BinanceExecutionType.NEW:
             exec_client.generate_order_accepted(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -246,6 +249,10 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             )
         elif self.x == BinanceExecutionType.TRADE:
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot process fill for {instrument_id}: instrument not found in cache",
+                )
 
             # Determine commission
             commission_asset = self.N

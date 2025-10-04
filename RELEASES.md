@@ -57,6 +57,7 @@ This will be the final release with support for Python 3.11.
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
+- Improved Binance fill handling when instrument not cached with clearer error log
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
