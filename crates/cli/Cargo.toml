@@ -23,18 +23,19 @@ hypersync = ["nautilus-blockchain"]
 
 [dependencies]
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
+nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-blockchain = { workspace = true, features = [
   "hypersync",
 ], optional = true }
-nautilus-model = { workspace = true, features = ["defi"] }
-futures-util = { workspace = true }
+
+alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
 log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
-alloy-primitives = { workspace = true }
 
 [[bin]]
 name = "nautilus"

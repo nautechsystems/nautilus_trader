@@ -37,6 +37,7 @@ This will be the final release with support for Python 3.11.
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019), thanks @filipmacek
+- Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -50,6 +51,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid ExecutionClient in Python (#3003), thanks @nicolad
 - Implemented Hyperliquid ExecutionClient in Rust (#3013), thanks @nicolad
 - Implemented Hyperliquid websocket tester for streaming market data (#3018), thanks @nicolad
+- Implemented Hyperliquid basic market and limit orders (#3022), thanks @nicolad
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
