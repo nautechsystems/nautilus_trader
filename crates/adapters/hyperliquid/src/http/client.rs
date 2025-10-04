@@ -41,14 +41,16 @@ use crate::{
         credential::{Secrets, VaultAddress},
     },
     http::{
-        conversion::instruments_from_defs_owned,
         error::{Error, Result},
         models::{
             HyperliquidExchangeRequest, HyperliquidExchangeResponse, HyperliquidFills,
             HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs,
             SpotMeta, SpotMetaAndCtxs,
         },
-        parse::{HyperliquidInstrumentDef, parse_perp_instruments, parse_spot_instruments},
+        parse::{
+            HyperliquidInstrumentDef, instruments_from_defs_owned, parse_perp_instruments,
+            parse_spot_instruments,
+        },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
             RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,

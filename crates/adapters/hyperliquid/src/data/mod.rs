@@ -60,7 +60,7 @@ pub struct HyperliquidDataClient {
     #[allow(dead_code)]
     config: HyperliquidDataClientConfig,
     http_client: HyperliquidHttpClient,
-    ws_client: Option<HyperliquidWebSocketClient>,
+    ws_client: HyperliquidWebSocketClient,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -94,11 +94,18 @@ impl HyperliquidDataClient {
             HyperliquidHttpClient::new(config.is_testnet, config.http_timeout_secs)
         };
 
+        let ws_url = if config.is_testnet {
+            HYPERLIQUID_TESTNET_WS_URL
+        } else {
+            HYPERLIQUID_WS_URL
+        };
+        let ws_client = HyperliquidWebSocketClient::new(ws_url.to_string());
+
         Ok(Self {
             client_id,
             config,
             http_client,
-            ws_client: None, // Will be initialized on connect
+            ws_client,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
@@ -130,19 +137,13 @@ impl HyperliquidDataClient {
     }
 
     async fn spawn_ws(&mut self) -> Result<()> {
-        let ws_url = if self.config.is_testnet {
-            HYPERLIQUID_TESTNET_WS_URL
-        } else {
-            HYPERLIQUID_WS_URL
-        };
+        tracing::info!("Connecting to Hyperliquid WebSocket");
 
-        tracing::info!("Connecting to Hyperliquid WebSocket at {}", ws_url);
-
-        let ws_client = HyperliquidWebSocketClient::connect(ws_url)
+        self.ws_client
+            .ensure_connected()
             .await
             .context("Failed to connect to Hyperliquid WebSocket")?;
 
-        self.ws_client = Some(ws_client);
         tracing::info!("Hyperliquid WebSocket client connected successfully");
 
         Ok(())
@@ -258,9 +259,7 @@ impl DataClient for HyperliquidDataClient {
         }
 
         // Disconnect WebSocket client
-        if let Some(mut ws_client) = self.ws_client.take()
-            && let Err(e) = ws_client.disconnect().await
-        {
+        if let Err(e) = self.ws_client.disconnect().await {
             tracing::error!("Error disconnecting WebSocket client: {e}");
         }
 

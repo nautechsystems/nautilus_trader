@@ -364,30 +364,72 @@ impl HyperliquidWebSocketInnerClient {
 /// functionality for WebSocket operations using standard domain methods.
 #[derive(Debug)]
 pub struct HyperliquidWebSocketClient {
-    inner: HyperliquidWebSocketInnerClient,
+    inner: Option<HyperliquidWebSocketInnerClient>,
+    url: String,
 }
 
 impl HyperliquidWebSocketClient {
-    /// Creates a new Hyperliquid WebSocket client.
+    /// Creates a new Hyperliquid WebSocket client without connecting.
+    /// The connection will be established when start() is called.
+    pub fn new(url: String) -> Self {
+        Self { inner: None, url }
+    }
+
+    /// Creates a new Hyperliquid WebSocket client and establishes connection.
     pub async fn connect(url: &str) -> Result<Self> {
         let inner = HyperliquidWebSocketInnerClient::connect(url).await?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Some(inner),
+            url: url.to_string(),
+        })
+    }
+
+    /// Establishes the WebSocket connection if not already connected.
+    pub async fn ensure_connected(&mut self) -> Result<()> {
+        if self.inner.is_none() {
+            let inner = HyperliquidWebSocketInnerClient::connect(&self.url).await?;
+            self.inner = Some(inner);
+        }
+        Ok(())
+    }
+
+    /// Returns true if the WebSocket is connected.
+    pub fn is_connected(&self) -> bool {
+        self.inner.is_some()
     }
 
     /// Subscribe to order updates for a specific user address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn subscribe_order_updates(&mut self, user: &str) -> Result<()> {
+        self.ensure_connected().await?;
         let subscription = SubscriptionRequest::OrderUpdates {
             user: user.to_string(),
         };
-        self.inner.ws_subscribe(subscription).await
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
     }
 
     /// Subscribe to user events (fills, funding, liquidations) for a specific user address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn subscribe_user_events(&mut self, user: &str) -> Result<()> {
+        self.ensure_connected().await?;
         let subscription = SubscriptionRequest::UserEvents {
             user: user.to_string(),
         };
-        self.inner.ws_subscribe(subscription).await
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
     }
 
     /// Subscribe to all user channels (order updates + user events) for convenience.
@@ -400,63 +442,116 @@ impl HyperliquidWebSocketClient {
     /// Get the next event from the WebSocket stream.
     /// Returns None when the connection is closed or the receiver is exhausted.
     pub async fn next_event(&mut self) -> Option<HyperliquidWsMessage> {
-        self.inner.ws_next_event().await
+        if let Some(ref mut inner) = self.inner {
+            inner.ws_next_event().await
+        } else {
+            None
+        }
     }
 
     /// Returns true if the WebSocket connection is active.
     pub fn is_active(&self) -> bool {
-        self.inner.is_active()
+        self.inner.as_ref().is_some_and(|inner| inner.is_active())
     }
 
     /// Returns true if the WebSocket is reconnecting.
     pub fn is_reconnecting(&self) -> bool {
-        self.inner.is_reconnecting()
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.is_reconnecting())
     }
 
     /// Returns true if the WebSocket is disconnecting.
     pub fn is_disconnecting(&self) -> bool {
-        self.inner.is_disconnecting()
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.is_disconnecting())
     }
 
     /// Returns true if the WebSocket is closed.
     pub fn is_closed(&self) -> bool {
-        self.inner.is_closed()
+        self.inner.as_ref().is_none_or(|inner| inner.is_closed())
     }
 
     /// Disconnect the WebSocket client.
     pub async fn disconnect(&mut self) -> Result<()> {
-        self.inner.ws_disconnect().await
+        if let Some(ref mut inner) = self.inner {
+            inner.ws_disconnect().await
+        } else {
+            Ok(())
+        }
     }
 
     /// Escape hatch: send raw requests for tests/power users.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
-        self.inner.ws_send(request).await
+        self.ensure_connected().await?;
+        self.inner.as_mut().unwrap().ws_send(request).await
     }
 
     /// High-level: call info l2Book (WS post)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn info_l2_book(
         &mut self,
         coin: &str,
         timeout: Duration,
     ) -> HyperliquidResult<crate::http::models::HyperliquidL2Book> {
-        self.inner.info_l2_book(coin, timeout).await
+        self.ensure_connected().await.map_err(|e| Error::Http {
+            status: 500,
+            message: e.to_string(),
+        })?;
+        self.inner
+            .as_mut()
+            .unwrap()
+            .info_l2_book(coin, timeout)
+            .await
     }
 
     /// High-level: fire arbitrary info (WS post) returning raw payload.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn post_info_raw(
         &mut self,
         payload: serde_json::Value,
         timeout: Duration,
     ) -> HyperliquidResult<PostResponsePayload> {
-        self.inner.post_info_raw(payload, timeout).await
+        self.ensure_connected().await.map_err(|e| Error::Http {
+            status: 500,
+            message: e.to_string(),
+        })?;
+        self.inner
+            .as_mut()
+            .unwrap()
+            .post_info_raw(payload, timeout)
+            .await
     }
 
     /// High-level: fire action (already signed ActionPayload)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
     pub async fn post_action_raw(
         &mut self,
         action: ActionPayload,
         timeout: Duration,
     ) -> HyperliquidResult<PostResponsePayload> {
-        self.inner.post_action_raw(action, timeout).await
+        self.ensure_connected().await.map_err(|e| Error::Http {
+            status: 500,
+            message: e.to_string(),
+        })?;
+        self.inner
+            .as_mut()
+            .unwrap()
+            .post_action_raw(action, timeout)
+            .await
     }
 }
