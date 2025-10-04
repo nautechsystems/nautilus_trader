@@ -444,16 +444,23 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         now = self._clock.timestamp_ns()
         start = params.pop("start_ns", None)
 
+        # A minimum number of bars needs to be requested so bars start to be received
+        # We then consider only bars which ts_init is after start
         if start is not None:
-            # start_time = pd.Timestamp(start)
             duration_str = timedelta_to_duration_str(
-                pd.Timedelta(now - start, "ns"),
+                max(
+                    pd.Timedelta(now - start, "ns"),
+                    pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec"),
+                ),  # Download at least approx 300 bars
             )
         else:
             start = now
             duration_str = timedelta_to_duration_str(
                 pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec"),
             )  # Download approx 300 bars
+
+        if "first_start_ns" not in params:
+            params["first_start_ns"] = start
 
         subscription = await self._subscribe(
             name,
@@ -465,6 +472,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             handle_revised_bars=handle_revised_bars,
             params=params,
         )
+
+        # In order to get missed bars after a disconnection
+        if (
+            self._last_disconnection_ns is not None
+            and self._last_disconnection_ns > params["first_start_ns"]
+        ):
+            start = self._last_disconnection_ns
 
         # Store start time separately for bar filtering (not part of resubscription handle)
         self._subscription_start_times[subscription.req_id] = start
