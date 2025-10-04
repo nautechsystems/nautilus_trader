@@ -20,8 +20,7 @@ if [[ ${#dirs[@]} -eq 0 ]]; then
 fi
 
 # Sort lexicographically; dev/nightly names include date and generally increase
-IFS=$'\n' sorted=($(sort <<<"${dirs[*]}"))
-unset IFS
+mapfile -t sorted < <(printf '%s\n' "${dirs[@]}" | sort)
 
 keep=$KEEP_DEVELOP
 if [[ "$BRANCH_NAME" == "nightly" ]]; then

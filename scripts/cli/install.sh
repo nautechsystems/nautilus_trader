@@ -189,7 +189,7 @@ fallback_build_from_source() {
 }
 
 main() {
-  local target ext art tmp attempt rc
+  local target ext art tmp attempt
   target="$(detect_target)"
   ext="tar.gz"
   art="nautilus-${target}.${ext}"
@@ -215,7 +215,6 @@ main() {
       install_from_archive "$tmp" "$art"
       return 0
     fi
-    rc=$?
     if [ "$attempt" -lt "$RETRIES" ]; then
       local delay
       delay=$(echo "$BACKOFFS" | awk -v n=$attempt '{print $n}')
