@@ -4797,6 +4797,7 @@ dependencies = [
  "strum 0.27.2",
  "sysinfo",
  "tempfile",
+ "thousands",
  "tokio",
  "tracing",
  "tracing-subscriber",

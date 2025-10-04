@@ -32,6 +32,7 @@ use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     time::get_atomic_clock_realtime,
 };
+use thousands::Separable;
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
@@ -273,22 +274,30 @@ impl TestClock {
     /// The method processes active timers, advancing them to `to_time_ns`, and collects any `TimeEvent`
     /// objects that are triggered as a result. Only timers that are not expired are processed.
     ///
+    /// # Warnings
+    ///
+    /// Logs a warning if >= 1,000,000 time events are allocated during advancement.
+    ///
     /// # Panics
     ///
     /// Panics if `to_time_ns` is less than the current internal clock time.
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
+        const WARN_TIME_EVENTS_THRESHOLD: usize = 1_000_000;
+
+        let from_time_ns = self.time.get_time_ns();
+
         // Time should be non-decreasing
         assert!(
-            to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` {to_time_ns} was < `self.time.get_time_ns()` {}",
-            self.time.get_time_ns()
+            to_time_ns >= from_time_ns,
+            "`to_time_ns` {to_time_ns} was < `from_time_ns` {}",
+            from_time_ns
         );
 
         if set_time {
             self.time.set_time(to_time_ns);
         }
 
-        // Iterate and advance timers and collect events. Only retain alive timers.
+        // Iterate and advance timers and collect events, only retain alive timers
         let mut events: Vec<TimeEvent> = Vec::new();
         self.timers.retain(|_, timer| {
             timer.advance(to_time_ns).for_each(|event| {
@@ -297,6 +306,16 @@ impl TestClock {
 
             !timer.is_expired()
         });
+
+        if events.len() >= WARN_TIME_EVENTS_THRESHOLD {
+            log::warn!(
+                "Allocated {} time events during clock advancement from {} to {}, \
+                 consider stopping the timer between large time ranges with no data points",
+                events.len().separate_with_commas(),
+                from_time_ns,
+                to_time_ns
+            );
+        }
 
         events.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
         events
@@ -308,22 +327,28 @@ impl TestClock {
     ///
     /// Note: `set_time` is not used but present to keep backward compatible api call
     ///
+    /// # Warnings
+    ///
+    /// Logs a warning when the internal heap already exceeds 100,000 scheduled events before pushing new ones.
+    ///
     /// # Panics
     ///
     /// Panics if `to_time_ns` is less than the current internal clock time.
     pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
-        const MAX_HEAP_SIZE: usize = 100_000;
+        const WARN_HEAP_SIZE_THRESHOLD: usize = 100_000;
+
+        let from_time_ns = self.time.get_time_ns();
 
         // Time should be non-decreasing
         assert!(
-            to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` {to_time_ns} was < `self.time.get_time_ns()` {}",
-            self.time.get_time_ns()
+            to_time_ns >= from_time_ns,
+            "`to_time_ns` {to_time_ns} was < `from_time_ns` {}",
+            from_time_ns
         );
 
         self.time.set_time(to_time_ns);
 
-        if self.heap.len() > MAX_HEAP_SIZE {
+        if self.heap.len() > WARN_HEAP_SIZE_THRESHOLD {
             log::warn!(
                 "TestClock heap size {} exceeds recommended limit",
                 self.heap.len()
