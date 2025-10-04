@@ -57,13 +57,14 @@ use crate::{
         auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
         error::{BybitWsError, BybitWsResult},
         messages::{
-            BybitWebSocketError, BybitWebSocketMessage, BybitWsAccountExecutionMsg,
-            BybitWsAccountOrderMsg, BybitWsAccountPositionMsg, BybitWsAccountWalletMsg,
-            BybitWsAmendOrderParams, BybitWsAuthResponse, BybitWsCancelOrderParams, BybitWsHeader,
-            BybitWsKlineMsg, BybitWsOrderbookDepthMsg, BybitWsPlaceOrderParams, BybitWsRequest,
-            BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinearMsg,
-            BybitWsTickerOptionMsg, BybitWsTradeMsg,
+            BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWebSocketMessage,
+            BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsAccountPositionMsg,
+            BybitWsAccountWalletMsg, BybitWsAmendOrderParams, BybitWsAuthResponse,
+            BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg, BybitWsOrderbookDepthMsg,
+            BybitWsPlaceOrderParams, BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg,
+            BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
         },
+        subscription::SubscriptionState,
     },
 };
 
@@ -87,7 +88,7 @@ pub struct BybitWebSocketClient {
     rx: Option<tokio::sync::mpsc::UnboundedReceiver<BybitWebSocketMessage>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
-    subscriptions: Arc<DashMap<String, ()>>,
+    subscriptions: SubscriptionState,
     is_authenticated: Arc<AtomicBool>,
     instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
     account_id: Option<AccountId>,
@@ -101,7 +102,7 @@ impl fmt::Debug for BybitWebSocketClient {
             .field("product_type", &self.product_type)
             .field("requires_auth", &self.requires_auth)
             .field("heartbeat", &self.heartbeat)
-            .field("active_subscriptions", &self.subscriptions.len())
+            .field("confirmed_subscriptions", &self.subscriptions.len())
             .finish()
     }
 }
@@ -120,7 +121,7 @@ impl Clone for BybitWebSocketClient {
             rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
             task_handle: None, // Each clone gets its own task handle
-            subscriptions: Arc::clone(&self.subscriptions),
+            subscriptions: self.subscriptions.clone(),
             is_authenticated: Arc::clone(&self.is_authenticated),
             instruments: Arc::clone(&self.instruments),
             account_id: self.account_id,
@@ -160,7 +161,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: Arc::new(DashMap::new()),
+            subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments: Arc::new(DashMap::new()),
             account_id: None,
@@ -187,7 +188,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: Arc::new(DashMap::new()),
+            subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments: Arc::new(DashMap::new()),
             account_id: None,
@@ -214,7 +215,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: Arc::new(DashMap::new()),
+            subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments: Arc::new(DashMap::new()),
             account_id: None,
@@ -274,7 +275,7 @@ impl BybitWebSocketClient {
 
         let inner = Arc::clone(&self.inner);
         let signal = Arc::clone(&self.signal);
-        let subscriptions = Arc::clone(&self.subscriptions);
+        let subscriptions = self.subscriptions.clone();
         let auth_tracker = self.auth_tracker.clone();
         let credential = self.credential.clone();
         let requires_auth = self.requires_auth;
@@ -411,21 +412,11 @@ impl BybitWebSocketClient {
             return Ok(());
         }
 
-        let mut new_topics = Vec::new();
-        for topic in topics {
-            if self.subscriptions.contains_key(&topic) {
-                tracing::debug!("Bybit subscription already active: {topic}");
-                continue;
-            }
-            self.subscriptions.insert(topic.clone(), ());
-            new_topics.push(topic);
+        for topic in &topics {
+            self.subscriptions.mark_subscribe(topic);
         }
 
-        if new_topics.is_empty() {
-            return Ok(());
-        }
-
-        Self::send_topics_inner(&self.inner, "subscribe", new_topics).await
+        Self::send_topics_inner(&self.inner, "subscribe", topics).await
     }
 
     /// Unsubscribe from the provided topics.
@@ -434,20 +425,11 @@ impl BybitWebSocketClient {
             return Ok(());
         }
 
-        let mut removed_topics = Vec::new();
-        for topic in topics {
-            if self.subscriptions.remove(&topic).is_some() {
-                removed_topics.push(topic);
-            } else {
-                tracing::debug!("Cannot unsubscribe '{topic}': not currently subscribed");
-            }
+        for topic in &topics {
+            self.subscriptions.mark_unsubscribe(topic);
         }
 
-        if removed_topics.is_empty() {
-            return Ok(());
-        }
-
-        Self::send_topics_inner(&self.inner, "unsubscribe", removed_topics).await
+        Self::send_topics_inner(&self.inner, "unsubscribe", topics).await
     }
 
     /// Returns a stream of parsed [`BybitWebSocketMessage`] items.
@@ -1046,11 +1028,12 @@ impl BybitWebSocketClient {
         }
 
         for chunk in topics.chunks(MAX_ARGS_PER_SUBSCRIPTION_REQUEST) {
-            let payload = json!({
-                "op": op,
-                "args": chunk,
-            });
-            Self::send_text_inner(inner, &payload.to_string()).await?;
+            let subscription = BybitSubscription {
+                op: op.to_string(),
+                args: chunk.to_vec(),
+            };
+            let payload = serde_json::to_string(&subscription)?;
+            Self::send_text_inner(inner, &payload).await?;
         }
 
         Ok(())
@@ -1058,19 +1041,23 @@ impl BybitWebSocketClient {
 
     async fn resubscribe_all_inner(
         inner: &Arc<RwLock<Option<WebSocketClient>>>,
-        subscriptions: &Arc<DashMap<String, ()>>,
+        subscriptions: &SubscriptionState,
     ) -> BybitWsResult<()> {
-        let topics: Vec<String> = subscriptions
-            .iter()
-            .map(|entry| entry.key().clone())
-            .collect();
+        let topics = subscriptions.all_topics();
+        if topics.is_empty() {
+            return Ok(());
+        }
 
+        tracing::info!(
+            "Restoring {} subscriptions after reconnection",
+            topics.len()
+        );
         Self::send_topics_inner(inner, "subscribe", topics).await
     }
 
     async fn handle_message(
         inner: &Arc<RwLock<Option<WebSocketClient>>>,
-        _subscriptions: &Arc<DashMap<String, ()>>,
+        subscriptions: &SubscriptionState,
         auth_tracker: &AuthTracker,
         requires_auth: bool,
         is_authenticated: &Arc<AtomicBool>,
@@ -1113,6 +1100,48 @@ impl BybitWebSocketClient {
                                 .clone()
                                 .unwrap_or_else(|| "Authentication failed".to_string());
                             auth_tracker.fail(message);
+                        }
+                    } else if let BybitWebSocketMessage::Subscription(sub_msg) = &event {
+                        // Handle subscription/unsubscription confirmation
+                        if sub_msg.op.eq_ignore_ascii_case("subscribe") {
+                            let pending_topics = subscriptions.pending_subscribe_topics();
+                            // Handle subscribe acknowledgment
+                            if sub_msg.success {
+                                for topic in pending_topics {
+                                    subscriptions.confirm_subscribe(&topic);
+                                    tracing::debug!(topic = topic, "Subscription confirmed");
+                                }
+                            } else {
+                                for topic in pending_topics {
+                                    subscriptions.mark_failure(&topic);
+                                    tracing::warn!(
+                                        topic = topic,
+                                        error = ?sub_msg.ret_msg,
+                                        "Subscription failed, will retry on reconnect"
+                                    );
+                                }
+                            }
+                        } else if sub_msg.op.eq_ignore_ascii_case("unsubscribe") {
+                            let pending_topics = subscriptions.pending_unsubscribe_topics();
+                            // Handle unsubscribe acknowledgment
+                            if sub_msg.success {
+                                for topic in pending_topics {
+                                    subscriptions.confirm_unsubscribe(&topic);
+                                    tracing::debug!(topic = topic, "Unsubscription confirmed");
+                                }
+                            } else {
+                                // Unsubscribe failed - venue still considers us subscribed
+                                // Clear from pending_unsubscribe and restore to confirmed
+                                for topic in pending_topics {
+                                    subscriptions.confirm_unsubscribe(&topic); // Clear from pending_unsubscribe
+                                    subscriptions.confirm_subscribe(&topic); // Restore to confirmed
+                                    tracing::warn!(
+                                        topic = topic,
+                                        error = ?sub_msg.ret_msg,
+                                        "Unsubscription failed, topic remains subscribed"
+                                    );
+                                }
+                            }
                         }
                     } else if let BybitWebSocketMessage::Error(err) = &event
                         && requires_auth
@@ -1249,12 +1278,18 @@ impl BybitWebSocketClient {
         let expires = now_ms + WEBSOCKET_AUTH_WINDOW_MS;
         let signature = credential.sign_websocket_auth(expires);
 
-        let payload = json!({
-            "op": "auth",
-            "args": [credential.api_key().as_str(), expires, signature],
-        });
+        let auth_request = BybitAuthRequest {
+            op: "auth".to_string(),
+            args: vec![
+                json!(credential.api_key().as_str()),
+                json!(expires),
+                json!(signature),
+            ],
+        };
 
-        if let Err(err) = Self::send_text_inner(inner, &payload.to_string()).await {
+        let payload = serde_json::to_string(&auth_request)?;
+
+        if let Err(err) = Self::send_text_inner(inner, &payload).await {
             auth_tracker.fail(err.to_string());
             return Err(err);
         }

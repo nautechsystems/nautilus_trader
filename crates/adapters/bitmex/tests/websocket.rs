@@ -1464,3 +1464,320 @@ async fn test_heartbeat_timeout_reconnection() {
 
     client.close().await.unwrap();
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_rapid_consecutive_reconnections() {
+    // Test that rapid consecutive disconnects/reconnects don't cause state corruption
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url.clone()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    // Initial connection with subscriptions
+    client.connect().await.unwrap();
+
+    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+    client.subscribe_book(instrument_id).await.unwrap();
+    client.subscribe_positions().await.unwrap();
+
+    client.wait_until_active(2.0).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let initial_auth_calls = *state.auth_calls.lock().await;
+    assert_eq!(initial_auth_calls, 1, "Should have 1 initial auth call");
+
+    // Perform 3 rapid disconnect/reconnect cycles
+    for cycle in 1..=3 {
+        println!("Starting cycle {cycle}");
+
+        // Clear subscription events to verify fresh resubscriptions
+        state.clear_subscription_events().await;
+
+        // Trigger server drop
+        state.drop_connections.store(true, Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Allow reconnection
+        state.drop_connections.store(false, Ordering::Relaxed);
+
+        // Wait for reconnection
+        let reconnect_result = client.wait_until_active(10.0).await;
+        assert!(
+            reconnect_result.is_ok(),
+            "Reconnection cycle {cycle} failed"
+        );
+
+        // Wait for subscription restoration
+        let events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+            events
+                .iter()
+                .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)
+                && events
+                    .iter()
+                    .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok)
+                && events.iter().any(|(topic, ok)| topic == "position" && *ok)
+        })
+        .await;
+
+        // Verify all subscriptions were restored in this cycle
+        assert!(
+            events
+                .iter()
+                .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok),
+            "Cycle {cycle}: trade:XBTUSD should be resubscribed; events={events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok),
+            "Cycle {cycle}: orderBookL2:XBTUSD should be resubscribed; events={events:?}"
+        );
+        assert!(
+            events.iter().any(|(topic, ok)| topic == "position" && *ok),
+            "Cycle {cycle}: position should be resubscribed; events={events:?}"
+        );
+
+        // Verify re-authentication happened
+        let auth_calls = *state.auth_calls.lock().await;
+        assert_eq!(
+            auth_calls,
+            initial_auth_calls + cycle,
+            "Auth calls mismatch after cycle {cycle}"
+        );
+    }
+
+    // Verify final state
+    let final_auth_calls = *state.auth_calls.lock().await;
+    assert_eq!(
+        final_auth_calls, 4,
+        "Should have 4 total auth calls (1 initial + 3 reconnects)"
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_multiple_partial_subscription_failures() {
+    // Test handling of multiple simultaneous subscription failures during restore
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url.clone()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    let xbt_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+
+    // Subscribe to 5 different channels
+    client.subscribe_trades(xbt_id).await.unwrap();
+    client.subscribe_book(xbt_id).await.unwrap();
+    client.subscribe_trades(eth_id).await.unwrap();
+    client.subscribe_positions().await.unwrap();
+    client.subscribe_orders().await.unwrap();
+
+    client.wait_until_active(2.0).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    state.clear_subscription_events().await;
+
+    // Set up 3 subscriptions to fail on next reconnect
+    state.fail_next_subscription("trade:XBTUSD").await;
+    state.fail_next_subscription("position").await;
+    state.fail_next_subscription("order").await;
+
+    // Trigger disconnect
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    // Wait for reconnection
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
+
+    // Wait for subscription restoration attempts
+    let first_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        let trade_xbt_failed = events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && !*ok);
+        let position_failed = events.iter().any(|(topic, ok)| topic == "position" && !*ok);
+        let order_failed = events.iter().any(|(topic, ok)| topic == "order" && !*ok);
+
+        // Also check that successful ones succeeded
+        let instrument_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "instrument" && *ok);
+        let trade_eth_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:ETHUSD" && *ok);
+        let book_ok = events
+            .iter()
+            .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok);
+
+        trade_xbt_failed
+            && position_failed
+            && order_failed
+            && instrument_ok
+            && trade_eth_ok
+            && book_ok
+    })
+    .await;
+
+    // Verify we got the expected mix of successes and failures
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && !*ok),
+        "trade:XBTUSD should fail"
+    );
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && !*ok),
+        "position should fail"
+    );
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "order" && !*ok),
+        "order should fail"
+    );
+
+    // Successful subscriptions
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:ETHUSD" && *ok),
+        "trade:ETHUSD should succeed"
+    );
+    assert!(
+        first_events
+            .iter()
+            .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok),
+        "orderBookL2:XBTUSD should succeed"
+    );
+
+    state.clear_subscription_events().await;
+
+    // Second reconnect should retry all failed subscriptions
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
+
+    let second_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)
+            && events.iter().any(|(topic, ok)| topic == "position" && *ok)
+            && events.iter().any(|(topic, ok)| topic == "order" && *ok)
+    })
+    .await;
+
+    // All previously failed subscriptions should now succeed
+    assert!(
+        second_events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok),
+        "trade:XBTUSD should succeed on retry"
+    );
+    assert!(
+        second_events
+            .iter()
+            .any(|(topic, ok)| topic == "position" && *ok),
+        "position should succeed on retry"
+    );
+    assert!(
+        second_events
+            .iter()
+            .any(|(topic, ok)| topic == "order" && *ok),
+        "order should succeed on retry"
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnection_race_condition() {
+    // Test disconnect request during active reconnection
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{}/realtime", addr);
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url.clone()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+    client.subscribe_positions().await.unwrap();
+
+    client.wait_until_active(2.0).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Add significant auth delay to create a window for race condition
+    state.set_auth_response_delay_ms(Some(1000)).await;
+
+    // Trigger first disconnect
+    state.drop_connections.store(true, Ordering::Relaxed);
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    // Wait a bit for reconnection to start but not complete (due to auth delay)
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Trigger another disconnect while reconnection is in progress
+    state.drop_connections.store(true, Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    state.drop_connections.store(false, Ordering::Relaxed);
+
+    // Clear the delay
+    state.set_auth_response_delay_ms(None).await;
+
+    // Client should eventually recover
+    let final_result = client.wait_until_active(15.0).await;
+    assert!(
+        final_result.is_ok(),
+        "Client should recover despite reconnection race condition"
+    );
+
+    // Verify subscriptions are restored
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let subs = state.subscriptions.lock().await;
+    assert!(
+        subs.contains(&"trade:XBTUSD".to_string()),
+        "Trade subscription should be restored"
+    );
+    assert!(
+        subs.contains(&"position".to_string()),
+        "Position subscription should be restored"
+    );
+
+    client.close().await.unwrap();
+}

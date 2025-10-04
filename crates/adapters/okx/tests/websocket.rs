@@ -1489,3 +1489,332 @@ async fn test_unauthenticated_private_channel_rejection() {
 
     client.close().await.expect("close failed");
 }
+
+#[tokio::test]
+async fn test_rapid_consecutive_reconnections() {
+    // Test that rapid consecutive disconnects/reconnects don't cause state corruption
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.initialize_instruments_cache(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(1.0)
+        .await
+        .expect("client inactive");
+
+    // Subscribe to multiple channels
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
+        .await
+        .expect("subscribe trades failed");
+    client
+        .subscribe_book(InstrumentId::from("BTC-USD.OKX"))
+        .await
+        .expect("subscribe book failed");
+    client
+        .subscribe_orders(OKXInstrumentType::Spot)
+        .await
+        .expect("subscribe orders failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.login_count.lock().await >= 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let initial_login_count = *state.login_count.lock().await;
+    assert_eq!(initial_login_count, 1, "Should have 1 initial login");
+
+    // Perform 3 rapid disconnect/reconnect cycles
+    for cycle in 1..=3 {
+        // Clear subscription events to verify fresh resubscriptions
+        state.clear_subscription_events().await;
+
+        state.drop_next_connection.store(true, Ordering::Relaxed);
+
+        // Trigger disconnect by subscribing to a new channel
+        client
+            .subscribe_trades(InstrumentId::from("ETH-USD.OKX"), false)
+            .await
+            .expect("subscribe trigger failed");
+
+        // Wait for reconnection
+        wait_until_async(
+            || {
+                let state = state.clone();
+                let expected = initial_login_count + cycle;
+                async move { *state.login_count.lock().await >= expected }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Wait for subscription restoration
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    let events = state.subscription_events().await;
+                    events
+                        .iter()
+                        .any(|(key, _, ok)| key.starts_with("trades") && *ok)
+                        && events
+                            .iter()
+                            .any(|(key, _, ok)| key.starts_with("orders") && *ok)
+                }
+            },
+            Duration::from_secs(8),
+        )
+        .await;
+
+        // Verify subscriptions were restored in this cycle
+        let events = state.subscription_events().await;
+        assert!(
+            events
+                .iter()
+                .any(|(key, _, ok)| key.starts_with("trades") && *ok),
+            "Cycle {cycle}: trades subscription should be restored; events={events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|(key, _, ok)| key.starts_with("orders") && *ok),
+            "Cycle {cycle}: orders subscription should be restored; events={events:?}"
+        );
+
+        let login_count = *state.login_count.lock().await;
+        assert_eq!(
+            login_count,
+            initial_login_count + cycle,
+            "Login count mismatch after cycle {cycle}"
+        );
+    }
+
+    // Verify final state
+    let final_login_count = *state.login_count.lock().await;
+    assert_eq!(
+        final_login_count, 4,
+        "Should have 4 total logins (1 initial + 3 reconnects)"
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_multiple_partial_subscription_failures() {
+    // Test handling of subscription failures during restore and automatic retry
+    // Note: OKX mock server drops connection on first failure, triggering immediate retry
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.initialize_instruments_cache(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(1.0)
+        .await
+        .expect("client inactive");
+
+    let btc = InstrumentId::from("BTC-USD.OKX");
+    let eth = InstrumentId::from("ETH-USD.OKX");
+
+    // Subscribe to multiple channels
+    client
+        .subscribe_trades(btc, false)
+        .await
+        .expect("subscribe BTC trades failed");
+    client
+        .subscribe_trades(eth, false)
+        .await
+        .expect("subscribe ETH trades failed");
+    client
+        .subscribe_book(btc)
+        .await
+        .expect("subscribe book failed");
+    client
+        .subscribe_orders(OKXInstrumentType::Spot)
+        .await
+        .expect("subscribe orders failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(_, _, ok)| *ok).count() >= 4
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    state.clear_subscription_events().await;
+
+    // Set up one subscription to fail on next reconnect
+    {
+        let mut pending = state.fail_next_subscriptions.lock().await;
+        pending.push("orders:SPOT".to_string());
+    }
+
+    // Trigger disconnect
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    client
+        .subscribe_trades(InstrumentId::from("SOL-USD.OKX"), false)
+        .await
+        .expect("trigger disconnect failed");
+
+    // Wait for the failure + automatic retry cycle
+    // Flow: reconnect → try orders:SPOT → fail → drop → reconnect → retry successfully
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events
+                    .iter()
+                    .any(|(key, _, ok)| key == "orders:SPOT" && !*ok)
+                    && events
+                        .iter()
+                        .any(|(key, _, ok)| key == "orders:SPOT" && *ok)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let events = state.subscription_events().await;
+
+    // Verify failure followed by successful retry
+    assert!(
+        events
+            .iter()
+            .any(|(key, _, ok)| key == "orders:SPOT" && !*ok),
+        "Orders should fail initially: {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(key, _, ok)| key == "orders:SPOT" && *ok),
+        "Orders should succeed on retry: {events:?}"
+    );
+
+    // Other subscriptions should succeed
+    let other_success = events
+        .iter()
+        .filter(|(key, _, ok)| *ok && !key.contains("orders"))
+        .count();
+    assert!(
+        other_success >= 1,
+        "At least one other subscription should succeed: {events:?}"
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_reconnection_race_condition() {
+    // Test disconnect request during active reconnection
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.initialize_instruments_cache(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(1.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
+        .await
+        .expect("subscribe trades failed");
+    client
+        .subscribe_orders(OKXInstrumentType::Spot)
+        .await
+        .expect("subscribe orders failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.login_count.lock().await >= 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Add significant auth delay to create a window for race condition
+    {
+        let mut delay = state.auth_response_delay_ms.lock().await;
+        *delay = Some(1000);
+    }
+
+    // Trigger first disconnect
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    client
+        .subscribe_trades(InstrumentId::from("ETH-USD.OKX"), false)
+        .await
+        .expect("trigger disconnect failed");
+
+    // Wait a bit for reconnection to start but not complete (due to auth delay)
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Trigger another disconnect while reconnection is in progress
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Clear the delay
+    {
+        let mut delay = state.auth_response_delay_ms.lock().await;
+        *delay = None;
+    }
+
+    // Client should eventually recover
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.login_count.lock().await >= 2 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Give time for subscriptions to restore
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Verify subscriptions are restored
+    let subscriptions = state.subscriptions.lock().await;
+    let trades_count = subscriptions
+        .iter()
+        .filter(|value| value_matches_channel(value, "trades"))
+        .count();
+    let orders_count = subscriptions
+        .iter()
+        .filter(|value| value_matches_channel(value, "orders"))
+        .count();
+
+    assert!(
+        trades_count >= 1,
+        "Should have at least 1 trade subscription restored"
+    );
+    assert!(
+        orders_count >= 1,
+        "Should have at least 1 order subscription restored"
+    );
+
+    client.close().await.expect("close failed");
+}

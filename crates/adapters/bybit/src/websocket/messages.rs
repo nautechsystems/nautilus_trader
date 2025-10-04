@@ -24,6 +24,20 @@ use crate::common::enums::{
     BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
 };
 
+/// Bybit WebSocket subscription message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BybitSubscription {
+    pub op: String,
+    pub args: Vec<String>,
+}
+
+/// Bybit WebSocket authentication message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BybitAuthRequest {
+    pub op: String,
+    pub args: Vec<serde_json::Value>,
+}
+
 /// High level message emitted by the Bybit WebSocket client.
 #[derive(Debug, Clone)]
 pub enum BybitWebSocketMessage {

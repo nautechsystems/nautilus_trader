@@ -49,7 +49,9 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<Mutex<usize>>,
-    subscription_events: Arc<Mutex<Vec<String>>>,
+    subscription_events: Arc<Mutex<Vec<(String, bool)>>>, // (topic, success)
+    fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
+    auth_response_delay_ms: Arc<Mutex<Option<u64>>>,
     authenticated: Arc<AtomicBool>,
     disconnect_trigger: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
@@ -61,6 +63,8 @@ impl Default for TestServerState {
         Self {
             connection_count: Arc::new(Mutex::new(0)),
             subscription_events: Arc::new(Mutex::new(Vec::new())),
+            fail_next_subscriptions: Arc::new(Mutex::new(Vec::new())),
+            auth_response_delay_ms: Arc::new(Mutex::new(None)),
             authenticated: Arc::new(AtomicBool::new(false)),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -74,10 +78,32 @@ impl TestServerState {
     async fn reset(&self) {
         *self.connection_count.lock().await = 0;
         self.subscription_events.lock().await.clear();
+        self.fail_next_subscriptions.lock().await.clear();
+        *self.auth_response_delay_ms.lock().await = None;
         self.authenticated.store(false, Ordering::Relaxed);
         self.disconnect_trigger.store(false, Ordering::Relaxed);
         self.ping_count.store(0, Ordering::Relaxed);
         self.pong_count.store(0, Ordering::Relaxed);
+    }
+
+    #[allow(dead_code)]
+    async fn set_subscription_failures(&self, topics: Vec<String>) {
+        *self.fail_next_subscriptions.lock().await = topics;
+    }
+
+    #[allow(dead_code)]
+    async fn set_auth_delay(&self, delay_ms: u64) {
+        *self.auth_response_delay_ms.lock().await = Some(delay_ms);
+    }
+
+    #[allow(dead_code)]
+    async fn subscription_events(&self) -> Vec<(String, bool)> {
+        self.subscription_events.lock().await.clone()
+    }
+
+    #[allow(dead_code)]
+    async fn clear_subscription_events(&self) {
+        self.subscription_events.lock().await.clear();
     }
 }
 
@@ -134,6 +160,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         }
                     }
                     Some("auth") => {
+                        // Check for auth delay
+                        if let Some(delay_ms) = *state.auth_response_delay_ms.lock().await {
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        }
+
                         // Parse auth request
                         let api_key = value
                             .get("args")
@@ -175,32 +206,62 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("subscribe") => {
                         let args = value.get("args").and_then(|a| a.as_array());
+                        let mut failed_topics = Vec::new();
+
                         if let Some(topics) = args {
+                            let fail_list = state.fail_next_subscriptions.lock().await.clone();
+
                             for topic in topics {
                                 if let Some(topic_str) = topic.as_str() {
+                                    let should_fail = fail_list.contains(&topic_str.to_string());
+
+                                    // Track the subscription event
                                     state
                                         .subscription_events
                                         .lock()
                                         .await
-                                        .push(topic_str.to_string());
+                                        .push((topic_str.to_string(), !should_fail));
+
+                                    if should_fail {
+                                        failed_topics.push(topic_str);
+                                    }
                                 }
                             }
                         }
 
-                        // Send subscription confirmation
-                        let sub_response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            "op": "subscribe"
-                        });
-                        if socket
-                            .send(Message::Text(sub_response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
+                        // Send subscription response (success or failure)
+                        if failed_topics.is_empty() {
+                            let sub_response = json!({
+                                "success": true,
+                                "ret_msg": "",
+                                "conn_id": "test-conn-id",
+                                "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
+                                "op": "subscribe"
+                            });
+                            if socket
+                                .send(Message::Text(sub_response.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        } else {
+                            // Send failure for failed subscriptions
+                            let error_response = json!({
+                                "success": false,
+                                "ret_msg": format!("Subscription failed for topics: {:?}", failed_topics),
+                                "ret_code": 10001,
+                                "conn_id": "test-conn-id",
+                                "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
+                                "op": "subscribe"
+                            });
+                            if socket
+                                .send(Message::Text(error_response.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
 
                         // Send a sample data message for the first topic
@@ -236,7 +297,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             for topic in topics {
                                 if let Some(topic_str) = topic.as_str() {
                                     let mut events = state.subscription_events.lock().await;
-                                    events.retain(|t| t != topic_str);
+                                    events.retain(|(t, _)| t != topic_str);
                                 }
                             }
                         }
@@ -311,6 +372,31 @@ async fn start_test_server()
     // Give server time to start
     tokio::time::sleep(Duration::from_millis(100)).await;
     Ok((addr, state))
+}
+
+#[allow(dead_code)]
+async fn wait_for_subscription_events<F>(
+    state: &TestServerState,
+    timeout: Duration,
+    mut predicate: F,
+) -> Vec<(String, bool)>
+where
+    F: FnMut(&[(String, bool)]) -> bool,
+{
+    let state_clone = state.clone();
+    let poll = async {
+        loop {
+            let events = state_clone.subscription_events().await;
+            if predicate(&events) {
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    match tokio::time::timeout(timeout, poll).await {
+        Ok(events) => events,
+        Err(_) => state.subscription_events().await,
+    }
 }
 
 #[rstest]
@@ -463,7 +549,10 @@ async fn test_subscription_lifecycle() {
     .await;
 
     let subs = state.subscription_events.lock().await.clone();
-    assert!(subs.contains(&"publicTrade.BTCUSDT".to_string()));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic == "publicTrade.BTCUSDT" && *ok)
+    );
 
     // Unsubscribe
     client.unsubscribe(topics).await.unwrap();
@@ -499,12 +588,14 @@ async fn test_message_routing() {
     let topics = vec!["publicTrade.BTCUSDT".to_string()];
     client.subscribe(topics).await.unwrap();
 
-    // Wait for and verify message
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for subscription to be confirmed
+    wait_until_async(
+        || async { client.subscription_count() > 0 },
+        Duration::from_secs(2),
+    )
+    .await;
 
     // Verify subscription was recorded
-    // Note: The client uses stream() method which takes ownership
-    // For this test, we verify subscriptions were registered
     assert!(client.subscription_count() > 0);
 
     client.close().await.unwrap();
@@ -542,8 +633,8 @@ async fn test_reconnection_flow() {
     // Trigger a server-side disconnect
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Give time for disconnect to propagate
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Short delay for disconnect trigger to be observed by server
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Note: Full reconnection testing requires the client to support reconnection
     // This test establishes the pattern for testing reconnection behavior
@@ -583,9 +674,18 @@ async fn test_multiple_subscriptions() {
 
     let subs = state.subscription_events.lock().await.clone();
     assert_eq!(subs.len(), 3);
-    assert!(subs.contains(&"publicTrade.BTCUSDT".to_string()));
-    assert!(subs.contains(&"publicTrade.ETHUSDT".to_string()));
-    assert!(subs.contains(&"orderbook.50.BTCUSDT".to_string()));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic == "publicTrade.BTCUSDT" && *ok)
+    );
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic == "publicTrade.ETHUSDT" && *ok)
+    );
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic == "orderbook.50.BTCUSDT" && *ok)
+    );
 
     client.close().await.unwrap();
 }
@@ -634,8 +734,8 @@ async fn test_heartbeat_timeout_reconnection() {
     // Trigger disconnect - client should attempt reconnection
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Give time for disconnect to propagate
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Short delay for disconnect trigger to be observed by server
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     client.close().await.unwrap();
 }
@@ -723,8 +823,8 @@ async fn test_reauth_after_disconnect() {
     // Trigger disconnect
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Give time for disconnect to propagate
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Short delay for disconnect trigger to be observed by server
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let _ = client.close().await;
 }
@@ -810,7 +910,7 @@ async fn test_subscription_after_reconnection() {
     // Trigger disconnect
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Give time for disconnect to propagate
+    // Short delay for disconnect trigger to be observed by server
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Verify subscriptions are tracked
@@ -887,7 +987,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     // Trigger disconnect
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    // Give time for disconnect to propagate
+    // Short delay for disconnect trigger to be observed by server
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     client.close().await.unwrap();
@@ -922,7 +1022,10 @@ async fn test_trade_subscription_flow() {
     .await;
 
     let subs = state.subscription_events.lock().await.clone();
-    assert!(subs.iter().any(|s| s.contains("publicTrade")));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic.contains("publicTrade") && *ok)
+    );
 
     client.close().await.unwrap();
 }
@@ -956,7 +1059,10 @@ async fn test_orderbook_subscription_flow() {
     .await;
 
     let subs = state.subscription_events.lock().await.clone();
-    assert!(subs.iter().any(|s| s.contains("orderbook")));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic.contains("orderbook") && *ok)
+    );
 
     client.close().await.unwrap();
 }
@@ -990,7 +1096,10 @@ async fn test_ticker_subscription_flow() {
     .await;
 
     let subs = state.subscription_events.lock().await.clone();
-    assert!(subs.iter().any(|s| s.contains("ticker")));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic.contains("ticker") && *ok)
+    );
 
     client.close().await.unwrap();
 }
@@ -1024,7 +1133,10 @@ async fn test_klines_subscription_flow() {
     .await;
 
     let subs = state.subscription_events.lock().await.clone();
-    assert!(subs.iter().any(|s| s.contains("kline")));
+    assert!(
+        subs.iter()
+            .any(|(topic, ok)| topic.contains("kline") && *ok)
+    );
 
     client.close().await.unwrap();
 }
