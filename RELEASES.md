@@ -96,6 +96,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
 - Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
+- Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
