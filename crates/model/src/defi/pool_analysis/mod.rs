@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod compare;
 pub mod position;
 pub mod profiler;
 pub mod swap_math;

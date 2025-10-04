@@ -108,7 +108,25 @@ impl BlockchainHttpRpcClient {
                         ))
                     }
                 }
-                Err(e) => Err(anyhow::anyhow!("Failed to parse eth call response: {}", e)),
+                Err(e) => {
+                    // Try to convert bytes to string for better error reporting
+                    let raw_response = String::from_utf8_lossy(bytes.as_ref());
+                    let preview = if raw_response.len() > 500 {
+                        format!(
+                            "{}... (truncated, {} bytes total)",
+                            &raw_response[..500],
+                            raw_response.len()
+                        )
+                    } else {
+                        raw_response.to_string()
+                    };
+
+                    Err(anyhow::anyhow!(
+                        "Failed to parse eth call response: {}\nRaw response: {}",
+                        e,
+                        preview
+                    ))
+                }
             },
             Err(e) => Err(anyhow::anyhow!(
                 "Failed to execute eth call RPC request: {}",

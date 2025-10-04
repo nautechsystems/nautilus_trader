@@ -1115,6 +1115,27 @@ impl PoolProfiler {
         self.positions.get(&position_key)
     }
 
+    /// Returns a list of all currently active positions.
+    ///
+    /// Active positions are those with liquidity > 0 whose tick range includes
+    /// the current pool tick, meaning they have tokens actively deployed in the pool
+    /// and are earning fees from trades at the current price.
+    ///
+    /// # Returns
+    ///
+    /// A vector of references to active [`PoolPosition`] objects.
+    pub fn get_active_positions(&self) -> Vec<&PoolPosition> {
+        self.positions
+            .values()
+            .filter(|position| {
+                let current_tick = self.get_current_tick();
+                position.liquidity > 0
+                    && position.tick_lower <= current_tick
+                    && current_tick < position.tick_upper
+            })
+            .collect()
+    }
+
     /// Gets the count of positions that are currently active.
     ///
     /// Active positions are those with liquidity > 0 and whose tick range
