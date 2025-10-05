@@ -15,10 +15,12 @@
 
 use std::env;
 
-use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
-use nautilus_hyperliquid::http::models::{
-    HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTpSl,
-    HyperliquidExecTriggerParams,
+use nautilus_hyperliquid::http::{
+    client::HyperliquidHttpClient,
+    models::{
+        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTpSl,
+        HyperliquidExecTriggerParams,
+    },
 };
 use rust_decimal_macros::dec;
 use tracing::level_filters::LevelFilter;

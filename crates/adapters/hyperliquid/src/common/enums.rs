@@ -529,11 +529,11 @@ pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::{OrderType, TriggerType};
     use rstest::rstest;
     use serde_json;
 
     use super::*;
-    use nautilus_model::enums::{OrderType, TriggerType};
 
     #[rstest]
     fn test_side_serde() {
