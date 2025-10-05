@@ -31,6 +31,8 @@ cdef class Command:
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    correlation_id : UUID4, optional
+        The correlation ID. If provided, this command is correlated to another command or request.
 
     Warnings
     --------
@@ -41,19 +43,23 @@ cdef class Command:
         self,
         UUID4 command_id not None,
         uint64_t ts_init,
+        UUID4 correlation_id = None,
     ):
         self.id = command_id
         self.ts_init = ts_init
+        self.correlation_id = correlation_id
 
     def __getstate__(self):
         return (
             self.id.to_str(),
             self.ts_init,
+            self.correlation_id.to_str() if self.correlation_id is not None else None,
         )
 
     def __setstate__(self, state):
         self.id = UUID4.from_str_c(state[0])
         self.ts_init = state[1]
+        self.correlation_id = UUID4.from_str_c(state[2]) if state[2] is not None else None
 
     def __eq__(self, Command other) -> bool:
         return self.id == other.id
@@ -62,7 +68,8 @@ cdef class Command:
         return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
+        correlation_str = f", correlation_id={self.correlation_id}" if self.correlation_id is not None else ""
+        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init}{correlation_str})"
 
 
 cdef class Document:
@@ -168,6 +175,8 @@ cdef class Request:
         The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    correlation_id : UUID4, optional
+        The correlation ID. If provided, this request is correlated to another request.
 
     Warnings
     --------
@@ -179,22 +188,26 @@ cdef class Request:
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
         uint64_t ts_init,
+        UUID4 correlation_id = None,
     ):
         self.callback = callback
         self.id = request_id
         self.ts_init = ts_init
+        self.correlation_id = correlation_id
 
     def __getstate__(self):
         return (
             self.callback,
             self.id.to_str(),
             self.ts_init,
+            self.correlation_id.to_str() if self.correlation_id is not None else None,
         )
 
     def __setstate__(self, state):
         self.callback = state[0]
         self.id = UUID4.from_str_c(state[1])
         self.ts_init = state[2]
+        self.correlation_id = UUID4.from_str_c(state[3]) if state[3] is not None else None
 
     def __eq__(self, Request other) -> bool:
         return self.id == other.id
@@ -203,7 +216,8 @@ cdef class Request:
         return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id}, callback={self.callback}, ts_init={self.ts_init})"
+        correlation_str = f", correlation_id={self.correlation_id}" if self.correlation_id is not None else ""
+        return f"{type(self).__name__}(id={self.id}, callback={self.callback}, ts_init={self.ts_init}{correlation_str})"
 
 
 cdef class Response:

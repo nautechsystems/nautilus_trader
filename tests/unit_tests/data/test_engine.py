@@ -349,6 +349,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params=None,
+            correlation_id=None,
         )
 
         # Act
@@ -406,6 +407,7 @@ class TestDataEngine:
             request_id=uuid,
             ts_init=self.clock.timestamp_ns(),
             params=None,
+            correlation_id=None,
         )
 
         request2 = RequestQuoteTicks(
@@ -419,6 +421,7 @@ class TestDataEngine:
             request_id=uuid,
             ts_init=self.clock.timestamp_ns(),
             params=None,
+            correlation_id=None,
         )
 
         # Act
@@ -3293,6 +3296,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params={"update_catalog": False},
+            correlation_id=None,
         )
 
         # Act
@@ -3330,6 +3334,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params={"update_catalog": False},
+            correlation_id=None,
         )
 
         # Act
@@ -3379,6 +3384,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params={"update_catalog": True},
+            correlation_id=None,
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -3423,6 +3429,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params={"update_catalog": True},
+            correlation_id=None,
         )
 
         # Act
@@ -3462,6 +3469,7 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             params={"update_catalog": False},
+            correlation_id=None,
         )
 
         # Act
