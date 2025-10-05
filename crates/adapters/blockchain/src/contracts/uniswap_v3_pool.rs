@@ -30,7 +30,7 @@ sol! {
     #[sol(rpc)]
     contract UniswapV3Pool {
         /// Packed struct containing core pool state
-        struct Slot0Return {
+        struct Slot0Data {
             uint160 sqrtPriceX96;
             int24 tick;
             uint16 observationIndex;
@@ -41,7 +41,7 @@ sol! {
         }
 
         /// Tick information
-        struct TickInfoReturn {
+        struct TickInfo {
             uint128 liquidityGross;
             int128 liquidityNet;
             uint256 feeGrowthOutside0X128;
@@ -53,7 +53,7 @@ sol! {
         }
 
         /// Position information
-        struct PositionInfoReturn {
+        struct PositionInfo {
             uint128 liquidity;
             uint256 feeGrowthInside0LastX128;
             uint256 feeGrowthInside1LastX128;
@@ -62,14 +62,14 @@ sol! {
         }
 
         // Core state getters
-        function slot0() external view returns (Slot0Return memory);
+        function slot0() external view returns (Slot0Data memory);
         function liquidity() external view returns (uint128);
         function feeGrowthGlobal0X128() external view returns (uint256);
         function feeGrowthGlobal1X128() external view returns (uint256);
 
         // Tick and position getters
-        function ticks(int24 tick) external view returns (TickInfoReturn memory);
-        function positions(bytes32 key) external view returns (PositionInfoReturn memory);
+        function ticks(int24 tick) external view returns (TickInfo memory);
+        function positions(bytes32 key) external view returns (PositionInfo memory);
     }
 }
 
