@@ -80,8 +80,74 @@ impl OrderRejected {
         from_dict_pyo3(py, values)
     }
 
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_order_id")]
+    fn py_client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "reason")]
+    fn py_reason(&self) -> String {
+        self.reason.as_str().to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation")]
+    fn py_reconciliation(&self) -> bool {
+        self.reconciliation != 0
+    }
+
+    #[getter]
+    #[pyo3(name = "due_post_only")]
+    fn py_due_post_only(&self) -> bool {
+        self.due_post_only != 0
+    }
+
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderRejected))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
@@ -94,6 +160,7 @@ impl OrderRejected {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        dict.set_item("due_post_only", self.due_post_only)?;
         Ok(dict.into())
     }
 }

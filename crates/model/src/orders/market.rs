@@ -416,7 +416,7 @@ impl Order for MarketOrder {
         );
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn events(&self) -> Vec<&OrderEventAny> {

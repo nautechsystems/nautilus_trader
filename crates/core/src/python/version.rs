@@ -25,7 +25,7 @@ use pyo3::{prelude::*, types::PyTuple};
 /// Panics if `version_info` cannot be downcast to a tuple or if tuple elements are missing.
 #[must_use]
 pub fn get_python_version() -> String {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let sys = match py.import("sys") {
             Ok(mod_sys) => mod_sys,
             Err(_) => return "Unavailable (failed to import sys)".to_string(),
@@ -75,7 +75,7 @@ pub fn get_python_version() -> String {
 /// This helper is primarily intended for diagnostic/logging purposes inside the NautilusTrader
 /// Python bindings.
 pub fn get_python_package_version(package_name: &str) -> String {
-    Python::with_gil(|py| match py.import(package_name) {
+    Python::attach(|py| match py.import(package_name) {
         Ok(package) => match package.getattr("__version__") {
             Ok(version_attr) => match version_attr.extract::<String>() {
                 Ok(version) => version,

@@ -69,6 +69,7 @@ data/
 ## Data Formats
 
 ### Quote Ticks Data
+
 Each quote tick record contains:
 
 - `timestamp`: When the data was received
@@ -81,6 +82,7 @@ Each quote tick record contains:
 - `ts_init`: Initialization timestamp
 
 ### Orderbook Deltas Data
+
 Each orderbook delta record contains:
 
 - `timestamp`: When the data was received
@@ -102,6 +104,7 @@ python examples/live/bybit/bybit_options_data_collector.py
 ```
 
 ### Custom Configuration
+
 You can modify the script to:
 
 - Change the underlying asset (e.g., ETH instead of BTC)

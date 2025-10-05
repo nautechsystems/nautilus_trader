@@ -22,13 +22,14 @@ from dataclasses import dataclass
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
 from nautilus_trader.common import DataActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.common import LogColor  # type: ignore[attr-defined]
-from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import Block  # type: ignore[attr-defined]
+from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolFeeCollect  # type: ignore[attr-defined]
 from nautilus_trader.model import PoolLiquidityUpdate  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
 
 
 @dataclass
@@ -107,6 +108,10 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(block), LogColor.CYAN)
 
+        for pool_id in self.pools:
+            pool = self.cache.pool_profiler(pool_id)
+            self.log.info(repr(pool), LogColor.MAGENTA)
+
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """
         Actions to be performed on receiving a pool swap.
@@ -116,5 +121,11 @@ class BlockchainActor(DataActor):
     def on_pool_liquidity_update(self, update: PoolLiquidityUpdate) -> None:
         """
         Actions to be performed on receiving a pool liquidity update.
+        """
+        self.log.info(repr(update), LogColor.CYAN)
+
+    def on_pool_fee_collect(self, update: PoolFeeCollect) -> None:
+        """
+        Actions to be performed on receiving a pool fee collect event.
         """
         self.log.info(repr(update), LogColor.CYAN)

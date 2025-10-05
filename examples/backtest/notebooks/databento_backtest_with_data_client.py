@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -37,9 +37,9 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
-from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
@@ -76,7 +76,7 @@ future_symbols = ["ESM4"]
 
 # Small amount of data for testing
 start_time = "2024-05-09T10:00"
-end_time = "2024-05-09T10:10"
+end_time = "2024-05-09T10:01"
 
 # A valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
@@ -114,6 +114,7 @@ class FuturesStrategy(Strategy):
         super().__init__(config=config)
         self.bar_type: BarType | None = None
         self.position_opened = False
+        self.n_depths = 0
 
     def on_start(self) -> None:
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
@@ -127,7 +128,19 @@ class FuturesStrategy(Strategy):
         # Subscribe to bar data
         self.subscribe_bars(self.bar_type, update_catalog=True)
 
+        # Subscribe order book depth
+        self.subscribe_order_book_depth(self.config.future_id, depth=10, update_catalog=True)
+
         self.user_log(f"Strategy started, subscribed to {self.bar_type}")
+
+    def on_order_book_depth(self, depth):
+        if self.n_depths > 0:
+            return
+
+        self.user_log(
+            f"Depth received: ts_init={unix_nanos_to_iso8601(depth.ts_init)}, {depth=}",
+        )
+        self.n_depths += 1
 
     def on_bar(self, bar: Bar) -> None:
         self.user_log(

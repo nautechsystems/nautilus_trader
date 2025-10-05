@@ -19,31 +19,31 @@ use pyo3::prelude::*;
 
 use crate::common::urls;
 
-/// Get the OKX HTTP base URL.
+/// Gets the OKX HTTP base URL.
 #[pyfunction]
 pub fn get_okx_http_base_url() -> String {
     urls::get_http_base_url()
 }
 
-/// Get the OKX WebSocket URL for public data (market data).
+/// Gets the OKX WebSocket URL for public data (market data).
 #[pyfunction]
 pub fn get_okx_ws_url_public(is_demo: bool) -> String {
     urls::get_ws_base_url_public(is_demo)
 }
 
-/// Get the OKX WebSocket URL for private data (account/order management).
+/// Gets the OKX WebSocket URL for private data (account/order management).
 #[pyfunction]
 pub fn get_okx_ws_url_private(is_demo: bool) -> String {
     urls::get_ws_base_url_private(is_demo)
 }
 
-/// Get the OKX WebSocket URL for business data (bars/candlesticks).
+/// Gets the OKX WebSocket URL for business data (bars/candlesticks).
 #[pyfunction]
 pub fn get_okx_ws_url_business(is_demo: bool) -> String {
     urls::get_ws_base_url_business(is_demo)
 }
 
-/// Check if OKX endpoint requires authentication.
+/// Checks if OKX endpoint requires authentication.
 #[pyfunction]
 pub fn okx_requires_authentication(endpoint_type: urls::OKXEndpointType) -> bool {
     urls::requires_authentication(endpoint_type)

@@ -27,6 +27,8 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -319,16 +321,17 @@ streaming = StreamingConfig(
 )
 
 logging = LoggingConfig(
-    log_level="WARNING",
+    log_level="WARNING",  # "DEBUG"
     log_level_file="WARNING",
     log_directory=".",
     log_file_name="databento_option_greeks",
     log_file_format=None,  # "json" or None
-    # log_component_levels={"SpreadQuoteAggregator": "WARNING"},
+    # log_component_levels={"SpreadQuoteAggregator": "DEBUG"},
     bypass_logging=False,
     print_config=False,
     use_pyo3=False,
     clear_log_file=True,
+    # log_components_only=True,
 )
 
 catalogs = [
@@ -392,6 +395,16 @@ margin_model = MarginModelConfig(
     model_type="standard",
 )  # Use standard margin model for options trading
 
+modules = [
+    ImportableActorConfig(
+        actor_path=OptionExerciseModule.fully_qualified_name(),
+        config_path=OptionExerciseConfig.fully_qualified_name(),
+        config={
+            "auto_exercise_enabled": True,
+        },
+    ),
+]
+
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -401,6 +414,7 @@ venues = [
         starting_balances=["1_000_000 USD"],
         margin_model=margin_model,
         fill_model=fill_model,
+        modules=modules,
     ),
 ]
 

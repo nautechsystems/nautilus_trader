@@ -4,31 +4,38 @@ description: Publish wheels to Cloudflare R2
 runs:
   using: "composite"
   steps:
-    - name: Checkout repository
-      # https://github.com/actions/checkout
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-    - name: Download built wheels
-      # https://github.com/actions/download-artifact
-      uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-      with:
-        path: dist/
-        pattern: "*.whl"
-
     - name: Configure AWS CLI for Cloudflare R2
       shell: bash
       run: |
         set -euo pipefail
         echo "Configuring AWS CLI for Cloudflare R2..."
 
-        # Install specific AWS CLI version known to work with R2
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip"
-        unzip awscliv2.zip
-        sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+        # AWS CLI v2 is pre-installed on GitHub runners
+        aws --version
 
+        # Configure credentials for Cloudflare R2
         mkdir -p ~/.aws
-        envsubst < .github/aws/credentials.ini > ~/.aws/credentials
-        envsubst < .github/aws/config.ini > ~/.aws/config
+        {
+          echo "[default]"
+          echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}"
+          echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}"
+        } > ~/.aws/credentials
+
+        {
+          echo "[default]"
+          echo "region=${CLOUDFLARE_R2_REGION:-auto}"
+          echo "output=json"
+          echo "s3 ="
+          echo "    signature_version = s3v4"
+          echo "    addressing_style = path"
+          echo "    payload_signing_enabled = false"
+          echo "    use_accelerate_endpoint = false"
+          echo "    use_dualstack_endpoint = false"
+          echo "    use_fips_endpoint = false"
+        } > ~/.aws/config
+
+        # Disable metadata lookups to avoid network to IMDS by default
+        export AWS_EC2_METADATA_DISABLED=true
 
     - name: Upload new wheels to Cloudflare R2
       shell: bash

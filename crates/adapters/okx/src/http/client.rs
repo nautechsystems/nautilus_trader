@@ -16,9 +16,8 @@
 //! Provides an ergonomic wrapper around the **OKX v5 REST API** –
 //! <https://www.okx.com/docs-v5/en/>.
 //!
-//! The core type exported by this module is [`OKXHttpClient`].  It offers a
-//! *strongly-typed* interface to all exchange endpoints currently required by
-//! NautilusTrader.
+//! The core type exported by this module is [`OKXHttpClient`].  It offers an
+//! interface to all exchange endpoints currently required by NautilusTrader.
 //!
 //! Key responsibilities handled internally:
 //! • Request signing and header composition for private routes (HMAC-SHA256).
@@ -27,11 +26,11 @@
 //! • Conversion of raw exchange errors into the rich [`OKXHttpError`] enum.
 //!
 //! # Quick links to official docs
-//! | Domain                               | OKX reference                                                             |
-//! |--------------------------------------|---------------------------------------------------------------------------|
-//! | Market data                          | <https://www.okx.com/docs-v5/en/#rest-api-market-data>                    |
-//! | Account & positions                  | <https://www.okx.com/docs-v5/en/#rest-api-account>                       |
-//! | Funding & asset balances             | <https://www.okx.com/docs-v5/en/#rest-api-funding>                       |
+//! | Domain                               | OKX reference                                          |
+//! |--------------------------------------|--------------------------------------------------------|
+//! | Market data                          | <https://www.okx.com/docs-v5/en/#rest-api-market-data> |
+//! | Account & positions                  | <https://www.okx.com/docs-v5/en/#rest-api-account>     |
+//! | Funding & asset balances             | <https://www.okx.com/docs-v5/en/#rest-api-funding>     |
 
 use std::{
     collections::HashMap,
@@ -40,46 +39,57 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
-    enums::{AggregationSource, BarAggregation},
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TriggerType},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
-use reqwest::{Method, StatusCode};
+use nautilus_network::{
+    http::HttpClient,
+    ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
+};
+use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory, OKXPosition, OKXPositionHistory,
-        OKXPositionTier, OKXTransactionDetail,
+        OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXIndexTicker,
+        OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
+        OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier,
+        OKXTransactionDetail,
     },
     query::{
-        GetCandlesticksParams, GetCandlesticksParamsBuilder, GetIndexTickerParams,
-        GetIndexTickerParamsBuilder, GetInstrumentsParams, GetInstrumentsParamsBuilder,
-        GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOrderHistoryParams,
-        GetOrderHistoryParamsBuilder, GetOrderListParams, GetOrderListParamsBuilder,
-        GetPositionTiersParams, GetPositionsHistoryParams, GetPositionsParams,
-        GetPositionsParamsBuilder, GetTradesParams, GetTradesParamsBuilder,
-        GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder, SetPositionModeParams,
-        SetPositionModeParamsBuilder,
+        GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
+        GetCandlesticksParamsBuilder, GetIndexTickerParams, GetIndexTickerParamsBuilder,
+        GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
+        GetMarkPriceParamsBuilder, GetOrderHistoryParams, GetOrderHistoryParamsBuilder,
+        GetOrderListParams, GetOrderListParamsBuilder, GetPositionTiersParams,
+        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder, GetTradesParams,
+        GetTradesParamsBuilder, GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder,
+        SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
     common::{
-        consts::OKX_HTTP_URL,
+        consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
-        enums::{OKXInstrumentType, OKXPositionMode},
+        enums::{
+            OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXSide,
+            OKXTradeMode, OKXTriggerType,
+        },
         models::OKXInstrument,
         parse::{
             okx_instrument_type, parse_account_state, parse_candlestick, parse_fill_report,
@@ -91,6 +101,7 @@ use crate::{
         models::{OKXCandlestick, OKXTrade},
         query::{GetOrderParams, GetPendingOrdersParams},
     },
+    websocket::{messages::OKXAlgoOrderMsg, parse::parse_algo_order_status_report},
 };
 
 const OKX_SUCCESS_CODE: &str = "0";
@@ -105,6 +116,8 @@ const OKX_SUCCESS_CODE: &str = "0";
 /// that should accommodate most use cases while respecting OKX's documented limits.
 pub static OKX_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
+
+const OKX_GLOBAL_RATE_KEY: &str = "okx:global";
 
 /// Represents an OKX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
@@ -126,11 +139,14 @@ pub struct OKXHttpInnerClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
+    retry_manager: RetryManager<OKXHttpError>,
+    cancellation_token: CancellationToken,
 }
 
 impl Default for OKXHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60), None, None, None)
+            .expect("Failed to create default OKXHttpInnerClient")
     }
 }
 
@@ -145,50 +161,169 @@ impl Debug for OKXHttpInnerClient {
 }
 
 impl OKXHttpInnerClient {
+    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
+        vec![
+            (OKX_GLOBAL_RATE_KEY.to_string(), *OKX_REST_QUOTA),
+            (
+                "okx:/api/v5/account/balance".to_string(),
+                Quota::per_second(NonZeroU32::new(5).unwrap()),
+            ),
+            (
+                "okx:/api/v5/public/instruments".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/candles".to_string(),
+                Quota::per_second(NonZeroU32::new(50).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/history-candles".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/market/history-trades".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/order".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()), // 60 requests / 2 seconds (per instrument)
+            ),
+            (
+                "okx:/api/v5/trade/orders-pending".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/orders-history".to_string(),
+                Quota::per_second(NonZeroU32::new(20).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/fills".to_string(),
+                Quota::per_second(NonZeroU32::new(30).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/order-algo".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+            (
+                "okx:/api/v5/trade/cancel-algos".to_string(),
+                Quota::per_second(NonZeroU32::new(10).unwrap()),
+            ),
+        ]
+    }
+
+    fn rate_limit_keys(endpoint: &str) -> Vec<Ustr> {
+        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
+        let route = format!("okx:{normalized}");
+
+        vec![Ustr::from(OKX_GLOBAL_RATE_KEY), Ustr::from(route.as_str())]
+    }
+
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
+
     /// Creates a new [`OKXHttpClient`] using the default OKX HTTP URL,
     /// optionally overridden with a custom base URL.
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, OKXHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            OKXHttpError::ValidationError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
             ),
             credential: None,
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         api_passphrase: String,
         base_url: String,
         timeout_secs: Option<u64>,
-    ) -> Self {
-        Self {
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, OKXHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            OKXHttpError::ValidationError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                vec![],
+                Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
             ),
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([("user-agent".to_string(), NAUTILUS_USER_AGENT.to_string())])
+        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
     /// Combine a base path with a `serde_urlencoded` query string if one exists.
@@ -223,21 +358,19 @@ impl OKXHttpInnerClient {
             None => return Err(OKXHttpError::MissingCredentials),
         };
 
-        let body_str = body
-            .and_then(|b| String::from_utf8(b.to_vec()).ok())
-            .unwrap_or_default();
+        let api_key = credential.api_key.to_string();
+        let api_passphrase = credential.api_passphrase.to_string();
 
-        tracing::debug!("{method} {path}");
-
-        let api_key = credential.api_key.clone().to_string();
-        let api_passphrase = credential.api_passphrase.clone();
-        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string();
-        let signature = credential.sign(&timestamp, method.as_str(), path, &body_str);
+        // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
+        let now = Utc::now();
+        let millis = now.timestamp_subsec_millis();
+        let timestamp = now.format("%Y-%m-%dT%H:%M:%S").to_string() + &format!(".{:03}Z", millis);
+        let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
         let mut headers = HashMap::new();
-        headers.insert("OK-ACCESS-KEY".to_string(), api_key);
+        headers.insert("OK-ACCESS-KEY".to_string(), api_key.clone());
         headers.insert("OK-ACCESS-PASSPHRASE".to_string(), api_passphrase);
-        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp);
+        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp.clone());
         headers.insert("OK-ACCESS-SIGN".to_string(), signature);
 
         Ok(headers)
@@ -246,9 +379,10 @@ impl OKXHttpInnerClient {
     /// Sends an HTTP request to OKX and parses the response into `Vec<T>`.
     ///
     /// Internally, this method handles:
-    /// - Building the URL from `base_url` + `path`
-    /// - Optionally signing the request
-    /// - Deserializing JSON responses into typed models, or returning a [`OKXHttpError`]
+    /// - Building the URL from `base_url` + `path`.
+    /// - Optionally signing the request.
+    /// - Deserializing JSON responses into typed models, or returning a [`OKXHttpError`].
+    /// - Retrying with exponential backoff on transient errors.
     ///
     /// # Errors
     ///
@@ -265,61 +399,123 @@ impl OKXHttpInnerClient {
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
         let url = format!("{}{path}", self.base_url);
+        let endpoint = path.to_string();
+        let method_clone = method.clone();
+        let body_clone = body.clone();
 
-        let mut headers = if authenticate {
-            self.sign_request(&method, path, body.as_deref())?
-        } else {
-            HashMap::new()
+        let operation = || {
+            let url = url.clone();
+            let method = method_clone.clone();
+            let body = body_clone.clone();
+            let endpoint = endpoint.clone();
+
+            async move {
+                let mut headers = if authenticate {
+                    self.sign_request(&method, endpoint.as_str(), body.as_deref())?
+                } else {
+                    HashMap::new()
+                };
+
+                // Always set Content-Type header when body is present
+                if body.is_some() {
+                    headers.insert("Content-Type".to_string(), "application/json".to_string());
+                }
+
+                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
+                let resp = self
+                    .client
+                    .request_with_ustr_keys(
+                        method.clone(),
+                        url,
+                        Some(headers),
+                        body,
+                        None,
+                        Some(rate_keys),
+                    )
+                    .await?;
+
+                tracing::trace!("Response: {resp:?}");
+
+                if resp.status.is_success() {
+                    let okx_response: OKXResponse<T> =
+                        serde_json::from_slice(&resp.body).map_err(|e| {
+                            tracing::error!("Failed to deserialize OKXResponse: {e}");
+                            OKXHttpError::JsonError(e.to_string())
+                        })?;
+
+                    if okx_response.code != OKX_SUCCESS_CODE {
+                        return Err(OKXHttpError::OkxError {
+                            error_code: okx_response.code,
+                            message: okx_response.msg,
+                        });
+                    }
+
+                    Ok(okx_response.data)
+                } else {
+                    let error_body = String::from_utf8_lossy(&resp.body);
+                    if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
+                        tracing::debug!("HTTP 404 with body: {error_body}");
+                    } else {
+                        tracing::error!(
+                            "HTTP error {} with body: {error_body}",
+                            resp.status.as_str()
+                        );
+                    }
+
+                    if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
+                        return Err(OKXHttpError::OkxError {
+                            error_code: parsed_error.code,
+                            message: parsed_error.msg,
+                        });
+                    }
+
+                    Err(OKXHttpError::UnexpectedStatus {
+                        status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
+                        body: error_body.to_string(),
+                    })
+                }
+            }
         };
 
-        // Always set Content-Type header when body is present
-        if body.is_some() {
-            headers.insert("Content-Type".to_string(), "application/json".to_string());
-        }
-
-        let resp = self
-            .client
-            .request(method.clone(), url, Some(headers), body, None, None)
-            .await?;
-
-        tracing::trace!("Response: {resp:?}");
-
-        if resp.status.is_success() {
-            let okx_response: OKXResponse<T> = serde_json::from_slice(&resp.body).map_err(|e| {
-                tracing::error!("Failed to deserialize OKXResponse: {e}");
-                OKXHttpError::JsonError(e.to_string())
-            })?;
-
-            if okx_response.code != OKX_SUCCESS_CODE {
-                return Err(OKXHttpError::OkxError {
-                    error_code: okx_response.code,
-                    message: okx_response.msg,
-                });
+        // Retry strategy based on OKX error responses and HTTP status codes:
+        //
+        // 1. Network errors: always retry (transient connection issues)
+        // 2. HTTP 5xx/429: server errors and rate limiting should be retried
+        // 3. OKX specific retryable error codes (defined in common::consts)
+        //
+        // Note: OKX returns many permanent errors which should NOT be retried
+        // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
+        let should_retry = |error: &OKXHttpError| -> bool {
+            match error {
+                OKXHttpError::HttpClientError(_) => true,
+                OKXHttpError::UnexpectedStatus { status, .. } => {
+                    status.as_u16() >= 500 || status.as_u16() == 429
+                }
+                OKXHttpError::OkxError { error_code, .. } => should_retry_error_code(error_code),
+                _ => false,
             }
+        };
 
-            Ok(okx_response.data)
-        } else {
-            let error_body = String::from_utf8_lossy(&resp.body);
-            tracing::error!(
-                "HTTP error {} with body: {error_body}",
-                resp.status.as_str()
-            );
-
-            if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
-                return Err(OKXHttpError::OkxError {
-                    error_code: parsed_error.code,
-                    message: parsed_error.msg,
-                });
+        let create_error = |msg: String| -> OKXHttpError {
+            if msg == "canceled" {
+                OKXHttpError::ValidationError("Request canceled".to_string())
+            } else {
+                OKXHttpError::ValidationError(msg)
             }
+        };
 
-            Err(OKXHttpError::UnexpectedStatus {
-                status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
-                body: error_body.to_string(),
-            })
-        }
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                endpoint.as_str(),
+                operation,
+                should_retry,
+                create_error,
+                &self.cancellation_token,
+            )
+            .await
     }
 
-    /// Set the position mode for an account.
+    /// Sets the position mode for an account.
     ///
     /// # Errors
     ///
@@ -357,7 +553,7 @@ impl OKXHttpInnerClient {
         self.send_request(Method::GET, &path, None, false).await
     }
 
-    /// Request a list of instruments with open contracts.
+    /// Requests a list of instruments with open contracts.
     ///
     /// # Errors
     ///
@@ -398,6 +594,10 @@ impl OKXHttpInnerClient {
 
     /// Requests the latest index price.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-index-tickers>
@@ -410,6 +610,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests trades history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -424,6 +628,10 @@ impl OKXHttpInnerClient {
 
     /// Requests recent candlestick data.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
@@ -436,6 +644,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests historical candlestick data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -450,6 +662,10 @@ impl OKXHttpInnerClient {
 
     /// Lists current open orders.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-orders-pending>
@@ -462,6 +678,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Retrieves a single order’s details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -477,6 +697,10 @@ impl OKXHttpInnerClient {
     /// Requests a list of assets (with non-zero balance), remaining balance, and available amount
     /// in the trading account.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance>
@@ -486,6 +710,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests historical order records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -500,6 +728,10 @@ impl OKXHttpInnerClient {
 
     /// Requests order list (pending orders).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-list>
@@ -511,9 +743,39 @@ impl OKXHttpInnerClient {
         self.send_request(Method::GET, &path, None, true).await
     }
 
+    /// Requests pending algo orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn http_get_order_algo_pending(
+        &self,
+        params: GetAlgoOrdersParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        let path = Self::build_path("/api/v5/trade/order-algo-pending", &params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Requests historical algo orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn http_get_order_algo_history(
+        &self,
+        params: GetAlgoOrdersParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        let path = Self::build_path("/api/v5/trade/order-algo-history", &params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
     /// Requests information on your positions. When the account is in net mode, net positions will
     /// be displayed, and when the account is in long/short mode, long or short positions will be
-    /// displayed. Return in reverse chronological order using ctime.
+    /// displayed. Returns in reverse chronological order using ctime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -528,6 +790,10 @@ impl OKXHttpInnerClient {
 
     /// Requests closed or historical position data.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions-history>
@@ -540,6 +806,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Requests transaction details (fills) for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     ///
     /// # References
     ///
@@ -570,7 +840,7 @@ pub struct OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60), None, None, None).expect("Failed to create default OKXHttpClient")
     }
 }
 
@@ -580,28 +850,56 @@ impl OKXHttpClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
-            inner: Arc::new(OKXHttpInnerClient::new(base_url, timeout_secs)),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            inner: Arc::new(OKXHttpInnerClient::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
-        }
+        })
     }
 
     /// Creates a new authenticated [`OKXHttpClient`] using environment variables and
     /// the default OKX HTTP base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None, None)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
         let api_key = api_key.unwrap_or(get_env_var("OKX_API_KEY")?);
         let api_secret = api_secret.unwrap_or(get_env_var("OKX_API_SECRET")?);
@@ -615,7 +913,10 @@ impl OKXHttpClient {
                 api_passphrase,
                 base_url,
                 timeout_secs,
-            )),
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
         })
@@ -661,9 +962,14 @@ impl OKXHttpClient {
         anyhow::bail!("Instrument {symbol} not in cache and fetch failed");
     }
 
-    /// Generates a timestamp for initialization.
-    fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.inner.cancel_all_requests();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        self.inner.cancellation_token()
     }
 
     /// Returns the base url being used by the client.
@@ -682,6 +988,11 @@ impl OKXHttpClient {
     #[must_use]
     pub const fn is_initialized(&self) -> bool {
         self.cache_initialized
+    }
+
+    /// Generates a timestamp for initialization.
+    fn generate_ts_init(&self) -> UnixNanos {
+        get_atomic_clock_realtime().get_time_ns()
     }
 
     /// Returns the cached instrument symbols.
@@ -910,13 +1221,19 @@ impl OKXHttpClient {
 
         params.inst_id(instrument_id.symbol.inner());
         if let Some(s) = start {
-            params.before(s.timestamp_millis().to_string());
+            params.after(s.timestamp_millis().to_string());
         }
         if let Some(e) = end {
-            params.after(e.timestamp_millis().to_string());
+            params.before(e.timestamp_millis().to_string());
         }
-        if let Some(l) = limit {
-            params.limit(l);
+        // OKX expects the optional `limit` parameter to be between 1 and 100 (default 100).
+        // The request layer uses 0 to express "no explicit limit", so we omit the field in that case
+        // and clamp any larger value to the documented maximum to avoid 51000 parameter errors.
+        const OKX_TRADES_MAX_LIMIT: u32 = 100;
+        if let Some(l) = limit
+            && l > 0
+        {
+            params.limit(l.min(OKX_TRADES_MAX_LIMIT));
         }
 
         let params = params.build().map_err(anyhow::Error::new)?;
@@ -954,6 +1271,10 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # Endpoint Selection
     ///
@@ -1581,6 +1902,10 @@ impl OKXHttpClient {
 
     /// Requests historical order status reports for the given parameters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-7-days>.
@@ -1665,13 +1990,30 @@ impl OKXHttpClient {
         let mut reports = Vec::with_capacity(combined_resp.len());
 
         // Use a seen filter in case pending orders are within the histories "2hr reserve window"
-        let mut seen = AHashSet::new();
+        let mut seen: AHashSet<String> = AHashSet::new();
 
         for order in combined_resp {
-            if seen.contains(&order.cl_ord_id) {
+            let seen_key = if !order.cl_ord_id.is_empty() {
+                order.cl_ord_id.as_str().to_string()
+            } else if let Some(algo_cl_ord_id) = order
+                .algo_cl_ord_id
+                .as_ref()
+                .filter(|value| !value.as_str().is_empty())
+            {
+                algo_cl_ord_id.as_str().to_string()
+            } else if let Some(algo_id) = order
+                .algo_id
+                .as_ref()
+                .filter(|value| !value.as_str().is_empty())
+            {
+                algo_id.as_str().to_string()
+            } else {
+                order.ord_id.as_str().to_string()
+            };
+
+            if !seen.insert(seen_key) {
                 continue; // Reserved pending already reported
             }
-            seen.insert(order.cl_ord_id);
 
             let inst = self.instrument_or_fetch(order.inst_id).await?;
 
@@ -1702,6 +2044,10 @@ impl OKXHttpClient {
     }
 
     /// Requests fill reports (transaction details) for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1791,6 +2137,10 @@ impl OKXHttpClient {
 
     /// Requests current position status reports for the given parameters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>.
@@ -1840,10 +2190,345 @@ impl OKXHttpClient {
                 inst.id(),
                 inst.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 
         Ok(reports)
     }
+
+    /// Places an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
+    pub async fn place_algo_order(
+        &self,
+        request: OKXPlaceAlgoOrderRequest,
+    ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        let body =
+            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXPlaceAlgoOrderResponse> = self
+            .inner
+            .send_request(Method::POST, "/api/v5/trade/order-algo", Some(body), true)
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Cancels an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
+    pub async fn cancel_algo_order(
+        &self,
+        request: OKXCancelAlgoOrderRequest,
+    ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
+        // OKX expects an array for cancel-algos endpoint
+        // Serialize once to bytes to keep signing and sending identical
+        let body =
+            serde_json::to_vec(&[request]).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXCancelAlgoOrderResponse> = self
+            .inner
+            .send_request(Method::POST, "/api/v5/trade/cancel-algos", Some(body), true)
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Places an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn place_algo_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: Option<TriggerType>,
+        limit_price: Option<Price>,
+        reduce_only: Option<bool>,
+    ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
+            return Err(OKXHttpError::ValidationError(
+                "Invalid order side".to_string(),
+            ));
+        }
+        let okx_side: OKXSide = order_side.into();
+
+        // Map trigger type to OKX format
+        let trigger_px_type_enum = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
+
+        // Determine order price based on order type
+        let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
+            limit_price.map(|p| p.to_string())
+        } else {
+            // Market orders use -1 to indicate market execution
+            Some("-1".to_string())
+        };
+
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: instrument_id.symbol.as_str().to_string(),
+            td_mode,
+            side: okx_side,
+            ord_type: OKXAlgoOrderType::Trigger, // All conditional orders use 'trigger' type
+            sz: quantity.to_string(),
+            algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
+            trigger_px: Some(trigger_price.to_string()),
+            order_px,
+            trigger_px_type: Some(trigger_px_type_enum),
+            tgt_ccy: None,  // Let OKX determine based on instrument
+            pos_side: None, // Use default position side
+            close_position: None,
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            reduce_only,
+        };
+
+        self.place_algo_order(request).await
+    }
+
+    /// Cancels an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn cancel_algo_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        algo_id: String,
+    ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
+        let request = OKXCancelAlgoOrderRequest {
+            inst_id: instrument_id.symbol.to_string(),
+            algo_id: Some(algo_id),
+            algo_cl_ord_id: None,
+        };
+
+        self.cancel_algo_order(request).await
+    }
+
+    /// Requests algo order status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_algo_order_status_reports(
+        &self,
+        account_id: AccountId,
+        instrument_type: Option<OKXInstrumentType>,
+        instrument_id: Option<InstrumentId>,
+        algo_id: Option<String>,
+        algo_client_order_id: Option<ClientOrderId>,
+        state: Option<OKXOrderStatus>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+
+        let inst_type = if let Some(inst_type) = instrument_type {
+            inst_type
+        } else if let Some(inst_id) = instrument_id {
+            let instrument = self.instrument_or_fetch(inst_id.symbol.inner()).await?;
+            let inst_type = okx_instrument_type(&instrument)?;
+            instruments_cache.insert(inst_id.symbol.inner(), instrument);
+            inst_type
+        } else {
+            anyhow::bail!("instrument_type or instrument_id required for algo order query")
+        };
+
+        let mut params_builder = GetAlgoOrdersParamsBuilder::default();
+        params_builder.inst_type(inst_type);
+        if let Some(inst_id) = instrument_id {
+            params_builder.inst_id(inst_id.symbol.inner().to_string());
+        }
+        if let Some(algo_id) = algo_id.as_ref() {
+            params_builder.algo_id(algo_id.clone());
+        }
+        if let Some(client_order_id) = algo_client_order_id.as_ref() {
+            params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
+        }
+        if let Some(state) = state {
+            params_builder.state(state);
+        }
+        if let Some(limit) = limit {
+            params_builder.limit(limit);
+        }
+
+        let params = params_builder
+            .build()
+            .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+        let mut seen: AHashSet<(String, String)> = AHashSet::new();
+
+        let pending = match self.inner.http_get_order_algo_pending(params.clone()).await {
+            Ok(result) => result,
+            Err(OKXHttpError::UnexpectedStatus { status, .. })
+                if status == StatusCode::NOT_FOUND =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        self.collect_algo_reports(
+            account_id,
+            &pending,
+            &mut instruments_cache,
+            ts_init,
+            &mut seen,
+            &mut reports,
+        )
+        .await?;
+
+        let history = match self.inner.http_get_order_algo_history(params).await {
+            Ok(result) => result,
+            Err(OKXHttpError::UnexpectedStatus { status, .. })
+                if status == StatusCode::NOT_FOUND =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        self.collect_algo_reports(
+            account_id,
+            &history,
+            &mut instruments_cache,
+            ts_init,
+            &mut seen,
+            &mut reports,
+        )
+        .await?;
+
+        Ok(reports)
+    }
+
+    /// Requests an algo order status report by client order identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_algo_order_status_report(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        algo_client_order_id: ClientOrderId,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let reports = self
+            .request_algo_order_status_reports(
+                account_id,
+                None,
+                Some(instrument_id),
+                None,
+                Some(algo_client_order_id),
+                None,
+                Some(50_u32),
+            )
+            .await?;
+
+        Ok(reports.into_iter().next())
+    }
+    async fn collect_algo_reports(
+        &self,
+        account_id: AccountId,
+        orders: &[OKXOrderAlgo],
+        instruments_cache: &mut AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+        seen: &mut AHashSet<(String, String)>,
+        reports: &mut Vec<OrderStatusReport>,
+    ) -> anyhow::Result<()> {
+        for order in orders {
+            let key = (order.algo_id.clone(), order.algo_cl_ord_id.clone());
+            if !seen.insert(key) {
+                continue;
+            }
+
+            let instrument = if let Some(instrument) = instruments_cache.get(&order.inst_id) {
+                instrument.clone()
+            } else {
+                let instrument = self.instrument_or_fetch(order.inst_id).await?;
+                instruments_cache.insert(order.inst_id, instrument.clone());
+                instrument
+            };
+
+            let report = parse_http_algo_order(order, account_id, &instrument, ts_init)?;
+            reports.push(report);
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_http_algo_order(
+    order: &OKXOrderAlgo,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let ord_px = if order.ord_px.is_empty() {
+        "-1".to_string()
+    } else {
+        order.ord_px.clone()
+    };
+
+    let reduce_only = if order.reduce_only.is_empty() {
+        "false".to_string()
+    } else {
+        order.reduce_only.clone()
+    };
+
+    let msg = OKXAlgoOrderMsg {
+        algo_id: order.algo_id.clone(),
+        algo_cl_ord_id: order.algo_cl_ord_id.clone(),
+        cl_ord_id: order.cl_ord_id.clone(),
+        ord_id: order.ord_id.clone(),
+        inst_id: order.inst_id,
+        inst_type: order.inst_type,
+        ord_type: order.ord_type,
+        state: order.state,
+        side: order.side,
+        pos_side: order.pos_side,
+        sz: order.sz.clone(),
+        trigger_px: order.trigger_px.clone(),
+        trigger_px_type: order.trigger_px_type.unwrap_or(OKXTriggerType::None),
+        ord_px,
+        td_mode: order.td_mode,
+        lever: order.lever.clone(),
+        reduce_only,
+        actual_px: order.actual_px.clone(),
+        actual_sz: order.actual_sz.clone(),
+        notional_usd: order.notional_usd.clone(),
+        c_time: order.c_time,
+        u_time: order.u_time,
+        trigger_time: order.trigger_time.clone(),
+        tag: order.tag.clone(),
+    };
+
+    parse_algo_order_status_report(&msg, instrument, account_id, ts_init)
 }

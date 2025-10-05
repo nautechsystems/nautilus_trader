@@ -96,14 +96,14 @@ config_tester = DataTesterConfig(
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
     subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
-    # subscribe_quotes=True,
-    # subscribe_trades=True,
-    # subscribe_mark_prices=True,
-    # subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
-    # subscribe_funding_rates=True,
-    # subscribe_bars=True,
-    # subscribe_instrument_status=False,
-    # subscribe_instrument_close=False,
+    subscribe_quotes=True,
+    subscribe_trades=True,
+    subscribe_mark_prices=True,
+    subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
+    subscribe_funding_rates=True,
+    subscribe_bars=True,
+    subscribe_instrument_status=False,
+    subscribe_instrument_close=False,
     # request_bars=True,
     # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
     # book_depth=5,
@@ -111,6 +111,8 @@ config_tester = DataTesterConfig(
     book_interval_ms=100,
     # manage_book=True,
     # use_pyo3_book=True,
+    request_bars=True,
+    # request_trades=True,  # TODO: Needs to be fixed
 )
 tester = DataTester(config=config_tester)
 

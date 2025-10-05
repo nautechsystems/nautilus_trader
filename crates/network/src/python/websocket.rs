@@ -13,16 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{create_exception, exceptions::PyException, prelude::*};
+use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pyvalue_err};
+use pyo3::{Py, create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
+    RECONNECTED,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{Consumer, WebSocketClient, WebSocketConfig, WriterCommand},
+    websocket::{MessageHandler, PingHandler, WebSocketClient, WebSocketConfig, WriterCommand},
 };
 
 // Python exception class for websocket errors
@@ -37,26 +41,60 @@ impl WebSocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
-    const fn py_new(
+    fn py_new(
         url: String,
-        handler: PyObject,
+        handler: Py<PyAny>,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
         heartbeat_msg: Option<String>,
-        ping_handler: Option<PyObject>,
+        ping_handler: Option<Py<PyAny>>,
         reconnect_timeout_ms: Option<u64>,
         reconnect_delay_initial_ms: Option<u64>,
         reconnect_delay_max_ms: Option<u64>,
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
     ) -> Self {
+        // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
+        let message_handler: MessageHandler = Arc::new(move |msg: Message| {
+            Python::attach(|py| {
+                let data = match msg {
+                    Message::Binary(data) => data.to_vec(),
+                    Message::Text(text) => {
+                        // Disregard the RECONNECTED sentinel message used for Rust flows
+                        if text == RECONNECTED {
+                            return;
+                        }
+                        text.as_bytes().to_vec()
+                    }
+                    _ => return, // Skip other message types
+                };
+                if let Err(e) = handler_clone.call1(py, (PyBytes::new(py, &data),)) {
+                    tracing::error!("Error calling Python message handler: {e}");
+                }
+            });
+        });
+
+        // Create function pointer for ping handler if provided
+        let ping_handler_fn = ping_handler.map(|ping_handler| {
+            let ping_handler_clone = clone_py_object(&ping_handler);
+            let ping_handler_fn: PingHandler = std::sync::Arc::new(move |data: Vec<u8>| {
+                Python::attach(|py| {
+                    if let Err(e) = ping_handler_clone.call1(py, (PyBytes::new(py, &data),)) {
+                        tracing::error!("Error calling Python ping handler: {e}");
+                    }
+                });
+            });
+            ping_handler_fn
+        });
+
         Self {
             url,
-            handler: Consumer::Python(Some(handler)),
+            message_handler: Some(message_handler),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler,
+            ping_handler: ping_handler_fn,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
@@ -74,27 +112,30 @@ impl WebSocketClient {
     ///
     /// - Throws an Exception if it is unable to make websocket connection.
     #[staticmethod]
-    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(), default_quota = None))]
+    #[pyo3(name = "connect", signature = (config, post_reconnection= None, keyed_quotas = Vec::new(), default_quota = None))]
     fn py_connect(
         config: WebSocketConfig,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        post_reconnection: Option<Py<PyAny>>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
+        // Convert Python callback to function pointer
+        let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_reconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Self::connect(
-                config,
-                post_connection,
-                post_reconnection,
-                post_disconnection,
-                keyed_quotas,
-                default_quota,
-            )
-            .await
-            .map_err(to_websocket_pyerr)
+            Self::connect(config, post_reconnection_fn, keyed_quotas, default_quota)
+                .await
+                .map_err(to_websocket_pyerr)
         })
     }
 
@@ -286,7 +327,7 @@ mod tests {
 
     use futures_util::{SinkExt, StreamExt};
     use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::{prelude::*, prepare_freethreaded_python};
+    use pyo3::prelude::*;
     use tokio::{
         net::TcpListener,
         task::{self, JoinHandle},
@@ -394,7 +435,7 @@ mod tests {
         }
     }
 
-    fn create_test_handler() -> (PyObject, PyObject) {
+    fn create_test_handler() -> (Py<PyAny>, Py<PyAny>) {
         let code_raw = r"
 class Counter:
     def __init__(self):
@@ -420,7 +461,7 @@ counter = Counter()
         let code = CString::new(code_raw).unwrap();
         let filename = CString::new("test".to_string()).unwrap();
         let module = CString::new("test".to_string()).unwrap();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
 
             let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
@@ -436,7 +477,7 @@ counter = Counter()
     #[tokio::test]
     #[traced_test]
     async fn basic_client_test() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         const N: usize = 10;
         let mut success_count = 0;
@@ -448,7 +489,7 @@ counter = Counter()
 
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            Python::with_gil(|py| handler.clone_ref(py)),
+            Python::attach(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             None,
             None,
@@ -459,7 +500,7 @@ counter = Counter()
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
+        let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
             .unwrap();
 
@@ -471,7 +512,7 @@ counter = Counter()
 
         // Check count is same as number messages sent
         sleep(Duration::from_secs(1)).await;
-        let count_value: usize = Python::with_gil(|py| {
+        let count_value: usize = Python::attach(|py| {
             counter
                 .getattr(py, "get_count")
                 .unwrap()
@@ -494,7 +535,7 @@ counter = Counter()
 
         // Check count is same as number messages sent
         sleep(Duration::from_secs(1)).await;
-        let count_value: usize = Python::with_gil(|py| {
+        let count_value: usize = Python::attach(|py| {
             counter
                 .getattr(py, "get_count")
                 .unwrap()
@@ -514,7 +555,7 @@ counter = Counter()
     #[tokio::test]
     #[traced_test]
     async fn message_ping_test() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let header_key = "hello-custom-key".to_string();
         let header_value = "hello-custom-value".to_string();
@@ -525,7 +566,7 @@ counter = Counter()
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            Python::with_gil(|py| handler.clone_ref(py)),
+            Python::attach(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
@@ -536,13 +577,13 @@ counter = Counter()
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
+        let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
             .unwrap();
 
         // Check if ping message has the correct message
         sleep(Duration::from_secs(2)).await;
-        let check_value: bool = Python::with_gil(|py| {
+        let check_value: bool = Python::attach(|py| {
             checker
                 .getattr(py, "get_check")
                 .unwrap()

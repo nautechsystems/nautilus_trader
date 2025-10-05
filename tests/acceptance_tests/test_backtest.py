@@ -25,8 +25,7 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.engine import ExecEngineConfig
-from nautilus_trader.backtest.engine import RiskEngineConfig
+from nautilus_trader.backtest.engine import register_time_range_generator
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -51,6 +50,7 @@ from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfi
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model import Bar
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
@@ -84,6 +84,7 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -940,17 +941,17 @@ class TestBacktestNodeWithBacktestDataIterator:
         assert len(combo_fills) > 0, "No combo fills were generated"
         assert (
             len(spread_leg_fills) >= 2
-        ), f"Expected at least 2 spread leg fills, got {len(spread_leg_fills)}"
+        ), f"Expected at least 2 spread leg fills, was {len(spread_leg_fills)}"
 
         # Validate that we have exactly 2 spread leg fills per combo fill (for a 2-leg spread)
         assert (
             len(spread_leg_fills) == len(combo_fills) * 2
-        ), f"Expected {len(combo_fills) * 2} spread leg fills for {len(combo_fills)} combo fills, got {len(spread_leg_fills)}"
+        ), f"Expected {len(combo_fills) * 2} spread leg fills for {len(combo_fills)} combo fills, was {len(spread_leg_fills)}"
 
         # Also validate that we have individual leg fills from init_portfolio
         assert (
             len(individual_leg_fills) >= 2
-        ), f"Expected at least 2 individual leg fills, got {len(individual_leg_fills)}"
+        ), f"Expected at least 2 individual leg fills, was {len(individual_leg_fills)}"
 
         # Extract and validate mathematical consistency using only spread leg fills
         self._validate_spread_math_consistency(combo_fills, spread_leg_fills)
@@ -974,7 +975,7 @@ class TestBacktestNodeWithBacktestDataIterator:
             matching_legs = [msg for msg in leg_fills if trade_id_part in msg]
             assert (
                 len(matching_legs) == 2
-            ), f"Expected 2 leg fills for trade {trade_id_part}, got {len(matching_legs)}"
+            ), f"Expected 2 leg fills for trade {trade_id_part}, was {len(matching_legs)}"
 
             # Extract leg fill prices
             # Format: "LEG FILL: ESM4 P5230.XCME 2 5 @ 97.63 (Order: ...)"
@@ -1095,6 +1096,8 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             (option2_id, 1),  # Long ESM4 P5250
         ],
     )
+
+    register_time_range_generator("default", BacktestEngine.default_time_range_generator)
 
     strategies = [
         ImportableStrategyConfig(
@@ -1243,7 +1246,10 @@ class OptionStrategy(Strategy):
         # Subscribe to individual option quotes
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
+            params={
+                "time_range_generator": "default",
+                "durations_seconds": (pd.Timedelta(minutes=2).seconds,),
+            },
         )
         self.subscribe_quote_ticks(
             self.config.option_id2,
@@ -1725,22 +1731,22 @@ class TestBacktestPnLAlignmentAcceptance:
         snapshots = engine.cache.position_snapshots()
         assert (
             len(snapshots) >= 2
-        ), f"Should have multiple snapshots in NETTING mode, got {len(snapshots)}"
+        ), f"Should have multiple snapshots in NETTING mode, was {len(snapshots)}"
 
         # Additional validations
         assert (
             len(positions_report) >= 1
-        ), f"Should have position cycles, got {len(positions_report)}"
+        ), f"Should have position cycles, was {len(positions_report)}"
         snapshots = engine.cache.position_snapshots()
         # In NETTING mode, closed positions become snapshots
         # Current/last position won't be in snapshots if still open or just closed
         # In NETTING mode, we expect snapshots for closed position cycles
         assert (
             len(snapshots) >= 2
-        ), f"Should have at least 2 snapshots in NETTING mode, got {len(snapshots)}"
+        ), f"Should have at least 2 snapshots in NETTING mode, was {len(snapshots)}"
         assert (
             len(positions_report) >= 3
-        ), f"Should have at least 3 position entries, got {len(positions_report)}"
+        ), f"Should have at least 3 position entries, was {len(positions_report)}"
 
     def test_pnl_alignment_position_flips(self):  # noqa: C901 (too complex)
         """
@@ -1896,7 +1902,7 @@ class TestBacktestPnLAlignmentAcceptance:
         # Validate we had positions
         assert (
             len(positions_report) >= 1
-        ), f"Should have positions from trades, got {len(positions_report)}"
+        ), f"Should have positions from trades, was {len(positions_report)}"
 
     def test_backtest_postrun_pnl_alignment(self):
         """

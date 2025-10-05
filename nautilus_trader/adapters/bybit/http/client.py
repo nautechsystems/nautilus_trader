@@ -23,6 +23,7 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.secure import SecureString
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -81,6 +82,7 @@ class BybitHttpClient:
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
+            "Referer": nautilus_pyo3.BYBIT_NAUTILUS_BROKER_ID,
             "X-BAPI-API-KEY": api_key,
         }
         self._client = HttpClient(

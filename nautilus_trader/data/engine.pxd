@@ -33,6 +33,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -100,6 +101,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
     cdef readonly dict[UUID4, int] _query_group_n_responses
     cdef readonly dict[UUID4, list] _query_group_responses
+    cdef readonly dict[UUID4, RequestData] _query_group_requests
 
     cdef readonly dict[InstrumentId, str] _topic_cache_deltas
     cdef readonly dict[InstrumentId, str] _topic_cache_quotes
@@ -124,6 +126,7 @@ cdef class DataEngine(Component):
     cdef readonly int _time_bars_build_delay
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
+    cdef readonly bint _emit_quotes_from_book_depths
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -218,6 +221,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
@@ -248,14 +252,15 @@ cdef class DataEngine(Component):
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments, bint update_catalog = *, bint force_update_catalog = *)
     cpdef tuple[datetime, object] _catalog_last_timestamp(self, type data_cls, identifier: str | None = *)
-    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
+    cpdef void _new_query_group(self, RequestData request, int n_components)
     cpdef DataResponse _handle_query_group(self, DataResponse response)
     cdef DataResponse _handle_query_group_aux(self, DataResponse response)
     cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties)
     cpdef void _check_bounds(self, DataResponse response)
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
-    cpdef void _handle_bars(self, list bars, Bar partial)
+    cpdef void _handle_order_book_depths(self, list depths)
+    cpdef void _handle_bars(self, list bars)
     cpdef dict _handle_aggregated_bars(self, DataResponse response)
     cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 

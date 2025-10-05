@@ -62,6 +62,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -1258,6 +1259,7 @@ cdef class Actor(Component):
         self,
         Venue venue,
         ClientId client_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1273,6 +1275,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
+        update_catalog : bool, optional
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1284,6 +1289,10 @@ cdef class Actor(Component):
             topic=f"data.instrument.{venue}.*",
             handler=self.handle_instrument,
         )
+
+        params = params or {}
+        params["update_catalog"] = update_catalog
+
         cdef SubscribeInstruments command = SubscribeInstruments(
             client_id=client_id,
             venue=venue,
@@ -1297,6 +1306,7 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         ClientId client_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1312,6 +1322,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        update_catalog : bool, optional
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1325,6 +1338,10 @@ cdef class Actor(Component):
                   f".{instrument_id.symbol.topic()}",
             handler=self.handle_instrument,
         )
+
+        params = params or {}
+        params["update_catalog"] = update_catalog
+
         cdef SubscribeInstrument command = SubscribeInstrument(
             instrument_id=instrument_id,
             client_id=client_id,
@@ -1407,6 +1424,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         bint managed = True,
         bint pyo3_conversion = False,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1429,6 +1447,9 @@ cdef class Actor(Component):
         pyo3_conversion : bool, default False
             If received deltas should be converted to `nautilus_pyo3.OrderBookDepth`
             prior to being passed to the `on_order_book_depth` handler.
+        update_catalog : bool, optional
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1445,6 +1466,10 @@ cdef class Actor(Component):
                   f".{instrument_id.symbol.topic()}",
             handler=self.handle_order_book_depth,
         )
+
+        params = params or {}
+        params["update_catalog"] = update_catalog
+
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
             book_data_type=OrderBookDepth10,
@@ -1771,7 +1796,6 @@ cdef class Actor(Component):
         self,
         BarType bar_type,
         ClientId client_id = None,
-        bint await_partial = False,
         bint update_catalog = False,
         dict[str, object] params = None,
     ):
@@ -1788,9 +1812,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        await_partial : bool, default False
-            If the bar aggregator should await the arrival of a historical partial bar prior
-            to actively aggregating new bars.
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
             Only useful when downloading data during a backtest.
@@ -1811,7 +1832,6 @@ cdef class Actor(Component):
 
         cdef SubscribeBars command = SubscribeBars(
             bar_type=bar_type,
-            await_partial=await_partial,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             command_id=UUID4(),
@@ -2881,6 +2901,90 @@ cdef class Actor(Component):
         cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
             instrument_id=instrument_id,
             limit=limit,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_data_response,
+            request_id=request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._pending_requests[request_id] = callback
+        self._send_data_req(request)
+
+        return request_id
+
+    cpdef UUID4 request_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
+        int limit = 0,
+        int depth = 10,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog: bool = True,
+        dict[str, object] params = None,
+    ):
+        """
+        Request historical `OrderBookDepth10` snapshots.
+
+        Once the response is received, the order book depth data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book depths request.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        limit : int, optional
+            The limit on the amount of depth snapshots received.
+        depth : int, optional
+            The maximum depth for the returned order book data (default is 10).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+        update_catalog : bool, default True
+            If the data catalog should be updated with the received data.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
+
+        params = params or {}
+        params["update_catalog"] = update_catalog
+
+        cdef UUID4 request_id = UUID4()
+        cdef RequestOrderBookDepth request = RequestOrderBookDepth(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
+            depth=depth,
             client_id=client_id,
             venue=instrument_id.venue,
             callback=self._handle_data_response,

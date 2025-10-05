@@ -22,13 +22,10 @@ default = []
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
-python = [
-  "nautilus-core/python",
-  "nautilus-model/python",
-  "pyo3",
-]
+python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -39,8 +36,9 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

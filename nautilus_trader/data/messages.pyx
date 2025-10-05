@@ -455,6 +455,53 @@ cdef class SubscribeOrderBook(SubscribeData):
             f"id={self.id}{form_params_str(self.params)})"
         )
 
+    def to_request(
+        self,
+        datetime start: datetime | None,
+        datetime end: datetime | None,
+        callback not None: Callable[[Any], None],
+    ) -> RequestOrderBookDepth:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestOrderBookDepth
+            The converted request message.
+        """
+        if self.data_type.type != OrderBookDepth10:
+            raise ValueError(
+                f"Cannot convert SubscribeOrderBook with data_type {self.data_type.type} to RequestOrderBookDepth. "
+                f"Only OrderBookDepth10 subscriptions can be converted to historical requests."
+            )
+
+        params = self.params.copy() if self.params else {}
+        params["subscription_name"] = f"{self.data_type.type.__name__}.{self.instrument_id}"
+
+        return RequestOrderBookDepth(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=0,
+            depth=self.depth if self.depth > 0 else 10,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=params,
+        )
+
 
 cdef class SubscribeQuoteTicks(SubscribeData):
     """
@@ -867,8 +914,6 @@ cdef class SubscribeBars(SubscribeData):
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    await_partial : bool
-        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -886,7 +931,6 @@ cdef class SubscribeBars(SubscribeData):
         Venue venue: Venue | None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        bint await_partial = False,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
@@ -899,13 +943,11 @@ cdef class SubscribeBars(SubscribeData):
             params,
         )
         self.bar_type = bar_type
-        self.await_partial = await_partial
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"bar_type={self.bar_type}, "
-            f"await_partial={self.await_partial}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue})"
         )
@@ -914,7 +956,6 @@ cdef class SubscribeBars(SubscribeData):
         return (
             f"{type(self).__name__}("
             f"bar_type={self.bar_type}, "
-            f"await_partial={self.await_partial}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"
@@ -2191,6 +2232,115 @@ cdef class RequestOrderBookSnapshot(RequestData):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestOrderBookDepth(RequestData):
+    """
+    Represents a request for historical `OrderBookDepth10` data.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of depth snapshots received.
+    depth : int
+        The maximum depth for the order book depth data (default is 10).
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
+        int depth,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ) -> None:
+        super().__init__(
+            DataType(OrderBookDepth10),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+        self.depth = depth
+
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init):
+        return RequestOrderBookDepth(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            depth=self.depth,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=ts_init,
+            params=self.params.copy(),
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"depth={self.depth}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"depth={self.depth}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"callback={self.callback}, "

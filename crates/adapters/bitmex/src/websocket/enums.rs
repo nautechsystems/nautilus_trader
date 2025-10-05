@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Enumerations used when parsing BitMEX WebSocket payloads.
+
 use nautilus_model::enums::{AggressorSide, BookAction, OrderSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -39,6 +41,7 @@ pub enum BitmexSide {
 }
 
 impl BitmexSide {
+    /// Converts the BitMEX side into a Nautilus order side.
     #[must_use]
     pub const fn as_order_side(&self) -> OrderSide {
         match self {
@@ -46,6 +49,7 @@ impl BitmexSide {
             Self::Sell => OrderSide::Sell,
         }
     }
+    /// Converts the BitMEX side into a Nautilus aggressor side.
     #[must_use]
     pub const fn as_aggressor_side(&self) -> AggressorSide {
         match self {
@@ -142,6 +146,7 @@ pub enum BitmexAction {
 }
 
 impl BitmexAction {
+    /// Maps a table action into the corresponding order book action.
     #[must_use]
     pub const fn as_book_action(&self) -> BookAction {
         match self {
@@ -171,8 +176,10 @@ pub enum BitmexWsOperation {
 )]
 #[serde(rename_all = "camelCase")]
 pub enum BitmexWsAuthAction {
-    /// Submit API key for authentication.
+    /// Submit API key for authentication (legacy, deprecated).
     AuthKey,
+    /// Submit API key with expires for authentication (recommended).
+    AuthKeyExpires,
     /// Cancel all orders after n seconds.
     CancelAllAfter,
 }
@@ -230,4 +237,23 @@ pub enum BitmexWsTopic {
     TradeBin1h,
     /// 1-day trade bins.
     TradeBin1d,
+}
+
+/// Represents authenticated WebSocket channels for account updates.
+#[derive(
+    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum BitmexWsAuthChannel {
+    /// Order updates for the authenticated account.
+    Order,
+    /// Execution/fill updates for the authenticated account.
+    Execution,
+    /// Position updates for the authenticated account.
+    Position,
+    /// Margin updates for the authenticated account.
+    Margin,
+    /// Wallet updates for the authenticated account.
+    Wallet,
 }

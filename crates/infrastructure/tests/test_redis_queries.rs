@@ -309,18 +309,17 @@ mod serial_tests {
                 .unwrap();
         }
 
-        // Wait for data to be written
+        // Wait for all currencies to be written
         wait_until_async(
             || async {
-                // Check if we can read back at least one currency
-                let test_result = DatabaseQueries::load_currency(
+                // Check if we can read back all currencies
+                let result = DatabaseQueries::load_currencies(
                     &database.con,
                     &trader_key,
-                    &Ustr::from("USD"),
                     SerializationEncoding::MsgPack,
                 )
                 .await;
-                test_result.is_ok() && test_result.unwrap().is_some()
+                result.is_ok() && result.unwrap().len() == 5
             },
             std::time::Duration::from_secs(2),
         )

@@ -207,6 +207,79 @@ cdef class CryptoPerpetual(Instrument):
         """
         return self.settlement_currency
 
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instruments = settlement_currency
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.base_currency
+        elif self.is_quanto:
+            return self.settlement_currency
+        else:
+            return self.quote_currency
+
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+    ):
+        """
+        Calculate the notional value.
+
+        Result will be in quote currency for standard instruments, base
+        currency for inverse instruments, or settlement currency for quanto
+        instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        price : Price
+            The price for the calculation.
+        use_quote_for_inverse : bool
+            For inverse instruments only: if True, treats the quantity as already representing
+            notional value in quote currency and returns it directly without calculation.
+            This is useful when quantity already represents a USD value that doesn't need
+            conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        if self.is_inverse:
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
+                return Money(quantity, self.quote_currency)
+
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
+                self.base_currency,
+            )
+        elif self.is_quanto:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.settlement_currency,
+            )
+        else:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.quote_currency,
+            )
+
     @staticmethod
     cdef CryptoPerpetual from_dict_c(dict values):
         Condition.not_none(values, "values")

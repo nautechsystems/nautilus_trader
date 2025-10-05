@@ -70,7 +70,7 @@ pub fn get_test_data_large_checksums_filepath() -> PathBuf {
 pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     let filepath = get_test_data_path().join("large").join(filename);
     let checksums_filepath = get_test_data_large_checksums_filepath();
-    ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath)).unwrap();
+    ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath), None).unwrap();
     filepath
 }
 

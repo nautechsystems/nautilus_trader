@@ -38,6 +38,10 @@ impl ClientConfig for BlockchainDataClientConfig {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
 pub struct BlockchainDataClientFactory;
 
 impl BlockchainDataClientFactory {
@@ -102,6 +106,7 @@ mod tests {
             chain,
             vec![],
             "https://eth-mainnet.example.com".to_string(),
+            None,
             None,
             None,
             false,

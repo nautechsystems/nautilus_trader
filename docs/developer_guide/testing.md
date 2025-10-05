@@ -1,6 +1,10 @@
 # Testing
 
-The test suite is divided into broad categories of tests including:
+Our automated tests serve as executable specifications for the trading platform.
+A healthy suite documents intended behaviour, gives contributors confidence to refactor, and catches regressions before they reach production.
+Tests also double as living examples that clarify complex flows and provide rapid CI feedback so issues surface early.
+
+The suite covers these categories:
 
 - Unit tests
 - Integration tests
@@ -8,10 +12,10 @@ The test suite is divided into broad categories of tests including:
 - Performance tests
 - Memory leak tests
 
-The performance tests exist to aid development of performance-critical components.
+Performance tests help evolve performance-critical components.
 
-Tests can be run using [pytest](https://docs.pytest.org), which is our primary test runner.
-We recommend using parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
+Run tests with [pytest](https://docs.pytest.org), our primary test runner.
+Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
 
 ## Running tests
 
@@ -45,57 +49,114 @@ cargo nextest run --workspace --features "python,ffi,high-precision,defi" --carg
 
 ### IDE integration
 
-- **PyCharm**: Right-click on tests folder or file → "Run pytest"
-- **VS Code**: Use the Python Test Explorer extension
+- **PyCharm**: Right-click the tests folder or file → "Run pytest".
+- **VS Code**: Use the Python Test Explorer extension.
 
 ## Test style
 
-- Test function naming should be descriptive of what is under test; it is not necessary to include the expected assertions in the function name.
-- Test functions *may* have docstrings that can be useful for elaborating on test setup, scenarios, and expected assertions.
-- Prefer pytest style free functions for Python tests over test classes with setup methods.
-- **Group assertions** where possible - perform all setup/act steps first, then assert expectations together at the end of the test to avoid the *act-assert-act* smell.
-- Using `unwrap`, `expect`, or direct `panic!`/`assert` calls inside **tests** is acceptable. The clarity and conciseness of the test suite outweigh defensive error-handling that is required in production code.
+- Name test functions after what they exercise; you do not need to encode the expected assertions in the name.
+- Add docstrings when they clarify setup, scenarios, or expectations.
+- Prefer pytest-style free functions for Python tests instead of test classes with setup methods.
+- **Group assertions** when possible: perform all setup/act steps first, then assert together to avoid the act-assert-act smell.
+- Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and conciseness matter more than defensive error handling here.
+
+## Waiting for asynchronous effects
+
+When waiting for background work to complete, prefer the polling helpers `await eventually(...)` from `nautilus_trader.test_kit.functions` and `wait_until_async(...)` from `nautilus_common::testing` instead of arbitrary sleeps. They surface failures faster and reduce flakiness in CI because they stop as soon as the condition is satisfied or time out with a useful error.
 
 ## Mocks
 
-Unit tests will often include other components acting as mocks. The intent of this is to simplify
-the test suite to avoid extensive use of a mocking framework, although `MagicMock` objects are
-currently used in particular cases.
+Use lightweight collaborators as mocks to keep the suite simple and avoid heavy mocking frameworks.
+We still rely on `MagicMock` in specific cases where it provides the most convenient tooling.
 
 ## Code coverage
 
-Code coverage output is generated using `coverage` and reported using [codecov](https://about.codecov.io/).
+We generate coverage reports with `coverage` and publish them to [codecov](https://about.codecov.io/).
 
-High test coverage is a goal for the project, however not at the expense of appropriate error handling or causing "test induced damage" to the architecture.
+Aim for high coverage without sacrificing appropriate error handling or causing "test induced damage" to the architecture.
 
-There are currently areas of the codebase which are impossible to test unless there is a change to the production code.
-For example, the last condition check of an if-else block which would catch an unrecognized value;
-these should be left in place in case there is a change to the production code which these checks could then catch.
+Some branches remain untestable without modifying production behaviour.
+For example, a final condition in a defensive if-else block may only trigger for unexpected values; leave these checks in place so future changes can exercise them if needed.
 
-Other design-time exceptions may also be impossible to test for, and so 100% test coverage is not the ultimate goal.
+Design-time exceptions can also be impractical to test, so 100% coverage is not the target.
 
 ## Excluded code coverage
 
-The `pragma: no cover` comments found throughout the codebase [exclude code from test coverage](https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html).
-The reason for their use is to reduce redundant/needless tests just to keep coverage high, such as:
+We use `pragma: no cover` comments to [exclude code from coverage](https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html) when tests would be redundant.
+Typical examples include:
 
 - Asserting an abstract method raises `NotImplementedError` when called.
 - Asserting the final condition check of an if-else block when impossible to test (as above).
 
-These tests are expensive to maintain (as they must be kept in line with any refactorings) and offer little to no benefit in return.
-The intention is for all abstract method implementations to be fully covered by tests.
-Therefore `pragma: no cover` should be judiciously removed when no longer appropriate, and its use *restricted* to the above cases.
+Such tests are expensive to maintain because they must track refactors while providing little value.
+Ensure concrete implementations of abstract methods remain fully covered.
+Remove `pragma: no cover` when it no longer applies and restrict its use to the cases above.
 
 ## Debugging Rust tests
 
-Rust tests can be debugged using the default test configuration.
+Use the default test configuration to debug Rust tests.
 
-If you want to run all tests while compiling with debug symbols for later debugging some tests individually,
-run `make cargo-test-debug` instead of `make cargo-test`.
+To run the full suite with debug symbols for later, run `make cargo-test-debug` instead of `make cargo-test`.
 
-In IntelliJ IDEA, to debug parametrised tests starting with `#[rstest]` with arguments defined in the header of the test,
-you need to modify the run configuration of the test so it looks like `test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
-(remove `-- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to the n-th parametrised test starting at 1).
-The reason for this is documented [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851) (the test is expanded into a module with several functions named `case_n`).
+In IntelliJ IDEA, adjust the run configuration for parametrised `#[rstest]` cases so it reads `test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
+(remove `-- --exact` and append `::case_n` where `n` starts at 1). This workaround matches the behaviour explained [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851).
 
-In VS Code, it is possible to directly select which test case to debug.
+In VS Code you can pick the specific test case to debug directly.
+
+## Python + Rust Mixed Debugging
+
+This workflow lets you debug Python and Rust code simultaneously from a Jupyter notebook inside VS Code.
+
+### Setup
+
+Install these VS Code extensions: Rust Analyzer, CodeLLDB, Python, Jupyter.
+
+### Step 0: Compile `nautilus_trader` with debug symbols
+
+   ```bash
+   cd nautilus_trader && make build-debug-pyo3
+   ```
+
+### Step 1: Set up debugging configuration
+
+```python
+from nautilus_trader.test_kit.debug_helpers import setup_debugging
+
+setup_debugging()
+```
+
+This command creates the required VS Code debugging configurations and starts a `debugpy` server for the Python debugger.
+
+By default `setup_debugging()` expects the `.vscode` folder one level above the `nautilus_trader` root directory.
+Adjust the target location if your workspace layout differs.
+
+### Step 2: Set breakpoints
+
+- **Python breakpoints:** Set in VS Code in the Python source files.
+- **Rust breakpoints:** Set in VS Code in the Rust source files.
+
+### Step 3: Start mixed debugging
+
+1. In VS Code select the **"Debug Jupyter + Rust (Mixed)"** configuration.
+2. Start debugging (F5) or press the green run arrow.
+3. Both Python and Rust debuggers attach to your Jupyter session.
+
+### Step 4: Execute code
+
+Run Jupyter notebook cells that call Rust functions. The debugger stops at breakpoints in both Python and Rust code.
+
+### Available configurations
+
+`setup_debugging()` creates these VS Code configurations:
+
+- **`Debug Jupyter + Rust (Mixed)`** - Mixed debugging for Jupyter notebooks.
+- **`Jupyter Mixed Debugging (Python)`** - Python-only debugging for notebooks.
+- **`Rust Debugger (for Jupyter debugging)`** - Rust-only debugging for notebooks.
+
+### Example
+
+Open and run the example notebook: `debug_mixed_jupyter.ipynb`.
+
+### Reference
+
+- [PyO3 debugging](https://pyo3.rs/v0.25.1/debugging.html?highlight=deb#debugging-from-jupyter-notebooks)

@@ -201,6 +201,10 @@ typedef enum LogLevel {
  * A real-time clock which uses system time.
  *
  * Timestamps are guaranteed to be unique and monotonically increasing.
+ *
+ * # Threading
+ *
+ * The clock holds thread-local runtime state and must remain on its originating thread.
  */
 typedef struct LiveClock LiveClock;
 
@@ -230,6 +234,10 @@ typedef struct LogGuard LogGuard;
  * A static test clock.
  *
  * Stores the current timestamp internally which can be advanced.
+ *
+ * # Threading
+ *
+ * This clock is thread-affine; use it only from the thread that created it.
  */
 typedef struct TestClock TestClock;
 
@@ -388,6 +396,11 @@ void test_clock_set_time_alert(struct TestClock_API *clock,
  * - `name_ptr` is a valid C string pointer.
  * - `callback_ptr` is a valid `PyCallable` pointer.
  *
+ * # Parameters
+ *
+ * - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+ * - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+ *
  * # Panics
  *
  * Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -478,6 +491,11 @@ void live_clock_set_time_alert(struct LiveClock_API *clock,
  * This function assumes:
  * - `name_ptr` is a valid C string pointer.
  * - `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Parameters
+ *
+ * - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+ * - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
  *
  * # Panics
  *
@@ -604,6 +622,7 @@ struct LogGuard_API logging_init(TraderId_t trader_id,
                                  uint8_t is_colored,
                                  uint8_t is_bypassed,
                                  uint8_t print_config,
+                                 uint8_t log_components_only,
                                  uint64_t max_file_size,
                                  uint32_t max_backup_count);
 

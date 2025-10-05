@@ -89,7 +89,7 @@ impl TardisHttpClient {
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let mut py_instruments = Vec::new();
                 for inst in instruments {
                     py_instruments.push(instrument_any_to_pyobject(py, inst)?);

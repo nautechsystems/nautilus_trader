@@ -52,6 +52,7 @@ pub mod fix;
 pub mod http;
 pub mod mode;
 pub mod net;
+pub mod retry;
 pub mod socket;
 pub mod websocket;
 
@@ -63,3 +64,6 @@ pub mod python;
 
 pub mod error;
 pub mod ratelimiter;
+
+/// Sentinel message to signal reconnection to Rust consumers.
+pub const RECONNECTED: &str = "__RECONNECTED__";

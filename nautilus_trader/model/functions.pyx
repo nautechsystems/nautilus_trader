@@ -367,6 +367,40 @@ cpdef time_in_force_to_pyo3(TimeInForce value):
     raise ValueError(f"Unsupported `TimeInForce`, was '{time_in_force_to_str(value)}'")
 
 
+cpdef trigger_type_to_pyo3(TriggerType value):
+    if value == TriggerType.NO_TRIGGER:
+        return nautilus_pyo3.TriggerType.NO_TRIGGER
+    if value == TriggerType.DEFAULT:
+        return nautilus_pyo3.TriggerType.DEFAULT
+    if value == TriggerType.LAST_PRICE:
+        return nautilus_pyo3.TriggerType.LAST_PRICE
+    if value == TriggerType.MARK_PRICE:
+        return nautilus_pyo3.TriggerType.MARK_PRICE
+    if value == TriggerType.INDEX_PRICE:
+        return nautilus_pyo3.TriggerType.INDEX_PRICE
+    if value == TriggerType.BID_ASK:
+        return nautilus_pyo3.TriggerType.BID_ASK
+    if value == TriggerType.DOUBLE_LAST:
+        return nautilus_pyo3.TriggerType.DOUBLE_LAST
+    if value == TriggerType.DOUBLE_BID_ASK:
+        return nautilus_pyo3.TriggerType.DOUBLE_BID_ASK
+
+    raise ValueError(f"Unsupported `TriggerType`, was '{trigger_type_to_str(value)}'")
+
+
+cpdef contingency_type_to_pyo3(ContingencyType value):
+    if value == ContingencyType.NO_CONTINGENCY:
+        return nautilus_pyo3.ContingencyType.NO_CONTINGENCY
+    if value == ContingencyType.OCO:
+        return nautilus_pyo3.ContingencyType.OCO
+    if value == ContingencyType.OTO:
+        return nautilus_pyo3.ContingencyType.OTO
+    if value == ContingencyType.OUO:
+        return nautilus_pyo3.ContingencyType.OUO
+
+    raise ValueError(f"Unsupported `ContingencyType`, was '{contingency_type_to_str(value)}'")
+
+
 cpdef OrderSide order_side_from_pyo3(value: nautilus_pyo3.OrderSide):
     if value == nautilus_pyo3.OrderSide.BUY:
         return OrderSide.BUY

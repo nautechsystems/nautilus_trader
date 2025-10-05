@@ -450,7 +450,7 @@ impl Order for MarketIfTouchedOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -744,7 +744,7 @@ mod tests {
 
         assert!(
             (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {expected_slippage}, got {actual_slippage}"
+            "Expected slippage around {expected_slippage}, was {actual_slippage}"
         );
     }
 }

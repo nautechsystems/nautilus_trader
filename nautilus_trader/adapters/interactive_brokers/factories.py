@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import AccountId
 
 # fmt: on
 
-GATEWAY = None
+GATEWAYS: dict[tuple, DockerizedIBGateway] = {}
 IB_CLIENTS: dict[tuple, InteractiveBrokersClient] = {}
 IB_INSTRUMENT_PROVIDERS: dict[tuple, InteractiveBrokersInstrumentProvider] = {}
 
@@ -52,12 +52,15 @@ def get_cached_ib_client(
     port: int | None = None,
     client_id: int = 1,
     dockerized_gateway: DockerizedIBGatewayConfig | None = None,
+    fetch_all_open_orders: bool = False,
 ) -> InteractiveBrokersClient:
     """
     Retrieve or create a cached InteractiveBrokersClient using the provided key.
 
     Should a keyed client already exist within the cache, the function will return this instance. It's important
     to note that the key comprises a combination of the host, port, and client_id.
+
+    When using DockerizedIBGatewayConfig, multiple gateways can be created and cached based on their trading_mode.
 
     Parameters
     ----------
@@ -78,25 +81,31 @@ def get_cached_ib_client(
         however, each must use a different client_id.
     dockerized_gateway: DockerizedIBGatewayConfig, optional
         The configuration for the dockerized gateway.If this is provided, Nautilus will oversee the docker
-        environment, facilitating the operation of the IB Gateway within.
+        environment, facilitating the operation of the IB Gateway within. Multiple gateways can be created
+        based on trading_mode.
+    fetch_all_open_orders : bool, default False
+        If True, uses reqAllOpenOrders to fetch orders from all API clients and TWS GUI.
+        If False, uses reqOpenOrders to fetch only orders from current client ID session.
 
     Returns
     -------
     InteractiveBrokersClient
 
     """
-    global GATEWAY
-
     if dockerized_gateway:
         PyCondition.equal(host, "127.0.0.1", "host", "127.0.0.1")
         PyCondition.none(port, "Ensure `port` is set to None when using DockerizedIBGatewayConfig.")
 
-        if GATEWAY is None:
-            GATEWAY = DockerizedIBGateway(dockerized_gateway)
-            GATEWAY.safe_start(wait=dockerized_gateway.timeout)
-            port = GATEWAY.port
+        # Create a unique key for the gateway based on its trading_mode
+        gateway_key = (dockerized_gateway.trading_mode,)
+
+        if gateway_key not in GATEWAYS:
+            gateway = DockerizedIBGateway(dockerized_gateway)
+            gateway.safe_start(wait=dockerized_gateway.timeout)
+            GATEWAYS[gateway_key] = gateway
+            port = gateway.port
         else:
-            port = GATEWAY.port
+            port = GATEWAYS[gateway_key].port
     else:
         PyCondition.not_none(
             host,
@@ -104,7 +113,7 @@ def get_cached_ib_client(
         )
         PyCondition.not_none(port, "Please provide the `port` for the IB TWS or Gateway.")
 
-    client_key: tuple = (host, port, client_id)
+    client_key: tuple = (host, port, client_id, fetch_all_open_orders)
 
     if client_key not in IB_CLIENTS:
         client = InteractiveBrokersClient(
@@ -115,6 +124,7 @@ def get_cached_ib_client(
             host=host,
             port=port,
             client_id=client_id,
+            fetch_all_open_orders=fetch_all_open_orders,
         )
         client.start()
         IB_CLIENTS[client_key] = client
@@ -281,6 +291,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             port=config.ibg_port,
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
+            fetch_all_open_orders=config.fetch_all_open_orders,
         )
 
         # Get instrument provider singleton
@@ -310,6 +321,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             config=config,
             name=name,
             connection_timeout=config.connection_timeout,
+            track_option_exercise_from_position_update=config.track_option_exercise_from_position_update,
         )
 
         return exec_client

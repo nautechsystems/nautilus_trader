@@ -38,10 +38,11 @@ pub static CAMELOT_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let mut dex = DexExtended::new(Dex::new(
         chains::ARBITRUM.clone(),
         DexType::CamelotV3,
-        "0x1a3c9b1d2f0529d97f2afc5136cc23e58f1fd35b",
+        "0x1a3c9B1d2F0529D97f2afC5136Cc23e58f1FD35B",
         102286676,
         AmmType::CLAMM,
         "Pool(address,address,address)",
+        "",
         "",
         "",
         "",

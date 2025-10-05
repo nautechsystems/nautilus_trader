@@ -25,7 +25,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use thiserror::Error;
 
-/// Build error for query parameter validation.
+/// Represents a build error for query parameter validation.
 #[derive(Debug, Error)]
 pub enum BuildError {
     /// Missing required instrument ID.

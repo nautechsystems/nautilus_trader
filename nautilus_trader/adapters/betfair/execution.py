@@ -457,6 +457,20 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot submit order: no instrument found for {command.instrument_id}")
             return
 
+        if command.order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {command.order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         self.generate_order_submitted(
             command.strategy_id,
             command.instrument_id,

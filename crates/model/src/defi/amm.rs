@@ -17,13 +17,16 @@
 
 use std::{fmt::Display, sync::Arc};
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U160};
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     data::HasTsInit,
-    defi::{Blockchain, SharedDex, chain::SharedChain, dex::Dex, token::Token},
+    defi::{
+        Blockchain, SharedDex, chain::SharedChain, dex::Dex,
+        tick_map::tick_math::get_tick_at_sqrt_ratio, token::Token,
+    },
     identifiers::{InstrumentId, Symbol, Venue},
 };
 
@@ -68,6 +71,10 @@ pub struct Pool {
     pub fee: Option<u32>,
     /// The minimum tick spacing for positions in concentrated liquidity AMMs.
     pub tick_spacing: Option<u32>,
+    /// The initial tick when the pool was first initialized.
+    pub initial_tick: Option<i32>,
+    /// The initial square root price when the pool was first initialized.
+    pub initial_sqrt_price_x96: Option<U160>,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
@@ -102,8 +109,31 @@ impl Pool {
             token1,
             fee,
             tick_spacing,
+            initial_tick: None,
+            initial_sqrt_price_x96: None,
             ts_init,
         }
+    }
+
+    /// Returns a formatted string representation of the pool for display purposes.
+    pub fn to_full_spec_string(&self) -> String {
+        format!(
+            "{}/{}-{}.{}",
+            self.token0.symbol,
+            self.token1.symbol,
+            self.fee.unwrap_or(0),
+            self.instrument_id.venue
+        )
+    }
+
+    /// Initializes the pool with the initial tick and square root price.
+    ///
+    /// This method should be called when an Initialize event is processed
+    /// to set the initial price and tick values for the pool.
+    pub fn initialize(&mut self, sqrt_price_x96: U160) {
+        let calculated_tick = get_tick_at_sqrt_ratio(sqrt_price_x96);
+        self.initial_sqrt_price_x96 = Some(sqrt_price_x96);
+        self.initial_tick = Some(calculated_tick);
     }
 
     pub fn create_instrument_id(chain: Blockchain, dex: &Dex, address: &Address) -> InstrumentId {
@@ -133,6 +163,10 @@ impl HasTsInit for Pool {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -159,6 +193,7 @@ mod tests {
             "Swap(address,address,int256,int256,uint160,uint128,int24)",
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
         );
 
         let token0 = Token::new(
@@ -229,6 +264,7 @@ mod tests {
             "Swap(address,address,int256,int256,uint160,uint128,int24)",
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
         );
 
         let token0 = Token::new(

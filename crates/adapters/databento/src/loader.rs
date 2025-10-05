@@ -191,6 +191,8 @@ impl DatabentoDataLoader {
         Ok(metadata.schema.map(|schema| schema.to_string()))
     }
 
+    /// Reads instrument definition records from a DBN file.
+    ///
     /// # Errors
     ///
     /// Returns an error if decoding the definition records fails.
@@ -264,6 +266,8 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// Reads and decodes market data records from a DBN file.
+    ///
     /// # Errors
     ///
     /// Returns an error if reading records fails.
@@ -324,6 +328,8 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// Loads all instrument definitions from a DBN file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
@@ -336,7 +342,10 @@ impl DatabentoDataLoader {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    // Cannot include trades
+    /// Loads order book delta messages from a DBN MBO schema file.
+    ///
+    /// Cannot include trades.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading order book deltas fails.
@@ -361,6 +370,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading order book depth10 fails.
@@ -385,6 +396,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads quote tick messages from a DBN MBP-1 or TBBO schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading quotes fails.
@@ -409,6 +422,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads best bid/offer quote messages from a DBN BBO schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading BBO quotes fails.
@@ -433,6 +448,60 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads consolidated MBP-1 quote messages from a DBN CMBP-1 schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading consolidated MBP-1 quotes fails.
+    pub fn load_cmbp_quotes(
+        &self,
+        filepath: &Path,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        self.read_records::<dbn::Cmbp1Msg>(filepath, instrument_id, price_precision, false, None)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Quote(quote) = item1 {
+                        Some(Ok(quote))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    /// Loads consolidated best bid/offer quote messages from a DBN CBBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading consolidated BBO quotes fails.
+    pub fn load_cbbo_quotes(
+        &self,
+        filepath: &Path,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        self.read_records::<dbn::CbboMsg>(filepath, instrument_id, price_precision, false, None)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Quote(quote) = item1 {
+                        Some(Ok(quote))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    /// Loads trade messages from a DBN TBBO schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading TBBO trades fails.
@@ -456,6 +525,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads trade messages from a DBN TCBBO schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading TCBBO trades fails.
@@ -479,6 +550,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads trade messages from a DBN TRADES schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading trades fails.
@@ -503,6 +576,8 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// Loads OHLCV bar messages from a DBN OHLCV schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading bars fails.
@@ -534,6 +609,8 @@ impl DatabentoDataLoader {
         .collect()
     }
 
+    /// Loads instrument status messages from a DBN STATUS schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading status records fails.
@@ -586,6 +663,8 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// Reads imbalance messages from a DBN IMBALANCE schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if reading imbalance records fails.
@@ -641,6 +720,8 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// Reads statistics messages from a DBN STATISTICS schema file.
+    ///
     /// # Errors
     ///
     /// Returns an error if reading statistics records fails.
@@ -704,6 +785,7 @@ impl DatabentoDataLoader {
 mod tests {
     use std::path::{Path, PathBuf};
 
+    use nautilus_model::types::{Price, Quantity};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -785,7 +867,53 @@ mod tests {
             .load_bbo_quotes(&path, Some(instrument_id), None)
             .unwrap();
 
+        assert_eq!(quotes.len(), 4);
+    }
+
+    #[rstest]
+    fn test_load_cmbp_quotes(loader: DatabentoDataLoader) {
+        let path = test_data_path().join("test_data.cmbp-1.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let quotes = loader
+            .load_cmbp_quotes(&path, Some(instrument_id), None)
+            .unwrap();
+
+        // Verify exact data count
         assert_eq!(quotes.len(), 2);
+
+        // Verify first quote fields
+        let first_quote = &quotes[0];
+        assert_eq!(first_quote.instrument_id, instrument_id);
+        assert_eq!(first_quote.bid_price, Price::from("3720.25"));
+        assert_eq!(first_quote.ask_price, Price::from("3720.50"));
+        assert_eq!(first_quote.bid_size, Quantity::from(24));
+        assert_eq!(first_quote.ask_size, Quantity::from(11));
+        assert_eq!(first_quote.ts_event, 1609160400006136329);
+        assert_eq!(first_quote.ts_init, 1609160400006136329);
+    }
+
+    #[rstest]
+    fn test_load_cbbo_quotes(loader: DatabentoDataLoader) {
+        let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let quotes = loader
+            .load_cbbo_quotes(&path, Some(instrument_id), None)
+            .unwrap();
+
+        // Verify exact data count
+        assert_eq!(quotes.len(), 2);
+
+        // Verify first quote fields
+        let first_quote = &quotes[0];
+        assert_eq!(first_quote.instrument_id, instrument_id);
+        assert_eq!(first_quote.bid_price, Price::from("3720.25"));
+        assert_eq!(first_quote.ask_price, Price::from("3720.50"));
+        assert_eq!(first_quote.bid_size, Quantity::from(24));
+        assert_eq!(first_quote.ask_size, Quantity::from(11));
+        assert_eq!(first_quote.ts_event, 1609160400006136329);
+        assert_eq!(first_quote.ts_init, 1609160400006136329);
     }
 
     #[rstest]
@@ -793,30 +921,26 @@ mod tests {
         let path = test_data_path().join("test_data.tbbo.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let _trades = loader
+        let trades = loader
             .load_tbbo_trades(&path, Some(instrument_id), None)
             .unwrap();
 
-        // assert_eq!(trades.len(), 2);  TODO: No records?
+        // TBBO test data doesn't contain valid trade data (size/price may be 0)
+        assert_eq!(trades.len(), 0);
     }
 
-    // TODO: Re-enable this test once proper TCBBO/CBBO test data is available
     #[rstest]
-    #[ignore]
     fn test_load_tcbbo_trades(loader: DatabentoDataLoader) {
         // Since we don't have dedicated TCBBO test data, we'll use CBBO data
         // In practice, TCBBO would be CBBO messages with trade data
-        let path = test_data_path().join("test_data.cbbo.dbn.zst");
+        let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let result = loader.load_tcbbo_trades(&path, Some(instrument_id), None);
 
-        // This should work without error even if no trades are found
         assert!(result.is_ok());
         let trades = result.unwrap();
-        // The test data might not have trade messages, so we just verify it loads without error
-        // The actual count doesn't matter for this test
-        let _ = trades.len();
+        assert_eq!(trades.len(), 2);
     }
 
     #[rstest]
@@ -831,7 +955,7 @@ mod tests {
     }
 
     #[rstest]
-    // #[case(test_data_path().join("test_data.ohlcv-1d.dbn.zst"))]  // TODO: Needs new data
+    // #[case(test_data_path().join("test_data.ohlcv-1d.dbn.zst"))]  // TODO: Empty file (0 records)
     #[case(test_data_path().join("test_data.ohlcv-1h.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1m.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]

@@ -19,7 +19,10 @@ use rust_decimal::Decimal;
 use tabled::{Table, Tabled, settings::Style};
 
 use super::{BookPrice, level::BookLevel, own::OwnBookLevel};
-use crate::orderbook::{OrderBook, own::OwnOrderBook};
+use crate::{
+    enums::OrderSideSpecified,
+    orderbook::{OrderBook, own::OwnOrderBook},
+};
 
 #[derive(Tabled)]
 struct BookLevelDisplay {
@@ -79,8 +82,8 @@ pub(crate) fn pprint_book(
         levels
             .iter()
             .map(|(book_price, level)| {
-                let is_bid_level = order_book.bids.levels.contains_key(book_price);
-                let is_ask_level = order_book.asks.levels.contains_key(book_price);
+                let is_bid_level = book_price.side == OrderSideSpecified::Buy;
+                let is_ask_level = book_price.side == OrderSideSpecified::Sell;
 
                 let bid_sizes: Vec<String> = level
                     .orders
@@ -177,8 +180,8 @@ pub(crate) fn pprint_own_book(
         levels
             .iter()
             .map(|(book_price, level)| {
-                let is_bid_level = own_order_book.bids.levels.contains_key(book_price);
-                let is_ask_level = own_order_book.asks.levels.contains_key(book_price);
+                let is_bid_level = book_price.side == OrderSideSpecified::Buy;
+                let is_ask_level = book_price.side == OrderSideSpecified::Sell;
 
                 let bid_sizes: Vec<String> = level
                     .orders

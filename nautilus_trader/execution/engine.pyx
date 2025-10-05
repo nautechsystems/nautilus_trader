@@ -57,6 +57,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -72,6 +73,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -154,6 +156,7 @@ cdef class ExecutionEngine(Component):
 
         # Configuration
         self.debug: bool = config.debug
+        self.convert_quote_qty_to_base = config.convert_quote_qty_to_base
         self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions
@@ -392,6 +395,17 @@ cdef class ExecutionEngine(Component):
 
         """
         self.manage_own_order_books = value
+
+    cpdef void set_convert_quote_qty_to_base(self, bint value):
+        """
+        Set the `convert_quote_qty_to_base` flag with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+        """
+        self.convert_quote_qty_to_base = value
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -1012,7 +1026,11 @@ cdef class ExecutionEngine(Component):
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity base_qty = None
-        if not instrument.is_inverse and order.is_quote_quantity:
+        if self.convert_quote_qty_to_base and not instrument.is_inverse and order.is_quote_quantity:
+            self._log.warning(
+                "`convert_quote_qty_to_base is deprecated`; set `convert_quote_qty_to_base=False` to maintain consistent behavior.",
+                LogColor.YELLOW,
+            )
             last_px = self._last_px_for_conversion(order.instrument_id, order.side)
             if last_px is None:
                 self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
@@ -1045,20 +1063,24 @@ cdef class ExecutionEngine(Component):
 
         # Check if converting quote quantity
         cdef Price last_px = None
-        cdef Quantity quote_qty = None
         cdef Quantity base_qty = None
-        if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
+        if self.convert_quote_qty_to_base and not instrument.is_inverse:
             for order in command.order_list.orders:
-                if order.is_quote_quantity == False:
+                if not order.is_quote_quantity:
                     continue  # Base quantity already set
-                if order.quantity != quote_qty:
-                    last_px = self._last_px_for_conversion(order.instrument_id, order.side)
-                    quote_qty = order.quantity
+
+                self._log.warning(
+                    "`convert_quote_qty_to_base` is deprecated; set `convert_quote_qty_to_base=False` to maintain consistent behavior",
+                    LogColor.YELLOW,
+                )
+
+                last_px = self._last_px_for_conversion(order.instrument_id, order.side)
                 if last_px is None:
                     for order in command.order_list.orders:
                         self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
                     return  # Denied
-                base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
+
+                base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
                 self._set_order_base_qty(order, base_qty)
 
         if self.manage_own_order_books:
@@ -1276,7 +1298,7 @@ cdef class ExecutionEngine(Component):
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.warning(
                     "Incorrect position ID assigned to fill: "
-                    f"cached={position_id!r}, assigned={fill.position_id!r}. "
+                    f"cached={position_id!r}, assigned={fill.position_id!r}; "
                     "re-assigning from cache",
                 )
             # Assign position ID to fill
@@ -1301,7 +1323,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
             raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+                f"Order for {fill.client_order_id!r} not found to determine position ID",
             )
 
         # Check execution algorithm position ID
@@ -1358,7 +1380,12 @@ cdef class ExecutionEngine(Component):
         try:
             order.apply(event)
         except InvalidStateTrigger as e:
-            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            log_msg = f"InvalidStateTrigger: {e}, did not apply {event}"
+
+            if order.status_c() == OrderStatus.ACCEPTED and isinstance(event, OrderAccepted):
+                self._log.debug(log_msg)
+            else:
+                self._log.warning(log_msg)
             return
         except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
@@ -1424,9 +1451,6 @@ cdef class ExecutionEngine(Component):
             # but without position linkage (since no position is created for spreads)
 
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
-        """
-        Handle position creation or update for a fill.
-        """
         cdef Position position = self._cache.position(fill.position_id)
 
         if position is None or position.is_closed_c():

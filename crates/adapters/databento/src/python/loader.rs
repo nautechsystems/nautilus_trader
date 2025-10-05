@@ -90,7 +90,7 @@ impl DatabentoDataLoader {
         py: Python,
         filepath: PathBuf,
         use_exchange_as_venue: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .load_instruments(&filepath, use_exchange_as_venue)
             .map_err(to_pyvalue_err)?;
@@ -128,7 +128,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::MboMsg>(
                 &filepath,
@@ -162,7 +162,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -191,7 +191,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::Mbp1Msg>(
                 &filepath,
@@ -225,9 +225,72 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false, None)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_cmbp_quotes")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    fn py_load_cmbp_quotes(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Vec<QuoteTick>> {
+        self.load_cmbp_quotes(&filepath, instrument_id, price_precision)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_cmbp_quotes_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
+    fn py_load_cmbp_quotes_as_pycapsule(
+        &self,
+        py: Python,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+        include_trades: Option<bool>,
+    ) -> PyResult<Py<PyAny>> {
+        let iter = self
+            .read_records::<dbn::Cmbp1Msg>(
+                &filepath,
+                instrument_id,
+                price_precision,
+                include_trades.unwrap_or(false),
+                None,
+            )
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_cbbo_quotes")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    fn py_load_cbbo_quotes(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Vec<QuoteTick>> {
+        self.load_cbbo_quotes(&filepath, instrument_id, price_precision)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_cbbo_quotes_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    fn py_load_cbbo_quotes_as_pycapsule(
+        &self,
+        py: Python,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Py<PyAny>> {
+        let iter = self
+            .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -253,7 +316,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -281,7 +344,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -309,7 +372,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -344,7 +407,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         timestamp_on_close: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::OhlcvMsg>(
                 &filepath,
@@ -430,7 +493,7 @@ impl DatabentoDataLoader {
 fn exhaust_data_iter_to_pycapsule(
     py: Python,
     iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
-) -> anyhow::Result<PyObject> {
+) -> anyhow::Result<Py<PyAny>> {
     let mut data = Vec::new();
     for result in iter {
         match result {

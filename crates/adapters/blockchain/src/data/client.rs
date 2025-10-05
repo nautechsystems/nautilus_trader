@@ -18,8 +18,9 @@ use nautilus_common::{
         DataEvent,
         defi::{
             DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
-            SubscribePool, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
-            UnsubscribePool, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+            SubscribePool, SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates,
+            SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+            UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
     runtime::get_runtime,
@@ -57,6 +58,8 @@ pub struct BlockchainDataClient {
     pub core_client: Option<BlockchainDataClientCore>,
     /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
+    /// Channel sender for messages to the HyperSync client.
+    hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     /// Channel sender for commands to be processed asynchronously.
     command_tx: tokio::sync::mpsc::UnboundedSender<DefiDataCommand>,
     /// Channel receiver for commands to be processed asynchronously.
@@ -74,12 +77,12 @@ impl BlockchainDataClient {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let core_client = BlockchainDataClientCore::new(config.clone(), Some(hypersync_tx));
         Self {
             chain,
-            core_client: Some(core_client),
+            core_client: None,
             config,
             hypersync_rx: Some(hypersync_rx),
+            hypersync_tx: Some(hypersync_tx),
             command_tx,
             command_rx: Some(command_rx),
             process_task: None,
@@ -105,11 +108,21 @@ impl BlockchainDataClient {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
 
-        let mut core_client = self.core_client.take().unwrap();
+        let data_tx = nautilus_common::runner::get_data_event_sender();
+
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
+        let hypersync_tx = self.hypersync_tx.take();
+
+        let mut core_client =
+            BlockchainDataClientCore::new(self.config.clone(), hypersync_tx, Some(data_tx));
 
         let handle = get_runtime().spawn(async move {
             tracing::debug!("Started task 'process'");
+
+            if let Err(e) = core_client.connect().await {
+                tracing::error!("Failed to connect blockchain core client: {e}");
+                return;
+            }
 
             let mut command_rx = command_rx;
             let mut shutdown_rx = shutdown_rx;
@@ -181,7 +194,7 @@ impl BlockchainDataClient {
                                                 &swap_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");
@@ -203,7 +216,7 @@ impl BlockchainDataClient {
                                                 &burn_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool burn event: {e}");
@@ -225,7 +238,7 @@ impl BlockchainDataClient {
                                                 &mint_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool mint event: {e}");
@@ -235,6 +248,28 @@ impl BlockchainDataClient {
                                         }
                                         Err(e) => {
                                             tracing::error!("Failed to get pool {} with error {:?}", mint_event.pool_address, e);
+                                            None
+                                        }
+                                    }
+                                }
+                                BlockchainMessage::CollectEvent(collect_event) => {
+                                    match core_client.get_pool(&collect_event.pool_address) {
+                                        Ok(pool) => {
+                                            let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
+                                            match core_client.process_pool_collect_event(
+                                                &collect_event,
+                                                pool,
+                                                dex_extended,
+                                            ){
+                                                Ok(update) => Some(DataEvent::DeFi(DefiData::PoolFeeCollect(update))),
+                                                Err(e) => {
+                                                    tracing::error!("Error processing pool collect event: {e}");
+                                                    None
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to get pool {} with error {:?}", collect_event.pool_address, e);
                                             None
                                         }
                                     }
@@ -270,6 +305,9 @@ impl BlockchainDataClient {
                                 }
                                 Ok(BlockchainMessage::BurnEvent(_)) => {
                                     tracing::warn!("RPC burn events are not yet supported");
+                                }
+                                Ok(BlockchainMessage::CollectEvent(_)) => {
+                                    tracing::warn!("RPC collect events are not yet supported")
                                 }
                                 Err(e) => {
                                     tracing::error!("Error processing RPC message: {e}");
@@ -386,6 +424,38 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
+                tracing::info!(
+                    "Processing subscribe pool fee collects command for address: {}",
+                    cmd.instrument_id
+                );
+
+                if let Some(ref mut _rpc) = core_client.rpc_client {
+                    tracing::warn!(
+                        "RPC pool fee collects subscription not yet implemented, using HyperSync"
+                    );
+                }
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|_| {
+                            anyhow::anyhow!(
+                                "Invalid pool fee collect address: {}",
+                                cmd.instrument_id
+                            )
+                        })?;
+                    core_client
+                        .subscription_manager
+                        .subscribe_collects(dex, pool_address);
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
+                Ok(())
+            }
         }
     }
 
@@ -461,6 +531,32 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
+            DefiUnsubscribeCommand::PoolFeeCollects(cmd) => {
+                tracing::info!(
+                    "Processing unsubscribe pool fee collects command for {}",
+                    cmd.instrument_id
+                );
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|_| {
+                            anyhow::anyhow!(
+                                "Invalid pool fee collect address: {}",
+                                cmd.instrument_id
+                            )
+                        })?;
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_collects(dex, pool_address);
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
+                Ok(())
+            }
         }
     }
 
@@ -527,11 +623,6 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        if let Some(core_client) = &mut self.core_client {
-            core_client.connect().await?;
-            core_client.initialize_cache_database().await;
-        }
-
         if self.process_task.is_none() {
             self.spawn_process_task();
         }
@@ -591,6 +682,16 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
+    fn subscribe_pool_fee_collects(
+        &mut self,
+        cmd: &SubscribePoolFeeCollects,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFeeCollects(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
         let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::Blocks(cmd.clone()));
         self.command_tx.send(command)?;
@@ -615,6 +716,16 @@ impl DataClient for BlockchainDataClient {
     ) -> anyhow::Result<()> {
         let command =
             DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool_fee_collects(
+        &mut self,
+        cmd: &UnsubscribePoolFeeCollects,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())
     }

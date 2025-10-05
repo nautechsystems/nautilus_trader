@@ -1,7 +1,7 @@
 [package]
 name = "nautilus-hyperliquid"
 readme = "README.md"
-publish = false  # Do not publish to crates.io yet
+publish = false # Do not publish to crates.io yet
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,14 +23,17 @@ default = []
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-network/python",
@@ -45,6 +48,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
+nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
@@ -53,17 +57,18 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+hex = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
-aws-lc-rs = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -72,14 +77,18 @@ serde_urlencoded = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }  # Needed for example binaries
+tracing-subscriber = { workspace = true } # Needed for example binaries
+url = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
-hex = { workspace = true }
-url = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
@@ -89,16 +98,20 @@ tracing-test = { workspace = true }
 
 [[bin]]
 name = "hyperliquid-http-public"
-path = "bin/http-public.rs"
+path = "bin/http_public.rs"
 
 [[bin]]
 name = "hyperliquid-http-private"
-path = "bin/http-private.rs"
+path = "bin/http_private.rs"
 
 [[bin]]
 name = "hyperliquid-ws-data"
-path = "bin/ws-data.rs"
+path = "bin/ws_data.rs"
 
 [[bin]]
 name = "hyperliquid-ws-exec"
-path = "bin/ws-exec.rs"
+path = "bin/ws_exec.rs"
+
+[[bin]]
+name = "hyperliquid-ws-post"
+path = "bin/ws_post.rs"

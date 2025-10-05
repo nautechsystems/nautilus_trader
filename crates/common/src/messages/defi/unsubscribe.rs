@@ -137,3 +137,33 @@ impl UnsubscribePoolLiquidityUpdates {
         }
     }
 }
+
+/// Represents an unsubscription command for pool fee collect events from a specific AMM pool.
+#[derive(Debug, Clone)]
+pub struct UnsubscribePoolFeeCollects {
+    pub instrument_id: InstrumentId,
+    pub client_id: Option<ClientId>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl UnsubscribePoolFeeCollects {
+    /// Creates a new [`UnsubscribePoolFeeCollects`] instance.
+    #[must_use]
+    pub const fn new(
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            client_id,
+            command_id,
+            ts_init,
+            params,
+        }
+    }
+}

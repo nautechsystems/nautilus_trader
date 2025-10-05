@@ -274,7 +274,7 @@ impl CryptoOption {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -297,7 +297,7 @@ impl CryptoOption {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(CryptoOption))?;
         dict.set_item("id", self.id.to_string())?;
@@ -359,15 +359,15 @@ impl CryptoOption {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
     use crate::instruments::{CryptoOption, stubs::*};
 
     #[rstest]
     fn test_dict_round_trip(crypto_option_btc_deribit: CryptoOption) {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let crypto_option = crypto_option_btc_deribit;
             let values = crypto_option.py_to_dict(py).unwrap();
             let values: Py<PyDict> = values.extract(py).unwrap();

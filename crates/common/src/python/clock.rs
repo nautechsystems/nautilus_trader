@@ -45,7 +45,7 @@ pub struct PyClock(Rc<RefCell<dyn Clock>>);
 #[pymethods]
 impl PyClock {
     #[pyo3(name = "register_default_handler")]
-    fn py_register_default_handler(&mut self, callback: PyObject) {
+    fn py_register_default_handler(&mut self, callback: Py<PyAny>) {
         self.0
             .borrow_mut()
             .register_default_handler(TimeEventCallback::from(callback));
@@ -59,7 +59,7 @@ impl PyClock {
         &mut self,
         name: &str,
         alert_time: DateTime<Utc>,
-        callback: Option<PyObject>,
+        callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
     ) -> PyResult<()> {
         self.0
@@ -81,7 +81,7 @@ impl PyClock {
         &mut self,
         name: &str,
         alert_time_ns: u64,
-        callback: Option<PyObject>,
+        callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
     ) -> PyResult<()> {
         self.0
@@ -106,7 +106,7 @@ impl PyClock {
         interval: Duration,
         start_time: Option<DateTime<Utc>>,
         stop_time: Option<DateTime<Utc>>,
-        callback: Option<PyObject>,
+        callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
@@ -145,7 +145,7 @@ impl PyClock {
         interval_ns: u64,
         start_time_ns: Option<u64>,
         stop_time_ns: Option<u64>,
-        callback: Option<PyObject>,
+        callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
@@ -250,7 +250,8 @@ mod tests {
     }
 
     pub fn test_callback() -> TimeEventCallback {
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
             let py_append = py_append.into_py_any_unwrap(py);
@@ -258,8 +259,9 @@ mod tests {
         })
     }
 
-    pub fn test_py_callback() -> PyObject {
-        Python::with_gil(|py| {
+    pub fn test_py_callback() -> Py<PyAny> {
+        Python::initialize();
+        Python::attach(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
             py_append.into_py_any_unwrap(py)
@@ -272,9 +274,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_py_set_time_alert() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -287,9 +288,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_py_set_timer() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -302,9 +302,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_py_set_time_alert_ns() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -319,9 +318,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_py_set_timer_ns() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -333,9 +331,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_raw_set_timer_ns(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -351,9 +348,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_cancel_timer(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -370,9 +366,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_cancel_timers(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -389,9 +384,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_advance_within_stop_time_py(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -416,9 +410,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -443,9 +436,8 @@ mod tests {
 
     #[rstest]
     fn test_test_clock_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -474,10 +466,10 @@ mod tests {
 
     #[rstest]
     fn test_live_clock_py_set_time_alert() {
-        pyo3::prepare_freethreaded_python();
         ensure_sender();
 
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -491,10 +483,10 @@ mod tests {
 
     #[rstest]
     fn test_live_clock_py_set_timer() {
-        pyo3::prepare_freethreaded_python();
         ensure_sender();
 
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -508,10 +500,10 @@ mod tests {
 
     #[rstest]
     fn test_live_clock_py_set_time_alert_ns() {
-        pyo3::prepare_freethreaded_python();
         ensure_sender();
 
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
@@ -527,10 +519,10 @@ mod tests {
 
     #[rstest]
     fn test_live_clock_py_set_timer_ns() {
-        pyo3::prepare_freethreaded_python();
         ensure_sender();
 
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);

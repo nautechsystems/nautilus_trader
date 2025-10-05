@@ -15,11 +15,7 @@
 
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
-use nautilus_model::{
-    defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
-    identifiers::InstrumentId,
-    types::Quantity,
-};
+use nautilus_model::defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex};
 
 /// Represents a mint event that occurs when liquidity is added to a position in a liquidity pool.
 #[derive(Debug, Clone)]
@@ -95,17 +91,12 @@ impl MintEvent {
         &self,
         chain: SharedChain,
         dex: SharedDex,
-        instrument_id: InstrumentId,
         pool_address: Address,
-        liquidity: Quantity,
-        amount0: Quantity,
-        amount1: Quantity,
         timestamp: Option<UnixNanos>,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
             chain,
             dex,
-            instrument_id,
             pool_address,
             PoolLiquidityUpdateType::Mint,
             self.block_number,
@@ -114,9 +105,9 @@ impl MintEvent {
             self.log_index,
             Some(self.sender),
             self.owner,
-            liquidity,
-            amount0,
-            amount1,
+            self.amount,
+            self.amount0,
+            self.amount1,
             self.tick_lower,
             self.tick_upper,
             timestamp,

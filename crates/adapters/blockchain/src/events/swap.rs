@@ -18,7 +18,6 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolSwap, SharedChain, SharedDex},
     enums::OrderSide,
-    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 
@@ -53,6 +52,10 @@ pub struct SwapEvent {
     /// The square root of the price ratio encoded as a Q64.96 fixed-point number.
     /// This represents the price of token1 in terms of token0 after the swap.
     pub sqrt_price_x96: U160,
+    /// The liquidity of the pool after the swap occurred.
+    pub liquidity: u128,
+    /// The current tick of the pool after the swap occurred.
+    pub tick: i32,
 }
 
 impl SwapEvent {
@@ -71,6 +74,8 @@ impl SwapEvent {
         amount0: I256,
         amount1: I256,
         sqrt_price_x96: U160,
+        liquidity: u128,
+        tick: i32,
     ) -> Self {
         Self {
             dex,
@@ -84,6 +89,8 @@ impl SwapEvent {
             amount0,
             amount1,
             sqrt_price_x96,
+            liquidity,
+            tick,
         }
     }
 
@@ -93,17 +100,15 @@ impl SwapEvent {
     pub fn to_pool_swap(
         &self,
         chain: SharedChain,
-        instrument_id: InstrumentId,
         pool_address: Address,
-        normalized_side: OrderSide,
-        normalized_quantity: Quantity,
-        normalized_price: Price,
+        normalized_side: Option<OrderSide>,
+        normalized_quantity: Option<Quantity>,
+        normalized_price: Option<Price>,
         timestamp: Option<UnixNanos>,
     ) -> PoolSwap {
         PoolSwap::new(
             chain,
             self.dex.clone(),
-            instrument_id,
             pool_address,
             self.block_number,
             self.transaction_hash.clone(),
@@ -111,6 +116,12 @@ impl SwapEvent {
             self.log_index,
             timestamp,
             self.sender,
+            self.receiver,
+            self.amount0,
+            self.amount1,
+            self.sqrt_price_x96,
+            self.liquidity,
+            self.tick,
             normalized_side,
             normalized_quantity,
             normalized_price,

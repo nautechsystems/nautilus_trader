@@ -29,7 +29,7 @@ use nautilus_model::{
     python::data::data_to_pycapsule,
 };
 #[cfg(feature = "python")]
-use pyo3::{PyObject, Python};
+use pyo3::{Py, PyAny, Python};
 
 use crate::{
     csv::{
@@ -246,7 +246,7 @@ pub fn stream_deltas<P: AsRef<Path>>(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Vec<PyObject> (OrderBookDeltas as PyCapsule) Streaming
+// Vec<Py<PyAny>> (OrderBookDeltas as PyCapsule) Streaming
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(feature = "python")]
@@ -254,7 +254,7 @@ pub fn stream_deltas<P: AsRef<Path>>(
 struct BatchedDeltasStreamIterator {
     reader: Reader<Box<dyn std::io::Read>>,
     record: StringRecord,
-    buffer: Vec<PyObject>,
+    buffer: Vec<Py<PyAny>>,
     current_batch: Vec<OrderBookDelta>,
     pending_batches: Vec<Vec<OrderBookDelta>>,
     chunk_size: usize,
@@ -355,7 +355,7 @@ impl BatchedDeltasStreamIterator {
 
 #[cfg(feature = "python")]
 impl Iterator for BatchedDeltasStreamIterator {
-    type Item = anyhow::Result<Vec<PyObject>>;
+    type Item = anyhow::Result<Vec<Py<PyAny>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(limit) = self.limit
@@ -423,7 +423,7 @@ impl Iterator for BatchedDeltasStreamIterator {
             None
         } else {
             // Create all capsules in a single GIL acquisition
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 for batch in self.pending_batches.drain(..) {
                     let deltas = OrderBookDeltas::new(self.instrument_id, batch);
                     let deltas = OrderBookDeltas_API::new(deltas);
@@ -437,7 +437,7 @@ impl Iterator for BatchedDeltasStreamIterator {
 }
 
 #[cfg(feature = "python")]
-/// Streams [`Vec<PyObject>`]s (`PyCapsule`) from a Tardis format CSV at the given `filepath`,
+/// Streams [`Vec<Py<PyAny>>`]s (`PyCapsule`) from a Tardis format CSV at the given `filepath`,
 /// yielding chunks of the specified size.
 ///
 /// # Errors
@@ -450,7 +450,7 @@ pub fn stream_batched_deltas<P: AsRef<Path>>(
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
-) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<PyObject>>>> {
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<Py<PyAny>>>>> {
     BatchedDeltasStreamIterator::new(
         filepath,
         chunk_size,
@@ -1384,11 +1384,7 @@ pub fn stream_funding_rates<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        enums::AggressorSide,
-        identifiers::TradeId,
-        types::{Price, Quantity},
-    };
+    use nautilus_model::{enums::AggressorSide, identifiers::TradeId, types::Price};
     use rstest::*;
 
     use super::*;

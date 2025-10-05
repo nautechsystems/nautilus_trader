@@ -1157,10 +1157,12 @@ cdef class Order:
         if self.avg_px == 0.0:
             return last_px
 
+        # Use previous filled quantity (before current fill) to avoid double-counting
+        # self.filled_qty already includes last_qty at this point
         cdef double filled_qty_f64 = self.filled_qty.as_f64_c()
-        cdef double total_qty = filled_qty_f64 + last_qty
-        if total_qty > 0:  # Protect divide by zero
-            return ((self.avg_px * filled_qty_f64) + (last_px * last_qty)) / total_qty
+        cdef double prev_filled_qty = filled_qty_f64 - last_qty
+        if filled_qty_f64 > 0:  # Protect divide by zero
+            return ((self.avg_px * prev_filled_qty) + (last_px * last_qty)) / filled_qty_f64
 
     cdef void _set_slippage(self):
         pass  # Optionally implement

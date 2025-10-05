@@ -30,7 +30,9 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
+use nautilus_model::defi::{
+    Block, Blockchain, Pool, PoolFeeCollect, PoolLiquidityUpdate, PoolSwap,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -54,7 +56,7 @@ use crate::{
     clock::Clock,
     component::Component,
     enums::ComponentState,
-    python::{clock::PyClock, logging::PyLogger},
+    python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -76,7 +78,7 @@ impl DataActorConfig {
 impl ImportableActorConfig {
     #[new]
     fn py_new(actor_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
-        let json_config = Python::with_gil(|py| -> PyResult<HashMap<String, serde_json::Value>> {
+        let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
             let json_str: String = PyModule::import(py, "json")?
                 .call_method("dumps", (config.bind(py),), None)?
                 .extract()?;
@@ -133,7 +135,7 @@ impl ImportableActorConfig {
 #[derive(Debug)]
 pub struct PyDataActor {
     core: DataActorCore,
-    py_self: Option<PyObject>,
+    py_self: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
 }
@@ -174,7 +176,7 @@ impl PyDataActor {
     /// to the original Python instance that contains this PyDataActor. This is essential
     /// for Python inheritance to work correctly, allowing Python subclasses to override
     /// DataActor methods and have them called by the Rust system.
-    pub fn set_python_instance(&mut self, py_obj: PyObject) {
+    pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
         self.py_self = Some(py_obj);
     }
 
@@ -228,7 +230,7 @@ impl PyDataActor {
 
         // Register default time event handler for this actor
         let actor_id = self.actor_id().inner();
-        let callback = TimeEventCallback::Rust(Rc::new(move |event: TimeEvent| {
+        let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 if let Err(e) = actor.on_time_event(&event) {
                     log::error!("Python time event handler failed for actor {actor_id}: {e}");
@@ -236,7 +238,7 @@ impl PyDataActor {
             } else {
                 log::error!("Actor {actor_id} not found for time event handling");
             }
-        }));
+        });
 
         self.clock.inner_mut().register_default_handler(callback);
 
@@ -287,8 +289,8 @@ impl DataActor for PyDataActor {
 
     #[allow(unused_variables)]
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-        Python::with_gil(|py| {
-            // TODO: Create a placeholder object since we can't easily convert &dyn Any to PyObject
+        Python::attach(|py| {
+            // TODO: Create a placeholder object since we can't easily convert &dyn Any to Py<PyAny>
             // For now, we'll pass None and let Python subclasses handle specific data types
             let py_data = py.None();
 
@@ -303,7 +305,7 @@ impl DataActor for PyDataActor {
     }
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
             self.py_on_instrument(py_instrument)
@@ -385,8 +387,14 @@ impl DataActor for PyDataActor {
             .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
     }
 
+    #[cfg(feature = "defi")]
+    fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+        self.py_on_pool_fee_collect(collect.clone())
+            .map_err(|e| anyhow::anyhow!("Python on_pool_fee_collect failed: {e}"))
+    }
+
     fn on_historical_data(&mut self, _data: &dyn Any) -> anyhow::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_data = py.None();
             self.py_on_historical_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
@@ -439,6 +447,18 @@ impl PyDataActor {
             ))
         } else {
             Ok(self.clock.clone())
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "cache")]
+    fn py_cache(&self) -> PyResult<PyCache> {
+        if !self.core.is_registered() {
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Actor must be registered with a trader before accessing cache",
+            ))
+        } else {
+            Ok(PyCache::from_rc(self.core.cache_rc()))
         }
     }
 
@@ -541,7 +561,7 @@ impl PyDataActor {
     fn py_on_start(&self) -> PyResult<()> {
         // Dispatch to Python instance's on_start method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_start"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_start"))?;
         }
         Ok(())
     }
@@ -550,7 +570,7 @@ impl PyDataActor {
     fn py_on_stop(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_stop method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_stop"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_stop"))?;
         }
         Ok(())
     }
@@ -559,7 +579,7 @@ impl PyDataActor {
     fn py_on_resume(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_resume method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_resume"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_resume"))?;
         }
         Ok(())
     }
@@ -568,7 +588,7 @@ impl PyDataActor {
     fn py_on_reset(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_reset method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_reset"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_reset"))?;
         }
         Ok(())
     }
@@ -577,7 +597,7 @@ impl PyDataActor {
     fn py_on_dispose(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_dispose method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_dispose"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_dispose"))?;
         }
         Ok(())
     }
@@ -586,7 +606,7 @@ impl PyDataActor {
     fn py_on_degrade(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_degrade method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_degrade"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_degrade"))?;
         }
         Ok(())
     }
@@ -595,7 +615,7 @@ impl PyDataActor {
     fn py_on_fault(&mut self) -> PyResult<()> {
         // Dispatch to Python instance's on_fault method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_fault"))?;
+            Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
         }
         Ok(())
     }
@@ -605,7 +625,7 @@ impl PyDataActor {
     fn py_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
         // Dispatch to Python instance's on_time_event method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_time_event", (event.into_py_any_unwrap(py),))
             })?;
         }
@@ -613,10 +633,10 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "on_data")]
-    fn py_on_data(&mut self, data: PyObject) -> PyResult<()> {
+    fn py_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
         // Dispatch to Python instance's on_data method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method1(py, "on_data", (data,)))?;
+            Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
         }
         Ok(())
     }
@@ -626,7 +646,7 @@ impl PyDataActor {
     fn py_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
         // Dispatch to Python instance's on_signal method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
             })?;
         }
@@ -634,10 +654,10 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "on_instrument")]
-    fn py_on_instrument(&mut self, instrument: PyObject) -> PyResult<()> {
+    fn py_on_instrument(&mut self, instrument: Py<PyAny>) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
+            Python::attach(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
         }
         Ok(())
     }
@@ -647,7 +667,7 @@ impl PyDataActor {
     fn py_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         // Dispatch to Python instance's on_quote method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
             })?;
         }
@@ -659,7 +679,7 @@ impl PyDataActor {
     fn py_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         // Dispatch to Python instance's on_trade method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
             })?;
         }
@@ -671,9 +691,7 @@ impl PyDataActor {
     fn py_on_bar(&mut self, bar: Bar) -> PyResult<()> {
         // Dispatch to Python instance's on_bar method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
-                py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),)))?;
         }
         Ok(())
     }
@@ -683,7 +701,7 @@ impl PyDataActor {
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
         // Dispatch to Python instance's on_book_deltas method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
             })?;
         }
@@ -695,7 +713,7 @@ impl PyDataActor {
     fn py_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
         // Dispatch to Python instance's on_book method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
             })?;
         }
@@ -707,7 +725,7 @@ impl PyDataActor {
     fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_mark_price method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
             })?;
         }
@@ -719,7 +737,7 @@ impl PyDataActor {
     fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_index_price method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
             })?;
         }
@@ -731,7 +749,7 @@ impl PyDataActor {
     fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_index_price method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(
                     py,
                     "on_funding_rate",
@@ -747,7 +765,7 @@ impl PyDataActor {
     fn py_on_instrument_status(&mut self, status: InstrumentStatus) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_status method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_status", (status.into_py_any_unwrap(py),))
             })?;
         }
@@ -759,7 +777,7 @@ impl PyDataActor {
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_close method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_close", (close.into_py_any_unwrap(py),))
             })?;
         }
@@ -772,7 +790,7 @@ impl PyDataActor {
     fn py_on_block(&mut self, block: Block) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_close method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_block", (block.into_py_any_unwrap(py),))
             })?;
         }
@@ -785,7 +803,7 @@ impl PyDataActor {
     fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
         // Dispatch to Python instance's on_pool method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_pool", (pool.into_py_any_unwrap(py),))
             })?;
         }
@@ -798,7 +816,7 @@ impl PyDataActor {
     fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
         // Dispatch to Python instance's on_pool_swap method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(py, "on_pool_swap", (swap.into_py_any_unwrap(py),))
             })?;
         }
@@ -811,12 +829,25 @@ impl PyDataActor {
     fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_pool_liquidity_update method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_self.call_method1(
                     py,
                     "on_pool_liquidity_update",
                     (update.into_py_any_unwrap(py),),
                 )
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_pool_fee_collect")]
+    fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) -> PyResult<()> {
+        // Dispatch to Python instance's on_pool_fee_collect method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool_fee_collect", (update.into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -925,15 +956,14 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "subscribe_bars")]
-    #[pyo3(signature = (bar_type, client_id=None, await_partial=false, params=None))]
+    #[pyo3(signature = (bar_type, client_id=None, params=None))]
     fn py_subscribe_bars(
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_bars(bar_type, client_id, await_partial, params);
+        self.subscribe_bars(bar_type, client_id, params);
         Ok(())
     }
 
@@ -1034,6 +1064,19 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         self.subscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_pool_fee_collects(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1376,9 +1419,22 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_fee_collects(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_pool_fee_collects(instrument_id, client_id, params);
+        Ok(())
+    }
+
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_data")]
-    fn py_on_historical_data(&mut self, data: PyObject) -> PyResult<()> {
+    fn py_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
         // Default implementation - can be overridden in Python subclasses
         Ok(())
     }
@@ -1437,6 +1493,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use alloy_primitives::{I256, U160};
     use nautilus_core::{UUID4, UnixNanos};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::{
@@ -1523,16 +1580,12 @@ mod tests {
 
     #[rstest]
     fn test_new_actor_creation() {
-        pyo3::prepare_freethreaded_python();
-
         let actor = PyDataActor::new(None);
         assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
     fn test_clock_access_before_registration_raises_error() {
-        pyo3::prepare_freethreaded_python();
-
         let actor = PyDataActor::new(None);
 
         // Accessing clock before registration should raise PyRuntimeError
@@ -1540,7 +1593,8 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
             assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
         });
 
@@ -1552,8 +1606,6 @@ mod tests {
 
     #[rstest]
     fn test_unregistered_actor_methods_work() {
-        pyo3::prepare_freethreaded_python();
-
         let actor = create_unregistered_actor();
 
         assert!(!actor.py_is_ready());
@@ -1573,8 +1625,6 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let mut actor = create_unregistered_actor();
         actor.register(trader_id, clock, cache).unwrap();
         assert!(actor.trader_id().is_some());
@@ -1587,8 +1637,6 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let actor = create_registered_actor(clock, cache, trader_id);
 
         assert_eq!(actor.state(), ComponentState::Ready);
@@ -1610,8 +1658,6 @@ mod tests {
         client_id: ClientId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         let _ = actor.py_subscribe_data(data_type.clone(), Some(client_id), None);
@@ -1620,7 +1666,7 @@ mod tests {
         let _ = actor.py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
     }
 
-    #[ignore] // TODO: Under development
+    #[ignore = "TODO: Under development"]
     #[rstest]
     fn test_lifecycle_methods_pass_through(
         clock: Rc<RefCell<TestClock>>,
@@ -1640,8 +1686,6 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let actor = create_registered_actor(clock, cache, trader_id);
 
         assert!(
@@ -1659,8 +1703,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         let result = actor.py_subscribe_book_at_interval(
@@ -1687,8 +1730,6 @@ mod tests {
 
     #[rstest]
     fn test_request_methods_signatures_exist() {
-        pyo3::prepare_freethreaded_python();
-
         let actor = create_unregistered_actor();
         assert!(actor.trader_id().is_none());
     }
@@ -1699,8 +1740,6 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let actor = create_registered_actor(clock, cache, trader_id);
         let state = actor.state();
         assert_eq!(state, ComponentState::Ready);
@@ -1851,8 +1890,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut test_actor = TestDataActor::new();
         test_actor.reset_tracker();
         test_actor
@@ -1876,8 +1914,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut test_actor = TestDataActor::new();
         test_actor.reset_tracker();
         test_actor
@@ -1894,8 +1931,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut test_actor = TestDataActor::new();
         test_actor.reset_tracker();
         test_actor
@@ -1920,8 +1956,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -1939,8 +1974,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -1966,8 +2000,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -1993,8 +2026,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2023,8 +2055,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2041,8 +2072,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2062,8 +2092,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2086,8 +2115,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2110,8 +2138,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2139,8 +2166,7 @@ mod tests {
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2164,8 +2190,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut test_actor = TestDataActor::new();
         test_actor.reset_tracker();
         test_actor
@@ -2194,8 +2219,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
@@ -2205,13 +2229,14 @@ mod tests {
         let dex = Arc::new(Dex::new(
             Chain::new(Blockchain::Ethereum, 1),
             DexType::UniswapV3,
-            "0x1f98431c8ad98523631ae4a59f267346ea31f984",
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             0,
             AmmType::CLAMM,
             "PoolCreated",
             "Swap",
             "Mint",
             "Burn",
+            "Collect",
         ));
         let token0 = Token::new(
             chain.clone(),
@@ -2248,7 +2273,6 @@ mod tests {
         let swap = PoolSwap::new(
             chain.clone(),
             dex.clone(),
-            pool.instrument_id,
             pool.address,
             12345,
             "0xabc123".to_string(),
@@ -2258,9 +2282,17 @@ mod tests {
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
-            nautilus_model::enums::OrderSide::Buy,
-            Quantity::from("1000"),
-            Price::from("1.0"),
+            "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
+                .parse()
+                .unwrap(),
+            I256::from_str("1000000000000000000").unwrap(),
+            I256::from_str("400000000000000").unwrap(),
+            U160::from(59000000000000u128),
+            1000000,
+            100,
+            Some(nautilus_model::enums::OrderSide::Buy),
+            Some(Quantity::from("1000")),
+            Some(Price::from("1.0")),
         );
 
         assert!(rust_actor.on_pool_swap(&swap).is_ok());
@@ -2273,8 +2305,7 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
-        pyo3::prepare_freethreaded_python();
-
+        pyo3::Python::initialize();
         let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())

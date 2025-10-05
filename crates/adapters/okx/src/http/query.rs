@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Strongly-typed request parameter structures for the OKX **v5 REST API**.
+//! Request parameter structures for the OKX **v5 REST API**.
 //!
 //! Each struct corresponds 1-to-1 with an OKX REST endpoint and is annotated
 //! using `serde` so that it can be serialized directly into the query string
@@ -43,12 +43,13 @@ use serde::{self, Deserialize, Serialize};
 
 use crate::{
     common::enums::{
-        OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXPositionSide, OKXTradeMode,
+        OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+        OKXTradeMode,
     },
     http::error::BuildError,
 };
 
-#[allow(dead_code)] // Under development
+#[allow(dead_code, reason = "Under development")]
 fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
@@ -170,37 +171,41 @@ pub struct GetCandlesticksParamsBuilder {
 }
 
 impl GetCandlesticksParamsBuilder {
-    /// Set the instrument ID.
+    /// Sets the instrument ID.
     pub fn inst_id(&mut self, inst_id: impl Into<String>) -> &mut Self {
         self.inst_id = Some(inst_id.into());
         self
     }
 
-    /// Set the bar interval.
+    /// Sets the bar interval.
     pub fn bar(&mut self, bar: impl Into<String>) -> &mut Self {
         self.bar = Some(bar.into());
         self
     }
 
-    /// Set the after timestamp (milliseconds).
+    /// Sets the after timestamp (milliseconds).
     pub fn after_ms(&mut self, after_ms: i64) -> &mut Self {
         self.after_ms = Some(after_ms);
         self
     }
 
-    /// Set the before timestamp (milliseconds).
+    /// Sets the before timestamp (milliseconds).
     pub fn before_ms(&mut self, before_ms: i64) -> &mut Self {
         self.before_ms = Some(before_ms);
         self
     }
 
-    /// Set the limit.
+    /// Sets the limit.
     pub fn limit(&mut self, limit: u32) -> &mut Self {
         self.limit = Some(limit);
         self
     }
 
-    /// Build the parameters with embedded invariant validation.
+    /// Builds the parameters with embedded invariant validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters are invalid.
     pub fn build(&mut self) -> Result<GetCandlesticksParams, BuildError> {
         // Extract values from builder
         let inst_id = self.inst_id.clone().ok_or(BuildError::MissingInstId)?;
@@ -315,7 +320,7 @@ pub struct GetOrderHistoryParams {
     pub inst_id: Option<String>,
     /// Order type: limit, market, post_only, fok, ioc (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ord_type: Option<String>,
+    pub ord_type: Option<OKXOrderType>,
     /// Order state: live, filled, canceled (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
@@ -355,6 +360,40 @@ pub struct GetOrderListParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     /// Number of results per request (default 100, max 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// Parameters for the GET /api/v5/trade/order-algo-* endpoints.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetAlgoOrdersParams {
+    /// Algo order identifier assigned by OKX (optional).
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<String>,
+    /// Client supplied algo order identifier (optional).
+    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
+    pub inst_type: OKXInstrumentType,
+    /// Specific instrument identifier (optional).
+    #[serde(rename = "instId", skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Order type filter (optional).
+    #[serde(rename = "ordType", skip_serializing_if = "Option::is_none")]
+    pub ord_type: Option<OKXOrderType>,
+    /// State filter (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<OKXOrderStatus>,
+    /// Pagination cursor – fetch records after this value (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Pagination cursor – fetch records before this value (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Maximum number of records to return (optional, default 100).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
@@ -461,4 +500,121 @@ pub struct GetOrderParams {
     /// Position side (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pos_side: Option<OKXPositionSide>,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_optional_parameters_are_omitted_when_none() {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+
+        let params = builder.build().unwrap();
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(
+            qs, "instId=BTC-USDT-SWAP&bar=1m",
+            "unexpected optional parameters were serialized: {qs}",
+        );
+    }
+
+    #[rstest]
+    fn test_no_literal_none_strings_leak_into_query_string() {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+
+        let params = builder.build().unwrap();
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(
+            !qs.contains("None"),
+            "found literal \"None\" in query string: {qs}",
+        );
+        assert!(
+            !qs.contains("after=") && !qs.contains("before=") && !qs.contains("limit="),
+            "empty optional parameters must be omitted entirely: {qs}",
+        );
+    }
+
+    #[rstest]
+    fn test_cursor_nanoseconds_rejected() {
+        // 2025-07-01T00:00:00Z in *nanoseconds* on purpose.
+        let after_nanos = 1_725_307_200_000_000_000i64;
+
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+        builder.after_ms(after_nanos);
+
+        // This should fail because nanoseconds > 13 digits
+        let result = builder.build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nanoseconds"));
+    }
+
+    #[rstest]
+    fn test_both_cursors_rejected() {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+        builder.after_ms(1725307200000);
+        builder.before_ms(1725393600000);
+
+        // Both cursors should be rejected
+        let result = builder.build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("both"));
+    }
+
+    #[rstest]
+    fn test_limit_exceeds_maximum_rejected() {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+        builder.limit(301u32); // Exceeds maximum limit
+
+        // Limit should be rejected
+        let result = builder.build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("300"));
+    }
+
+    #[rstest]
+    #[case(1725307200000, "after=1725307200000")] // 13 digits = milliseconds
+    #[case(1725307200, "after=1725307200")] // 10 digits = seconds
+    #[case(1725307, "after=1725307")] // 7 digits = also valid
+    fn test_valid_millisecond_cursor_passes(#[case] timestamp: i64, #[case] expected: &str) {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+        builder.after_ms(timestamp);
+
+        let params = builder.build().unwrap();
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains(expected));
+    }
+
+    #[rstest]
+    #[case(1, "limit=1")]
+    #[case(50, "limit=50")]
+    #[case(100, "limit=100")]
+    #[case(300, "limit=300")] // Maximum allowed limit
+    fn test_valid_limit_passes(#[case] limit: u32, #[case] expected: &str) {
+        let mut builder = GetCandlesticksParamsBuilder::default();
+        builder.inst_id("BTC-USDT-SWAP");
+        builder.bar("1m");
+        builder.limit(limit);
+
+        let params = builder.build().unwrap();
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains(expected));
+    }
 }

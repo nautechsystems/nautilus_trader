@@ -448,7 +448,7 @@ pub fn parse_derivative_ticker_msg(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::{AggressorSide, BookAction};
+    use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;

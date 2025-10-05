@@ -133,7 +133,7 @@ impl LimitOrder {
         Ok(Self {
             core: OrderCore::new(init_order),
             price,
-            expire_time: expire_time.or(Some(UnixNanos::default())),
+            expire_time,
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
@@ -464,7 +464,7 @@ impl Order for LimitOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {

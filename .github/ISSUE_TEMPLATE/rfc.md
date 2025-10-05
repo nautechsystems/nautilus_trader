@@ -8,6 +8,7 @@ labels:
 # RFC: [Title]
 
 ## What is an RFC?
+
 An RFC (Request for Comments) is a proposal for significant changes or additions to the project,
 such as new features, major refactorings, or process improvements. RFCs are meant for ideas that
 could have a broad impact and benefit from wider community discussion.

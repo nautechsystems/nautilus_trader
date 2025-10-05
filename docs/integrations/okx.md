@@ -1,9 +1,5 @@
 # OKX
 
-:::warning
-The OKX integration is still under active development.
-:::
-
 Founded in 2017, OKX is a leading cryptocurrency exchange offering spot, perpetual swap,
 futures, and options trading. This integration supports live market data ingest and order
 execution on OKX.
@@ -11,12 +7,7 @@ execution on OKX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-**It does not require any external OKX client library dependencies**.
-
-:::info
-There is **no** need for additional installation steps for `okx`.
-The core components of the adapter are compiled as a static library and automatically linked during the build process.
-:::
+It does not require external OKX client libraries—the core components are compiled as a static library and linked automatically during the build.
 
 ## Examples
 
@@ -58,6 +49,7 @@ OKX uses specific symbol conventions for different instrument types. All instrum
 ### Symbol format by instrument type
 
 #### SPOT
+
 Format: `{BaseCurrency}-{QuoteCurrency}`
 
 Examples:
@@ -131,7 +123,7 @@ A: Check the `contract_types` parameter in the configuration:
 - For linear contracts: `OKXContractType.LINEAR`.
 - For inverse contracts: `OKXContractType.INVERSE`.
 
-## Order capability
+## Orders capability
 
 Below are the order types, execution instructions, and time-in-force options supported
 for linear perpetual swap products on OKX.
@@ -155,15 +147,19 @@ use_hyphens_in_client_order_ids=False
 
 ### Order types
 
-| Order Type          | Linear Perpetual Swap | Notes                |
-|---------------------|-----------------------|----------------------|
-| `MARKET`            | ✓                     |                      |
-| `LIMIT`             | ✓                     |                      |
-| `STOP_MARKET`       | ✓                     |                      |
-| `STOP_LIMIT`        | ✓                     |                      |
-| `MARKET_IF_TOUCHED` | ✓                     |                      |
-| `LIMIT_IF_TOUCHED`  | ✓                     |                      |
+| Order Type          | Linear Perpetual Swap | Notes                                |
+|---------------------|-----------------------|--------------------------------------|
+| `MARKET`            | ✓                     | Immediate execution at market price. Supports quote quantity. |
+| `LIMIT`             | ✓                     | Execution at specified price or better. |
+| `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order). |
+| `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order). |
+| `MARKET_IF_TOUCHED` | ✓                     | Conditional market order (OKX algo order). |
+| `LIMIT_IF_TOUCHED`  | ✓                     | Conditional limit order (OKX algo order). |
 | `TRAILING_STOP`     | -                     | *Not yet supported*. |
+
+:::info
+**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, and `LIMIT_IF_TOUCHED` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources.
+:::
 
 ### Execution instructions
 
@@ -179,12 +175,12 @@ use_hyphens_in_client_order_ids=False
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | ✗                     | *Not supported by OKX. Use strategy-managed GTD.* |
+| `GTD`         | ✗                     | *Not supported by OKX API.* |
 
 :::info
-**GTD (Good Till Date) time in force**: OKX does not support GTD time in force through their API.
-If you need GTD functionality, you should use Nautilus's strategy-managed GTD feature instead,
-which will handle the order expiration by canceling the order at expiry.
+**GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
+
+If you need GTD functionality, you must use Nautilus's strategy-managed GTD feature, which will handle the order expiration by canceling the order at the specified expiry time.
 :::
 
 ### Batch operations
@@ -202,7 +198,53 @@ which will handle the order expiration by canceling the order at expiry.
 | Query positions   | ✓                     | Real-time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode.                              |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
-| Margin mode       | Isolated              | Currently isolated only. *Cross margin coming soon*. |
+| Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
+
+### Margin modes
+
+OKX's unified account system allows trading with different margin modes on a per-order basis. The adapter supports specifying the trade mode (`td_mode`) when submitting orders.
+
+:::note
+**Important**: Account modes must be initially configured via the OKX Web/App interface. The API cannot set the account mode for the first time.
+:::
+
+For more details on OKX's account modes and margin system, see the [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+
+#### Available margin modes
+
+- **`cash`**: Spot trading without margin (default for spot trading).
+- **`isolated`**: Isolated margin mode where risk is confined to specific positions.
+- **`cross`**: Cross margin mode where all positions share the same margin pool.
+- **`spot_isolated`**: Isolated margin for spot trading.
+
+#### Setting margin mode per order
+
+You can specify the margin mode for individual orders using the `params` parameter:
+
+```python
+# Submit an order with isolated margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "isolated"}
+)
+
+# Submit an order with cross margin mode
+strategy.submit_order(
+    order=order,
+    params={"td_mode": "cross"}
+)
+```
+
+If no `td_mode` is specified in params, the adapter will use the default mode configured for your account type:
+
+- Cash accounts default to `cash` mode.
+- Margin accounts default to `isolated` mode.
+
+This flexibility allows you to:
+
+- Run multiple strategies with different risk profiles simultaneously.
+- Isolate high-risk trades while using cross margin for capital-efficient positions.
+- Mix spot and margin trades within the same account.
 
 ### Order querying
 
@@ -222,6 +264,49 @@ which will handle the order expiration by canceling the order at expiry.
 | Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
 | Conditional orders  | ✓                     | Stop and limit-if-touched orders.          |
 
+#### Conditional order architecture
+
+Conditional orders (OKX algo orders) use a hybrid architecture for optimal performance and reliability:
+
+- **Submission**: Via HTTP REST API (`/api/v5/trade/order-algo`)
+- **Status updates**: Via WebSocket business endpoint (`/ws/v5/business`) on the `orders-algo` channel
+- **Cancellation**: Via HTTP REST API using algo order ID tracking
+
+This design ensures:
+
+- Immediate submission acknowledgment through HTTP.
+- Real-time status updates through WebSocket.
+- Proper order lifecycle management with algo order ID mapping.
+
+#### Supported conditional order types
+
+| Order Type          | Trigger Types          | Notes                                     |
+|---------------------|------------------------|-------------------------------------------|
+| `STOP_MARKET`       | Last, Mark, Index      | Market execution when triggered.          |
+| `STOP_LIMIT`        | Last, Mark, Index      | Limit order placement when triggered.     |
+| `MARKET_IF_TOUCHED` | Last, Mark, Index      | Market execution when price touched.      |
+| `LIMIT_IF_TOUCHED`  | Last, Mark, Index      | Limit order placement when price touched. |
+
+#### Trigger price types
+
+Conditional orders support different trigger price sources:
+
+- **Last Price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
+- **Mark Price** (`TriggerType.MARK_PRICE`): Uses the mark price (recommended for derivatives).
+- **Index Price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
+
+```python
+# Example: Stop loss using mark price trigger
+stop_order = order_factory.stop_market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_str("0.1"),
+    trigger_price=Price.from_str("45000.0"),
+    trigger_type=TriggerType.MARK_PRICE,  # Use mark price for trigger
+)
+strategy.submit_order(stop_order)
+```
+
 ## Authentication
 
 To use the OKX adapter, you'll need to create API credentials in your OKX account:
@@ -240,40 +325,84 @@ export OKX_API_PASSPHRASE="your_passphrase"
 
 Or pass them directly in the configuration (not recommended for production).
 
-## Rate limits
+## Rate limiting
 
-The OKX adapter implements automatic rate limiting for both HTTP and WebSocket connections to respect OKX's API limits and prevent rate limit errors.
+The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults for both REST and WebSocket calls.
 
-### HTTP rate limiting
+### REST limits
 
-The HTTP client implements a global default rate limit of **250 requests per second**. This is a conservative default that works across most endpoints. However, note that individual OKX endpoints have their own server-side limits:
+- Global cap: 250 requests per second (matches 500 requests / 2 seconds IP allowance).
+- Endpoint-specific quotas appear in the table below and mirror OKX’s published limits where available.
 
-- Sub-account order limit: 1000 requests per 2 seconds.
-- Account balance: 10 requests per 2 seconds (more restrictive).
-- Account instruments: 20 requests per 2 seconds.
+### WebSocket limits
 
-The global limiter helps prevent hitting the overall rate limit, but endpoints with lower server-side limits may still rate-limit if accessed too frequently.
+- Subscription operations: 3 requests per second.
+- Order actions (place/cancel/amend): 250 requests per second.
 
-### WebSocket rate limiting
+:::warning
+OKX enforces per-endpoint and per-account quotas; exceeding them leads to HTTP 429 responses and temporary throttling on that key.
+:::
 
-The WebSocket client implements keyed rate limiting with different quotas for different operation types:
+| Key / Endpoint                   | Limit (req/sec) | Notes                                                   |
+|----------------------------------|-----------------|---------------------------------------------------------|
+| `okx:global`                     | 250             | Matches 500 req / 2 s IP allowance.                     |
+| `/api/v5/public/instruments`     | 10              | Matches OKX 20 req / 2 s docs.                          |
+| `/api/v5/market/candles`         | 50              | Higher allowance for streaming candles.                 |
+| `/api/v5/market/history-candles` | 20              | Conservative quota for large historical pulls.          |
+| `/api/v5/market/history-trades`  | 30              | Trade history pulls.                                    |
+| `/api/v5/account/balance`        | 5               | OKX guidance: 10 req / 2 s.                             |
+| `/api/v5/trade/order`            | 30              | 60 requests / 2 seconds per-instrument limit.           |
+| `/api/v5/trade/orders-pending`   | 20              | Open order fetch.                                       |
+| `/api/v5/trade/orders-history`   | 20              | Historical orders.                                      |
+| `/api/v5/trade/fills`            | 30              | Execution reports.                                      |
+| `/api/v5/trade/order-algo`       | 10              | Algo placements (conditional orders).                   |
+| `/api/v5/trade/cancel-algos`     | 10              | Algo cancellation.                                      |
 
-- **General operations** (subscriptions): 3 requests per second.
-- **Order operations** (place/cancel/amend): 250 requests per second.
+All keys automatically include the `okx:global` bucket. URLs are normalised (query strings removed) before rate limiting, so requests with different filters share the same quota.
 
-This approach ensures that subscription management doesn't interfere with order execution performance while respecting OKX's connection rate limits.
-
-### OKX API rate limits
-
-OKX enforces various rate limits on their API endpoints:
-
-- **REST API**: Varies by endpoint (typically 20-1000 requests per 2 seconds depending on the endpoint).
-- **WebSocket**: 3 connection requests per second per IP, with subscription and order limits.
-- **Trading**: Order placement has specific limits based on account level and instrument type.
-
-For complete and up-to-date rate limit information, refer to the [OKX API documentation](https://www.okx.com/docs-v5/en/#overview-rate-limit).
+:::info
+For more details on rate limiting, see the official documentation: <https://www.okx.com/docs-v5/en/#rest-api-rate-limit>.
+:::
 
 ## Configuration
+
+### Configuration options
+
+The OKX data client provides the following configuration options:
+
+#### Data client
+
+| Option                               | Default                         | Description |
+|--------------------------------------|---------------------------------|-------------|
+| `instrument_types`                   | `(OKXInstrumentType.SPOT,)`     | Controls which OKX instrument families are loaded (spot, swap, futures, options). |
+| `contract_types`                     | `None`                          | Restricts loading to specific contract styles when combined with `instrument_types`. |
+| `base_url_http`                      | `None`                          | Override for the OKX REST endpoint; defaults to the production URL resolved at runtime. |
+| `base_url_ws`                        | `None`                          | Override for the market data WebSocket endpoint. |
+| `api_key` / `api_secret` / `api_passphrase` | `None`                  | When omitted, pulled from the `OKX_API_KEY`, `OKX_API_SECRET`, and `OKX_PASSPHRASE` environment variables. |
+| `is_demo`                            | `False`                         | Connects to the OKX demo environment when `True`. |
+| `http_timeout_secs`                  | `60`                            | Request timeout (seconds) for REST market data calls. |
+| `update_instruments_interval_mins`   | `60`                            | Interval, in minutes, between background instrument refreshes. |
+| `vip_level`                          | `None`                          | Enables higher-depth order book channels when set to the matching OKX VIP tier. |
+
+The OKX execution client provides the following configuration options:
+
+#### Execution client
+
+| Option                     | Default     | Description |
+|----------------------------|-------------|-------------|
+| `instrument_types`         | `(OKXInstrumentType.SPOT,)` | Instrument families that should be tradable for this client. |
+| `contract_types`           | `None`      | Restricts tradable contracts (linear, inverse, options) when paired with `instrument_types`. |
+| `base_url_http`            | `None`      | Override for the OKX trading REST endpoint. |
+| `base_url_ws`              | `None`      | Override for the private WebSocket endpoint. |
+| `api_key` / `api_secret` / `api_passphrase` | `None` | Fall back to `OKX_API_KEY`, `OKX_API_SECRET`, and `OKX_PASSPHRASE` environment variables when unset. |
+| `margin_mode`              | `None`      | Forces the OKX account margin mode (cross or isolated) when specified. |
+| `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
+| `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
+| `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower-latency fill reports. |
+| `use_mm_mass_cancel`       | `False`     | Uses the market-maker bulk cancel endpoint when available; otherwise falls back to per-order cancels. |
+| `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
+| `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |
 
 Below is an example configuration for a live trading node using OKX data and execution clients:
 
@@ -296,7 +425,7 @@ config = TradingNodeConfig(
             base_url_http=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR),
+            contract_types=(OKXContractType.LINEAR,),
             is_demo=False,
         ),
     },
@@ -309,7 +438,7 @@ config = TradingNodeConfig(
             base_url_ws=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR),
+            contract_types=(OKXContractType.LINEAR,),
             is_demo=False,
         ),
     },
@@ -320,17 +449,7 @@ node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
 node.build()
 ```
 
-## Error handling
-
-Common issues when using the OKX adapter:
-
-- **Authentication errors**: Verify your API credentials and ensure they have the required permissions.
-- **Insufficient permissions**: Verify your API key has trading permissions if executing orders.
-- **Rate limit exceeded**: Reduce request frequency or implement delays between requests.
-- **Invalid symbols**: Ensure you're using valid OKX instrument identifiers.
-
-For detailed error information, check the NautilusTrader logs.
-
-## References
-
-See the OKX [API documentation](https://www.okx.com/docs-v5/) and the NautilusTrader [API reference](../api_reference/adapters/okx.md) for more details.
+:::info
+For additional features or to contribute to the OKX adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

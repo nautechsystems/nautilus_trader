@@ -262,7 +262,7 @@ impl TestDataActor {
         }
     }
 
-    #[allow(dead_code)] // TODO: Under development
+    #[allow(dead_code, reason = "TODO: Under development")]
     pub fn custom_function(&mut self) {}
 }
 
@@ -699,7 +699,7 @@ fn test_subscribe_and_receive_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
@@ -720,7 +720,7 @@ fn test_unsubscribe_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
@@ -1549,6 +1549,7 @@ fn test_subscribe_and_receive_pools(
         "Swap",
         "Mint",
         "Burn",
+        "Collect",
     );
     let token0 = Token::new(
         chain.clone(),
@@ -1594,14 +1595,15 @@ fn test_subscribe_and_receive_pool_swaps(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock, cache, trader_id);
-    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.start().unwrap();
-
+    use alloy_primitives::{I256, U160};
     use nautilus_model::{
         defi::{AmmType, Dex, DexType, chain::chains},
         identifiers::InstrumentId,
     };
+
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
@@ -1614,6 +1616,7 @@ fn test_subscribe_and_receive_pool_swaps(
         "Swap",
         "Mint",
         "Burn",
+        "Collect",
     );
 
     let pool_address = Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443").unwrap();
@@ -1623,7 +1626,6 @@ fn test_subscribe_and_receive_pool_swaps(
     let swap = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1631,9 +1633,15 @@ fn test_subscribe_and_receive_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Buy,
-        Quantity::from("1000"),
-        Price::from("500"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        1000000,
+        100,
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
     );
 
     actor.subscribe_pool_swaps(instrument_id, None, None);
@@ -1653,11 +1661,12 @@ fn test_unsubscribe_pool_swaps(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
+    use alloy_primitives::{I256, U160};
+    use nautilus_model::defi::{Dex, DexType, Pool, chain::chains, dex::AmmType};
+
     let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-
-    use nautilus_model::defi::{Dex, DexType, Pool, chain::chains, dex::AmmType};
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
@@ -1670,6 +1679,7 @@ fn test_unsubscribe_pool_swaps(
         "Swap",
         "Mint",
         "Burn",
+        "Collect",
     );
     let pool_address = Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443").unwrap();
     let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_address);
@@ -1681,7 +1691,6 @@ fn test_unsubscribe_pool_swaps(
     let swap1 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex.clone()),
-        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1689,9 +1698,15 @@ fn test_unsubscribe_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Buy,
-        Quantity::from("1000"),
-        Price::from("500"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        1000000,
+        100,
+        Some(OrderSide::Buy),
+        Some(Quantity::from("1000")),
+        Some(Price::from("500")),
     );
     msgbus::publish(topic, &swap1);
 
@@ -1701,7 +1716,6 @@ fn test_unsubscribe_pool_swaps(
     let swap2 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        instrument_id,
         pool_address,
         2000u64,
         "0x456".to_string(),
@@ -1709,9 +1723,15 @@ fn test_unsubscribe_pool_swaps(
         0,
         None,
         Address::from([0x12; 20]),
-        OrderSide::Sell,
-        Quantity::from("2000"),
-        Price::from("1000"),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        1000000,
+        100,
+        Some(OrderSide::Sell),
+        Some(Quantity::from("2000")),
+        Some(Price::from("1000")),
     );
     msgbus::publish(topic, &swap2);
 

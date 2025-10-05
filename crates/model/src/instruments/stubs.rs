@@ -381,7 +381,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let base_currency = symbol.as_str().split('/').next().unwrap();
     let quote_currency = symbol.as_str().split('/').next_back().unwrap();
     let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
-    let price_increment = Price::new(1.0 / 10.0f64, price_precision);
+    let price_increment = Price::new(1.0 / 10.0f64.powi(price_precision as i32), price_precision);
     CurrencyPair::new(
         instrument_id,
         symbol,

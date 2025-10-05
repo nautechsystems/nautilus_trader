@@ -13,18 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::env;
+use std::str::FromStr;
 
-use nautilus_bitmex::http::{
-    client::BitmexHttpClient,
-    parse::parse_instrument_any,
-    query::{
-        GetExecutionParamsBuilder, GetOrderParamsBuilder, GetPositionParamsBuilder,
-        GetTradeParamsBuilder,
-    },
-};
-use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_model::{identifiers::InstrumentId, instruments::any::InstrumentAny};
+use nautilus_bitmex::http::client::BitmexHttpClient;
+use nautilus_model::identifiers::InstrumentId;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -33,72 +25,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let api_key = env::var("BITMEX_API_KEY").expect("environment variable should be set");
-    let api_secret = env::var("BITMEX_API_SECRET").expect("environment variable should be set");
-    let client = BitmexHttpClient::new(None, Some(api_key), Some(api_secret), false, None);
+    let client = BitmexHttpClient::from_env()?;
 
-    match client.get_instruments(false).await {
-        Ok(resp) => {
-            tracing::debug!("{:?}", resp);
-            let ts_init = get_atomic_clock_realtime().get_time_ns();
-            let mut instruments: Vec<InstrumentAny> = Vec::new();
-            for def in resp {
-                tracing::debug!("Parsing {def:?}");
-                if let Some(inst) = parse_instrument_any(&def, ts_init) {
-                    instruments.push(inst);
-                } else {
-                    tracing::warn!(
-                        "Did not parse: symbol={}, type={}",
-                        def.symbol,
-                        def.instrument_type,
-                    );
-                }
-            }
-        }
-        Err(e) => tracing::error!("{e:?}"),
-    }
+    let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX")?;
+    let instrument = client.request_instrument(instrument_id).await?;
 
-    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-
-    match client.get_instrument(&instrument_id.symbol).await {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
-    }
-
-    let resp = client.get_wallet().await;
-    match resp {
-        Ok(instrument) => tracing::debug!("{:?}", instrument),
-        Err(e) => tracing::error!("{e:?}"),
-    }
-
-    let params = GetOrderParamsBuilder::default()
-        .symbol("XBTUSD".to_string())
-        .build()?;
-    match client.get_orders(params).await {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
-    }
-
-    let params = GetTradeParamsBuilder::default()
-        .symbol("XBTUSD".to_string())
-        .build()?;
-    match client.get_trades(params).await {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
-    }
-
-    let params = GetExecutionParamsBuilder::default()
-        .symbol("XBTUSD".to_string())
-        .build()?;
-    match client.get_executions(params).await {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
-    }
-
-    let params = GetPositionParamsBuilder::default().build()?;
-    match client.get_positions(params).await {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
+    match instrument {
+        Some(inst) => tracing::info!(instrument = ?inst, "Retrieved instrument"),
+        None => tracing::warn!("Instrument XBTUSD.BITMEX not returned from BitMEX"),
     }
 
     Ok(())

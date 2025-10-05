@@ -88,6 +88,36 @@ pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow
         .ok_or_else(|| anyhow::anyhow!("Missing block number in the log"))
 }
 
+/// Extracts the event signature from a log entry and returns it as a hex string
+///
+/// # Errors
+///
+/// Returns an error if the event signature (topic0) is not present in the log.
+pub fn extract_event_signature(
+    log: &hypersync_client::simple_types::Log,
+) -> anyhow::Result<String> {
+    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
+        Ok(hex::encode(topic))
+    } else {
+        anyhow::bail!("Missing event signature in topic0");
+    }
+}
+
+/// Extracts the event signature from a log entry and returns it as raw bytes
+///
+/// # Errors
+///
+/// Returns an error if the event signature (topic0) is not present in the log.
+pub fn extract_event_signature_bytes(
+    log: &hypersync_client::simple_types::Log,
+) -> anyhow::Result<&[u8]> {
+    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
+        Ok(topic.as_ref())
+    } else {
+        anyhow::bail!("Missing event signature in topic0");
+    }
+}
+
 /// Validates that a log entry corresponds to the expected event by comparing its topic0 with the provided event signature hash.
 ///
 /// # Errors
@@ -95,15 +125,12 @@ pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow
 /// Returns an error if the event signature doesn't match or if topic0 is missing.
 pub fn validate_event_signature_hash(
     event_name: &str,
-    event_signature_hash: &str,
+    target_event_signature_hash: &str,
     log: &hypersync_client::simple_types::Log,
 ) -> anyhow::Result<()> {
-    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
-        if hex::encode(topic) != event_signature_hash {
-            anyhow::bail!("Invalid event signature for event '{event_name}'");
-        }
-    } else {
-        anyhow::bail!("Missing event signature in topic0 for event '{event_name}'");
+    let event_signature = extract_event_signature(log)?;
+    if event_signature.as_str() != target_event_signature_hash {
+        anyhow::bail!("Invalid event signature for event '{event_name}'");
     }
     Ok(())
 }
@@ -229,7 +256,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 
@@ -241,7 +268,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 

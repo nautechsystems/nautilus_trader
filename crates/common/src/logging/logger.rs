@@ -64,6 +64,8 @@ pub struct LoggerConfig {
     pub fileout_level: LevelFilter,
     /// Per-component log levels, allowing finer-grained control.
     component_level: HashMap<Ustr, LevelFilter>,
+    /// If only components with explicit component-level filters should be logged.
+    pub log_components_only: bool,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
     /// If the configuration should be printed to stdout at initialization.
@@ -77,6 +79,7 @@ impl Default for LoggerConfig {
             stdout_level: LevelFilter::Info,
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
+            log_components_only: false,
             is_colored: true,
             print_config: false,
         }
@@ -90,6 +93,7 @@ impl LoggerConfig {
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
         component_level: HashMap<Ustr, LevelFilter>,
+        log_components_only: bool,
         is_colored: bool,
         print_config: bool,
     ) -> Self {
@@ -97,6 +101,7 @@ impl LoggerConfig {
             stdout_level,
             fileout_level,
             component_level,
+            log_components_only,
             is_colored,
             print_config,
         }
@@ -113,7 +118,10 @@ impl LoggerConfig {
                 continue;
             }
             let kv_lower = kv.to_lowercase(); // For case-insensitive comparison
-            if kv_lower == "is_colored" {
+
+            if kv_lower == "log_components_only" {
+                config.log_components_only = true;
+            } else if kv_lower == "is_colored" {
                 config.is_colored = true;
             } else if kv_lower == "print_config" {
                 config.print_config = true;
@@ -449,6 +457,7 @@ impl Logger {
             stdout_level,
             fileout_level,
             component_level,
+            log_components_only,
             is_colored,
             print_config: _,
         } = config;
@@ -477,7 +486,13 @@ impl Logger {
                              file_writer_opt: &mut Option<FileWriter>| {
             match event {
                 LogEvent::Log(line) => {
-                    if let Some(&filter_level) = component_level.get(&line.component)
+                    let component_filter_level = component_level.get(&line.component);
+
+                    if log_components_only && component_filter_level.is_none() {
+                        return;
+                    }
+
+                    if let Some(&filter_level) = component_filter_level
                         && line.level > filter_level
                     {
                         return;
@@ -768,6 +783,7 @@ mod tests {
                     Ustr::from("RiskEngine"),
                     LevelFilter::Error
                 )]),
+                log_components_only: false,
                 is_colored: true,
                 print_config: false,
             }
@@ -783,8 +799,29 @@ mod tests {
                 stdout_level: LevelFilter::Warn,
                 fileout_level: LevelFilter::Error,
                 component_level: HashMap::new(),
+                log_components_only: false,
                 is_colored: true,
                 print_config: true,
+            }
+        );
+    }
+
+    #[rstest]
+    fn log_config_parsing_with_log_components_only() {
+        let config =
+            LoggerConfig::from_spec("stdout=Info;log_components_only;RiskEngine=Debug").unwrap();
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Info,
+                fileout_level: LevelFilter::Off,
+                component_level: HashMap::from_iter(vec![(
+                    Ustr::from("RiskEngine"),
+                    LevelFilter::Debug
+                )]),
+                log_components_only: true,
+                is_colored: true,
+                print_config: false,
             }
         );
     }

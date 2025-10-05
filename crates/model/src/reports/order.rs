@@ -68,6 +68,10 @@ pub struct OrderStatusReport {
     pub order_list_id: Option<OrderListId>,
     /// The position ID associated with the order (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
+    /// The reported linked client order IDs related to contingency orders.
+    pub linked_order_ids: Option<Vec<ClientOrderId>>,
+    /// The parent order ID for contingent child orders, if available.
+    pub parent_order_id: Option<ClientOrderId>,
     /// The orders contingency type.
     pub contingency_type: ContingencyType,
     /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
@@ -135,6 +139,8 @@ impl OrderStatusReport {
             ts_init,
             order_list_id: None,
             venue_position_id: None,
+            linked_order_ids: None,
+            parent_order_id: None,
             contingency_type: ContingencyType::default(),
             expire_time: None,
             price: None,
@@ -163,6 +169,23 @@ impl OrderStatusReport {
     #[must_use]
     pub const fn with_order_list_id(mut self, order_list_id: OrderListId) -> Self {
         self.order_list_id = Some(order_list_id);
+        self
+    }
+
+    /// Sets the linked client order IDs.
+    #[must_use]
+    pub fn with_linked_order_ids(
+        mut self,
+        linked_order_ids: impl IntoIterator<Item = ClientOrderId>,
+    ) -> Self {
+        self.linked_order_ids = Some(linked_order_ids.into_iter().collect());
+        self
+    }
+
+    /// Sets the parent order ID.
+    #[must_use]
+    pub const fn with_parent_order_id(mut self, parent_order_id: ClientOrderId) -> Self {
+        self.parent_order_id = Some(parent_order_id);
         self
     }
 
@@ -296,6 +319,8 @@ impl Display for OrderStatusReport {
                 client_order_id={:?}, \
                 order_list_id={:?}, \
                 venue_position_id={:?}, \
+                linked_order_ids={:?}, \
+                parent_order_id={:?}, \
                 contingency_type={}, \
                 expire_time={:?}, \
                 price={:?}, \
@@ -327,6 +352,8 @@ impl Display for OrderStatusReport {
             self.client_order_id,
             self.order_list_id,
             self.venue_position_id,
+            self.linked_order_ids,
+            self.parent_order_id,
             self.contingency_type,
             self.expire_time,
             self.price,
@@ -409,6 +436,8 @@ mod tests {
         // Test default values
         assert_eq!(report.order_list_id, None);
         assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.linked_order_ids, None);
+        assert_eq!(report.parent_order_id, None);
         assert_eq!(report.contingency_type, ContingencyType::default());
         assert_eq!(report.expire_time, None);
         assert_eq!(report.price, None);
@@ -457,6 +486,7 @@ mod tests {
             .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
             .with_order_list_id(OrderListId::from("OL-001"))
             .with_venue_position_id(PositionId::from("P-001"))
+            .with_parent_order_id(ClientOrderId::from("O-PARENT"))
             .with_price(Price::from("1.00000"))
             .with_avg_px(1.00001)
             .with_trigger_price(Price::from("0.99000"))
@@ -478,6 +508,10 @@ mod tests {
         );
         assert_eq!(report.order_list_id, Some(OrderListId::from("OL-001")));
         assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
+        assert_eq!(
+            report.parent_order_id,
+            Some(ClientOrderId::from("O-PARENT"))
+        );
         assert_eq!(report.price, Some(Price::from("1.00000")));
         assert_eq!(report.avg_px, Some(1.00001));
         assert_eq!(report.trigger_price, Some(Price::from("0.99000")));

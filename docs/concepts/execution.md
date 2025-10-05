@@ -130,14 +130,14 @@ Every order command and event passes through the `RiskEngine` unless specificall
 
 The `RiskEngine` includes several built-in pre-trade risk checks, including:
 
-- Price precisions correct for the instrument
+- Price precisions correct for the instrument.
 - Prices are positive (unless an option type instrument)
-- Quantity precisions correct for the instrument
-- Below maximum notional for the instrument
-- Within maximum or minimum quantity for the instrument
-- Only reducing position when a `reduce_only` execution instruction is specified for the order
+- Quantity precisions correct for the instrument.
+- Below maximum notional for the instrument.
+- Within maximum or minimum quantity for the instrument.
+- Only reducing position when a `reduce_only` execution instruction is specified for the order.
 
-If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and
+If any risk check fails, the system generates an `OrderDenied` event, effectively closing the order and
 preventing it from progressing further. This event includes a human-readable reason for the denial.
 
 ### Trading state
@@ -146,9 +146,9 @@ Additionally, the current trading state of a Nautilus system affects order flow.
 
 The `TradingState` enum has three variants:
 
-- `ACTIVE`: The system operates normally
-- `HALTED`: The system will not process further order commands until the state changes
-- `REDUCING`: The system will only process cancels or commands that reduce open positions
+- `ACTIVE`: Operates normally.
+- `HALTED`: Does not process further order commands until state changes.
+- `REDUCING`: Only processes cancels or commands that reduce open positions.
 
 :::info
 See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for further details.
@@ -230,14 +230,14 @@ To implement a custom execution algorithm you must define a class which inherits
 
 An execution algorithm is a type of `Actor`, so it's capable of the following:
 
-- Request and subscribe to data
-- Access the `Cache`
-- Set time alerts and/or timers using a `Clock`
+- Request and subscribe to data.
+- Access the `Cache`.
+- Set time alerts and/or timers using a `Clock`.
 
 Additionally it can:
 
-- Access the central `Portfolio`
-- Spawn secondary orders from a received primary (original) order
+- Access the central `Portfolio`.
+- Spawn secondary orders from a received primary (original) order.
 
 Once an execution algorithm is registered, and the system is running, it will receive orders off the
 messages bus which are addressed to its `ExecAlgorithmId` via the `exec_algorithm_id` order parameter.

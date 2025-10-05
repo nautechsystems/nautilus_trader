@@ -27,7 +27,7 @@ use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_stri
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-#[allow(unused_imports)] // FIXED_PRECISION used in docs
+#[allow(unused_imports, reason = "FIXED_PRECISION used in docs")]
 use super::fixed::{FIXED_PRECISION, check_fixed_precision};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 

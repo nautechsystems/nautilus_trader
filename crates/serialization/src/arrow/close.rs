@@ -179,10 +179,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::{
-        enums::InstrumentCloseType,
-        types::{fixed::FIXED_SCALAR, price::PriceRaw},
-    };
+    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw};
     use rstest::rstest;
 
     use super::*;

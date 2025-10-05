@@ -726,7 +726,7 @@ pub fn parse_settlement_currency(info: &TardisInstrumentInfo, is_inverse: bool) 
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{identifiers::InstrumentId, instruments::Instrument, types::Currency};
+    use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
     use rstest::rstest;
 
     use super::*;

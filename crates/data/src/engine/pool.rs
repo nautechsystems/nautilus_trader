@@ -25,7 +25,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::handler::MessageHandler};
 use nautilus_model::{
-    defi::{PoolLiquidityUpdate, PoolSwap},
+    defi::{PoolFeeCollect, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap},
     identifiers::InstrumentId,
 };
 use ustr::Ustr;
@@ -49,15 +49,40 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_swap(&self, _swap: &PoolSwap) {
-        if let Some(_pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
-            // TODO: Implement handling pool swap
+    fn handle_pool_swap(&self, swap: &PoolSwap) {
+        if let Some(pool_profiler) = self
+            .cache
+            .borrow_mut()
+            .pool_profiler_mut(&self.instrument_id)
+            && let Err(e) = pool_profiler.process_swap(swap)
+        {
+            log::error!("Failed to process pool swap: {e}");
         }
     }
 
-    fn handle_pool_liquidity_update(&self, _update: &PoolLiquidityUpdate) {
-        if let Some(_pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
-            // TODO: implement handling pool liquidity update
+    fn handle_pool_liquidity_update(&self, update: &PoolLiquidityUpdate) {
+        if let Some(pool_profiler) = self
+            .cache
+            .borrow_mut()
+            .pool_profiler_mut(&self.instrument_id)
+            && let Err(e) = match update.kind {
+                PoolLiquidityUpdateType::Mint => pool_profiler.process_mint(update),
+                PoolLiquidityUpdateType::Burn => pool_profiler.process_burn(update),
+                _ => panic!("Liquidity update operation {} not implemented", update.kind),
+            }
+        {
+            log::error!("Failed to process pool liquidity update: {e}");
+        }
+    }
+
+    fn handle_pool_fee_collect(&self, event: &PoolFeeCollect) {
+        if let Some(pool_profiler) = self
+            .cache
+            .borrow_mut()
+            .pool_profiler_mut(&self.instrument_id)
+            && let Err(e) = pool_profiler.process_collect(event)
+        {
+            log::error!("Failed to process pool fee collect: {e}");
         }
     }
 }
@@ -75,6 +100,10 @@ impl MessageHandler for PoolUpdater {
 
         if let Some(update) = message.downcast_ref::<PoolLiquidityUpdate>() {
             self.handle_pool_liquidity_update(update);
+        }
+
+        if let Some(update) = message.downcast_ref::<PoolFeeCollect>() {
+            self.handle_pool_fee_collect(update);
         }
     }
 

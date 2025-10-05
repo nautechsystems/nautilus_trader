@@ -18,6 +18,7 @@ import asyncio
 from nautilus_trader.common.component import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.currencies import register_currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
@@ -280,7 +281,7 @@ class InstrumentProvider:
         PyCondition.not_none(currency, "currency")
 
         self._currencies[currency.code] = currency
-        Currency.register(currency, overwrite=False)
+        register_currency(currency, overwrite=False)
 
     def add(self, instrument: Instrument) -> None:
         """

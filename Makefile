@@ -127,7 +127,7 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
 	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
-	@echo "⚠️  nuking working tree (git clean -fxd)…"
+	@echo "WARNING: nuking working tree (git clean -fxd)..."
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality
@@ -150,7 +150,7 @@ clippy:  #-- Run Rust clippy linter with fixes
 
 .PHONY: clippy-nightly
 clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
-	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
+	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::unwrap_used -W clippy::expect_used
 
 .PHONY: clippy-crate-%
 clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)
@@ -159,8 +159,9 @@ clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-cr
 #== Dependencies
 
 .PHONY: outdated
-outdated:  #-- Check for outdated Rust dependencies
-	cargo outdated
+outdated: check-outdated-installed  #-- Check for outdated dependencies
+	cargo outdated --workspace --root-deps-only
+	uv tree --outdated --depth 1 --all-groups
 
 .PHONY: update cargo-update
 update: cargo-update  #-- Update all dependencies (uv and cargo)
@@ -221,6 +222,13 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 		exit 1; \
 	fi
 
+.PHONY: check-outdated-installed
+check-outdated-installed:  #-- Verify cargo-outdated is installed
+	@if ! cargo outdated --version >/dev/null 2>&1; then \
+		echo "cargo-outdated is not installed. You can install it using 'cargo install cargo-outdated'"; \
+		exit 1; \
+	fi
+
 .PHONY: check-features  #-- Verify crate feature combinations compile correctly
 check-features: check-hack-installed
 	cargo hack check --each-feature
@@ -239,6 +247,12 @@ else
 	$(info $(M) Running Rust tests (showing summary and failures only)...)
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
+
+.PHONY: cargo-test-hypersync
+cargo-test-hypersync: RUST_BACKTRACE=1
+cargo-test-hypersync: check-nextest-installed
+cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
 
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1
@@ -379,7 +393,7 @@ init-db:  #-- Initialize PostgreSQL database schema
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
 	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0 $(if $(filter true,$(VERBOSE)),-v,)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
 
 .PHONY: pytest-memory-tracking
 pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled
@@ -394,7 +408,7 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 
 .PHONY: install-cli
 install-cli:  #-- Install Nautilus CLI tool from source
-	cargo install --path crates/cli --bin nautilus --force
+	cargo install --path crates/cli --bin nautilus --locked --force
 
 #== Internal
 
@@ -403,8 +417,7 @@ help:  #-- Show this help message and exit
 	@printf "Nautilus Trader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make pytest VERBOSE=true$(GRAY) to run tests with verbose output$(RESET)\n\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"

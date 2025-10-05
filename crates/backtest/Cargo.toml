@@ -24,6 +24,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = [
@@ -60,9 +61,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

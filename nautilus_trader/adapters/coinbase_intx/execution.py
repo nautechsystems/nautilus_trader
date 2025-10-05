@@ -510,6 +510,20 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             self._log.warning(f"Cannot submit already closed order, {order}")
             return
 
+        if order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate order submitted event, to ensure correct ordering of event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,

@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop]
+    branches: [master, nightly, develop, test-ci]
   pull_request:
     branches: ['*']
 
@@ -15,13 +15,15 @@ jobs:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -56,7 +58,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -65,7 +67,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -75,13 +77,15 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -89,10 +93,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          curl -fsSL https://packages.nautechsystems.io/cli/nautilus-cli/install.sh | bash -s -- -b "$HOME/.local/bin"
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -104,7 +111,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test-hypersync
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -145,7 +152,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -154,7 +161,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -164,13 +171,15 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -178,10 +187,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          curl -fsSL https://packages.nautechsystems.io/cli/nautilus-cli/install.sh | bash -s -- -b "$HOME/.local/bin"
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -193,7 +205,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test-hypersync
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -223,9 +235,6 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for pull requests for now
-    if: >
-      !(github.event_name == 'pull_request' && github.base_ref == 'develop')
     needs:
       - pre-commit
     env:
@@ -233,13 +242,15 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -250,7 +261,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test-hypersync
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -280,10 +291,6 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1 hr)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
     env:
@@ -293,13 +300,15 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -329,14 +338,15 @@ jobs:
   publish-wheels-develop:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
+    environment: r2-develop
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
     needs:
       - build-linux-x86
       - build-macos
-      # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
-      # - build-windows # Reinstate this when/if windows runs on every build
+      - build-windows
+      # - build-linux-arm # Keep for nightly only (slow build)
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/develop'
     env:
@@ -345,27 +355,42 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Download built wheels
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-nightly:
+    name: publish-wheels-nightly
     runs-on: ubuntu-latest
+    environment: r2-nightly
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
@@ -380,29 +405,43 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Download built wheels
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-master:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
       actions: write  # Required for deleting artifacts
@@ -418,18 +457,25 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Get uv version
         shell: bash
@@ -437,44 +483,35 @@ jobs:
           echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
         with:
           version: ${{ env.UV_VERSION }}
+
+      - name: Download built wheels for PyPI and GitHub release
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
-      - name: Download built wheels
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: dist/
-          pattern: "*.whl"
-
       - name: Upload wheels to GitHub release
+        # https://cli.github.com/manual/gh_release_upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: |
-          find dist -type f -name "*.whl" | while read wheel; do
-            echo "Uploading $wheel to release"
-            asset_name=$(basename "$wheel")
-            curl -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$wheel" \
-              "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "$TAG_NAME" dist/*.whl --clobber --repo "$GITHUB_REPOSITORY"
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
           done
-
-      - name: Consolidate wheels for PyPI
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Create dist/all directory for consolidated wheels
-          mkdir -p dist/all
-
-          # Move all .whl files from subdirectories to dist/all (exclude dist/all itself)
-          find dist/ -path dist/all -prune -o -name "*.whl" -type f -exec mv {} dist/all/ \;
-
-          echo "Consolidated wheels in dist/all:"
-          ls -la dist/all/
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload wheels to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -482,10 +519,21 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv publish dist/all
+          # Use --check-url to skip files that already exist on PyPI
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to publish wheels to PyPI after retries"; exit 1; fi
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
@@ -505,14 +553,17 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Common setup
@@ -554,19 +605,27 @@ jobs:
     needs: [tag-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -597,16 +656,21 @@ jobs:
           echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
       - name: Upload release asset
-        id: upload-release-asset
-        # https://github.com/actions/upload-release-asset
-        uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
+        # https://cli.github.com/manual/gh_release_upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/gzip
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ASSET_PATH: ${{ env.ASSET_PATH }}
+        run: |
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber --repo "$GITHUB_REPOSITORY"
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload sdist to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -614,4 +678,13 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv publish dist
+          # Use --check-url to skip files that already exist on PyPI
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to publish sdist to PyPI after retries"; exit 1; fi

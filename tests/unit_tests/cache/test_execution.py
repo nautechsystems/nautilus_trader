@@ -1770,6 +1770,109 @@ class TestCache:
         assert account.event_count == 1
         assert account.event_count < initial_event_count
 
+    def test_purge_closed_positions_does_not_purge_reopened_position(self):
+        # Arrange: Create a position that goes FLAT then reopens
+        # This test verifies the fix for the race condition where positions that were
+        # previously closed but later reopened were incorrectly purged
+
+        # Create initial buy order to open position
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+
+        # Fill the buy order to open LONG position
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,  # 1 second
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.add_position(position, OmsType.NETTING)
+        self.cache.update_position(position)
+
+        # Verify position is LONG
+        assert position.is_long
+        assert not position.is_closed
+        assert self.cache.is_position_open(position_id)
+
+        # Create sell order to close position (make it FLAT)
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order2, position_id)
+
+        # Fill the sell order to close position (FLAT)
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+            ts_event=2_000_000_000,  # 2 seconds
+        )
+        position.apply(fill2)
+        self.cache.update_position(position)
+
+        # Verify position is now FLAT (closed)
+        assert position.side == PositionSide.FLAT
+        assert position.is_closed
+        assert position.ts_closed > 0  # Has a close timestamp
+        assert self.cache.is_position_closed(position_id)
+        ts_closed_original = position.ts_closed
+
+        # Create another buy order to REOPEN the position
+        order3 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+        self.cache.add_order(order3, position_id)
+
+        # Fill the buy order to reopen position (LONG again)
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00020"),
+            ts_event=3_000_000_000,  # 3 seconds
+        )
+        position.apply(fill3)
+        self.cache.update_position(position)
+
+        # Verify position is LONG again (reopened)
+        assert position.is_long
+        assert not position.is_closed
+        assert position.ts_closed == 0  # Close timestamp should be reset
+        assert self.cache.is_position_open(position_id)
+
+        # Act: Attempt to purge closed positions
+        # This should NOT purge our position even though it was closed before,
+        # because it's currently OPEN
+        # Use a timestamp far in the future to ensure any old ts_closed would trigger purge
+        self.cache.purge_closed_positions(
+            ts_now=ts_closed_original + 1_000_000_000_000,  # Way after the close time
+            buffer_secs=0,
+        )
+
+        # Assert: Position should still exist because it's currently OPEN
+        assert self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is not None
+        assert self.cache.is_position_open(position_id)
+        assert not self.cache.is_position_closed(position_id)
+        assert position in self.cache.positions_open()
+        assert position not in self.cache.positions_closed()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
+
 
 class TestExecutionCacheIntegrityCheck:
     def setup(self):

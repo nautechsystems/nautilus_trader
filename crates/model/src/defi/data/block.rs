@@ -28,6 +28,31 @@ use crate::defi::{
     },
 };
 
+/// Represents the precise position of an event within a blockchain.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BlockPosition {
+    /// The block number (height) in the blockchain where the event occurred.
+    pub number: u64,
+    /// The unique hash identifier of the block containing the event.
+    pub hash: String,
+    /// The index position of the transaction within the block (0-based).
+    pub transaction_index: u32,
+    /// The index position of the log/event within the transaction (0-based).
+    pub log_index: u32,
+}
+
+impl BlockPosition {
+    /// Creates a new [`BlockPosition`] with the specified positioning data.
+    pub fn new(number: u64, hash: String, index: u32, log_index: u32) -> Self {
+        Self {
+            number,
+            hash,
+            transaction_index: index,
+            log_index,
+        }
+    }
+}
+
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

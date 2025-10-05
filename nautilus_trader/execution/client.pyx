@@ -17,6 +17,7 @@ from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 
 from libc.stdint cimport uint64_t
 
@@ -41,6 +42,7 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
+from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderModifyRejected
@@ -331,6 +333,47 @@ cdef class ExecutionClient(Component):
         )
 
         self._send_account_state(account_state)
+
+    cpdef void generate_order_denied(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str reason,
+        uint64_t ts_event,
+    ):
+        """
+        Generate an `OrderDenied` event and send it to the `ExecutionEngine`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        instrument_id : InstrumentId
+            The instrument ID.
+        client_order_id : ClientOrderId
+            The client order ID.
+        reason : str
+            The order denied reason.
+        ts_event : uint64_t
+            UNIX timestamp (nanoseconds) when the order denied event occurred.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        # Generate event
+        cdef OrderDenied denied = OrderDenied(
+            trader_id=self.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        denied._mem.ts_event = ts_event
+
+        self._send_order_event(denied)
 
     cpdef void generate_order_submitted(
         self,
@@ -838,6 +881,12 @@ cdef class ExecutionClient(Component):
         )
 
     cpdef void _send_fill_report(self, report: FillReport):
+        self._msgbus.send(
+            endpoint="ExecEngine.reconcile_execution_report",
+            msg=report,
+        )
+
+    cpdef void _send_position_status_report(self, report: PositionStatusReport):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_execution_report",
             msg=report,

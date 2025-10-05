@@ -105,6 +105,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    fs_rust_storage_options : dict[str, str], optional
+        Storage-specific configuration options for the rust backend.
+        Defaults to what is used for fs_storage_options if not specified.
     max_rows_per_group : int, default 5000
         The maximum number of rows per group. If the value is greater than 0,
         then the dataset writer may split up large incoming batches into
@@ -129,7 +132,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: PathLike[str] | str,
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
-        dataset_kwargs: dict | None = None,
+        fs_rust_storage_options: dict | None = None,
         max_rows_per_group: int = 5_000,
         show_query_paths: bool = False,
     ) -> None:
@@ -144,8 +147,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             self.fs_protocol,
             **self.fs_storage_options,
         )
+        self.fs_rust_storage_options = fs_rust_storage_options or self.fs_storage_options
         self.serializer = ArrowSerializer()
-        self.dataset_kwargs = dataset_kwargs or {}
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
@@ -188,7 +191,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     def from_uri(
         cls,
         uri: str,
-        storage_options: dict[str, str] | None = None,
+        fs_storage_options: dict[str, str] | None = None,
+        fs_rust_storage_options: dict[str, str] | None = None,
     ) -> ParquetDataCatalog:
         """
         Create a data catalog instance from the given `uri` with optional storage
@@ -198,11 +202,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         uri : str
             The URI string for the backing path.
-        storage_options : dict[str, str], optional
+        fs_storage_options : dict[str, str], optional
             Storage-specific configuration options.
             For S3: endpoint_url, region, access_key_id, secret_access_key, session_token, etc.
             For GCS: service_account_path, service_account_key, project_id, etc.
             For Azure: account_name, account_key, sas_token, etc.
+        fs_rust_storage_options : dict[str, str], optional
+            Storage-specific configuration options for the rust backend.
+            Defaults to what is used for fs_storage_options if not specified.
 
         Returns
         -------
@@ -219,12 +226,17 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Merge parsed storage options with provided storage options
         # Provided storage options take precedence
-        merged_storage_options = parsed.copy()
+        merged_fs_storage_options = parsed.copy()
 
-        if storage_options:
-            merged_storage_options.update(storage_options)
+        if fs_storage_options:
+            merged_fs_storage_options.update(fs_storage_options)
 
-        return cls(path=path, fs_protocol=protocol, fs_storage_options=merged_storage_options)
+        return cls(
+            path=path,
+            fs_protocol=protocol,
+            fs_storage_options=merged_fs_storage_options,
+            fs_rust_storage_options=fs_rust_storage_options,
+        )
 
     # -- WRITING ----------------------------------------------------------------------------------
 
@@ -519,6 +531,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate all parquet files across the entire catalog within the specified
@@ -541,6 +554,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -558,7 +573,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         leaf_directories = self._find_leaf_data_directories()
 
         for directory in leaf_directories:
-            self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+            self._consolidate_directory(
+                directory,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate=deduplicate,
+            )
 
     def consolidate_data(
         self,
@@ -567,6 +588,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate multiple parquet files for a specific data class and instrument ID
@@ -593,6 +615,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -604,7 +628,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         directory = self._make_path(data_cls, identifier)
-        self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+        self._consolidate_directory(
+            directory,
+            start,
+            end,
+            ensure_contiguous_files,
+            deduplicate=deduplicate,
+        )
 
     def _consolidate_directory(
         self,
@@ -612,6 +642,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         parquet_files = self.fs.glob(os.path.join(directory, "*.parquet"))
         files_to_consolidate = []
@@ -643,18 +674,36 @@ class ParquetDataCatalog(BaseDataCatalog):
             _timestamps_to_filename(intervals[0][0], intervals[-1][1]),
         )
         files_to_consolidate.sort()
-        self._combine_parquet_files(files_to_consolidate, new_file_name)
+        self._combine_parquet_files(files_to_consolidate, new_file_name, deduplicate=deduplicate)
 
-    def _combine_parquet_files(self, file_list: list[str], new_file: str) -> None:
+    def _combine_parquet_files(
+        self,
+        file_list: list[str],
+        new_file: str,
+        deduplicate: bool = False,
+    ) -> None:
         if len(file_list) <= 1:
             return
 
         tables = [pq.read_table(file, memory_map=True, pre_buffer=False) for file in file_list]
         combined_table = pa.concat_tables(tables)
+
+        if deduplicate:
+            combined_table = self._deduplicate_table(combined_table)
+
         pq.write_table(combined_table, where=new_file)
 
         for file in file_list:
-            self.fs.rm(file)
+            if file != new_file:
+                self.fs.rm(file)
+
+    @staticmethod
+    def _deduplicate_table(table: pa.Table) -> pa.Table:
+        deduped_data_table = table.group_by(table.column_names).aggregate([])
+        return pa.Table.from_arrays(
+            deduped_data_table.columns,
+            schema=table.schema,
+        )
 
     def consolidate_catalog_by_period(
         self,
@@ -1630,6 +1679,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 .replace(".", "_")
                 .replace("-", "_")
                 .replace(" ", "_")
+                .replace("^", "_")
                 .lower()
             )
             safe_filename = _extract_sql_safe_filename(file)
@@ -1696,7 +1746,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         try:
             # Register object store using the Rust implementation with storage options
-            session.register_object_store_from_uri(catalog_uri, self.fs_storage_options)
+            session.register_object_store_from_uri(catalog_uri, self.fs_rust_storage_options)
 
         except Exception as e:
             # Log the error but don't fail - DataFusion might still work with built-in support
@@ -2136,7 +2186,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Non-instrument feather files
         for path_str in self.fs.glob(f"{prefix}/*.feather"):
-            if not Path(path_str).is_file():
+            if not self.fs.isfile(path_str):
                 continue
 
             file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
@@ -2149,7 +2199,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Per-instrument feather files
         for path_str in self.fs.glob(f"{prefix}/**/*.feather"):
-            if not Path(path_str).is_file():
+            if not self.fs.isfile(path_str):
                 continue
 
             file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
@@ -2212,10 +2262,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         table_name = class_to_filename(data_cls)
         feather_dir = Path(self.path) / subdirectory / instance_id
 
-        if (feather_dir / table_name).is_dir():
-            feather_files = sorted((feather_dir / table_name).glob("*.feather"))
+        if self.fs.isdir(feather_dir / table_name):
+            feather_files = sorted(self.fs.glob(str(feather_dir / table_name / "*.feather")))
         else:
-            feather_files = sorted(feather_dir.glob(f"{table_name}_*.feather"))
+            feather_files = sorted(self.fs.glob(f"{table_name}_*.feather"))
 
         all_data = []
 

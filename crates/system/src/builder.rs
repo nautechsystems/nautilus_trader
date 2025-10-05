@@ -266,11 +266,9 @@ mod tests {
         assert_eq!(builder.timeout_connection, Duration::from_secs(30));
     }
 
+    #[cfg(feature = "python")]
     #[rstest]
     fn test_builder_build() {
-        #[cfg(feature = "python")]
-        pyo3::prepare_freethreaded_python();
-
         let result = NautilusKernelBuilder::default().build();
         assert!(result.is_ok());
 

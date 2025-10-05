@@ -26,7 +26,8 @@ use nautilus_model::{
 };
 
 use crate::events::{
-    burn::BurnEvent, mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent,
+    burn::BurnEvent, collect::CollectEvent, initialize::InitializeEvent, mint::MintEvent,
+    pool_created::PoolCreatedEvent, swap::SwapEvent,
 };
 
 type ConvertTradeDataFn =
@@ -35,17 +36,21 @@ type ConvertTradeDataFn =
 /// Extended DEX wrapper that adds provider-specific event parsing capabilities to the domain `Dex` model.
 #[derive(Debug, Clone)]
 pub struct DexExtended {
-    /// The core domain Dex object being extended
+    /// The core domain Dex object being extended.
     pub dex: SharedDex,
-    /// Function to parse pool creation events
+    /// Function to parse pool creation events.
     pub parse_pool_created_event_fn: Option<fn(Log) -> anyhow::Result<PoolCreatedEvent>>,
-    /// Function to parse swap events
+    /// Function to parse initialize events.
+    pub parse_initialize_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<InitializeEvent>>,
+    /// Function to parse swap events.
     pub parse_swap_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<SwapEvent>>,
-    /// Function to parse mint events
+    /// Function to parse mint events.
     pub parse_mint_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<MintEvent>>,
-    /// Function to parse burn events
+    /// Function to parse burn events.
     pub parse_burn_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<BurnEvent>>,
-    /// Function to convert to trade data
+    /// Function to parse collect events.
+    pub parse_collect_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<CollectEvent>>,
+    /// Function to convert to trade data.
     pub convert_to_trade_data_fn: Option<ConvertTradeDataFn>,
 }
 
@@ -56,9 +61,11 @@ impl DexExtended {
         Self {
             dex: Arc::new(dex),
             parse_pool_created_event_fn: None,
+            parse_initialize_event_fn: None,
             parse_swap_event_fn: None,
             parse_mint_event_fn: None,
             parse_burn_event_fn: None,
+            parse_collect_event_fn: None,
             convert_to_trade_data_fn: None,
         }
     }
@@ -69,6 +76,14 @@ impl DexExtended {
         parse_pool_created_event: fn(Log) -> anyhow::Result<PoolCreatedEvent>,
     ) {
         self.parse_pool_created_event_fn = Some(parse_pool_created_event);
+    }
+
+    /// Sets the function used to parse initialize events for this Dex.
+    pub fn set_initialize_event_parsing(
+        &mut self,
+        parse_initialize_event: fn(SharedDex, Log) -> anyhow::Result<InitializeEvent>,
+    ) {
+        self.parse_initialize_event_fn = Some(parse_initialize_event);
     }
 
     /// Sets the function used to parse swap events for this Dex.
@@ -93,6 +108,14 @@ impl DexExtended {
         parse_burn_event: fn(SharedDex, Log) -> anyhow::Result<BurnEvent>,
     ) {
         self.parse_burn_event_fn = Some(parse_burn_event);
+    }
+
+    /// Sets the function used to parse collect events for this Dex.
+    pub fn set_collect_event_parsing(
+        &mut self,
+        parse_collect_event: fn(SharedDex, Log) -> anyhow::Result<CollectEvent>,
+    ) {
+        self.parse_collect_event_fn = Some(parse_collect_event);
     }
 
     /// Sets the function used to convert trade data for this Dex.
@@ -184,6 +207,40 @@ impl DexExtended {
         } else {
             anyhow::bail!(
                 "Parsing of burn event in not defined in this dex: {}",
+                self.dex.name
+            )
+        }
+    }
+
+    /// Checks if this DEX requires pool initialization events.
+    pub fn needs_initialization(&self) -> bool {
+        self.dex.initialize_event.is_some()
+    }
+
+    /// Parses an event log into an `InitializeEvent` struct.
+    pub fn parse_initialize_event(&self, log: Log) -> anyhow::Result<InitializeEvent> {
+        if let Some(parse_initialize_event_fn) = &self.parse_initialize_event_fn {
+            parse_initialize_event_fn(self.dex.clone(), log)
+        } else {
+            anyhow::bail!(
+                "Parsing of initialize event in not defined in this dex: {}",
+                self.dex.name
+            )
+        }
+    }
+
+    /// Parses a collect event log using this DEX's specific parsing function.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX does not have a collect event parser defined or if parsing fails.
+    pub fn parse_collect_event(&self, log: Log) -> anyhow::Result<CollectEvent> {
+        if let Some(parse_collect_event_fn) = &self.parse_collect_event_fn {
+            parse_collect_event_fn(self.dex.clone(), log)
+        } else {
+            anyhow::bail!(
+                "Parsing of collect event in not defined in this dex: {}:{}",
+                self.dex.chain,
                 self.dex.name
             )
         }

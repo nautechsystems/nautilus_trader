@@ -224,6 +224,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     ss: int  # ignore
     rp: str  # Realized Profit of the trade
     gtd: int  # TIF GTD order auto cancel time
+    W: int | None = None  # Working Time (when order was added to the book)
+    V: str | None = None  # Self-Trade Prevention Mode
 
     def parse_to_order_status_report(
         self,
@@ -279,8 +281,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
-
         strategy_id = None
+
         if client_order_id:
             strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
 
@@ -299,7 +301,9 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
 
         instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
         if instrument is None:
-            raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
+            raise ValueError(
+                f"Cannot process event for {instrument_id}: instrument not found in cache",
+            )
 
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision
@@ -378,13 +382,6 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
-            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            if instrument is None:
-                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
-
-            price_precision = instrument.price_precision
-            size_precision = instrument.size_precision
-
             if order.order_type == OrderType.TRAILING_STOP_MARKET:
                 exec_client.generate_order_updated(
                     strategy_id=strategy_id,

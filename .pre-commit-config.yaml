@@ -28,6 +28,16 @@ repos:
     hooks:
       - id: gitlint
 
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
@@ -49,6 +59,14 @@ repos:
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
         files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
 
+      - id: check-non-latin-text
+        name: check non-Latin text
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        entry: .pre-commit-hooks/check_non_latin_text.sh
+        language: script
+        types: [text]
+        files: '\.(rs|py|pyx|md|toml|yaml|yml)$'
+
       - id: check-toml-codegen
         name: check toml-codegen
         description: Ensures TOML files don't contain the 'codegen-backend' keyword
@@ -63,6 +81,16 @@ repos:
         language: script
         types: [text]
         pass_filenames: false
+
+      - id: zizmor
+        name: zizmor (audit GitHub actions)
+        description: Audit GitHub Actions workflows
+        language: python
+        additional_dependencies: [zizmor]
+        entry: zizmor
+        files: '^\.github/workflows/.*\.ya?ml$'
+        pass_filenames: false
+        args: ["--no-online-audits", "--min-severity", "medium", ".github/workflows"]
 
   ##############################################################################
   #  Rust formatting and linting
@@ -109,7 +137,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 25.1.0
+    rev: 25.9.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -117,7 +145,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.11
+    rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -146,10 +174,10 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+    rev: v1.18.2
     hooks:
       - id: mypy
-        exclude: ^python/nautilus_trader/.*__init__\.py$
+        exclude: (^python/|^nautilus_trader/.*\.pyi$)
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
@@ -164,7 +192,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.14  # uv version
+    rev: 0.8.22  # uv version
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

@@ -19,6 +19,7 @@ import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.manager import AccountsManager
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -889,6 +890,101 @@ def test_cash_account_clear_balance_locked_resets_locked_balance():
     assert account.balance_locked(USD) == Money(0, USD)
 
 
+def test_accounts_manager_update_balance_locked_with_base_currency_multiple_orders():
+    """
+    Test that AccountsManager correctly aggregates locked balances for multiple orders
+    when the account has a base currency, ensuring proper currency conversion.
+    """
+    # Arrange - Create account with USD base currency
+    event = AccountState(
+        account_id=AccountId("SIM-001"),
+        account_type=AccountType.CASH,
+        base_currency=USD,  # Base currency set
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(1_000_000.00, USD),
+                Money(0.00, USD),
+                Money(1_000_000.00, USD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(event)
+
+    # Create cache and manager
+    cache = Cache()
+    cache.add_account(account)
+
+    clock = TestClock()
+    logger = Logger("AccountManager")
+    manager = AccountsManager(cache, logger, clock)
+
+    # Create multiple orders for the same instrument
+    order_factory = OrderFactory(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    orders = [
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("0.75000"),
+        ),
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50_000),
+            price=Price.from_str("0.74500"),
+        ),
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(75_000),
+            price=Price.from_str("0.74000"),
+        ),
+    ]
+
+    # Submit orders to mark them as open
+    for order in orders:
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+    # Act
+    result = manager.update_orders(
+        account=account,
+        instrument=AUDUSD_SIM,
+        orders_open=orders,
+        ts_event=clock.timestamp_ns(),
+    )
+
+    # Assert
+    assert result is True
+
+    # Check that locked balance is correctly aggregated in base currency (USD)
+    locked_balance = account.balance_locked(USD)
+
+    # Expected locked amounts (all converted to USD base currency):
+    # Order 1: 100,000 * 0.75000 = 75,000 USD
+    # Order 2: 50,000 * 0.74500 = 37,250 USD
+    # Order 3: 75,000 * 0.74000 = 55,500 USD
+    # Total: 167,750 USD
+    expected_locked = Money(167_750.00, USD)
+
+    assert locked_balance == expected_locked
+
+    # Verify no locked balance in AUD (should all be converted to base USD)
+    assert account.balance_locked(AUD) is None
+
+
 class TestCashAccountPurge:
     def test_purge_account_events_retains_latest_when_all_events_purged(self):
         # Arrange
@@ -1348,6 +1444,104 @@ def test_accounts_manager_locks_correct_currency_for_fx_orders():
     assert result is True
     assert account.balance_locked(USD) == Money(0.00, USD)
     assert account.balance_locked(AUD) == Money(100_000.00, AUD)  # Full quantity in AUD
+
+
+def test_accounts_manager_locks_correct_currency_for_multiple_crypto_spot_orders():
+    # Arrange
+    cache = TestComponentStubs.cache()
+    clock = TestClock()
+    logger = Logger("AccountsManager")
+
+    # Create account with both USDT and BTC balances
+    account_event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=None,  # No base currency to test direct currency locking
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(600.00, USDT),
+                Money(0.00, USDT),
+                Money(600.00, USDT),
+            ),
+            AccountBalance(
+                Money(0.001, BTC),
+                Money(0.00, BTC),
+                Money(0.001, BTC),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+    account = CashAccount(account_event, calculate_account_state=True)
+    cache.add_account(account)
+
+    accounts_manager = AccountsManager(
+        cache=cache,
+        clock=clock,
+        logger=logger,
+    )
+    # Create a BUY order for BTCUSDT - should lock USDT
+    buy_order = TestExecStubs.limit_order(
+        instrument=BTCUSDT_BINANCE,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.0005"),
+        price=Price.from_str("115_972.65"),
+    )
+
+    # Set order to ACCEPTED state
+    buy_order.apply(TestEventStubs.order_submitted(buy_order))
+    buy_order.apply(TestEventStubs.order_accepted(buy_order))
+
+    # Add the order to cache
+    cache.add_order(buy_order, PositionId("TEST-001"))
+    # Act
+    result = accounts_manager.update_orders(
+        account=account,
+        instrument=BTCUSDT_BINANCE,
+        orders_open=[buy_order],
+        ts_event=0,
+    )
+    print(TestEventStubs.order_accepted(buy_order))
+    # Assert - BUY order should lock USDT (quote currency)
+    assert result is True
+    assert account.balance_locked(USDT) == Money(57.986325, USDT)  # 115_972.65 * 0.0005
+    assert account.balance_locked(BTC) == Money(0.00, BTC)
+
+    # Now test SELL order - clear the previous lock first
+    account.clear_balance_locked(BTCUSDT_BINANCE.id)
+
+    # Create a SELL order for BTCUSDT - should lock BTC
+    sell_order = TestExecStubs.limit_order(
+        instrument=BTCUSDT_BINANCE,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00014"),
+        price=Price.from_str("115_978.72"),
+        client_order_id=ClientOrderId("O-20210410-022422-001-001-2"),
+    )
+
+    # Set order to ACCEPTED state
+    sell_order.apply(TestEventStubs.order_submitted(sell_order))
+    sell_order.apply(TestEventStubs.order_accepted(sell_order))
+
+    # Add the order to cache
+    cache.add_order(sell_order, PositionId("TEST-001"))
+
+    # Act
+    result = accounts_manager.update_orders(
+        account=account,
+        instrument=BTCUSDT_BINANCE,
+        orders_open=[buy_order, sell_order],
+        ts_event=0,
+    )
+
+    # Assert - SELL order should lock BTC (base currency)
+    assert result is True
+    assert account.balance_locked(USDT) == Money(57.98632500, USDT)
+    assert account.balance_locked(BTC) == Money(0.00014, BTC)  # Full quantity in BTC
 
 
 def test_accounts_manager_with_base_currency_converts_locks():

@@ -803,3 +803,114 @@ class TestLiveExecutionEngine:
 
             engine.stop()
             await eventually(lambda: engine.evt_qsize() == 0)
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_with_none_mass_status_returns_false(self):
+        """
+        Test that reconciliation returns False when mass_status is None.
+        """
+
+        # Arrange
+        async def mock_generate_mass_status(lookback_mins):
+            return None
+
+        self.client.generate_mass_status = mock_generate_mass_status
+        self.exec_engine.start()
+
+        # Act
+        result = await self.exec_engine.reconcile_execution_state()
+
+        # Assert - should return False because mass_status is None
+        assert result is False
+
+        # Cleanup
+        self.exec_engine.stop()
+
+    @pytest.mark.asyncio()
+    async def test_filled_qty_mismatch_with_zero_report(self):
+        """
+        Test that filled_qty mismatch is detected when report.filled_qty is less than
+        cached.
+        """
+        # Arrange
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        filled_event = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=AUDUSD_SIM.make_qty(100),
+        )
+        order.apply(filled_event)
+        self.cache.update_order(order)
+
+        report = OrderStatusReport(
+            account_id=AccountId("MOCK-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("V-123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            quantity=AUDUSD_SIM.make_qty(100),
+            filled_qty=AUDUSD_SIM.make_qty(0),  # Zero filled (error: less than cached)
+            report_id=UUID4(),
+            ts_accepted=self.clock.timestamp_ns(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        result = self.exec_engine.reconcile_execution_report(report)
+
+        # Assert - should correctly detect and fail on backwards fill quantity
+        assert result is False
+
+    @pytest.mark.asyncio()
+    async def test_inflight_timeout_resolves_order(self):
+        """
+        Test that inflight orders are resolved after exceeding max retries.
+        """
+        # Arrange
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100),
+        )
+
+        self.cache.add_order(order)
+        # Create an old submitted event so the order appears delayed
+        old_ts = (
+            self.clock.timestamp_ns()
+            - self.exec_engine._inflight_check_threshold_ns
+            - 1_000_000_000
+        )
+        order.apply(TestEventStubs.order_submitted(order, ts_event=old_ts))
+        self.cache.update_order(order)
+
+        # Set retry count to max so next check will resolve
+        self.exec_engine._recon_check_retries[order.client_order_id] = (
+            self.exec_engine.inflight_check_max_retries
+        )
+
+        # Verify preconditions
+        assert order.is_inflight
+        assert self.cache.orders_inflight() == [order]
+
+        # Act - trigger the inflight check which should resolve the order
+        await self.exec_engine._check_inflight_orders()
+
+        # Assert - order should be resolved as REJECTED
+        assert order.status == OrderStatus.REJECTED
+        assert not order.is_inflight
+        assert order.client_order_id not in self.exec_engine._recon_check_retries
+
+        # Cleanup
+        self.exec_engine.stop()

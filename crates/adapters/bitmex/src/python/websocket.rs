@@ -55,15 +55,33 @@ use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 #[pymethods]
 impl BitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None, testnet=false))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
+        testnet: bool,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, account_id, heartbeat).map_err(to_pyvalue_err)
+        // If both api_key and api_secret are None, try to load from environment
+        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
+            // Choose environment variables based on testnet flag
+            let (key_var, secret_var) = if testnet {
+                ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+            } else {
+                ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+            };
+
+            let env_key = std::env::var(key_var).ok();
+            let env_secret = std::env::var(secret_var).ok();
+            (env_key, env_secret)
+        } else {
+            (api_key, api_secret)
+        };
+
+        Self::new(url, final_api_key, final_api_secret, account_id, heartbeat)
+            .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -101,12 +119,17 @@ impl BitmexWebSocketClient {
         self.get_subscriptions(instrument_id)
     }
 
+    #[pyo3(name = "set_account_id")]
+    pub fn py_set_account_id(&mut self, account_id: AccountId) {
+        self.set_account_id(account_id);
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -127,16 +150,18 @@ impl BitmexWebSocketClient {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
-                    Python::with_gil(|py| match msg {
+                    Python::attach(|py| match msg {
                         NautilusWsMessage::Data(data_vec) => {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                        NautilusWsMessage::OrderStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::OrderStatusReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::FillReports(reports) => {
@@ -147,7 +172,7 @@ impl BitmexWebSocketClient {
                             }
                         }
                         NautilusWsMessage::PositionStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                            if let Ok(py_obj) = report.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
@@ -159,10 +184,16 @@ impl BitmexWebSocketClient {
                             }
                         }
                         NautilusWsMessage::AccountState(account_state) => {
-                            if let Ok(py_obj) = (*account_state).into_py_any(py) {
+                            if let Ok(py_obj) = account_state.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
+                        NautilusWsMessage::OrderUpdated(event) => {
+                            if let Ok(py_obj) = event.into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::Reconnected => {} // Nothing to handle
                     });
                 }
             });
@@ -542,9 +573,129 @@ impl BitmexWebSocketClient {
             Ok(())
         })
     }
+
+    #[pyo3(name = "subscribe_orders")]
+    fn py_subscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_orders().await {
+                log::error!("Failed to subscribe to orders: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_executions")]
+    fn py_subscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_executions().await {
+                log::error!("Failed to subscribe to executions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_positions")]
+    fn py_subscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_positions().await {
+                log::error!("Failed to subscribe to positions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_margin")]
+    fn py_subscribe_margin<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_margin().await {
+                log::error!("Failed to subscribe to margin: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_wallet")]
+    fn py_subscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_wallet().await {
+                log::error!("Failed to subscribe to wallet: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_orders")]
+    fn py_unsubscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_orders().await {
+                log::error!("Failed to unsubscribe from orders: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_executions")]
+    fn py_unsubscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_executions().await {
+                log::error!("Failed to unsubscribe from executions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_positions")]
+    fn py_unsubscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_positions().await {
+                log::error!("Failed to unsubscribe from positions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_margin")]
+    fn py_unsubscribe_margin<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_margin().await {
+                log::error!("Failed to unsubscribe from margin: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_wallet")]
+    fn py_unsubscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_wallet().await {
+                log::error!("Failed to unsubscribe from wallet: {e}");
+            }
+            Ok(())
+        })
+    }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

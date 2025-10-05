@@ -13,34 +13,56 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Conversion routines that map BitMEX REST models into Nautilus domain structures.
+
 use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    data::trade::TradeTick,
-    enums::{CurrencyType, OrderSide, TriggerType},
-    identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
-    instruments::{
-        any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair,
+    data::{Bar, BarType, TradeTick},
+    enums::{
+        ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
     },
-    reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
+    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
+use ustr::Ustr;
 use uuid::Uuid;
 
-use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade};
+use super::models::{
+    BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade, BitmexTradeBin,
+};
 use crate::common::{
-    enums::{BitmexExecInstruction, BitmexInstrumentType},
+    enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentType},
     parse::{
-        parse_aggressor_side, parse_contingency_type, parse_instrument_id, parse_liquidity_side,
-        parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
-        parse_position_side, parse_time_in_force,
+        convert_contract_quantity, derive_contract_decimal_and_increment, map_bitmex_currency,
+        normalize_trade_bin_prices, normalize_trade_bin_volume, parse_aggressor_side,
+        parse_contracts_quantity, parse_instrument_id, parse_liquidity_side,
+        parse_optional_datetime_to_unix_nanos, parse_position_side,
+        parse_signed_contracts_quantity,
     },
 };
 
+/// Returns the appropriate position multiplier for a BitMEX instrument.
+///
+/// For inverse contracts, BitMEX uses `underlyingToSettleMultiplier` to define contract sizing,
+/// with fallback to `underlyingToPositionMultiplier` for older historical data.
+/// For linear contracts, BitMEX uses `underlyingToPositionMultiplier`.
+fn get_position_multiplier(definition: &BitmexInstrument) -> Option<f64> {
+    if definition.is_inverse {
+        definition
+            .underlying_to_settle_multiplier
+            .or(definition.underlying_to_position_multiplier)
+    } else {
+        definition.underlying_to_position_multiplier
+    }
+}
+
+/// Attempts to convert a BitMEX instrument record into a Nautilus instrument by type.
 #[must_use]
 pub fn parse_instrument_any(
     instrument: &BitmexInstrument,
@@ -49,36 +71,108 @@ pub fn parse_instrument_any(
     match instrument.instrument_type {
         BitmexInstrumentType::Spot => parse_spot_instrument(instrument, ts_init)
             .map_err(|e| {
-                tracing::warn!(
-                    "Failed to parse spot instrument {}: {}",
-                    instrument.symbol,
-                    e
-                );
+                tracing::warn!("Failed to parse spot instrument {}: {e}", instrument.symbol);
                 e
             })
             .ok(),
-        BitmexInstrumentType::PerpetualContract => parse_perpetual_instrument(instrument, ts_init)
-            .map_err(|e| {
-                tracing::warn!(
-                    "Failed to parse perpetual instrument {}: {}",
-                    instrument.symbol,
+        BitmexInstrumentType::PerpetualContract | BitmexInstrumentType::PerpetualContractFx => {
+            // Handle both crypto and FX perpetuals the same way
+            parse_perpetual_instrument(instrument, ts_init)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse perpetual instrument {}: {e}",
+                        instrument.symbol,
+                    );
                     e
-                );
-                e
-            })
-            .ok(),
+                })
+                .ok()
+        }
         BitmexInstrumentType::Futures => parse_futures_instrument(instrument, ts_init)
             .map_err(|e| {
                 tracing::warn!(
-                    "Failed to parse futures instrument {}: {}",
+                    "Failed to parse futures instrument {}: {e}",
                     instrument.symbol,
-                    e
                 );
                 e
             })
             .ok(),
-        _ => None,
+        BitmexInstrumentType::BasketIndex
+        | BitmexInstrumentType::CryptoIndex
+        | BitmexInstrumentType::FxIndex
+        | BitmexInstrumentType::LendingIndex
+        | BitmexInstrumentType::VolatilityIndex => {
+            // Parse index instruments as perpetuals for cache purposes
+            // They need to be in cache for WebSocket price updates
+            parse_index_instrument(instrument, ts_init)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse index instrument {}: {}",
+                        instrument.symbol,
+                        e
+                    );
+                    e
+                })
+                .ok()
+        }
+        _ => {
+            tracing::warn!(
+                "Unsupported instrument type {:?} for symbol {}",
+                instrument.instrument_type,
+                instrument.symbol
+            );
+            None
+        }
     }
+}
+
+/// Parse a BitMEX index instrument into a Nautilus `InstrumentAny`.
+///
+/// Index instruments are parsed as perpetuals with minimal fields to support
+/// price update lookups in the WebSocket.
+///
+/// # Errors
+///
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_index_instrument(
+    definition: &BitmexInstrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let instrument_id = parse_instrument_id(definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
+
+    let base_currency = Currency::USD();
+    let quote_currency = Currency::USD();
+    let settlement_currency = Currency::USD();
+
+    let price_increment = Price::from(definition.tick_size.to_string());
+    let size_increment = Quantity::from(1); // Indices don't have tradeable sizes
+
+    Ok(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+        instrument_id,
+        raw_symbol,
+        base_currency,
+        quote_currency,
+        settlement_currency,
+        false, // is_inverse
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        None, // multiplier
+        None, // lot_size
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_notional
+        None, // min_notional
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        ts_init,
+        ts_init,
+    )))
 }
 
 /// Parse a BitMEX spot instrument into a Nautilus `InstrumentAny`.
@@ -90,13 +184,23 @@ pub fn parse_spot_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    let max_scale = FIXED_PRECISION as u32;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
+
+    let min_quantity = convert_contract_quantity(
+        definition.lot_size,
+        contract_decimal,
+        max_scale,
+        "minimum quantity",
+    )?;
 
     let taker_fee = definition
         .taker_fee
@@ -118,18 +222,14 @@ pub fn parse_spot_instrument(
         .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
         .unwrap_or(Decimal::ZERO);
 
-    let lot_size = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
-    let max_quantity = definition
-        .max_order_qty
-        .map(|qty| Quantity::new_checked(qty, 0))
-        .transpose()?;
-    let min_quantity = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
+    let lot_size =
+        convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
+    let max_quantity = convert_contract_quantity(
+        definition.max_order_qty,
+        contract_decimal,
+        max_scale,
+        "max quantity",
+    )?;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = definition
@@ -175,8 +275,8 @@ pub fn parse_perpetual_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
     let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
@@ -186,7 +286,13 @@ pub fn parse_perpetual_instrument(
     let is_inverse = definition.is_inverse;
 
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    let max_scale = FIXED_PRECISION as u32;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
+
+    let lot_size =
+        convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
 
     let taker_fee = definition
         .taker_fee
@@ -210,18 +316,13 @@ pub fn parse_perpetual_instrument(
 
     // TODO: How to handle negative multipliers?
     let multiplier = Some(Quantity::new_checked(definition.multiplier.abs(), 0)?);
-    let lot_size = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
-    let max_quantity = definition
-        .max_order_qty
-        .map(|qty| Quantity::new_checked(qty, 0))
-        .transpose()?;
-    let min_quantity = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
+    let max_quantity = convert_contract_quantity(
+        definition.max_order_qty,
+        contract_decimal,
+        max_scale,
+        "max quantity",
+    )?;
+    let min_quantity = lot_size;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = definition
@@ -269,8 +370,8 @@ pub fn parse_futures_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let underlying = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
     let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
@@ -279,10 +380,21 @@ pub fn parse_futures_instrument(
     ));
     let is_inverse = definition.is_inverse;
 
-    let activation_ns = UnixNanos::from(definition.listing);
+    let ts_event = UnixNanos::from(definition.timestamp);
+    let activation_ns = definition
+        .listing
+        .as_ref()
+        .map(|dt| UnixNanos::from(*dt))
+        .unwrap_or(ts_event);
     let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    let max_scale = FIXED_PRECISION as u32;
+    let (contract_decimal, size_increment) =
+        derive_contract_decimal_and_increment(get_position_multiplier(definition), max_scale)?;
+
+    let lot_size =
+        convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
 
     let taker_fee = definition
         .taker_fee
@@ -307,26 +419,19 @@ pub fn parse_futures_instrument(
     // TODO: How to handle negative multipliers?
     let multiplier = Some(Quantity::new_checked(definition.multiplier.abs(), 0)?);
 
-    let lot_size = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
-    let max_quantity = definition
-        .max_order_qty
-        .map(|qty| Quantity::new_checked(qty, 0))
-        .transpose()?;
-    let min_quantity = definition
-        .lot_size
-        .map(|size| Quantity::new_checked(size, 0))
-        .transpose()?;
+    let max_quantity = convert_contract_quantity(
+        definition.max_order_qty,
+        contract_decimal,
+        max_scale,
+        "max quantity",
+    )?;
+    let min_quantity = lot_size;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = definition
         .max_price
         .map(|price| Price::from(price.to_string()));
     let min_price = None;
-    let ts_event = UnixNanos::from(definition.timestamp);
-
     let instrument = CryptoFuture::new(
         instrument_id,
         raw_symbol,
@@ -370,9 +475,9 @@ pub fn parse_trade(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let instrument_id = parse_instrument_id(&trade.symbol);
-    let price = Price::new(trade.price.unwrap_or(0.0), price_precision);
-    let size = Quantity::from(trade.size.unwrap_or(0));
+    let instrument_id = parse_instrument_id(trade.symbol);
+    let price = Price::new(trade.price, price_precision);
+    let size = Quantity::from(trade.size);
     let aggressor_side = parse_aggressor_side(&trade.side);
     let trade_id = TradeId::new(
         trade
@@ -392,6 +497,55 @@ pub fn parse_trade(
     ))
 }
 
+/// Converts a BitMEX trade-bin record into a Nautilus [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error when required OHLC fields are missing from the payload.
+///
+/// # Panics
+///
+/// Panics if the bar type or price precision cannot be determined for the instrument, which
+/// indicates the instrument cache was not hydrated prior to parsing.
+pub fn parse_trade_bin(
+    bin: BitmexTradeBin,
+    instrument: &InstrumentAny,
+    bar_type: &BarType,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let instrument_id = bar_type.instrument_id();
+    let price_precision = instrument.price_precision();
+
+    let open = bin
+        .open
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+    let high = bin
+        .high
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+    let low = bin
+        .low
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+    let close = bin
+        .close
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+
+    let open = Price::new(open, price_precision);
+    let high = Price::new(high, price_precision);
+    let low = Price::new(low, price_precision);
+    let close = Price::new(close, price_precision);
+
+    let (open, high, low, close) =
+        normalize_trade_bin_prices(open, high, low, close, &bin.symbol, Some(bar_type));
+
+    let volume_contracts = normalize_trade_bin_volume(bin.volume, &bin.symbol);
+    let volume = parse_contracts_quantity(volume_contracts, instrument);
+    let ts_event = UnixNanos::from(bin.timestamp);
+
+    Ok(Bar::new(
+        *bar_type, open, high, low, close, volume, ts_event, ts_init,
+    ))
+}
+
 /// Parse a BitMEX order into a Nautilus `OrderStatusReport`.
 ///
 /// # Errors
@@ -405,46 +559,40 @@ pub fn parse_trade(
 /// - Order is missing required fields: `symbol`, `ord_type`, `time_in_force`, `ord_status`, or `order_qty`
 /// - Unsupported `ExecInstruction` type is encountered (other than `ParticipateDoNotInitiate` or `ReduceOnly`)
 pub fn parse_order_status_report(
-    order: BitmexOrder,
-    price_precision: u8,
+    order: &BitmexOrder,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    // BitMEX returns account as a number, but AccountId needs format like "BITMEX-123"
-    let account_id = AccountId::new(format!("BITMEX-{}", order.account.unwrap_or(0)));
-    let instrument_id = parse_instrument_id(
-        order
-            .symbol
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing symbol"))?,
-    );
+    let instrument_id = instrument.id();
+    let account_id = AccountId::new(format!("BITMEX-{}", order.account));
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
     let order_side: OrderSide = order
         .side
-        .ok_or_else(|| anyhow::anyhow!("Order missing side"))?
-        .into();
-    let order_type = parse_order_type(
-        order
-            .ord_type
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing ord_type"))?,
-    );
-    let time_in_force = parse_time_in_force(
-        order
-            .time_in_force
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing time_in_force"))?,
-    );
-    let order_status = parse_order_status(
-        order
-            .ord_status
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing ord_status"))?,
-    );
-    let quantity = Quantity::from(
+        .map_or(OrderSide::NoOrderSide, |side| side.into());
+
+    // BitMEX may not include ord_type in cancel responses,
+    // for robustness default to LIMIT if not provided.
+    let order_type: OrderType = order.ord_type.map(|t| t.into()).unwrap_or(OrderType::Limit);
+
+    // BitMEX may not include time_in_force in cancel responses,
+    // for robustness default to GTC if not provided.
+    let time_in_force: TimeInForce = order
+        .time_in_force
+        .and_then(|tif| tif.try_into().ok())
+        .unwrap_or(TimeInForce::Gtc);
+
+    let order_status: OrderStatus = (*order
+        .ord_status
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Order missing ord_status"))?)
+    .into();
+    let quantity = parse_signed_contracts_quantity(
         order
             .order_qty
             .ok_or_else(|| anyhow::anyhow!("Order missing order_qty"))?,
+        instrument,
     );
-    let filled_qty = Quantity::from(order.cum_qty.unwrap_or(0));
+    let filled_qty = parse_signed_contracts_quantity(order.cum_qty.unwrap_or(0), instrument);
     let report_id = UUID4::new();
     let ts_accepted = order.transact_time.map_or_else(
         || get_atomic_clock_realtime().get_time_ns(),
@@ -454,7 +602,6 @@ pub fn parse_order_status_report(
         || get_atomic_clock_realtime().get_time_ns(),
         UnixNanos::from,
     );
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -480,6 +627,8 @@ pub fn parse_order_status_report(
     if let Some(cl_ord_link_id) = order.cl_ord_link_id {
         report = report.with_order_list_id(OrderListId::new(cl_ord_link_id));
     }
+
+    let price_precision = instrument.price_precision();
 
     if let Some(price) = order.price {
         report = report.with_price(Price::new(price, price_precision));
@@ -508,21 +657,30 @@ pub fn parse_order_status_report(
                 | BitmexExecInstruction::IndexPrice
                 | BitmexExecInstruction::AllOrNone
                 | BitmexExecInstruction::Fixed
-                | BitmexExecInstruction::Unknown => {
-                    // TODO: Implement these execution instructions
-                }
+                | BitmexExecInstruction::Unknown => {}
             }
         }
     }
 
     if let Some(contingency_type) = order.contingency_type {
-        report = report.with_contingency_type(parse_contingency_type(&contingency_type));
+        report = report.with_contingency_type(contingency_type.into());
     }
 
-    // if let Some(expire_time) = order.ex {
-    //     report = report.with_trigger_price(Price::new(trigger_price, price_precision));
-    // }
+    if matches!(
+        report.contingency_type,
+        ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
+    ) && report.order_list_id.is_none()
+    {
+        tracing::debug!(
+            order_id = %order.order_id,
+            client_order_id = ?report.client_order_id,
+            contingency_type = ?report.contingency_type,
+            "BitMEX order missing clOrdLinkID for contingent order",
+        );
+    }
 
+    // BitMEX does not currently include an explicit expiry timestamp
+    // in the order status response, so `report.expire_time` remains `None`.
     Ok(report)
 }
 
@@ -533,23 +691,35 @@ pub fn parse_order_status_report(
 /// Currently this function does not return errors as all fields are handled gracefully,
 /// but returns `Result` for future error handling compatibility.
 ///
+/// Parse a BitMEX execution into a Nautilus `FillReport` using instrument scaling.
+///
 /// # Panics
 ///
 /// Panics if:
 /// - Execution is missing required fields: `symbol`, `order_id`, `trd_match_id`, `last_qty`, `last_px`, or `transact_time`
-pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::Result<FillReport> {
-    // BitMEX returns account as a number, but AccountId needs format like "BITMEX-123"
-    let account_id = AccountId::new(format!("BITMEX-{}", exec.account.unwrap_or(0)));
-    let instrument_id = parse_instrument_id(
-        exec.symbol
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Fill missing symbol"))?,
-    );
-    let venue_order_id = VenueOrderId::new(
-        exec.order_id
-            .ok_or_else(|| anyhow::anyhow!("Fill missing order_id"))?
-            .to_string(),
-    );
+///
+/// # Errors
+///
+/// Returns an error when the execution does not represent a trade or lacks required identifiers.
+pub fn parse_fill_report(
+    exec: BitmexExecution,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    // Skip non-trade executions (funding, settlements, etc.)
+    // Trade executions have exec_type of Trade and must have order_id
+    if !matches!(exec.exec_type, BitmexExecType::Trade) {
+        anyhow::bail!("Skipping non-trade execution: {:?}", exec.exec_type);
+    }
+
+    // Additional check: skip executions without order_id (likely funding/settlement)
+    let order_id = exec.order_id.ok_or_else(|| {
+        anyhow::anyhow!("Skipping execution without order_id: {:?}", exec.exec_type)
+    })?;
+
+    let account_id = AccountId::new(format!("BITMEX-{}", exec.account));
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(order_id.to_string());
     // trd_match_id might be missing for some execution types, use exec_id as fallback
     let trade_id = TradeId::new(
         exec.trd_match_id
@@ -557,27 +727,20 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
             .ok_or_else(|| anyhow::anyhow!("Fill missing both trd_match_id and exec_id"))?
             .to_string(),
     );
-    let order_side: OrderSide = exec
-        .side
-        .ok_or_else(|| anyhow::anyhow!("Fill missing side"))?
-        .into();
-    let last_qty = Quantity::from(
-        exec.last_qty
-            .ok_or_else(|| anyhow::anyhow!("Fill missing last_qty"))?,
-    );
-    let last_px = Price::new(
-        exec.last_px
-            .ok_or_else(|| anyhow::anyhow!("Fill missing last_px"))?,
-        price_precision,
-    );
-    // BitMEX uses "XBt" but we need "XBT" for Currency
-    let settlement_currency = exec
-        .settl_currency
-        .unwrap_or("XBT".to_string())
-        .to_uppercase();
+    // Skip executions without side (likely not trades)
+    let Some(side) = exec.side else {
+        anyhow::bail!("Skipping execution without side: {:?}", exec.exec_type);
+    };
+    let order_side: OrderSide = side.into();
+    let last_qty = parse_signed_contracts_quantity(exec.last_qty, instrument);
+    let last_px = Price::new(exec.last_px, instrument.price_precision());
+
+    // Map BitMEX currency to standard currency code
+    let settlement_currency_str = exec.settl_currency.unwrap_or(Ustr::from("XBT")).as_str();
+    let mapped_currency = map_bitmex_currency(settlement_currency_str);
     let commission = Money::new(
         exec.commission.unwrap_or(0.0),
-        Currency::from(settlement_currency),
+        Currency::from(mapped_currency.as_str()),
     );
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
@@ -586,7 +749,6 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
         || get_atomic_clock_realtime().get_time_ns(),
         UnixNanos::from,
     );
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Ok(FillReport::new(
         account_id,
@@ -612,24 +774,29 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
 ///
 /// Currently this function does not return errors as all fields are handled gracefully,
 /// but returns `Result` for future error handling compatibility.
-pub fn parse_position_report(position: BitmexPosition) -> anyhow::Result<PositionStatusReport> {
+pub fn parse_position_report(
+    position: BitmexPosition,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", position.account));
-    let instrument_id = parse_instrument_id(&position.symbol);
+    let instrument_id = instrument.id();
     let position_side = parse_position_side(position.current_qty).as_specified();
-    let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
+    let quantity = parse_signed_contracts_quantity(position.current_qty.unwrap_or(0), instrument);
     let venue_position_id = None; // Not applicable on BitMEX
+    let avg_px_open = position.avg_entry_price.and_then(Decimal::from_f64);
     let ts_last = parse_optional_datetime_to_unix_nanos(&position.timestamp, "timestamp");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
         quantity,
-        venue_position_id,
         ts_last,
         ts_init,
-        None,
+        None,              // report_id
+        venue_position_id, // venue_position_id
+        avg_px_open,       // avg_px_open
     ))
 }
 
@@ -650,17 +817,22 @@ fn get_currency(code: String) -> Currency {
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Utc};
-    use nautilus_model::enums::{LiquiditySide, PositionSide};
+    use nautilus_model::{
+        data::{BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
+    };
     use rstest::rstest;
-    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::{Decimal, prelude::ToPrimitive};
     use uuid::Uuid;
 
     use super::*;
     use crate::{
         common::{
             enums::{
-                BitmexContingencyType, BitmexInstrumentType, BitmexLiquidityIndicator,
-                BitmexOrderStatus, BitmexOrderType, BitmexSide, BitmexTimeInForce,
+                BitmexContingencyType, BitmexFairMethod, BitmexInstrumentState,
+                BitmexInstrumentType, BitmexLiquidityIndicator, BitmexMarkMethod,
+                BitmexOrderStatus, BitmexOrderType, BitmexSide, BitmexTickDirection,
+                BitmexTimeInForce,
             },
             testing::load_test_json,
         },
@@ -677,7 +849,7 @@ mod tests {
 
         assert_eq!(instrument.symbol, "XBTUSD");
         assert_eq!(instrument.root_symbol, "XBT");
-        assert_eq!(instrument.state, "Open");
+        assert_eq!(instrument.state, BitmexInstrumentState::Open);
         assert!(instrument.is_inverse);
         assert_eq!(instrument.maker_fee, Some(0.0005));
         assert_eq!(
@@ -695,7 +867,7 @@ mod tests {
 
         // Test first order (New)
         let order1 = &orders[0];
-        assert_eq!(order1.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(order1.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order1.side, Some(BitmexSide::Buy));
         assert_eq!(order1.order_qty, Some(100));
         assert_eq!(order1.price, Some(98000.0));
@@ -705,7 +877,7 @@ mod tests {
 
         // Test second order (Filled)
         let order2 = &orders[1];
-        assert_eq!(order2.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(order2.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order2.side, Some(BitmexSide::Sell));
         assert_eq!(order2.order_qty, Some(200));
         assert_eq!(order2.ord_status, Some(BitmexOrderStatus::Filled));
@@ -723,10 +895,10 @@ mod tests {
 
         // Test first execution (Maker)
         let exec1 = &executions[0];
-        assert_eq!(exec1.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(exec1.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(exec1.side, Some(BitmexSide::Sell));
-        assert_eq!(exec1.last_qty, Some(100));
-        assert_eq!(exec1.last_px, Some(98950.0));
+        assert_eq!(exec1.last_qty, 100);
+        assert_eq!(exec1.last_px, 98950.0);
         assert_eq!(
             exec1.last_liquidity_ind,
             Some(BitmexLiquidityIndicator::Maker)
@@ -739,7 +911,7 @@ mod tests {
             exec2.last_liquidity_ind,
             Some(BitmexLiquidityIndicator::Taker)
         );
-        assert_eq!(exec2.last_px, Some(98951.0));
+        assert_eq!(exec2.last_px, 98951.0);
     }
 
     #[rstest]
@@ -770,14 +942,14 @@ mod tests {
         let trade1 = &trades[0];
         assert_eq!(trade1.symbol, "XBTUSD");
         assert_eq!(trade1.side, Some(BitmexSide::Buy));
-        assert_eq!(trade1.size, Some(100));
-        assert_eq!(trade1.price, Some(98950.0));
+        assert_eq!(trade1.size, 100);
+        assert_eq!(trade1.price, 98950.0);
 
         // Test third trade (Sell side)
         let trade3 = &trades[2];
         assert_eq!(trade3.side, Some(BitmexSide::Sell));
-        assert_eq!(trade3.size, Some(50));
-        assert_eq!(trade3.price, Some(98949.5));
+        assert_eq!(trade3.size, 50);
+        assert_eq!(trade3.price, 98949.5);
     }
 
     #[rstest]
@@ -817,17 +989,84 @@ mod tests {
         assert_eq!(bin3.volume, Some(78000));
     }
 
-    // ========================================================================
-    // High Priority: Report Parsing Functions
-    // ========================================================================
+    #[rstest]
+    fn test_parse_trade_bin_to_bar() {
+        let json_data = load_test_json("http_get_trade_bins.json");
+        let bins: Vec<BitmexTradeBin> = serde_json::from_str(&json_data).unwrap();
+        let instrument_json = load_test_json("http_get_instrument_xbtusd.json");
+        let instrument: BitmexInstrument = serde_json::from_str(&instrument_json).unwrap();
+
+        let ts_init = UnixNanos::from(1u64);
+        let instrument_any = parse_instrument_any(&instrument, ts_init).expect("instrument parsed");
+
+        let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
+
+        let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
+
+        let precision = instrument_any.price_precision();
+        let expected_open = Price::from_decimal(Decimal::from_str("98900.0").unwrap(), precision)
+            .expect("open price");
+        let expected_close = Price::from_decimal(Decimal::from_str("98950.0").unwrap(), precision)
+            .expect("close price");
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open, expected_open);
+        assert_eq!(bar.close, expected_close);
+    }
+
+    #[rstest]
+    fn test_parse_trade_bin_extreme_adjustment() {
+        let instrument_json = load_test_json("http_get_instrument_xbtusd.json");
+        let instrument: BitmexInstrument = serde_json::from_str(&instrument_json).unwrap();
+
+        let ts_init = UnixNanos::from(1u64);
+        let instrument_any = parse_instrument_any(&instrument, ts_init).expect("instrument parsed");
+
+        let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
+
+        let bin = BitmexTradeBin {
+            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            symbol: Ustr::from("XBTUSD"),
+            open: Some(50_000.0),
+            high: Some(49_990.0),
+            low: Some(50_010.0),
+            close: Some(50_005.0),
+            trades: Some(5),
+            volume: Some(1_000),
+            vwap: None,
+            last_size: None,
+            turnover: None,
+            home_notional: None,
+            foreign_notional: None,
+        };
+
+        let bar = parse_trade_bin(bin.clone(), &instrument_any, &bar_type, ts_init).unwrap();
+
+        let precision = instrument_any.price_precision();
+        let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)
+            .expect("high price");
+        let expected_low = Price::from_decimal(Decimal::from_str("49990.0").unwrap(), precision)
+            .expect("low price");
+        let expected_open = Price::from_decimal(Decimal::from_str("50000.0").unwrap(), precision)
+            .expect("open price");
+
+        assert_eq!(bar.high, expected_high);
+        assert_eq!(bar.low, expected_low);
+        assert_eq!(bar.open, expected_open);
+    }
 
     #[rstest]
     fn test_parse_order_status_report() {
         let order = BitmexOrder {
-            account: Some(123456),
-            symbol: Some("XBTUSD".to_string()),
+            account: 123456,
+            symbol: Some(Ustr::from("XBTUSD")),
             order_id: Uuid::parse_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890").unwrap(),
-            cl_ord_id: Some("client-123".to_string()),
+            cl_ord_id: Some(Ustr::from("client-123")),
+            cl_ord_link_id: None,
             side: Some(BitmexSide::Buy),
             ord_type: Some(BitmexOrderType::Limit),
             time_in_force: Some(BitmexTimeInForce::GoodTillCancel),
@@ -836,11 +1075,24 @@ mod tests {
             cum_qty: Some(50),
             price: Some(50000.0),
             stop_px: Some(49000.0),
+            display_qty: None,
+            peg_offset_value: None,
+            peg_price_type: None,
+            currency: Some(Ustr::from("USD")),
+            settl_currency: Some(Ustr::from("XBt")),
             exec_inst: Some(vec![
                 BitmexExecInstruction::ParticipateDoNotInitiate,
                 BitmexExecInstruction::ReduceOnly,
             ]),
             contingency_type: Some(BitmexContingencyType::OneCancelsTheOther),
+            ex_destination: None,
+            triggered: None,
+            working_indicator: Some(true),
+            ord_rej_reason: None,
+            leaves_qty: Some(50),
+            avg_px: None,
+            multi_leg_reporting_type: None,
+            text: None,
             transact_time: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                     .unwrap()
@@ -851,10 +1103,12 @@ mod tests {
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
         };
 
-        let report = parse_order_status_report(order, 2).unwrap();
+        let instrument =
+            parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
+                .unwrap();
+        let report = parse_order_status_report(&order, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-123456");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -874,10 +1128,11 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_report_minimal() {
         let order = BitmexOrder {
-            account: None,
-            symbol: Some("ETHUSD".to_string()),
+            account: 0, // Use 0 for test account
+            symbol: Some(Ustr::from("ETHUSD")),
             order_id: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
             cl_ord_id: None,
+            cl_ord_link_id: None,
             side: Some(BitmexSide::Sell),
             ord_type: Some(BitmexOrderType::Market),
             time_in_force: Some(BitmexTimeInForce::ImmediateOrCancel),
@@ -886,8 +1141,21 @@ mod tests {
             cum_qty: Some(200),
             price: None,
             stop_px: None,
+            display_qty: None,
+            peg_offset_value: None,
+            peg_price_type: None,
+            currency: None,
+            settl_currency: None,
             exec_inst: None,
             contingency_type: None,
+            ex_destination: None,
+            triggered: None,
+            working_indicator: Some(false),
+            ord_rej_reason: None,
+            leaves_qty: Some(0),
+            avg_px: None,
+            multi_leg_reporting_type: None,
+            text: None,
             transact_time: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                     .unwrap()
@@ -898,10 +1166,15 @@ mod tests {
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
         };
 
-        let report = parse_order_status_report(order, 2).unwrap();
+        let mut instrument_def = create_test_perpetual_instrument();
+        instrument_def.symbol = Ustr::from("ETHUSD");
+        instrument_def.underlying = Ustr::from("ETH");
+        instrument_def.quote_currency = Ustr::from("USD");
+        instrument_def.settl_currency = Some(Ustr::from("USDt"));
+        let instrument = parse_perpetual_instrument(&instrument_def, UnixNanos::default()).unwrap();
+        let report = parse_order_status_report(&order, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-0");
         assert_eq!(report.instrument_id.to_string(), "ETHUSD.BITMEX");
@@ -922,15 +1195,15 @@ mod tests {
     fn test_parse_fill_report() {
         let exec = BitmexExecution {
             exec_id: Uuid::parse_str("f1f2f3f4-e5e6-d7d8-c9c0-b1b2b3b4b5b6").unwrap(),
-            account: Some(654321),
-            symbol: Some("XBTUSD".to_string()),
+            account: 654321,
+            symbol: Some(Ustr::from("XBTUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
-            cl_ord_id: Some("client-456".to_string()),
+            cl_ord_id: Some(Ustr::from("client-456")),
             side: Some(BitmexSide::Buy),
-            last_qty: Some(50),
-            last_px: Some(50100.5),
+            last_qty: 50,
+            last_px: 50100.5,
             commission: Some(0.00075),
-            settl_currency: Some("XBt".to_string()),
+            settl_currency: Some(Ustr::from("XBt")),
             last_liquidity_ind: Some(BitmexLiquidityIndicator::Taker),
             trd_match_id: Some(Uuid::parse_str("99999999-8888-7777-6666-555555555555").unwrap()),
             transact_time: Some(
@@ -938,10 +1211,44 @@ mod tests {
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
+            cl_ord_link_id: None,
+            underlying_last_px: None,
+            last_mkt: None,
+            order_qty: Some(50),
+            price: Some(50100.0),
+            display_qty: None,
+            stop_px: None,
+            peg_offset_value: None,
+            peg_price_type: None,
+            currency: None,
+            exec_type: BitmexExecType::Trade,
+            ord_type: BitmexOrderType::Limit,
+            time_in_force: BitmexTimeInForce::GoodTillCancel,
+            exec_inst: None,
+            contingency_type: None,
+            ex_destination: None,
+            ord_status: Some(BitmexOrderStatus::Filled),
+            triggered: None,
+            working_indicator: None,
+            ord_rej_reason: None,
+            leaves_qty: None,
+            cum_qty: Some(50),
+            avg_px: Some(50100.5),
+            trade_publish_indicator: None,
+            multi_leg_reporting_type: None,
+            text: None,
+            exec_cost: None,
+            exec_comm: None,
+            home_notional: None,
+            foreign_notional: None,
+            timestamp: None,
         };
 
-        let report = parse_fill_report(exec, 2).unwrap();
+        let instrument =
+            parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
+                .unwrap();
+
+        let report = parse_fill_report(exec, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-654321");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -965,13 +1272,13 @@ mod tests {
     fn test_parse_fill_report_with_missing_trd_match_id() {
         let exec = BitmexExecution {
             exec_id: Uuid::parse_str("f1f2f3f4-e5e6-d7d8-c9c0-b1b2b3b4b5b6").unwrap(),
-            account: Some(111111),
-            symbol: Some("ETHUSD".to_string()),
+            account: 111111,
+            symbol: Some(Ustr::from("ETHUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
             cl_ord_id: None,
             side: Some(BitmexSide::Sell),
-            last_qty: Some(100),
-            last_px: Some(3000.0),
+            last_qty: 100,
+            last_px: 3000.0,
             commission: None,
             settl_currency: None,
             last_liquidity_ind: Some(BitmexLiquidityIndicator::Maker),
@@ -981,12 +1288,50 @@ mod tests {
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
+            cl_ord_link_id: None,
+            underlying_last_px: None,
+            last_mkt: None,
+            order_qty: Some(100),
+            price: Some(3000.0),
+            display_qty: None,
+            stop_px: None,
+            peg_offset_value: None,
+            peg_price_type: None,
+            currency: None,
+            exec_type: BitmexExecType::Trade,
+            ord_type: BitmexOrderType::Market,
+            time_in_force: BitmexTimeInForce::ImmediateOrCancel,
+            exec_inst: None,
+            contingency_type: None,
+            ex_destination: None,
+            ord_status: Some(BitmexOrderStatus::Filled),
+            triggered: None,
+            working_indicator: None,
+            ord_rej_reason: None,
+            leaves_qty: None,
+            cum_qty: Some(100),
+            avg_px: Some(3000.0),
+            trade_publish_indicator: None,
+            multi_leg_reporting_type: None,
+            text: None,
+            exec_cost: None,
+            exec_comm: None,
+            home_notional: None,
+            foreign_notional: None,
+            timestamp: None,
         };
 
-        let report = parse_fill_report(exec, 2).unwrap();
+        let mut instrument_def = create_test_perpetual_instrument();
+        instrument_def.symbol = Ustr::from("ETHUSD");
+        instrument_def.underlying = Ustr::from("ETH");
+        instrument_def.quote_currency = Ustr::from("USD");
+        instrument_def.settl_currency = Some(Ustr::from("USDt"));
+        let instrument = parse_perpetual_instrument(&instrument_def, UnixNanos::default()).unwrap();
+
+        let report = parse_fill_report(exec, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-111111");
+        assert_eq!(report.instrument_id.to_string(), "ETHUSD.BITMEX");
         assert_eq!(
             report.trade_id.to_string(),
             "f1f2f3f4-e5e6-d7d8-c9c0-b1b2b3b4b5b6"
@@ -1001,17 +1346,102 @@ mod tests {
     fn test_parse_position_report() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "XBTUSD".to_string(),
+            symbol: Ustr::from("XBTUSD"),
             current_qty: Some(1000),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
+            currency: None,
+            underlying: None,
+            quote_currency: None,
+            commission: None,
+            init_margin_req: None,
+            maint_margin_req: None,
+            risk_limit: None,
+            leverage: None,
+            cross_margin: None,
+            deleverage_percentile: None,
+            rebalanced_pnl: None,
+            prev_realised_pnl: None,
+            prev_unrealised_pnl: None,
+            prev_close_price: None,
+            opening_timestamp: None,
+            opening_qty: None,
+            opening_cost: None,
+            opening_comm: None,
+            open_order_buy_qty: None,
+            open_order_buy_cost: None,
+            open_order_buy_premium: None,
+            open_order_sell_qty: None,
+            open_order_sell_cost: None,
+            open_order_sell_premium: None,
+            exec_buy_qty: None,
+            exec_buy_cost: None,
+            exec_sell_qty: None,
+            exec_sell_cost: None,
+            exec_qty: None,
+            exec_cost: None,
+            exec_comm: None,
+            current_timestamp: None,
+            current_cost: None,
+            current_comm: None,
+            realised_cost: None,
+            unrealised_cost: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            is_open: Some(true),
+            mark_price: None,
+            mark_value: None,
+            risk_value: None,
+            home_notional: None,
+            foreign_notional: None,
+            pos_state: None,
+            pos_cost: None,
+            pos_cost2: None,
+            pos_cross: None,
+            pos_init: None,
+            pos_comm: None,
+            pos_loss: None,
+            pos_margin: None,
+            pos_maint: None,
+            pos_allowance: None,
+            taxable_margin: None,
+            init_margin: None,
+            maint_margin: None,
+            session_margin: None,
+            target_excess_margin: None,
+            var_margin: None,
+            realised_gross_pnl: None,
+            realised_tax: None,
+            realised_pnl: None,
+            unrealised_gross_pnl: None,
+            long_bankrupt: None,
+            short_bankrupt: None,
+            tax_base: None,
+            indicative_tax_rate: None,
+            indicative_tax: None,
+            unrealised_tax: None,
+            unrealised_pnl: None,
+            unrealised_pnl_pcnt: None,
+            unrealised_roe_pcnt: None,
+            avg_cost_price: None,
+            avg_entry_price: None,
+            break_even_price: None,
+            margin_call_price: None,
+            liquidation_price: None,
+            bankrupt_price: None,
+            last_price: None,
+            last_value: None,
         };
 
-        let report = parse_position_report(position).unwrap();
+        let instrument =
+            parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
+                .unwrap();
+
+        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-789012");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -1023,17 +1453,105 @@ mod tests {
     fn test_parse_position_report_short() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "ETHUSD".to_string(),
+            symbol: Ustr::from("ETHUSD"),
             current_qty: Some(-500),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
+            currency: None,
+            underlying: None,
+            quote_currency: None,
+            commission: None,
+            init_margin_req: None,
+            maint_margin_req: None,
+            risk_limit: None,
+            leverage: None,
+            cross_margin: None,
+            deleverage_percentile: None,
+            rebalanced_pnl: None,
+            prev_realised_pnl: None,
+            prev_unrealised_pnl: None,
+            prev_close_price: None,
+            opening_timestamp: None,
+            opening_qty: None,
+            opening_cost: None,
+            opening_comm: None,
+            open_order_buy_qty: None,
+            open_order_buy_cost: None,
+            open_order_buy_premium: None,
+            open_order_sell_qty: None,
+            open_order_sell_cost: None,
+            open_order_sell_premium: None,
+            exec_buy_qty: None,
+            exec_buy_cost: None,
+            exec_sell_qty: None,
+            exec_sell_cost: None,
+            exec_qty: None,
+            exec_cost: None,
+            exec_comm: None,
+            current_timestamp: None,
+            current_cost: None,
+            current_comm: None,
+            realised_cost: None,
+            unrealised_cost: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            is_open: Some(true),
+            mark_price: None,
+            mark_value: None,
+            risk_value: None,
+            home_notional: None,
+            foreign_notional: None,
+            pos_state: None,
+            pos_cost: None,
+            pos_cost2: None,
+            pos_cross: None,
+            pos_init: None,
+            pos_comm: None,
+            pos_loss: None,
+            pos_margin: None,
+            pos_maint: None,
+            pos_allowance: None,
+            taxable_margin: None,
+            init_margin: None,
+            maint_margin: None,
+            session_margin: None,
+            target_excess_margin: None,
+            var_margin: None,
+            realised_gross_pnl: None,
+            realised_tax: None,
+            realised_pnl: None,
+            unrealised_gross_pnl: None,
+            long_bankrupt: None,
+            short_bankrupt: None,
+            tax_base: None,
+            indicative_tax_rate: None,
+            indicative_tax: None,
+            unrealised_tax: None,
+            unrealised_pnl: None,
+            unrealised_pnl_pcnt: None,
+            unrealised_roe_pcnt: None,
+            avg_cost_price: None,
+            avg_entry_price: None,
+            break_even_price: None,
+            margin_call_price: None,
+            liquidation_price: None,
+            bankrupt_price: None,
+            last_price: None,
+            last_value: None,
         };
 
-        let report = parse_position_report(position).unwrap();
+        let mut instrument_def = create_test_futures_instrument();
+        instrument_def.symbol = Ustr::from("ETHUSD");
+        instrument_def.underlying = Ustr::from("ETH");
+        instrument_def.quote_currency = Ustr::from("USD");
+        instrument_def.settl_currency = Some(Ustr::from("USD"));
+        let instrument = parse_futures_instrument(&instrument_def, UnixNanos::default()).unwrap();
+
+        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 500.0); // Should be absolute value
@@ -1043,20 +1561,214 @@ mod tests {
     fn test_parse_position_report_flat() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "SOLUSD".to_string(),
+            symbol: Ustr::from("SOLUSD"),
             current_qty: Some(0),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
             ),
-            ..Default::default()
+            currency: None,
+            underlying: None,
+            quote_currency: None,
+            commission: None,
+            init_margin_req: None,
+            maint_margin_req: None,
+            risk_limit: None,
+            leverage: None,
+            cross_margin: None,
+            deleverage_percentile: None,
+            rebalanced_pnl: None,
+            prev_realised_pnl: None,
+            prev_unrealised_pnl: None,
+            prev_close_price: None,
+            opening_timestamp: None,
+            opening_qty: None,
+            opening_cost: None,
+            opening_comm: None,
+            open_order_buy_qty: None,
+            open_order_buy_cost: None,
+            open_order_buy_premium: None,
+            open_order_sell_qty: None,
+            open_order_sell_cost: None,
+            open_order_sell_premium: None,
+            exec_buy_qty: None,
+            exec_buy_cost: None,
+            exec_sell_qty: None,
+            exec_sell_cost: None,
+            exec_qty: None,
+            exec_cost: None,
+            exec_comm: None,
+            current_timestamp: None,
+            current_cost: None,
+            current_comm: None,
+            realised_cost: None,
+            unrealised_cost: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            is_open: Some(true),
+            mark_price: None,
+            mark_value: None,
+            risk_value: None,
+            home_notional: None,
+            foreign_notional: None,
+            pos_state: None,
+            pos_cost: None,
+            pos_cost2: None,
+            pos_cross: None,
+            pos_init: None,
+            pos_comm: None,
+            pos_loss: None,
+            pos_margin: None,
+            pos_maint: None,
+            pos_allowance: None,
+            taxable_margin: None,
+            init_margin: None,
+            maint_margin: None,
+            session_margin: None,
+            target_excess_margin: None,
+            var_margin: None,
+            realised_gross_pnl: None,
+            realised_tax: None,
+            realised_pnl: None,
+            unrealised_gross_pnl: None,
+            long_bankrupt: None,
+            short_bankrupt: None,
+            tax_base: None,
+            indicative_tax_rate: None,
+            indicative_tax: None,
+            unrealised_tax: None,
+            unrealised_pnl: None,
+            unrealised_pnl_pcnt: None,
+            unrealised_roe_pcnt: None,
+            avg_cost_price: None,
+            avg_entry_price: None,
+            break_even_price: None,
+            margin_call_price: None,
+            liquidation_price: None,
+            bankrupt_price: None,
+            last_price: None,
+            last_value: None,
         };
 
-        let report = parse_position_report(position).unwrap();
+        let mut instrument_def = create_test_spot_instrument();
+        instrument_def.symbol = Ustr::from("SOLUSD");
+        instrument_def.underlying = Ustr::from("SOL");
+        instrument_def.quote_currency = Ustr::from("USD");
+        let instrument = parse_spot_instrument(&instrument_def, UnixNanos::default()).unwrap();
+
+        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_parse_position_report_spot_scaling() {
+        let position = BitmexPosition {
+            account: 789012,
+            symbol: Ustr::from("SOLUSD"),
+            current_qty: Some(1000),
+            timestamp: Some(
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
+            currency: None,
+            underlying: None,
+            quote_currency: None,
+            commission: None,
+            init_margin_req: None,
+            maint_margin_req: None,
+            risk_limit: None,
+            leverage: None,
+            cross_margin: None,
+            deleverage_percentile: None,
+            rebalanced_pnl: None,
+            prev_realised_pnl: None,
+            prev_unrealised_pnl: None,
+            prev_close_price: None,
+            opening_timestamp: None,
+            opening_qty: None,
+            opening_cost: None,
+            opening_comm: None,
+            open_order_buy_qty: None,
+            open_order_buy_cost: None,
+            open_order_buy_premium: None,
+            open_order_sell_qty: None,
+            open_order_sell_cost: None,
+            open_order_sell_premium: None,
+            exec_buy_qty: None,
+            exec_buy_cost: None,
+            exec_sell_qty: None,
+            exec_sell_cost: None,
+            exec_qty: None,
+            exec_cost: None,
+            exec_comm: None,
+            current_timestamp: None,
+            current_cost: None,
+            current_comm: None,
+            realised_cost: None,
+            unrealised_cost: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            is_open: Some(true),
+            mark_price: None,
+            mark_value: None,
+            risk_value: None,
+            home_notional: None,
+            foreign_notional: None,
+            pos_state: None,
+            pos_cost: None,
+            pos_cost2: None,
+            pos_cross: None,
+            pos_init: None,
+            pos_comm: None,
+            pos_loss: None,
+            pos_margin: None,
+            pos_maint: None,
+            pos_allowance: None,
+            taxable_margin: None,
+            init_margin: None,
+            maint_margin: None,
+            session_margin: None,
+            target_excess_margin: None,
+            var_margin: None,
+            realised_gross_pnl: None,
+            realised_tax: None,
+            realised_pnl: None,
+            unrealised_gross_pnl: None,
+            long_bankrupt: None,
+            short_bankrupt: None,
+            tax_base: None,
+            indicative_tax_rate: None,
+            indicative_tax: None,
+            unrealised_tax: None,
+            unrealised_pnl: None,
+            unrealised_pnl_pcnt: None,
+            unrealised_roe_pcnt: None,
+            avg_cost_price: None,
+            avg_entry_price: None,
+            break_even_price: None,
+            margin_call_price: None,
+            liquidation_price: None,
+            bankrupt_price: None,
+            last_price: None,
+            last_value: None,
+        };
+
+        let mut instrument_def = create_test_spot_instrument();
+        instrument_def.symbol = Ustr::from("SOLUSD");
+        instrument_def.underlying = Ustr::from("SOL");
+        instrument_def.quote_currency = Ustr::from("USD");
+        let instrument = parse_spot_instrument(&instrument_def, UnixNanos::default()).unwrap();
+
+        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
+        assert!((report.quantity.as_f64() - 0.1).abs() < 1e-9);
     }
 
     // ========================================================================
@@ -1065,13 +1777,15 @@ mod tests {
 
     fn create_test_spot_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTUSD".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTUSD"),
+            root_symbol: Ustr::from("XBT"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Spot,
-            listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                     .unwrap()
@@ -1080,16 +1794,16 @@ mod tests {
             expiry: None,
             settle: None,
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT".to_string()),
-            lot_size: Some(1.0),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT")),
+            lot_size: Some(1000.0),
             tick_size: 0.01,
             multiplier: 1.0,
-            settl_currency: Some("USD".to_string()),
+            settl_currency: Some(Ustr::from("USD")),
             is_quanto: false,
             is_inverse: false,
             maker_fee: Some(-0.00025),
@@ -1118,7 +1832,7 @@ mod tests {
             calc_interval: None,
             publish_interval: None,
             publish_time: None,
-            underlying_to_position_multiplier: Some(1.0),
+            underlying_to_position_multiplier: Some(10000.0),
             underlying_to_settle_multiplier: None,
             quote_to_settle_multiplier: Some(1.0),
             init_margin: Some(0.1),
@@ -1148,7 +1862,7 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
@@ -1158,7 +1872,7 @@ mod tests {
             fair_basis_rate: None,
             fair_basis: None,
             fair_price: None,
-            mark_method: Some("LastPrice".to_string()),
+            mark_method: Some(BitmexMarkMethod::LastPrice),
             indicative_settle_price: None,
             settled_price_adjustment_rate: None,
             settled_price: None,
@@ -1166,18 +1880,24 @@ mod tests {
             min_tick: None,
             funding_base_rate: None,
             funding_quote_rate: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 
     fn create_test_perpetual_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTUSD".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTUSD"),
+            root_symbol: Ustr::from("XBT"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::PerpetualContract,
-            listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                     .unwrap()
@@ -1186,16 +1906,16 @@ mod tests {
             expiry: None,
             settle: None,
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT".to_string()),
-            lot_size: Some(1.0),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT")),
+            lot_size: Some(100.0),
             tick_size: 0.5,
-            multiplier: -1.0,
-            settl_currency: Some("XBT".to_string()),
+            multiplier: -100000000.0,
+            settl_currency: Some(Ustr::from("XBt")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -1221,9 +1941,9 @@ mod tests {
             turnover_24h: Some(7500000000.0),
             has_liquidity: Some(true),
             // Perpetual specific fields
-            funding_base_symbol: Some(".XBTBON8H".to_string()),
-            funding_quote_symbol: Some(".USDBON8H".to_string()),
-            funding_premium_symbol: Some(".XBTUSDPI8H".to_string()),
+            funding_base_symbol: Some(Ustr::from(".XBTBON8H")),
+            funding_quote_symbol: Some(Ustr::from(".USDBON8H")),
+            funding_premium_symbol: Some(Ustr::from(".XBTUSDPI8H")),
             funding_timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T08:00:00.000Z")
                     .unwrap()
@@ -1242,9 +1962,9 @@ mod tests {
             calc_interval: None,
             publish_interval: None,
             publish_time: None,
-            underlying_to_position_multiplier: Some(1.0),
-            underlying_to_settle_multiplier: None,
-            quote_to_settle_multiplier: Some(0.00000001),
+            underlying_to_position_multiplier: None,
+            underlying_to_settle_multiplier: Some(-100000000.0),
+            quote_to_settle_multiplier: None,
             init_margin: Some(0.01),
             maint_margin: Some(0.005),
             risk_limit: Some(20000000000.0),
@@ -1265,34 +1985,40 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
             impact_mid_price: Some(50495.0),
             impact_ask_price: Some(50500.0),
-            fair_method: Some("FundingRate".to_string()),
+            fair_method: Some(BitmexFairMethod::FundingRate),
             fair_basis_rate: Some(0.1095),
             fair_basis: Some(0.01),
             fair_price: Some(50500.01),
-            mark_method: Some("FairPrice".to_string()),
+            mark_method: Some(BitmexMarkMethod::FairPrice),
             indicative_settle_price: Some(50500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,
             instant_pnl: false,
             min_tick: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 
     fn create_test_futures_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTH25".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTH25"),
+            root_symbol: Ustr::from("XBT"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Futures,
-            listing: DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            listing: Some(
+                DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             front: Some(
                 DateTime::parse_from_rfc3339("2024-12-27T12:00:00.000Z")
                     .unwrap()
@@ -1309,16 +2035,16 @@ mod tests {
                     .with_timezone(&Utc),
             ),
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT30M".to_string()),
-            lot_size: Some(1.0),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT30M")),
+            lot_size: Some(100.0),
             tick_size: 0.5,
-            multiplier: -1.0,
-            settl_currency: Some("XBT".to_string()),
+            multiplier: -100000000.0,
+            settl_currency: Some(Ustr::from("XBt")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -1357,9 +2083,9 @@ mod tests {
             calc_interval: None,
             publish_interval: None,
             publish_time: None,
-            underlying_to_position_multiplier: Some(1.0),
-            underlying_to_settle_multiplier: None,
-            quote_to_settle_multiplier: Some(0.00000001),
+            underlying_to_position_multiplier: None,
+            underlying_to_settle_multiplier: Some(-100000000.0),
+            quote_to_settle_multiplier: None,
             init_margin: Some(0.02),
             maint_margin: Some(0.01),
             risk_limit: Some(20000000000.0),
@@ -1380,22 +2106,26 @@ mod tests {
             high_price: Some(56000.0),
             low_price: Some(54000.0),
             last_price_protected: Some(55500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0183),
             mid_price: Some(55500.0),
             impact_bid_price: Some(55490.0),
             impact_mid_price: Some(55495.0),
             impact_ask_price: Some(55500.0),
-            fair_method: Some("ImpactMidPrice".to_string()),
+            fair_method: Some(BitmexFairMethod::ImpactMidPrice),
             fair_basis_rate: Some(1.8264),
             fair_basis: Some(1000.0),
             fair_price: Some(55500.0),
-            mark_method: Some("FairPrice".to_string()),
+            mark_method: Some(BitmexMarkMethod::FairPrice),
             indicative_settle_price: Some(55500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,
             instant_pnl: false,
             min_tick: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            prev_total_volume: None,
         }
     }
 
@@ -1416,9 +2146,10 @@ mod tests {
                 assert_eq!(spot.id.venue.as_str(), "BITMEX");
                 assert_eq!(spot.raw_symbol.as_str(), "XBTUSD");
                 assert_eq!(spot.price_precision, 2);
-                assert_eq!(spot.size_precision, 0);
+                assert_eq!(spot.size_precision, 4);
                 assert_eq!(spot.price_increment.as_f64(), 0.01);
-                assert_eq!(spot.size_increment.as_f64(), 1.0);
+                assert!((spot.size_increment.as_f64() - 0.0001).abs() < 1e-9);
+                assert!((spot.lot_size.unwrap().as_f64() - 0.1).abs() < 1e-9);
                 assert_eq!(spot.maker_fee.to_f64().unwrap(), -0.00025);
                 assert_eq!(spot.taker_fee.to_f64().unwrap(), 0.00075);
             }

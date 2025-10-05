@@ -166,8 +166,12 @@ def _build_rust_libs() -> None:
 
         if BUILD_MODE == "release":
             build_options = ["--release"]
-            existing_rustflags = os.environ.get("RUSTFLAGS", "")
-            os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
+            # Only pass '-s' at link time on Linux. On macOS this flag is obsolete
+            # and may cause failures with recent toolchains. Cargo already performs
+            # symbol stripping per profile, and we post-strip where applicable.
+            if IS_LINUX:
+                existing_rustflags = os.environ.get("RUSTFLAGS", "")
+                os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
         elif BUILD_MODE == "debug-pyo3":
             build_options = ["--profile", "debug-pyo3"]
         else:
@@ -254,6 +258,9 @@ def _build_extensions() -> list[Extension]:
                 extra_compile_args.append("-fdata-sections")
                 extra_link_args.append("-Wl,--gc-sections")
                 extra_link_args.append("-Wl,--as-needed")
+                # Ensure non-executable stack on Linux to avoid loader errors
+                # when any input object accidentally requests an execstack.
+                extra_link_args.append("-Wl,-z,noexecstack")
 
     if IS_WINDOWS:
         # Standard Windows system libraries required when linking Cython extensions.
@@ -524,7 +531,9 @@ def build() -> None:
     """
     _ensure_windows_python_import_lib()
     _build_rust_libs()
-    _copy_rust_dylibs_to_project()
+    # Allow skipping Rust dylib copy in constrained environments
+    if not os.getenv("SKIP_RUST_DYLIB_COPY"):
+        _copy_rust_dylibs_to_project()
 
     if not PYO3_ONLY:
         # Create C Extensions to feed into cythonize()

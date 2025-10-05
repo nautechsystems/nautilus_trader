@@ -23,6 +23,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -55,8 +56,6 @@ futures-util = { workspace = true }
 heck = { workspace = true }
 log = { workspace = true }
 parquet = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -73,6 +72,9 @@ tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

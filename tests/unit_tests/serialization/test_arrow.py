@@ -520,6 +520,40 @@ class TestArrowSerializer:
         # Assert
         assert deserialized == [event]
 
+    def test_serialize_and_deserialize_account_state_with_margin_none_instrument_id(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("BINANCE-001"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(10000, USDT),
+                    Money(100, USDT),
+                    Money(9900, USDT),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(500, USDT),
+                    Money(250, USDT),
+                    instrument_id=None,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(AccountState, serialized)
+
+        # Assert
+        assert deserialized == [event]
+
     def test_serialize_and_deserialize_market_order_initialized_events(self):
         # Arrange
         event = OrderInitialized(

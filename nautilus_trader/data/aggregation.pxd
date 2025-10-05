@@ -17,17 +17,13 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
-from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.greeks cimport GreeksCalculator
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -46,7 +42,6 @@ cdef class BarBuilder:
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
-    cdef bint _partial_set
     cdef Price _last_close
     cdef Price _open
     cdef Price _high
@@ -54,8 +49,7 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Quantity volume
 
-    cpdef void set_partial(self, Bar partial_bar)
-    cpdef void update(self, Price price, Quantity size, uint64_t ts_event)
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_init)
     cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
     cpdef void reset(self)
     cpdef Bar build_now(self)
@@ -67,7 +61,6 @@ cdef class BarAggregator:
     cdef BarBuilder _builder
     cdef object _handler
     cdef object _handler_backup
-    cdef bint _await_partial
     cdef bint _batch_mode
     cdef public bint is_running
 
@@ -77,8 +70,7 @@ cdef class BarAggregator:
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_trade_tick(self, TradeTick tick)
     cpdef void handle_bar(self, Bar bar)
-    cpdef void set_partial(self, Bar partial_bar)
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event)
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init)
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
     cdef void _build_now_and_send(self)
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init)
@@ -96,6 +88,11 @@ cdef class ValueBarAggregator(BarAggregator):
     cdef object _cum_value
 
     cpdef object get_cumulative_value(self)
+
+
+cdef class RenkoBarAggregator(BarAggregator):
+    cdef readonly object brick_size
+    cdef object _last_close
 
 
 cdef class TimeBarAggregator(BarAggregator):

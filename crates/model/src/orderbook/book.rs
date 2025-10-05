@@ -160,6 +160,108 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
+    /// Removes overlapped bid/ask levels when the book is strictly crossed (best bid > best ask)
+    ///
+    /// - Acts only when both sides exist and the book is crossed.
+    /// - Deletes by removing whole price levels via the ladder API to preserve invariants.
+    /// - `side=None` or `NoOrderSide` clears both overlapped ranges (conservative, may widen spread).
+    /// - `side=Buy` clears crossed bids only; side=Sell clears crossed asks only.
+    /// - Returns removed price levels (crossed bids first, then crossed asks), or None if nothing removed.
+    pub fn clear_stale_levels(&mut self, side: Option<OrderSide>) -> Option<Vec<BookLevel>> {
+        if self.book_type == BookType::L1_MBP {
+            // L1_MBP maintains a single top-of-book price per side; nothing to do
+            return None;
+        }
+
+        let (Some(best_bid), Some(best_ask)) = (self.best_bid_price(), self.best_ask_price())
+        else {
+            return None;
+        };
+
+        if best_bid <= best_ask {
+            return None;
+        }
+
+        let mut removed_levels = Vec::new();
+        let mut clear_bids = false;
+        let mut clear_asks = false;
+
+        match side {
+            Some(OrderSide::Buy) => clear_bids = true,
+            Some(OrderSide::Sell) => clear_asks = true,
+            _ => {
+                clear_bids = true;
+                clear_asks = true;
+            }
+        }
+
+        // Collect prices to remove for asks (prices <= best_bid)
+        let mut ask_prices_to_remove = Vec::new();
+        if clear_asks {
+            for (bp, _level) in self.asks.levels.iter() {
+                if bp.value <= best_bid {
+                    ask_prices_to_remove.push(*bp);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Collect prices to remove for bids (prices >= best_ask)
+        let mut bid_prices_to_remove = Vec::new();
+        if clear_bids {
+            for (bp, _level) in self.bids.levels.iter() {
+                if bp.value >= best_ask {
+                    bid_prices_to_remove.push(*bp);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if ask_prices_to_remove.is_empty() && bid_prices_to_remove.is_empty() {
+            return None;
+        }
+
+        let bid_count = bid_prices_to_remove.len();
+        let ask_count = ask_prices_to_remove.len();
+
+        // Remove and collect bid levels
+        for price in bid_prices_to_remove {
+            if let Some(level) = self.bids.remove_level(price) {
+                removed_levels.push(level);
+            }
+        }
+
+        // Remove and collect ask levels
+        for price in ask_prices_to_remove {
+            if let Some(level) = self.asks.remove_level(price) {
+                removed_levels.push(level);
+            }
+        }
+
+        self.increment(self.sequence, self.ts_last);
+
+        if removed_levels.is_empty() {
+            None
+        } else {
+            let total_orders: usize = removed_levels.iter().map(|level| level.orders.len()).sum();
+
+            log::warn!(
+                "Removed {} stale/crossed levels (instrument_id={}, bid_levels={}, ask_levels={}, total_orders={}), book was crossed with best_bid={} > best_ask={}",
+                removed_levels.len(),
+                self.instrument_id,
+                bid_count,
+                ask_count,
+                total_orders,
+                best_bid,
+                best_ask
+            );
+
+            Some(removed_levels)
+        }
+    }
+
     /// Applies a single order book delta operation.
     pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
         let order = delta.order;
@@ -187,12 +289,40 @@ impl OrderBook {
         self.asks.clear();
 
         for order in depth.bids {
-            self.add(order, depth.flags, depth.sequence, depth.ts_event);
+            // Skip padding entries
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+
+            debug_assert_eq!(
+                order.side,
+                OrderSide::Buy,
+                "Bid order must have Buy side, was {:?}",
+                order.side
+            );
+
+            let order = pre_process_order(self.book_type, order, depth.flags);
+            self.bids.add(order);
         }
 
         for order in depth.asks {
-            self.add(order, depth.flags, depth.sequence, depth.ts_event);
+            // Skip padding entries
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+
+            debug_assert_eq!(
+                order.side,
+                OrderSide::Sell,
+                "Ask order must have Sell side, was {:?}",
+                order.side
+            );
+
+            let order = pre_process_order(self.book_type, order, depth.flags);
+            self.asks.add(order);
         }
+
+        self.increment(depth.sequence, depth.ts_event);
     }
 
     /// Returns an iterator over bid price levels.
@@ -456,27 +586,34 @@ impl OrderBook {
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
-        debug_assert!(
-            sequence >= self.sequence,
-            "Sequence number should not go backwards: old={}, new={}",
-            self.sequence,
-            sequence
-        );
-        debug_assert!(
-            ts_event >= self.ts_last,
-            "Timestamp should not go backwards: old={}, new={}",
-            self.ts_last,
-            ts_event
-        );
-        debug_assert!(
-            self.update_count < u64::MAX,
-            "Update count approaching overflow: {}",
-            self.update_count
-        );
+        // Critical invariant checks: panic in debug, warn in release
+        if sequence < self.sequence {
+            let msg = format!(
+                "Sequence number should not go backwards: old={}, new={}",
+                self.sequence, sequence
+            );
+            debug_assert!(sequence >= self.sequence, "{}", msg);
+            log::warn!("{}", msg);
+        }
+
+        if ts_event < self.ts_last {
+            let msg = format!(
+                "Timestamp should not go backwards: old={}, new={}",
+                self.ts_last, ts_event
+            );
+            debug_assert!(ts_event >= self.ts_last, "{}", msg);
+            log::warn!("{}", msg);
+        }
+
+        if self.update_count == u64::MAX {
+            let msg = format!("Update count approaching overflow: {}", self.update_count);
+            debug_assert!(self.update_count < u64::MAX, "{}", msg);
+            log::warn!("{}", msg);
+        }
 
         self.sequence = sequence;
         self.ts_last = ts_event;
-        self.update_count += 1;
+        self.update_count = self.update_count.saturating_add(1);
     }
 
     /// Updates L1 book state from a quote tick. Only valid for L1_MBP book type.
@@ -523,6 +660,8 @@ impl OrderBook {
         self.update_book_bid(bid, quote.ts_event);
         self.update_book_ask(ask, quote.ts_event);
 
+        self.increment(self.sequence.saturating_add(1), quote.ts_event);
+
         Ok(())
     }
 
@@ -565,6 +704,8 @@ impl OrderBook {
         self.update_book_bid(bid, trade.ts_event);
         self.update_book_ask(ask, trade.ts_event);
 
+        self.increment(self.sequence.saturating_add(1), trade.ts_event);
+
         Ok(())
     }
 
@@ -572,7 +713,7 @@ impl OrderBook {
         if let Some(top_bids) = self.bids.top()
             && let Some(top_bid) = top_bids.first()
         {
-            self.bids.remove(top_bid.order_id, 0, ts_event);
+            self.bids.remove_order(top_bid.order_id, 0, ts_event);
         }
         self.bids.add(order);
     }
@@ -581,7 +722,7 @@ impl OrderBook {
         if let Some(top_asks) = self.asks.top()
             && let Some(top_ask) = top_asks.first()
         {
-            self.asks.remove(top_ask.order_id, 0, ts_event);
+            self.asks.remove_order(top_ask.order_id, 0, ts_event);
         }
         self.asks.add(order);
     }

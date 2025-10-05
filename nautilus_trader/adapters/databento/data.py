@@ -42,6 +42,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -66,9 +67,11 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
@@ -177,7 +180,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
-        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard-coded)
+        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hardcoded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
@@ -707,6 +710,22 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
+            # Check for schema override in params
+            schema_override: str | None = command.params.get("schema")
+            if schema_override:
+                if (
+                    command.bar_type.spec.aggregation == BarAggregation.DAY
+                    and schema_override == "ohlcv-eod"
+                ):
+                    # Allow ohlcv-eod override for daily bars
+                    schema = DatabentoSchema.OHLCV_EOD
+                else:
+                    self._log.error(
+                        f"Invalid schema override '{schema_override}' for bar type {command.bar_type}. "
+                        f"Only 'ohlcv-eod' is supported for DAY aggregation bars.",
+                    )
+                    return
+
             start: int | None = command.params.get("start_ns")
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -789,6 +808,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._request_imbalance(request.data_type, request.id)
         elif request.data_type.type == DatabentoStatistics:
             await self._request_statistics(request.data_type, request.id)
+        elif request.data_type.type == OrderBookDepth10:
+            await self._request_order_book_depth(request)
         else:
             raise NotImplementedError(
                 f"Cannot request {request.data_type.type} (not implemented)",
@@ -1106,7 +1127,47 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_bars(
             bar_type=request.bar_type,
             bars=bars,
-            partial=None,  # No partials
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
+
+    async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        self._log.info(
+            f"DEBUG: Dataset for venue {request.instrument_id.venue}: {dataset}",
+            LogColor.CYAN,
+        )
+
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
+
+        if request.limit > 0:
+            self._log.warning(
+                f"Databento does not support `limit` parameter for order book depths, "
+                f"ignoring limit={request.limit}",
+            )
+
+        self._log.info(
+            f"Requesting {request.instrument_id} order book depth data: "
+            f"depth={request.depth}, "
+            f"start={start}, "
+            f"end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_depths = await self._http_client.get_order_book_depth10(
+            dataset=dataset,
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            start=start.value,
+            end=end.value,
+            depth=request.depth,
+        )
+        depths = OrderBookDepth10.from_pyo3_list(pyo3_depths)
+
+        self._handle_order_book_depths(
+            instrument_id=request.instrument_id,
+            depths=depths,
             correlation_id=request.id,
             start=request.start,
             end=request.end,

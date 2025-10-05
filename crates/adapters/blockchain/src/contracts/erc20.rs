@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy::{
-    primitives::{Address, Bytes},
+    primitives::{Address, Bytes, U256},
     sol,
     sol_types::SolCall,
 };
@@ -32,6 +32,7 @@ sol! {
         function name() external view returns (string);
         function symbol() external view returns (string);
         function decimals() external view returns (uint8);
+        function balanceOf(address account) external view returns (uint256);
     }
 }
 
@@ -60,7 +61,7 @@ pub enum TokenInfoError {
     RpcError(#[from] BlockchainRpcClientError),
     #[error("Token {field} is empty for address {address}")]
     EmptyTokenField { field: Erc20Field, address: Address },
-    #[error("Multicall returned unexpected number of results: expected {expected}, got {actual}")]
+    #[error("Multicall returned unexpected number of results: expected {expected}, was {actual}")]
     UnexpectedResultCount { expected: usize, actual: usize },
     #[error("Call failed for {field} at address {address}: {reason} (raw data: {raw_data})")]
     CallFailed {
@@ -221,6 +222,25 @@ impl Erc20Contract {
         }
 
         Ok(token_infos)
+    }
+
+    /// Fetches the balance of a specific account for this ERC20 token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract call fails.
+    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
+    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    pub async fn balance_of(
+        &self,
+        token_address: &Address,
+        account: &Address,
+    ) -> Result<U256, BlockchainRpcClientError> {
+        let call_data = ERC20::balanceOfCall { account: *account }.abi_encode();
+        let result = self.base.execute_call(token_address, &call_data).await?;
+
+        ERC20::balanceOfCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 }
 

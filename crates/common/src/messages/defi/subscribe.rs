@@ -138,3 +138,33 @@ impl SubscribePoolLiquidityUpdates {
         }
     }
 }
+
+/// Represents a subscription command for pool fee collect events from a specific AMM pool.
+#[derive(Debug, Clone)]
+pub struct SubscribePoolFeeCollects {
+    pub instrument_id: InstrumentId,
+    pub client_id: Option<ClientId>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl SubscribePoolFeeCollects {
+    /// Creates a new [`SubscribePoolFeeCollects`] instance.
+    #[must_use]
+    pub const fn new(
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            client_id,
+            command_id,
+            ts_init,
+            params,
+        }
+    }
+}

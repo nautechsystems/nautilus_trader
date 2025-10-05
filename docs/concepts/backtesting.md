@@ -1,4 +1,5 @@
 # Backtesting
+
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
 including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
@@ -79,7 +80,7 @@ available or necessary, then the platform has the capability of processing marke
 5. **Bars**:
    - Aggregating trading activity - typically over fixed time intervals, such as 1-minute, 1-hour, or 1-day.
 
-### Choosing data: Cost vs. Accuracy
+### Choosing data: cost vs. accuracy
 
 For many trading strategies, bar data (e.g., 1-minute) can be sufficient for backtesting and strategy development. This is
 particularly important because bar data is typically much more accessible and cost-effective compared to tick or order book data.
@@ -206,7 +207,7 @@ Nautilus supports two modes of bar processing:
      - If Open is closer to High: processes as `Open → High → Low → Close`.
      - If Open is closer to Low: processes as `Open → Low → High → Close`.
    - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
-   - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
+   - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order fills first.
 
 Here's how to configure adaptive bar ordering for a venue, including account setup:
 
@@ -251,7 +252,7 @@ When backtesting with bar data, be aware that the reduced granularity of price i
 For the most realistic backtesting results, consider using higher granularity data sources such as L2 or L3 order book data when available.
 :::
 
-### Fill Model
+### Fill model
 
 The `FillModel` helps simulate order queue position and execution in a simple probabilistic way during backtesting.
 It addresses a fundamental challenge: *even with perfect historical market data, we can't fully simulate how orders may have interacted with other
@@ -269,8 +270,8 @@ The `FillModel` simulates two key aspects of trading that exist in real markets 
 
 ```python
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 
 # Create a custom fill model with your desired probabilities
 fill_model = FillModel(
@@ -376,14 +377,14 @@ When using less granular data, the same behaviors apply as L1:
 The `FillModel` has certain limitations to keep in mind:
 
 - **Partial fills are supported** with L2/L3 order book data - when there is no longer any size available in the order book, no more fills will be generated and the order will remain in a partially filled state. This accurately simulates real market conditions where not enough liquidity is available at the desired price levels.
-- With L1 data, slippage is limited to a fixed 1-tick, at which entire order's quantity is filled.
+- With L1 data, slippage limits to a fixed 1-tick, at which the system fills the entire order's quantity.
 
 :::note
 As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
 
-- Partial fill simulation
-- Variable slippage based on order size
-- More complex queue position modeling
+- Partial fill simulation.
+- Variable slippage based on order size.
+- More complex queue position modeling.
 
 :::
 

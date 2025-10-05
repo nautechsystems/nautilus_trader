@@ -34,6 +34,7 @@ pub static CURVE_FINANCE: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });

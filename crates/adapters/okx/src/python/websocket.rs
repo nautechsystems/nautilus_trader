@@ -170,6 +170,11 @@ impl OKXWebSocketClient {
         self.is_closed()
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    pub fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     #[pyo3(name = "get_subscriptions")]
     fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
         let channels = self.get_subscriptions(instrument_id);
@@ -190,8 +195,8 @@ impl OKXWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -218,7 +223,7 @@ impl OKXWebSocketClient {
                                 instrument_any_to_pyobject(py, *msg)
                             });
                         }
-                        NautilusWsMessage::Data(msg) => Python::with_gil(|py| {
+                        NautilusWsMessage::Data(msg) => Python::attach(|py| {
                             for data in msg {
                                 let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
@@ -254,14 +259,15 @@ impl OKXWebSocketClient {
                                 };
                             }
                         }
-                        NautilusWsMessage::Deltas(msg) => Python::with_gil(|py| {
+                        NautilusWsMessage::Deltas(msg) => Python::attach(|py| {
                             let py_obj =
                                 data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(msg)));
                             call_python(py, &callback, py_obj);
                         }),
                         NautilusWsMessage::AccountUpdate(msg) => {
-                            call_python_with_data(&callback, |py| msg.py_to_dict(py));
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
+                        NautilusWsMessage::Reconnected => {} // Nothing to handle
                         NautilusWsMessage::Error(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
@@ -723,6 +729,38 @@ impl OKXWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_orders_algo")]
+    fn py_subscribe_orders_algo<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_orders_algo(instrument_type).await {
+                log::error!("Failed to subscribe to algo orders '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_orders_algo")]
+    fn py_unsubscribe_orders_algo<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_orders_algo(instrument_type).await {
+                log::error!("Failed to unsubscribe from algo orders '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_fills")]
     fn py_subscribe_fills<'py>(
         &self,
@@ -779,7 +817,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Submits a new order via WebSocket.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         trader_id,
@@ -840,20 +877,16 @@ impl OKXWebSocketClient {
                     position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
-    /// Cancels an existing order via WebSocket.
-    #[pyo3(name = "cancel_order")]
-    #[pyo3(signature = (
+    #[pyo3(name = "cancel_order", signature = (
         trader_id,
         strategy_id,
         instrument_id,
-        client_order_id,
+        client_order_id=None,
         venue_order_id=None,
-        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_cancel_order<'py>(
@@ -862,9 +895,8 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-        position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -876,26 +908,21 @@ impl OKXWebSocketClient {
                     instrument_id,
                     client_order_id,
                     venue_order_id,
-                    position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
-    /// Modify an existing order via WebSocket.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         trader_id,
         strategy_id,
         instrument_id,
-        client_order_id,
-        new_client_order_id,
+        client_order_id=None,
+        venue_order_id=None,
         price=None,
         quantity=None,
-        venue_order_id=None,
-        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -904,12 +931,10 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        new_client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
-        venue_order_id: Option<VenueOrderId>,
-        position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -920,25 +945,21 @@ impl OKXWebSocketClient {
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    new_client_order_id,
                     price,
                     quantity,
                     venue_order_id,
-                    position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
-    /// Submits multiple orders via WebSocket.
     #[allow(clippy::type_complexity)]
     #[pyo3(name = "batch_submit_orders")]
     fn py_batch_submit_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
@@ -999,8 +1020,7 @@ impl OKXWebSocketClient {
             client
                 .batch_submit_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -1009,29 +1029,22 @@ impl OKXWebSocketClient {
     fn py_batch_cancel_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
         for obj in orders {
-            let (instrument_type, instrument_id, client_order_id, order_id, position_side): (
+            let (instrument_type, instrument_id, client_order_id, order_id): (
                 String,
                 InstrumentId,
                 Option<ClientOrderId>,
                 Option<String>,
-                Option<PositionSide>,
             ) = obj
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
-            domain_orders.push((
-                inst_type,
-                instrument_id,
-                client_order_id,
-                order_id,
-                position_side,
-            ));
+            domain_orders.push((inst_type, instrument_id, client_order_id, order_id));
         }
 
         let client = self.clone();
@@ -1040,17 +1053,15 @@ impl OKXWebSocketClient {
             client
                 .batch_cancel_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
-    /// Modifies multiple orders via WebSocket.
     #[pyo3(name = "batch_modify_orders")]
     fn py_batch_modify_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
@@ -1062,7 +1073,6 @@ impl OKXWebSocketClient {
                 new_client_order_id,
                 price,
                 quantity,
-                position_side,
             ): (
                 String,
                 InstrumentId,
@@ -1070,7 +1080,6 @@ impl OKXWebSocketClient {
                 ClientOrderId,
                 Option<Price>,
                 Option<Quantity>,
-                Option<PositionSide>,
             ) = obj
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -1083,7 +1092,6 @@ impl OKXWebSocketClient {
                 new_client_order_id,
                 price,
                 quantity,
-                position_side,
             ));
         }
 
@@ -1093,23 +1101,38 @@ impl OKXWebSocketClient {
             client
                 .batch_modify_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    #[pyo3(name = "mass_cancel_orders")]
+    fn py_mass_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .mass_cancel_orders(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)
         })
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }
 }
 
-fn call_python_with_data<F>(callback: &PyObject, data_converter: F)
+fn call_python_with_data<F>(callback: &Py<PyAny>, data_converter: F)
 where
-    F: FnOnce(Python) -> PyResult<PyObject>,
+    F: FnOnce(Python) -> PyResult<Py<PyAny>>,
 {
-    Python::with_gil(|py| match data_converter(py) {
+    Python::attach(|py| match data_converter(py) {
         Ok(py_obj) => call_python(py, callback, py_obj),
         Err(e) => tracing::error!("Failed to convert data to Python object: {e}"),
     });

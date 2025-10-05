@@ -23,7 +23,10 @@ use std::collections::HashSet;
 use anyhow::Result;
 use futures::StreamExt;
 use nautilus_core::UnixNanos;
-use nautilus_model::data::{Data, HasTsInit};
+use nautilus_model::data::{
+    Bar, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+    QuoteTick, TradeTick, close::InstrumentClose,
+};
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use object_store::path::Path as ObjectPath;
 
@@ -420,7 +423,6 @@ impl ParquetDataCatalog {
                 // Use match statement to call the generic consolidate_data_by_period for various types
                 match data_cls_name.as_str() {
                     "quotes" => {
-                        use nautilus_model::data::QuoteTick;
                         self.consolidate_data_by_period_generic::<QuoteTick>(
                             identifier,
                             period_nanos,
@@ -430,7 +432,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "trades" => {
-                        use nautilus_model::data::TradeTick;
                         self.consolidate_data_by_period_generic::<TradeTick>(
                             identifier,
                             period_nanos,
@@ -440,7 +441,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "order_book_deltas" => {
-                        use nautilus_model::data::OrderBookDelta;
                         self.consolidate_data_by_period_generic::<OrderBookDelta>(
                             identifier,
                             period_nanos,
@@ -450,7 +450,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "order_book_depths" => {
-                        use nautilus_model::data::OrderBookDepth10;
                         self.consolidate_data_by_period_generic::<OrderBookDepth10>(
                             identifier,
                             period_nanos,
@@ -460,7 +459,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "bars" => {
-                        use nautilus_model::data::Bar;
                         self.consolidate_data_by_period_generic::<Bar>(
                             identifier,
                             period_nanos,
@@ -470,7 +468,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "index_prices" => {
-                        use nautilus_model::data::IndexPriceUpdate;
                         self.consolidate_data_by_period_generic::<IndexPriceUpdate>(
                             identifier,
                             period_nanos,
@@ -480,7 +477,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "mark_prices" => {
-                        use nautilus_model::data::MarkPriceUpdate;
                         self.consolidate_data_by_period_generic::<MarkPriceUpdate>(
                             identifier,
                             period_nanos,
@@ -490,7 +486,6 @@ impl ParquetDataCatalog {
                         )?;
                     }
                     "instrument_closes" => {
-                        use nautilus_model::data::close::InstrumentClose;
                         self.consolidate_data_by_period_generic::<InstrumentClose>(
                             identifier,
                             period_nanos,
@@ -638,7 +633,6 @@ impl ParquetDataCatalog {
         // Use match statement to call the generic consolidate_data_by_period for various types
         match type_name {
             "quotes" => {
-                use nautilus_model::data::QuoteTick;
                 self.consolidate_data_by_period_generic::<QuoteTick>(
                     identifier,
                     period_nanos,
@@ -648,7 +642,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "trades" => {
-                use nautilus_model::data::TradeTick;
                 self.consolidate_data_by_period_generic::<TradeTick>(
                     identifier,
                     period_nanos,
@@ -658,7 +651,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "order_book_deltas" => {
-                use nautilus_model::data::OrderBookDelta;
                 self.consolidate_data_by_period_generic::<OrderBookDelta>(
                     identifier,
                     period_nanos,
@@ -668,7 +660,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "order_book_depths" => {
-                use nautilus_model::data::OrderBookDepth10;
                 self.consolidate_data_by_period_generic::<OrderBookDepth10>(
                     identifier,
                     period_nanos,
@@ -678,7 +669,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "bars" => {
-                use nautilus_model::data::Bar;
                 self.consolidate_data_by_period_generic::<Bar>(
                     identifier,
                     period_nanos,
@@ -688,7 +678,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "index_prices" => {
-                use nautilus_model::data::IndexPriceUpdate;
                 self.consolidate_data_by_period_generic::<IndexPriceUpdate>(
                     identifier,
                     period_nanos,
@@ -698,7 +687,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "mark_prices" => {
-                use nautilus_model::data::MarkPriceUpdate;
                 self.consolidate_data_by_period_generic::<MarkPriceUpdate>(
                     identifier,
                     period_nanos,
@@ -708,7 +696,6 @@ impl ParquetDataCatalog {
                 )?;
             }
             "instrument_closes" => {
-                use nautilus_model::data::close::InstrumentClose;
                 self.consolidate_data_by_period_generic::<InstrumentClose>(
                     identifier,
                     period_nanos,
@@ -1463,27 +1450,16 @@ impl ParquetDataCatalog {
     ) -> Result<()> {
         // Use match statement to call the generic delete_data_range for various types
         match type_name {
-            "quotes" => {
-                use nautilus_model::data::QuoteTick;
-                self.delete_data_range_generic::<QuoteTick>(identifier, start, end)
-            }
-            "trades" => {
-                use nautilus_model::data::TradeTick;
-                self.delete_data_range_generic::<TradeTick>(identifier, start, end)
-            }
-            "bars" => {
-                use nautilus_model::data::Bar;
-                self.delete_data_range_generic::<Bar>(identifier, start, end)
-            }
+            "quotes" => self.delete_data_range_generic::<QuoteTick>(identifier, start, end),
+            "trades" => self.delete_data_range_generic::<TradeTick>(identifier, start, end),
+            "bars" => self.delete_data_range_generic::<Bar>(identifier, start, end),
             "order_book_deltas" => {
-                use nautilus_model::data::OrderBookDelta;
                 self.delete_data_range_generic::<OrderBookDelta>(identifier, start, end)
             }
             "order_book_depth10" => {
-                use nautilus_model::data::OrderBookDepth10;
                 self.delete_data_range_generic::<OrderBookDepth10>(identifier, start, end)
             }
-            _ => Err(anyhow::anyhow!("Unsupported data type: {}", type_name)),
+            _ => anyhow::bail!("Unsupported data type: {type_name}"),
         }
     }
 

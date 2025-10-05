@@ -61,7 +61,7 @@ use nautilus_common::{
         UnsubscribeCommand,
     },
     msgbus::{self, MStr, Topic, handler::ShareableMessageHandler, switchboard},
-    timer::TimeEventCallback,
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{
@@ -90,8 +90,8 @@ use ustr::Ustr;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
-        VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
+        ValueBarAggregator, VolumeBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -118,6 +118,8 @@ pub struct DataEngine {
     config: DataEngineConfig,
     #[cfg(feature = "defi")]
     pool_updaters: AHashMap<InstrumentId, Rc<crate::engine::pool::PoolUpdater>>,
+    #[cfg(feature = "defi")]
+    pool_updaters_pending: AHashSet<InstrumentId>,
 }
 
 impl DataEngine {
@@ -157,6 +159,8 @@ impl DataEngine {
             config,
             #[cfg(feature = "defi")]
             pool_updaters: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            pool_updaters_pending: AHashSet::new(),
         }
     }
 
@@ -170,6 +174,12 @@ impl DataEngine {
     #[must_use]
     pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
+    }
+
+    /// Returns the `Rc<RefCell<Cache>>` used by this engine.
+    #[must_use]
+    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        Rc::clone(&self.cache)
     }
 
     /// Registers the `catalog` with the engine with an optional specific `name`.
@@ -493,6 +503,13 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which fee collect subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_fee_collects(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_fee_collects)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -577,11 +594,15 @@ impl DataEngine {
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
                 self.setup_pool_updater(&cmd.instrument_id);
             }
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id);
+            }
             _ => {}
         }
 
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            log::info!("Forwarding subscription to client {:?}", cmd.client_id());
             client.execute_defi_subscribe(cmd);
         } else {
             log::error!(
@@ -683,6 +704,7 @@ impl DataEngine {
                 RequestCommand::Instrument(req) => client.request_instrument(req),
                 RequestCommand::Instruments(req) => client.request_instruments(req),
                 RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+                RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
@@ -745,20 +767,33 @@ impl DataEngine {
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
-                if let Err(err) = self.cache.borrow_mut().add_pool(pool.clone()) {
-                    log::error!("Failed to add Pool to cache: {err}");
+                if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                    log::error!("Failed to add Pool to cache: {e}");
+                }
+
+                // Check if pool profiler creation was deferred
+                if self.pool_updaters_pending.remove(&pool.instrument_id) {
+                    log::info!(
+                        "Pool {} now loaded, creating deferred pool profiler",
+                        pool.instrument_id
+                    );
+                    self.setup_pool_updater(&pool.instrument_id);
                 }
 
                 let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSwap(swap) => {
-                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id);
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id());
                 msgbus::publish(topic, &swap as &dyn Any);
             }
             DefiData::PoolLiquidityUpdate(update) => {
-                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
+                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id());
                 msgbus::publish(topic, &update as &dyn Any);
+            }
+            DefiData::PoolFeeCollect(collect) => {
+                let topic = switchboard::get_defi_collect_topic(collect.instrument_id());
+                msgbus::publish(topic, &collect as &dyn Any);
             }
         }
     }
@@ -803,6 +838,10 @@ impl DataEngine {
         let deltas = if self.config.buffer_deltas {
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
                 buffered_deltas.deltas.push(delta);
+                buffered_deltas.flags = delta.flags;
+                buffered_deltas.sequence = delta.sequence;
+                buffered_deltas.ts_event = delta.ts_event;
+                buffered_deltas.ts_init = delta.ts_init;
             } else {
                 let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
                 self.buffered_deltas_map
@@ -839,6 +878,13 @@ impl DataEngine {
 
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
                 buffered_deltas.deltas.extend(deltas.deltas);
+
+                if let Some(last_delta) = buffered_deltas.deltas.last() {
+                    buffered_deltas.flags = last_delta.flags;
+                    buffered_deltas.sequence = last_delta.sequence;
+                    buffered_deltas.ts_event = last_delta.ts_event;
+                    buffered_deltas.ts_init = last_delta.ts_init;
+                }
             } else {
                 self.buffered_deltas_map.insert(instrument_id, deltas);
             }
@@ -964,7 +1010,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
     }
@@ -974,7 +1020,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
 
         Ok(())
     }
@@ -1025,8 +1071,9 @@ impl DataEngine {
                 .insert(cmd.instrument_id, snapshotter.clone());
             let timer_name = snapshotter.timer_name;
 
-            let callback =
-                TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
+            let callback_fn: Rc<dyn Fn(TimeEvent)> =
+                Rc::new(move |event| snapshotter.snapshot(event));
+            let callback = TimeEventCallback::from(callback_fn);
 
             self.clock
                 .borrow_mut()
@@ -1042,7 +1089,7 @@ impl DataEngine {
                 .expect(FAILED);
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
 
         Ok(())
     }
@@ -1183,7 +1230,7 @@ impl DataEngine {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
-                if clock.timer_names().contains(&timer_name.as_str()) {
+                if clock.timer_exists(&timer_name) {
                     clock.cancel_timer(&timer_name);
                 }
                 log::debug!("Removed BookSnapshotter for instrument ID {instrument_id}");
@@ -1231,7 +1278,7 @@ impl DataEngine {
     // -- INTERNAL --------------------------------------------------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    fn setup_order_book(
+    fn setup_book_updater(
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
@@ -1266,14 +1313,60 @@ impl DataEngine {
 
     #[cfg(feature = "defi")]
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId) {
+        use std::sync::Arc;
+
+        use nautilus_model::defi::PoolProfiler;
+
+        log::info!("Setting up pool updater for {instrument_id}");
+
         if self.pool_updaters.contains_key(instrument_id) {
+            log::debug!("Pool updater for {instrument_id} already exists");
             return;
+        }
+
+        {
+            let mut cache = self.cache.borrow_mut();
+
+            // Check if profiler already exists in cache
+            if cache.pool_profiler(instrument_id).is_some() {
+                log::debug!("Pool profiler for {instrument_id} already exists in cache");
+            } else {
+                // Check if pool exists in cache, otherwise defer profiler creation
+                let pool = match cache.pool(instrument_id) {
+                    Some(pool) => pool,
+                    None => {
+                        log::info!(
+                            "Pool {instrument_id} not yet in cache, deferring profiler creation until pool loads"
+                        );
+                        self.pool_updaters_pending.insert(*instrument_id);
+                        return;
+                    }
+                };
+
+                let pool = Arc::new(pool.clone());
+                let mut pool_profiler = PoolProfiler::new(pool.clone());
+
+                // Initialize profiler if pool has initial price set
+                if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
+                    pool_profiler.initialize(initial_sqrt_price_x96);
+                    log::debug!(
+                        "Initialized pool profiler for {instrument_id} with sqrt_price {initial_sqrt_price_x96}"
+                    );
+                } else {
+                    log::debug!("Created pool profiler for {instrument_id}");
+                }
+
+                if let Err(e) = cache.add_pool_profiler(pool_profiler) {
+                    log::error!("Failed to add pool profiler {instrument_id}: {e}");
+                    return;
+                }
+            }
         }
 
         let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
         let handler = ShareableMessageHandler(updater.clone());
 
-        // Subscribe to pool swaps and liquidity updates
+        // Subscribe to pool swaps, liquidity updates, and fee collects
         let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
         if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
@@ -1285,7 +1378,16 @@ impl DataEngine {
 
         let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
         if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(liquidity_topic.into(), handler, Some(self.msgbus_priority));
+            msgbus::subscribe(
+                liquidity_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let collect_topic = switchboard::get_defi_collect_topic(*instrument_id);
+        if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(collect_topic.into(), handler, Some(self.msgbus_priority));
         }
 
         self.pool_updaters.insert(*instrument_id, updater);
@@ -1327,7 +1429,6 @@ impl DataEngine {
                 size_precision,
                 clock,
                 handler,
-                false, // await_partial
                 config.time_bars_build_with_no_updates,
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
@@ -1342,24 +1443,28 @@ impl DataEngine {
                     price_precision,
                     size_precision,
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
-                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Value => Box::new(ValueBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
-                    false,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    instrument.price_increment(),
+                    handler,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
-                    "Cannot create aggregator: {} aggregation not currently supported",
+                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
                     bar_type.spec().aggregation
                 ),
             }

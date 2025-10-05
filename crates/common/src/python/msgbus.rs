@@ -16,7 +16,7 @@
 use std::rc::Rc;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{PyObject, PyResult, pyfunction, pymethods};
+use pyo3::{Py, PyAny, PyResult, pyfunction, pymethods};
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
@@ -54,7 +54,7 @@ impl BusMessage {
 /// Returns an error if `endpoint` is invalid.
 #[pyfunction]
 #[pyo3(name = "msgbus_send")]
-pub fn py_msgbus_send(endpoint: &str, message: PyObject) -> PyResult<()> {
+pub fn py_msgbus_send(endpoint: &str, message: Py<PyAny>) -> PyResult<()> {
     let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
     send_any(endpoint, &message);
     Ok(())
@@ -82,7 +82,7 @@ pub fn py_msgbus_is_registered(endpoint: &str) -> bool {
 /// Returns an error if `topic` is invalid.
 #[pyfunction]
 #[pyo3(name = "msgbus_publish")]
-pub fn py_msgbus_publish(topic: &str, message: PyObject) -> PyResult<()> {
+pub fn py_msgbus_publish(topic: &str, message: Py<PyAny>) -> PyResult<()> {
     let topic = MStr::<Topic>::topic(topic).map_err(to_pyvalue_err)?;
     publish(topic, &message);
     Ok(())

@@ -154,7 +154,10 @@ impl LiveNode {
         Ok(())
     }
 
-    #[allow(unsafe_code)] // Required for Python actor component registration
+    #[allow(
+        unsafe_code,
+        reason = "Required for Python actor component registration"
+    )]
     #[pyo3(name = "add_actor_from_config")]
     fn py_add_actor_from_config(
         &mut self,
@@ -175,7 +178,7 @@ impl LiveNode {
         log::info!("Importing actor from module: {module_name} class: {class_name}");
 
         // Import the Python class to verify it exists and get it for method dispatch
-        let _python_class = Python::with_gil(|py| -> PyResult<PyObject> {
+        let _python_class = Python::attach(|py| -> PyResult<Py<PyAny>> {
             let actor_module = py.import(module_name)?;
             let actor_class = actor_module.getattr(class_name)?;
             Ok(actor_class.unbind())
@@ -189,7 +192,7 @@ impl LiveNode {
         log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
 
         // Create the Python actor and register the internal PyDataActor
-        let python_actor = Python::with_gil(|py| -> anyhow::Result<PyObject> {
+        let python_actor = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
             // Import the Python class
             let actor_module = py
                 .import(module_name)
@@ -379,7 +382,7 @@ impl LiveNode {
         .map_err(to_pyruntime_err)?;
 
         // Add the actor to the trader's lifecycle management without consuming it
-        let actor_id = Python::with_gil(
+        let actor_id = Python::attach(
             |py| -> anyhow::Result<nautilus_model::identifiers::ActorId> {
                 let py_actor = python_actor.bind(py);
                 let py_data_actor_ref = py_actor
@@ -486,13 +489,13 @@ impl LiveNodeBuilderPy {
     fn py_add_data_client(
         &self,
         name: Option<String>,
-        factory: PyObject,
-        config: PyObject,
+        factory: Py<PyAny>,
+        config: Py<PyAny>,
     ) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
-            Python::with_gil(|py| -> PyResult<Self> {
-                // Use the global registry to extract PyObjects to trait objects
+            Python::attach(|py| -> PyResult<Self> {
+                // Use the global registry to extract Py<PyAny>s to trait objects
                 let registry = get_global_pyo3_registry();
 
                 let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;

@@ -33,6 +33,7 @@ from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOpt
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.objects import Currency
 
 
 if TYPE_CHECKING:
@@ -219,7 +220,9 @@ class BybitInstrumentProvider(InstrumentProvider):
                 # Has precision 18 (exceeds max 9) and not used for any instrument?
                 continue
             try:
-                currency = coin_info.parse_to_currency()
+                currency = Currency.from_str(coin_info.coin)
+                if currency is None:
+                    currency = coin_info.parse_to_currency()
             except ValueError as e:
                 self._log.warning(f"Unable to parse currency {coin_info}: {e}")
                 continue

@@ -18,7 +18,11 @@ from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -29,6 +33,7 @@ from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -213,3 +218,71 @@ class TestBacktestMarketDataClient:
         # Assert - the unknown instrument should not be in cache
         instrument = self.cache.instrument(unknown_id)
         assert instrument is None
+
+    def test_subscribe_order_book_depth_with_valid_instrument(self):
+        # Arrange
+        audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        self.cache.add_instrument(audusd)
+
+        command = SubscribeOrderBook(
+            instrument_id=audusd.id,
+            book_data_type=OrderBookDepth10,
+            book_type=BookType.L2_MBP,
+            client_id=ClientId("BACKTEST"),
+            venue=audusd.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+            depth=10,
+        )
+
+        # Act & Assert - should not raise an exception
+        self.client.subscribe_order_book_depth(command)
+
+    def test_subscribe_order_book_depth_with_missing_instrument_logs_error(self):
+        # Arrange
+        unknown_id = InstrumentId(Symbol("UNKNOWN"), Venue("SIM"))
+
+        command = SubscribeOrderBook(
+            instrument_id=unknown_id,
+            book_data_type=OrderBookDepth10,
+            book_type=BookType.L2_MBP,
+            client_id=ClientId("BACKTEST"),
+            venue=unknown_id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+            depth=10,
+        )
+
+        # Act & Assert - should not raise an exception (logs error instead)
+        self.client.subscribe_order_book_depth(command)
+
+    def test_unsubscribe_order_book_depth(self):
+        # Arrange
+        audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        self.cache.add_instrument(audusd)
+
+        # First subscribe
+        subscribe_command = SubscribeOrderBook(
+            instrument_id=audusd.id,
+            book_data_type=OrderBookDepth10,
+            book_type=BookType.L2_MBP,
+            client_id=ClientId("BACKTEST"),
+            venue=audusd.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+            depth=10,
+        )
+        self.client.subscribe_order_book_depth(subscribe_command)
+
+        # Create unsubscribe command
+        unsubscribe_command = UnsubscribeOrderBook(
+            instrument_id=audusd.id,
+            book_data_type=OrderBookDepth10,
+            client_id=ClientId("BACKTEST"),
+            venue=audusd.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act & Assert - should not raise an exception
+        self.client.unsubscribe_order_book_depth(unsubscribe_command)

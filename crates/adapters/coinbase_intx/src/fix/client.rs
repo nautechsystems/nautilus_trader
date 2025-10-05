@@ -181,24 +181,9 @@ impl CoinbaseIntxFixClient {
     /// Returns an error if network connection or FIX logon fails.
     pub async fn connect(
         &mut self,
-        #[cfg(feature = "python")] handler: PyObject,
+        #[cfg(feature = "python")] handler: Py<PyAny>,
         #[cfg(not(feature = "python"))] _handler: (),
     ) -> anyhow::Result<()> {
-        let config = SocketConfig {
-            url: self.endpoint.clone(),
-            mode: Mode::Tls,
-            suffix: vec![FIX_DELIMITER],
-            #[cfg(feature = "python")]
-            py_handler: None, // Using handler from arg (TODO: refactor this config pattern)
-            heartbeat: None, // Using FIX heartbeats
-            reconnect_timeout_ms: Some(10000),
-            reconnect_delay_initial_ms: Some(5000),
-            reconnect_delay_max_ms: Some(30000),
-            reconnect_backoff_factor: Some(1.5),
-            reconnect_jitter_ms: Some(500),
-            certs_dir: None,
-        };
-
         let logged_on = self.logged_on.clone();
         let seq_num = self.seq_num.clone();
         let received_seq_num = self.received_seq_num.clone();
@@ -246,7 +231,7 @@ impl CoinbaseIntxFixClient {
                                         &message, account_id, ts_init,
                                     ) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -272,7 +257,7 @@ impl CoinbaseIntxFixClient {
                                     let ts_init = clock.get_time_ns();
                                     match convert_to_fill_report(&message, account_id, ts_init) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -307,15 +292,24 @@ impl CoinbaseIntxFixClient {
             }
         });
 
+        let config = SocketConfig {
+            url: self.endpoint.clone(),
+            mode: Mode::Tls,
+            suffix: vec![FIX_DELIMITER],
+            message_handler: Some(handle_message),
+            heartbeat: None, // Using FIX heartbeats
+            reconnect_timeout_ms: Some(10000),
+            reconnect_delay_initial_ms: Some(5000),
+            reconnect_delay_max_ms: Some(30000),
+            reconnect_backoff_factor: Some(1.5),
+            reconnect_jitter_ms: Some(500),
+            certs_dir: None,
+        };
+
         let socket = match SocketClient::connect(
-            config,
-            Some(handle_message),
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
+            config, None, // post_connection
+            None, // post_reconnection
+            None, // post_disconnection
         )
         .await
         {
@@ -529,7 +523,7 @@ impl CoinbaseIntxFixClient {
 
 // Can't be moved to core because we don't want to depend on tracing there
 #[cfg(feature = "python")]
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

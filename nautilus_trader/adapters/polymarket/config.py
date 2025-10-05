@@ -33,15 +33,18 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type.
+        The Polymarket signature type:
+        - 0: EOA (Externally Owned Account)
+        - 1: Email/Magic Wallet Proxy
+        - 2: Browser Wallet Proxy
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
-        The Polymarket API public key.
+        The Polymarket API key.
         If ``None`` then will source the `POLYMARKET_API_KEY` environment variable.
     api_secret : str, optional
-        The Polymarket API public key.
+        The Polymarket API secret.
         If ``None`` then will source the `POLYMARKET_API_SECRET` environment variable.
     passphrase : str, optional
         The Polymarket API passphrase.
@@ -59,6 +62,9 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     compute_effective_deltas : bool, default False
         If True, computes effective deltas by comparing old and new order book states,
         reducing snapshot size. This takes ~1 millisecond, so is not recommended for latency-sensitive strategies.
+    drop_quotes_missing_side : bool, default True
+        If True, drops QuoteTick messages when bid or ask prices are missing (can occur near market resolution).
+        If False, uses boundary prices (0.001/0.999) with zero volume for missing sides.
 
     """
 
@@ -75,6 +81,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     ws_connection_delay_secs: PositiveFloat = 0.1
     update_instruments_interval_mins: PositiveInt | None = 60
     compute_effective_deltas: bool = False
+    drop_quotes_missing_side: bool = True
 
 
 class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -89,16 +96,19 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The private key for the wallet on the **Polygon** network.
         If ``None`` then will source the `POLYMARKET_PK` environment variable.
     signature_type : int, default 0 (EOA)
-        The Polymarket signature type.
+        The Polymarket signature type:
+        - 0: EOA (Externally Owned Account)
+        - 1: Email/Magic Wallet Proxy
+        - 2: Browser Wallet Proxy
     funder : str, optional
         The wallet address (public key) on the **Polygon** network used for funding USDC.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
-        The Polymarket API public key.
+        The Polymarket API key.
         If ``None`` then will source the `POLYMARKET_API_KEY` environment variable.
     api_secret : str, optional
-        The Polymarket API public key.
-        If ``None`` then will source the `POLYMARKET_API_SECRET` environment variables.
+        The Polymarket API secret.
+        If ``None`` then will source the `POLYMARKET_API_SECRET` environment variable.
     passphrase : str, optional
         The Polymarket API passphrase.
         If ``None`` then will source the `POLYMARKET_PASSPHRASE` environment variable.

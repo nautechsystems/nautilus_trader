@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Enumerations representing OKX WebSocket message metadata and codes.
+
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -60,7 +62,7 @@ pub enum OKXWsErrorType {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OKXWsOperation {
-    /// Subscribe to one or more topics.
+    /// Subscribes to one or more topics.
     Subscribe,
     /// Unsubscribe from one or more topics.
     Unsubscribe,
@@ -78,6 +80,10 @@ pub enum OKXWsOperation {
     BatchAmendOrders,
     /// Mass cancel all orders for an instrument.
     MassCancel,
+    /// Place a new algo order.
+    OrderAlgo,
+    /// Cancel algo orders.
+    CancelAlgos,
 }
 
 #[derive(
@@ -159,8 +165,8 @@ pub enum OKXWsChannel {
     Orders,
     #[serde(rename = "fills")]
     Fills,
-    // #[display(fmt = "orders-algo")]
-    // AlgoOrders,
+    #[serde(rename = "orders-algo")]
+    OrdersAlgo,
     // #[display(fmt = "algo-advance")]
     // AlgoAdvance,
     // #[display(fmt = "liquidation-warning")]

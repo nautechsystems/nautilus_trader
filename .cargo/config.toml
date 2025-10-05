@@ -1,31 +1,27 @@
 [target.'cfg(all())']
 rustflags = [
-    # https://rust-lang.github.io/rust-clippy/master/index.html#drop_non_drop
-    # Disable this lint as we explicitly drop even when `Drop` is not implemented
-    "-Aclippy::drop_non_drop",
+  # https://rust-lang.github.io/rust-clippy/master/index.html#drop_non_drop
+  # Disable this lint as we explicitly drop even when `Drop` is not implemented
+  "-Aclippy::drop_non_drop",
 ]
 
 [target.'cfg(target_os = "linux")']
 rustflags = [
-    "-C", "link-arg=-Wl,--gc-sections",
-    "-C", "link-arg=-Wl,--as-needed",
-    "-C", "link-arg=-Wl,-z,norelro",
-    "-C", "relocation-model=pic",
+  "-C",
+  "link-arg=-Wl,--gc-sections",
+  "-C",
+  "link-arg=-Wl,--as-needed",
+  "-C",
+  "link-arg=-Wl,-z,norelro",
+  "-C",
+  "relocation-model=pic",
 ]
 
 [target.x86_64-apple-darwin]
-rustflags = [
-    "-C", "link-arg=-undefined",
-    "-C", "link-arg=dynamic_lookup",
-]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
 
 [target.aarch64-apple-darwin]
-rustflags = [
-    "-C", "link-arg=-undefined",
-    "-C", "link-arg=dynamic_lookup",
-]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
 
 [target.x86_64-pc-windows-msvc]
-rustflags = [
-    "-C", "target-feature=+crt-static",
-]
+rustflags = ["-C", "target-feature=+crt-static"]

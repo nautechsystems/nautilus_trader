@@ -32,7 +32,9 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -240,6 +242,260 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", True)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2),
+            price=Price.from_str("42000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "queue"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        # Assert
+        request = mock_send_request.call_args
+        payload = request[1]["payload"]
+        assert payload["priceMatch"] == "QUEUE"
+        assert payload.get("price") is None
+        assert payload["timeInForce"] == "GTC"
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_post_only_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+            price=Price.from_str("35000"),
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "post-only" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_display_qty_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(3),
+            price=Price.from_str("28000"),
+            display_qty=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "iceberg" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_market_order_with_quote_quantity_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        denied_kwargs = mock_generate_denied.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
+
+    @pytest.mark.asyncio()
+    async def test_submit_market_order_with_price_match_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "not supported" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_invalid_price_match_value_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+            price=Price.from_str("33000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_short(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "invalid"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "not one of" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_non_string_price_match_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2),
+            price=Price.from_str("30000"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=TestIdStubs.position_id_long(),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": 123},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "string value" in reason
 
     @pytest.mark.asyncio()
     @pytest.mark.parametrize(
@@ -656,3 +912,416 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
+
+    @pytest.mark.asyncio()
+    async def test_submit_stop_limit_order_with_invalid_trigger_type_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            trigger_price=Price.from_str("10050.00"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRIGGER_TYPE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_stop_market_order_with_invalid_trigger_type_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(5),
+            trigger_price=Price.from_str("9950.00"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRIGGER_TYPE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_with_invalid_trigger_type_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(100),
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            activation_price=Price.from_str("10000.00"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRIGGER_TYPE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_with_invalid_offset_type_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(50),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            activation_price=Price.from_str("10000.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRAILING_OFFSET_TYPE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_with_offset_too_small_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(5),  # 0.05% - too small (min is 0.1%)
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            activation_price=Price.from_str("10000.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRAILING_OFFSET" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_with_offset_too_large_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(60000),  # 600% - too large (max is 5%)
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            activation_price=Price.from_str("10000.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRAILING_OFFSET" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_with_trigger_price_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(100),
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            trigger_price=Price.from_str("10000.00"),  # Should use activation_price instead
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "INVALID_TRIGGER_PRICE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_trailing_stop_without_activation_price_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal(100),
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "MISSING_ACTIVATION_PRICE" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_oco_order_list_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        # Create a bracket order which has linked_order_ids (simulates OCO-like structure)
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            sl_trigger_price=Price.from_str("9500.00"),
+            tp_price=Price.from_str("10500.00"),
+        )
+
+        for order in bracket.orders:
+            self.cache.add_order(order, None)
+
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order_list=bracket,
+            position_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order_list(submit_order_list)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        # All orders in bracket should be denied (entry + stop loss + take profit = 3 orders)
+        assert mock_generate_denied.call_count == 3
+        denied_client_order_ids = {
+            call.kwargs["client_order_id"] for call in mock_generate_denied.call_args_list
+        }
+        assert denied_client_order_ids == {order.client_order_id for order in bracket.orders}
+        for call in mock_generate_denied.call_args_list:
+            assert "UNSUPPORTED_OCO_CONDITIONAL_ORDERS" in call.kwargs["reason"]
+
+    @pytest.mark.asyncio()
+    async def test_submit_unsupported_order_type_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        # Create an order with unsupported type (MARKET_TO_LIMIT not supported on Binance)
+        order = self.strategy.order_factory.market_to_limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "UNSUPPORTED_ORDER_TYPE" in reason
+        assert "MARKET_TO_LIMIT" in reason
+
+    @pytest.mark.asyncio()
+    async def test_submit_unsupported_time_in_force_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        # Create an order with unsupported TIF (DAY not supported on Binance Futures)
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            time_in_force=TimeInForce.DAY,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "UNSUPPORTED_TIME_IN_FORCE" in reason
+        assert "DAY" in reason

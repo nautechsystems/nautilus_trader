@@ -23,8 +23,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
-use rust_decimal::Decimal;
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
@@ -34,7 +34,10 @@ use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
-use crate::types::{Currency, fixed::FIXED_PRECISION};
+use crate::types::{
+    Currency,
+    fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision},
+};
 
 // -----------------------------------------------------------------------------
 // MoneyRaw
@@ -45,6 +48,32 @@ pub type MoneyRaw = i128;
 
 #[cfg(not(feature = "high-precision"))]
 pub type MoneyRaw = i64;
+
+// -----------------------------------------------------------------------------
+
+/// The maximum raw money integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from MONEY_MAX * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because MONEY_MAX and FIXED_SCALAR
+/// are chosen such that their product fits within MoneyRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
+#[unsafe(no_mangle)]
+#[allow(unsafe_code)]
+pub static MONEY_RAW_MAX: MoneyRaw = (MONEY_MAX * FIXED_SCALAR) as MoneyRaw;
+
+/// The minimum raw money integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from MONEY_MIN * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because MONEY_MIN and FIXED_SCALAR
+/// are chosen such that their product fits within MoneyRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
+#[unsafe(no_mangle)]
+#[allow(unsafe_code)]
+pub static MONEY_RAW_MIN: MoneyRaw = (MONEY_MIN * FIXED_SCALAR) as MoneyRaw;
 
 // -----------------------------------------------------------------------------
 // MONEY_MAX
@@ -132,8 +161,22 @@ impl Money {
     }
 
     /// Creates a new [`Money`] instance from the given `raw` fixed-point value and the specified `currency`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `raw` is outside the representable range [`MONEY_RAW_MIN`, `MONEY_RAW_MAX`].
+    /// Panics if `currency.precision` exceeds [`FIXED_PRECISION`].
     #[must_use]
     pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
+        check_predicate_true(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            &format!(
+                "`raw` value {raw} exceeded bounds [{}, {}] for Money",
+                MONEY_RAW_MIN, MONEY_RAW_MAX
+            ),
+        )
+        .expect(FAILED);
+        check_fixed_precision(currency.precision).expect(FAILED);
         Self { raw, currency }
     }
 
@@ -196,7 +239,7 @@ impl Money {
         // to the currency's actual precision for decimal conversion.
         let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(precision_diff));
 
-        #[allow(clippy::useless_conversion)] // Required for precision modes
+        #[allow(clippy::useless_conversion, reason = "Required for precision modes")]
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 
@@ -206,6 +249,40 @@ impl Money {
         let amount_str = format!("{:.*}", self.currency.precision as usize, self.as_f64())
             .separate_with_underscores();
         format!("{} {}", amount_str, self.currency.code)
+    }
+
+    /// Creates a new [`Money`] from a `Decimal` value with specified currency.
+    ///
+    /// This method provides more reliable parsing by using Decimal arithmetic
+    /// to avoid floating-point precision issues during conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The decimal value cannot be converted to the raw representation.
+    /// - Overflow occurs during scaling.
+    pub fn from_decimal(decimal: Decimal, currency: Currency) -> anyhow::Result<Self> {
+        let precision = currency.precision;
+
+        let scale_factor = Decimal::from(10_i64.pow(precision as u32));
+        let scaled = decimal * scale_factor;
+        let rounded = scaled.round();
+
+        #[cfg(feature = "high-precision")]
+        let raw_at_precision: MoneyRaw = rounded.to_i128().ok_or_else(|| {
+            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i128")
+        })?;
+        #[cfg(not(feature = "high-precision"))]
+        let raw_at_precision: MoneyRaw = rounded.to_i64().ok_or_else(|| {
+            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i64")
+        })?;
+
+        let scale_up = 10_i64.pow((FIXED_PRECISION - precision) as u32) as MoneyRaw;
+        let raw = raw_at_precision
+            .checked_mul(scale_up)
+            .ok_or_else(|| anyhow::anyhow!("Overflow when scaling to fixed precision"))?;
+
+        Ok(Self { raw, currency })
     }
 }
 
@@ -222,15 +299,18 @@ impl FromStr for Money {
             ));
         }
 
-        // Parse amount
-        let amount = parts[0]
-            .replace('_', "")
-            .parse::<f64>()
-            .map_err(|e| format!("Error parsing amount '{}' as `f64`: {e:?}", parts[0]))?;
+        let clean_amount = parts[0].replace('_', "");
 
-        // Parse currency
+        let decimal = if clean_amount.contains('e') || clean_amount.contains('E') {
+            Decimal::from_scientific(&clean_amount)
+                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
+        } else {
+            Decimal::from_str(&clean_amount)
+                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
+        };
+
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
-        Self::new_checked(amount, currency).map_err(|e| e.to_string())
+        Self::from_decimal(decimal, currency).map_err(|e| e.to_string())
     }
 }
 
@@ -422,13 +502,7 @@ impl Display for Money {
         if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{} {}", self.raw, self.currency)
         } else {
-            write!(
-                f,
-                "{:.*} {}",
-                self.currency.precision as usize,
-                self.as_f64(),
-                self.currency
-            )
+            write!(f, "{} {}", self.as_decimal(), self.currency)
         }
     }
 }
@@ -720,6 +794,63 @@ mod tests {
     }
 
     #[rstest]
+    #[case("1e7 USD", 10_000_000.0)]
+    #[case("2.5e3 EUR", 2_500.0)]
+    #[case("1.234e-2 GBP", 0.01)] // GBP has 2 decimal places, so 0.01234 becomes 0.01
+    #[case("5E-3 JPY", 0.0)] // JPY has 0 decimal places, so 0.005 becomes 0
+    fn test_from_str_scientific_notation(#[case] input: &str, #[case] expected_value: f64) {
+        let money = Money::from_str(input).unwrap();
+        assert!(approx_eq!(
+            f64,
+            money.as_f64(),
+            expected_value,
+            epsilon = 1e-10
+        ));
+    }
+
+    #[rstest]
+    #[case("1_234.56 USD", 1234.56)]
+    #[case("1_000_000 EUR", 1_000_000.0)]
+    #[case("99_999.99 GBP", 99_999.99)]
+    fn test_from_str_with_underscores(#[case] input: &str, #[case] expected_value: f64) {
+        let money = Money::from_str(input).unwrap();
+        assert!(approx_eq!(
+            f64,
+            money.as_f64(),
+            expected_value,
+            epsilon = 1e-10
+        ));
+    }
+
+    #[rstest]
+    fn test_from_decimal_precision_preservation() {
+        use rust_decimal::Decimal;
+
+        let decimal = Decimal::from_str("123.45").unwrap();
+        let money = Money::from_decimal(decimal, Currency::USD()).unwrap();
+        assert_eq!(money.currency.precision, 2);
+        assert!(approx_eq!(f64, money.as_f64(), 123.45, epsilon = 1e-10));
+
+        // Verify raw value is exact for USD (2 decimal places)
+        let expected_raw = 12345 * 10_i64.pow((FIXED_PRECISION - 2) as u32);
+        assert_eq!(money.raw, expected_raw as MoneyRaw);
+    }
+
+    #[rstest]
+    fn test_from_decimal_rounding() {
+        use rust_decimal::Decimal;
+
+        // Test banker's rounding with USD (2 decimal places)
+        let decimal = Decimal::from_str("1.005").unwrap();
+        let money = Money::from_decimal(decimal, Currency::USD()).unwrap();
+        assert_eq!(money.as_f64(), 1.0); // 1.005 rounds to 1.00 (even)
+
+        let decimal = Decimal::from_str("1.015").unwrap();
+        let money = Money::from_decimal(decimal, Currency::USD()).unwrap();
+        assert_eq!(money.as_f64(), 1.02); // 1.015 rounds to 1.02 (even)
+    }
+
+    #[rstest]
     fn test_money_hash() {
         use std::{
             collections::hash_map::DefaultHasher,
@@ -758,6 +889,14 @@ mod tests {
         assert_eq!(money, deserialized);
     }
 
+    #[rstest]
+    #[should_panic(expected = "`raw` value")]
+    fn test_money_from_raw_out_of_range_panics() {
+        let usd = Currency::USD();
+        let raw = MONEY_RAW_MAX.saturating_add(1);
+        let _ = Money::from_raw(raw, usd);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Property-based testing
     ////////////////////////////////////////////////////////////////////////////////
@@ -793,13 +932,18 @@ mod tests {
             // Use smaller values than MONEY_MAX to avoid overflow in arithmetic operations
             Just(MONEY_MIN / 2.0),
             Just(MONEY_MAX / 2.0),
+            Just(MONEY_MIN + 1.0),
+            Just(MONEY_MAX - 1.0),
+            Just(MONEY_MIN),
+            Just(MONEY_MAX),
         ]
     }
 
     fn money_strategy() -> impl Strategy<Value = Money> {
-        (money_amount_strategy(), currency_strategy()).prop_map(|(amount, currency)| {
-            Money::new_checked(amount, currency).unwrap_or_else(|_| Money::zero(currency))
-        })
+        (money_amount_strategy(), currency_strategy())
+            .prop_filter_map("constructible money", |(amount, currency)| {
+                Money::new_checked(amount, currency).ok()
+            })
     }
 
     proptest! {
@@ -865,9 +1009,14 @@ mod tests {
                         sum1.checked_add(money3.raw),
                         money1.raw.checked_add(sum2)
                     ) {
-                        let left_result = Money::from_raw(left, money1.currency);
-                        let right_result = Money::from_raw(right, money1.currency);
-                        prop_assert_eq!(left_result, right_result, "Addition should be associative");
+                        // Check if results are within bounds before constructing Money
+                        if (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&left)
+                            && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&right)
+                        {
+                            let left_result = Money::from_raw(left, money1.currency);
+                            let right_result = Money::from_raw(right, money1.currency);
+                            prop_assert_eq!(left_result, right_result, "Addition should be associative");
+                        }
                     }
             }
         }
@@ -880,11 +1029,12 @@ mod tests {
             // Subtraction should be the inverse of addition for same currency
             if money1.currency == money2.currency {
                 // Test (a + b) - b == a, avoiding overflow
-                if let Some(sum_raw) = money1.raw.checked_add(money2.raw) {
-                    let sum = Money::from_raw(sum_raw, money1.currency);
-                    let diff = sum - money2;
-                    prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
-                }
+                if let Some(sum_raw) = money1.raw.checked_add(money2.raw)
+                    && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
+                        let sum = Money::from_raw(sum_raw, money1.currency);
+                        let diff = sum - money2;
+                        prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
+                    }
             }
         }
 
@@ -906,10 +1056,11 @@ mod tests {
             prop_assert_eq!(negated.currency, money.currency, "Negation preserves currency");
 
             // Test additive inverse property (if no overflow)
-            if let Some(sum_raw) = money.raw.checked_add(negated.raw) {
-                let sum = Money::from_raw(sum_raw, money.currency);
-                prop_assert!(sum.is_zero(), "Money + (-Money) should equal zero");
-            }
+            if let Some(sum_raw) = money.raw.checked_add(negated.raw)
+                && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
+                    let sum = Money::from_raw(sum_raw, money.currency);
+                    prop_assert!(sum.is_zero(), "Money + (-Money) should equal zero");
+                }
         }
 
         #[rstest]

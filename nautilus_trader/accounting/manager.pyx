@@ -30,10 +30,13 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -211,14 +214,14 @@ cdef class AccountsManager:
         if not orders_open:
             account.clear_balance_locked(instrument.id)
 
-        total_locked = Decimal(0)
-        base_xrate  = Decimal(0)
-
-        cdef Currency currency = None
-        cdef Money balance_locked
+        cdef dict[Currency, Money] total_locked = {}
+        base_xrate = Decimal(0)
 
         cdef:
             Order order
+            Currency currency = None
+            Money balance_locked
+            Money cumulative_locked
         for order in orders_open:
             assert order.instrument_id == instrument.id
 
@@ -226,7 +229,6 @@ cdef class AccountsManager:
                 # Does not contribute to locked balance
                 continue
 
-            # Calculate balance locked
             balance_locked = account.calculate_balance_locked(
                 instrument,
                 order.side,
@@ -234,18 +236,12 @@ cdef class AccountsManager:
                 order.price if order.has_price_c() else order.trigger_price,
             )
 
-            # The currency is the output currency for the aggregated locked total,
-            # set currency from the first order's locked balance
-            if currency is None:
-                currency = balance_locked.currency
-
-            locked = balance_locked.as_decimal()
+            currency = balance_locked.currency
+            locked_amount = balance_locked.as_decimal()
 
             if account.base_currency is not None:
                 if base_xrate == 0:
-                    # Cache base currency and xrate
-                    # If account has a base currency then we convert and aggregate in base
-                    currency = account.base_currency
+                    # Cache base xrate on first pass only
                     base_xrate = self._calculate_xrate_to_base(
                         instrument=instrument,
                         account=account,
@@ -260,20 +256,25 @@ cdef class AccountsManager:
                         )
                         return False
 
-                # Apply base xrate
-                locked = round(locked * base_xrate, currency.get_precision())
+                # Always use base currency when converting
+                currency = account.base_currency
+                balance_locked = Money(locked_amount * base_xrate, currency)
 
-            total_locked += locked
+            cumulative_locked = total_locked.get(currency)
+
+            if cumulative_locked is not None:
+                cumulative_locked.add_assign(balance_locked)
+            else:
+                total_locked[currency] = balance_locked
 
         # No contributing orders (reduce-only/unpriced): clear any existing lock
-        if currency is None:
+        if len(total_locked) == 0:
             account.clear_balance_locked(instrument.id)
             return True
 
-        cdef Money locked_money = Money(total_locked, currency)
-        account.update_balance_locked(instrument.id, locked_money)
-
-        self._log.info(f"{instrument.id} balance_locked={locked_money.to_formatted_str()}")
+        for currency, balance_locked in total_locked.items():
+            account.update_balance_locked(instrument.id, balance_locked)
+            self._log.debug(f"{instrument.id} balance_locked={balance_locked.to_formatted_str()}")
 
         return True
 
@@ -441,7 +442,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side == OrderSide.SELL else PriceType.ASK,
             )
             if xrate is None:
                 self._log.error(
@@ -459,7 +460,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side == OrderSide.SELL else PriceType.ASK,
             )
             if xrate is None:
                 self._log.error(

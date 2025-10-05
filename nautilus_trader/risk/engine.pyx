@@ -785,20 +785,34 @@ cdef class RiskEngine(Component):
                     return False  # Denied
             elif order.is_sell_c():
                 if account.base_currency is not None:
-                    if cum_notional_sell is None:
-                        cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
+                    if order.is_reduce_only:
+                        if self.debug:
+                            self._log.debug(
+                                "Reduce-only SELL skips cumulative notional free-balance check",
+                                LogColor.MAGENTA,
+                            )
                     else:
-                        cum_notional_sell._mem.raw += order_balance_impact._mem.raw
+                        if cum_notional_sell is None:
+                            cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
+                        else:
+                            cum_notional_sell._mem.raw += order_balance_impact._mem.raw
 
-                    if self.debug:
-                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
-                    if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
-                        self._deny_order(
-                            order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
-                        )
-                        return False  # Denied
+                        if self.debug:
+                            self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
+                        if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
+                            self._deny_order(
+                                order=order,
+                                reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
+                            )
+                            return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
+                    if order.is_reduce_only:
+                        if self.debug:
+                            self._log.debug(
+                                "Reduce-only SELL skips base-currency cumulative free check",
+                                LogColor.MAGENTA,
+                            )
+                        continue
                     cash_value = Money(effective_quantity.as_f64_c(), base_currency)
                     free = account.balance_free(base_currency)
 

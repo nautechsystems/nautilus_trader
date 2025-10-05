@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! URL helpers and endpoint metadata for OKX services.
+
 use nautilus_core::env::get_env_var;
 
 /// OKX endpoint types for determining URL and authentication requirements.
@@ -24,7 +26,7 @@ pub enum OKXEndpointType {
     Business,
 }
 
-/// Check if endpoint requires authentication.
+/// Checks if endpoint requires authentication.
 pub fn requires_authentication(endpoint_type: OKXEndpointType) -> bool {
     matches!(
         endpoint_type,
@@ -32,12 +34,12 @@ pub fn requires_authentication(endpoint_type: OKXEndpointType) -> bool {
     )
 }
 
-/// Get the HTTP base URL.
+/// Gets the HTTP base URL.
 pub fn get_http_base_url() -> String {
     get_env_var("OKX_BASE_URL_HTTP").unwrap_or_else(|_| "https://www.okx.com".to_string())
 }
 
-/// Get the WebSocket base URL for public data (market data).
+/// Gets the WebSocket base URL for public data (market data).
 pub fn get_ws_base_url_public(is_demo: bool) -> String {
     if is_demo {
         get_env_var("OKX_DEMO_BASE_URL_WS_PUBLIC")
@@ -48,7 +50,7 @@ pub fn get_ws_base_url_public(is_demo: bool) -> String {
     }
 }
 
-/// Get the WebSocket base URL for private data (account/order management).
+/// Gets the WebSocket base URL for private data (account/order management).
 pub fn get_ws_base_url_private(is_demo: bool) -> String {
     if is_demo {
         get_env_var("OKX_DEMO_BASE_URL_WS_PRIVATE")
@@ -59,7 +61,7 @@ pub fn get_ws_base_url_private(is_demo: bool) -> String {
     }
 }
 
-/// Get the WebSocket base URL for business data (bars/candlesticks).
+/// Gets the WebSocket base URL for business data (bars/candlesticks).
 pub fn get_ws_base_url_business(is_demo: bool) -> String {
     if is_demo {
         get_env_var("OKX_DEMO_BASE_URL_WS_BUSINESS")
@@ -70,7 +72,7 @@ pub fn get_ws_base_url_business(is_demo: bool) -> String {
     }
 }
 
-/// Get WebSocket URL by endpoint type.
+/// Gets WebSocket URL by endpoint type.
 pub fn get_ws_url(endpoint_type: OKXEndpointType, is_demo: bool) -> String {
     match endpoint_type {
         OKXEndpointType::Public => get_ws_base_url_public(is_demo),
@@ -79,7 +81,7 @@ pub fn get_ws_url(endpoint_type: OKXEndpointType, is_demo: bool) -> String {
     }
 }
 
-/// Get the WebSocket base URL (backward compatibility - defaults to private).
+/// Gets the WebSocket base URL (backward compatibility - defaults to private).
 ///
 /// .. deprecated::
 ///     Use get_ws_base_url_public() or get_ws_base_url_private() instead.

@@ -124,6 +124,8 @@ cpdef order_side_to_pyo3(OrderSide value)
 cpdef order_type_to_pyo3(OrderType value)
 cpdef order_status_to_pyo3(OrderStatus value)
 cpdef time_in_force_to_pyo3(TimeInForce value)
+cpdef trigger_type_to_pyo3(TriggerType value)
+cpdef contingency_type_to_pyo3(ContingencyType value)
 
 cpdef OrderSide order_side_from_pyo3(value)
 cpdef OrderType order_type_from_pyo3(value)

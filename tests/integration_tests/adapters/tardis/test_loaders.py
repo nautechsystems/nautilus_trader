@@ -138,18 +138,86 @@ def test_tardis_load_depth10_from_snapshot5(
     # Assert
     assert len(deltas) == 10_000
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
+
+    # Verify all 10 bid levels (first 5 from data, rest are null/empty)
     assert len(deltas[0].bids) == 10
-    assert deltas[0].bids[0].price == Price.from_str("11657.07")
-    assert deltas[0].bids[0].size == Quantity.from_str("10.896")
-    assert deltas[0].bids[0].side == OrderSide.BUY
-    assert deltas[0].bids[0].order_id == 0
+    expected_bids = [
+        ("11657.07", "10.896"),
+        ("11656.97", "0.2"),
+        ("11655.78", "0.2"),
+        ("11655.77", "0.98"),
+        ("11655.68", "0.111"),
+    ]
+
+    for i, (price, size) in enumerate(expected_bids):
+        assert deltas[0].bids[i].price == Price.from_str(price)
+        assert deltas[0].bids[i].size == Quantity.from_str(size)
+        assert deltas[0].bids[i].side == OrderSide.BUY
+        assert deltas[0].bids[i].order_id == 0
+    # Levels 5-9 should be empty (price 0, size 0)
+    for i in range(5, 10):
+        assert deltas[0].bids[i].price == Price.from_int(0)
+        assert deltas[0].bids[i].size == Quantity.from_int(0)
+        assert deltas[0].bids[i].side == OrderSide.NO_ORDER_SIDE
+        assert deltas[0].bids[i].order_id == 0
+
+    # Verify bid prices are strictly decreasing for non-zero levels (logical check)
+    for i in range(1, 5):
+        assert (
+            deltas[0].bids[i].price < deltas[0].bids[i - 1].price  # type: ignore
+        ), f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i-1} ({deltas[0].bids[i-1].price})"
+
+    # Verify all 10 ask levels (first 5 from data, rest are null/empty)
     assert len(deltas[0].asks) == 10
-    assert deltas[0].asks[0].price == Price.from_str("11657.08")
-    assert deltas[0].asks[0].size == Quantity.from_str("1.714")
-    assert deltas[0].asks[0].side == OrderSide.SELL
-    assert deltas[0].asks[0].order_id == 0
+    expected_asks = [
+        ("11657.08", "1.714"),
+        ("11657.54", "5.4"),
+        ("11657.56", "0.238"),
+        ("11657.61", "0.077"),
+        ("11657.92", "0.918"),
+    ]
+
+    for i, (price, size) in enumerate(expected_asks):
+        assert deltas[0].asks[i].price == Price.from_str(price)
+        assert deltas[0].asks[i].size == Quantity.from_str(size)
+        assert deltas[0].asks[i].side == OrderSide.SELL
+        assert deltas[0].asks[i].order_id == 0
+    # Levels 5-9 should be empty (price 0, size 0)
+    for i in range(5, 10):
+        assert deltas[0].asks[i].price == Price.from_int(0)
+        assert deltas[0].asks[i].size == Quantity.from_int(0)
+        assert deltas[0].asks[i].side == OrderSide.NO_ORDER_SIDE
+        assert deltas[0].asks[i].order_id == 0
+
+    # Verify ask prices are strictly increasing for non-zero levels (logical check)
+    for i in range(1, 5):
+        assert (
+            deltas[0].asks[i].price > deltas[0].asks[i - 1].price  # type: ignore
+        ), f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i-1} ({deltas[0].asks[i-1].price})"
+
+    # Verify bid/ask spread is positive (best ask > best bid)
+    assert (
+        deltas[0].asks[0].price > deltas[0].bids[0].price  # type: ignore
+    ), f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+
+    # Verify bid and ask counts
     assert deltas[0].bid_counts[0] == 1
+    assert deltas[0].bid_counts[1] == 1
+    assert deltas[0].bid_counts[2] == 1
+    assert deltas[0].bid_counts[3] == 1
+    assert deltas[0].bid_counts[4] == 1
+    for i in range(5, 10):
+        assert deltas[0].bid_counts[i] == 0
+
     assert deltas[0].ask_counts[0] == 1
+    assert deltas[0].ask_counts[1] == 1
+    assert deltas[0].ask_counts[2] == 1
+    assert deltas[0].ask_counts[3] == 1
+    assert deltas[0].ask_counts[4] == 1
+    for i in range(5, 10):
+        assert deltas[0].ask_counts[i] == 0
+
+    # Verify metadata
     assert deltas[0].flags == 128
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
@@ -184,18 +252,72 @@ def test_tardis_load_depth10_from_snapshot25(
     # Assert
     assert len(deltas) == 10_000
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+
+    # Verify all 10 bid levels from snapshot25 (only first 10 of 25 are used)
     assert len(deltas[0].bids) == 10
-    assert deltas[0].bids[0].price == Price.from_str("11657.07")
-    assert deltas[0].bids[0].size == Quantity.from_str("10.896")
-    assert deltas[0].bids[0].side == OrderSide.BUY
-    assert deltas[0].bids[0].order_id == 0
+    expected_bids = [
+        ("11657.07", "10.896"),
+        ("11656.97", "0.2"),
+        ("11655.78", "0.2"),
+        ("11655.77", "0.98"),
+        ("11655.68", "0.111"),
+        ("11655.66", "0.077"),
+        ("11655.57", "0.34"),
+        ("11655.48", "0.4"),
+        ("11655.26", "1.185"),
+        ("11654.86", "0.195"),
+    ]
+
+    for i, (price, size) in enumerate(expected_bids):
+        assert deltas[0].bids[i].price == Price.from_str(price)
+        assert deltas[0].bids[i].size == Quantity.from_str(size)
+        assert deltas[0].bids[i].side == OrderSide.BUY
+        assert deltas[0].bids[i].order_id == 0
+
+    # Verify bid prices are strictly decreasing (logical check)
+    for i in range(1, 10):
+        assert (
+            deltas[0].bids[i].price < deltas[0].bids[i - 1].price  # type: ignore
+        ), f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i-1} ({deltas[0].bids[i-1].price})"
+
+    # Verify all 10 ask levels from snapshot25 (only first 10 of 25 are used)
     assert len(deltas[0].asks) == 10
-    assert deltas[0].asks[0].price == Price.from_str("11657.08")
-    assert deltas[0].asks[0].size == Quantity.from_str("1.714")
-    assert deltas[0].asks[0].side == OrderSide.SELL
-    assert deltas[0].asks[0].order_id == 0
-    assert deltas[0].bid_counts[0] == 1
-    assert deltas[0].ask_counts[0] == 1
+    expected_asks = [
+        ("11657.08", "1.714"),
+        ("11657.54", "5.4"),
+        ("11657.56", "0.238"),
+        ("11657.61", "0.077"),
+        ("11657.92", "0.918"),
+        ("11658.09", "1.015"),
+        ("11658.12", "0.665"),
+        ("11658.19", "0.583"),
+        ("11658.28", "0.255"),
+        ("11658.29", "0.656"),
+    ]
+
+    for i, (price, size) in enumerate(expected_asks):
+        assert deltas[0].asks[i].price == Price.from_str(price)
+        assert deltas[0].asks[i].size == Quantity.from_str(size)
+        assert deltas[0].asks[i].side == OrderSide.SELL
+        assert deltas[0].asks[i].order_id == 0
+
+    # Verify ask prices are strictly increasing (logical check)
+    for i in range(1, 10):
+        assert (
+            deltas[0].asks[i].price > deltas[0].asks[i - 1].price  # type: ignore
+        ), f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i-1} ({deltas[0].asks[i-1].price})"
+
+    # Verify bid/ask spread is positive (best ask > best bid)
+    assert (
+        deltas[0].asks[0].price > deltas[0].bids[0].price  # type: ignore
+    ), f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+
+    # Verify bid and ask counts (all should be 1 for snapshot data)
+    for i in range(10):
+        assert deltas[0].bid_counts[i] == 1
+        assert deltas[0].ask_counts[i] == 1
+
+    # Verify metadata
     assert deltas[0].flags == 128
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000

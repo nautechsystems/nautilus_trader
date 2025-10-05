@@ -106,6 +106,10 @@ cdef extern from "../includes/common.h":
     # A real-time clock which uses system time.
     #
     # Timestamps are guaranteed to be unique and monotonically increasing.
+    #
+    # # Threading
+    #
+    # The clock holds thread-local runtime state and must remain on its originating thread.
     cdef struct LiveClock:
         pass
 
@@ -133,6 +137,10 @@ cdef extern from "../includes/common.h":
     # A static test clock.
     #
     # Stores the current timestamp internally which can be advanced.
+    #
+    # # Threading
+    #
+    # This clock is thread-affine; use it only from the thread that created it.
     cdef struct TestClock:
         pass
 
@@ -257,6 +265,11 @@ cdef extern from "../includes/common.h":
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
     #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+    #
     # # Panics
     #
     # Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -335,6 +348,11 @@ cdef extern from "../includes/common.h":
     # This function assumes:
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
     #
     # # Panics
     #
@@ -446,6 +464,7 @@ cdef extern from "../includes/common.h":
                               uint8_t is_colored,
                               uint8_t is_bypassed,
                               uint8_t print_config,
+                              uint8_t log_components_only,
                               uint64_t max_file_size,
                               uint32_t max_backup_count);
 

@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.89.0 | 3.11-3.13 |
-| `Linux (ARM64)`    | 1.89.0 | 3.11-3.13 |
-| `macOS (ARM64)`    | 1.89.0 | 3.11-3.13 |
-| `Windows (x86_64)` | 1.89.0 | 3.11-3.13 |
+| `Linux (x86_64)`   | 1.90.0 | 3.11-3.13 |
+| `Linux (ARM64)`    | 1.90.0 | 3.11-3.13 |
+| `macOS (ARM64)`    | 1.90.0 | 3.11-3.13 |
+| `Windows (x86_64)` | 1.90.0 | 3.11-3.13 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -127,7 +127,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
 | [Binance US](https://binance.us)                                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
 | [Binance Futures](https://www.binance.com/en/futures)                        | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
-| [BitMEX](https://www.bitmex.com)                                             | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/bitmex.md)        |
+| [BitMEX](https://www.bitmex.com)                                             | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](docs/integrations/bitmex.md)        |
 | [Bybit](https://www.bybit.com)                                               | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/bybit.md)         |
 | [Coinbase International](https://www.coinbase.com/en/international-exchange) | `COINBASE_INTX`       | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/coinbase_intx.md) |
 | [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/databento.md)     |
@@ -232,26 +232,30 @@ To install the latest stable release:
 pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
 ```
 
+> [!TIP]
+>
+> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically:
+
 #### Development wheels
 
 Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
 
-**Note**: Wheels from the `develop` branch are only built for the Linux x86_64 platform to save time
-and compute resources, while `nightly` wheels support additional platforms as shown below.
+This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 | Platform           | Nightly | Develop |
 | :----------------- | :------ | :------ |
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | -       |
+| `macOS (ARM64)`    | ✓       | ✓       |
+| `Windows (x86_64)` | ✓       | ✓       |
 
-This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
-while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
-
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+**Note**: Development wheels from the `develop` branch publish for every supported platform except Linux ARM64.
+Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
 
 > [!WARNING]
 >
@@ -267,10 +271,10 @@ To install the latest available pre-release (including development wheels):
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
-To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
+To install a specific development wheel (e.g., `1.221.0a20250912` for September 12, 2025):
 
 ```bash
-pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 #### Available versions
@@ -282,6 +286,10 @@ To programmatically fetch and list available versions:
 ```bash
 curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
 ```
+
+> [!NOTE]
+>
+> On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before installing binary wheels.
 
 #### Branch updates
 
@@ -306,7 +314,7 @@ It's possible to install from source using pip if you first install the build de
 
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+       - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
    - Verify (any system):
        from a terminal session run: `rustc --version`
 
@@ -328,12 +336,12 @@ It's possible to install from source using pip if you first install the build de
        ```
 
    - Windows:
-       1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
-          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+       1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
+          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
        2. Enable `clang` in the current shell:
 
           ```powershell
-          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
           ```
 
    - Verify (any system):
@@ -341,9 +349,17 @@ It's possible to install from source using pip if you first install the build de
 
 4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+    - Linux and macOS:
+
+        ```bash
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ```
+
+    - Windows (PowerShell):
+
+        ```powershell
+        irm https://astral.sh/uv/install.ps1 | iex
+        ```
 
 5. Clone the source with `git`, and install from the project's root directory:
 

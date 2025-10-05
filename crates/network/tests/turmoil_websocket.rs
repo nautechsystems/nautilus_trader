@@ -23,7 +23,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::net::TcpConnector;
 use rstest::rstest;
-use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
+use tokio_tungstenite::{WebSocketStream, accept_async, client_async, tungstenite::Message};
 use turmoil::{Builder, net};
 
 /// Turmoil TCP connector for testing.
@@ -42,46 +42,22 @@ impl TcpConnector for TurmoilTcpConnector {
 }
 
 /// A test-specific WebSocket client that uses dependency injection for networking.
-struct TestWebSocketClient<C: TcpConnector> {
-    connector: C,
+struct TestWebSocketClient {
+    connector: TurmoilTcpConnector,
 }
 
-impl<C: TcpConnector> TestWebSocketClient<C> {
-    const fn new(connector: C) -> Self {
+impl TestWebSocketClient {
+    const fn new(connector: TurmoilTcpConnector) -> Self {
         Self { connector }
     }
 
     async fn connect(
         &self,
         addr: &str,
-    ) -> Result<WebSocketStream<C::Stream>, Box<dyn std::error::Error>> {
-        // Connect using the injected connector
+    ) -> Result<WebSocketStream<turmoil::net::TcpStream>, Box<dyn std::error::Error>> {
         let stream = self.connector.connect(addr).await?;
-
-        // Create a simple HTTP request for WebSocket upgrade
-        let _request = format!(
-            "GET / HTTP/1.1\\r\\n\
-             Host: {}\\r\\n\
-             Upgrade: websocket\\r\\n\
-             Connection: Upgrade\\r\\n\
-             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\\r\\n\
-             Sec-WebSocket-Version: 13\\r\\n\
-             \\r\\n",
-            addr.split(':').next().unwrap_or("server")
-        );
-
-        // For this simplified test, we'll manually upgrade the connection
-        // In practice, you'd use tokio-tungstenite's client_async_with_config
-        // but that requires more complex mocking of the HTTP upgrade process
-
-        // For now, let's create a mock WebSocket stream
-        let ws_stream = WebSocketStream::from_raw_socket(
-            stream,
-            tokio_tungstenite::tungstenite::protocol::Role::Client,
-            None,
-        )
-        .await;
-
+        let url = format!("ws://{addr}/");
+        let (ws_stream, _response) = client_async(url, stream).await?;
         Ok(ws_stream)
     }
 }
@@ -137,30 +113,43 @@ fn test_turmoil_websocket_with_dependency_injection() {
         let client = TestWebSocketClient::new(TurmoilTcpConnector);
 
         // Try to connect to the server
-        let connect_result = client.connect("server:8080").await;
+        let mut ws_stream = client
+            .connect("server:8080")
+            .await
+            .expect("WebSocket handshake should succeed");
 
-        // For this test, we mainly want to verify that:
-        // 1. The dependency injection pattern works
-        // 2. The turmoil connector is being used
-        // 3. Basic networking flows through turmoil
+        ws_stream
+            .send(Message::Text("hello turmoil".into()))
+            .await
+            .expect("send text");
+        let echo = ws_stream
+            .next()
+            .await
+            .expect("expected echo")
+            .expect("websocket frame");
+        assert_eq!(echo, Message::Text("hello turmoil".into()));
 
-        match connect_result {
-            Ok(mut ws_stream) => {
-                // Send a test message
-                let send_result = ws_stream.send(Message::Text("hello turmoil".into())).await;
+        ws_stream
+            .send(Message::Binary(b"abc".to_vec().into()))
+            .await
+            .expect("send binary");
+        let binary_echo = ws_stream
+            .next()
+            .await
+            .expect("expected binary echo")
+            .expect("websocket frame");
+        assert_eq!(binary_echo, Message::Binary(b"abc".to_vec().into()));
 
-                // Even if the WebSocket protocol doesn't work perfectly,
-                // we've proven that the dependency injection approach works
-                // and that turmoil networking is being used
-                println!("WebSocket connection established and message sent: {send_result:?}");
-            }
-            Err(e) => {
-                // Connection failed, but that's expected since we're doing a
-                // simplified WebSocket implementation. The important thing is
-                // that we're using turmoil networking.
-                println!("Connection failed as expected with simplified WebSocket: {e}");
-            }
-        }
+        ws_stream
+            .send(Message::Ping(b"ping".to_vec().into()))
+            .await
+            .expect("send ping");
+        let pong = ws_stream
+            .next()
+            .await
+            .expect("expected pong")
+            .expect("websocket frame");
+        assert_eq!(pong, Message::Pong(b"ping".to_vec().into()));
 
         Ok(())
     });
@@ -177,9 +166,22 @@ fn test_turmoil_websocket_network_partition() {
     sim.client("client", async {
         let client = TestWebSocketClient::new(TurmoilTcpConnector);
 
-        // Initial connection attempt
-        let initial_result = client.connect("server:8080").await;
-        println!("Initial connection: {:?}", initial_result.is_ok());
+        // Initial connection succeeds and can exchange a message
+        let mut initial_stream = client
+            .connect("server:8080")
+            .await
+            .expect("initial connect");
+        initial_stream
+            .send(Message::Text("before_partition".into()))
+            .await
+            .expect("send before partition");
+        let reply = initial_stream
+            .next()
+            .await
+            .expect("echo before partition")
+            .expect("frame");
+        assert_eq!(reply, Message::Text("before_partition".into()));
+        drop(initial_stream);
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -202,8 +204,21 @@ fn test_turmoil_websocket_network_partition() {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Should be able to attempt connection again after repair
-        let repair_result = client.connect("server:8080").await;
-        println!("Connection after repair: {:?}", repair_result.is_ok());
+        let mut repaired_stream = client
+            .connect("server:8080")
+            .await
+            .expect("connect after repair");
+        repaired_stream
+            .send(Message::Text("after_partition".into()))
+            .await
+            .expect("send after repair");
+        let repaired_reply = repaired_stream
+            .next()
+            .await
+            .expect("echo after repair")
+            .expect("frame");
+        assert_eq!(repaired_reply, Message::Text("after_partition".into()));
+        drop(repaired_stream);
 
         Ok(())
     });

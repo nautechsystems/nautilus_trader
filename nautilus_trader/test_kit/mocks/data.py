@@ -24,9 +24,11 @@ from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
@@ -79,6 +81,7 @@ class MockMarketDataClient(MarketDataClient):
         self.quote_ticks: list[QuoteTick] = []
         self.trade_ticks: list[TradeTick] = []
         self.bars: list[Bar] = []
+        self.order_book_depths: list[OrderBookDepth10] = []
 
     def request_instrument(self, request: RequestInstrument) -> None:
         self._handle_instrument(
@@ -123,7 +126,16 @@ class MockMarketDataClient(MarketDataClient):
         self._handle_bars_py(
             request.bar_type,
             self.bars,
-            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        self._handle_order_book_depths_py(
+            request.instrument_id,
+            self.order_book_depths,
             request.id,
             request.start,
             request.end,

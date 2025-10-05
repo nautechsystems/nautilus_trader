@@ -21,6 +21,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 default = []
 extension-module = [
   "nautilus-core/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
@@ -41,8 +42,6 @@ futures-util = { workspace = true }
 http = { workspace = true }
 memchr = { workspace = true }
 nonzero_ext = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
@@ -52,8 +51,13 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
 webpki-roots = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-common = { workspace = true }

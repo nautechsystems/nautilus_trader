@@ -1,0 +1,60 @@
+{
+  "arg": {
+    "channel": "orders",
+    "instType": "SWAP"
+  },
+  "data": [
+    {
+      "accFillSz": "0.01",
+      "avgPx": "101950.0",
+      "cTime": "1737400200000",
+      "cancelSource": "",
+      "cancelSourceReason": "",
+      "category": "normal",
+      "ccy": "USDT",
+      "clOrdId": "706620792746729474_0",
+      "execType": "T",
+      "fee": "-0.020390",
+      "feeCcy": "USDT",
+      "fillPx": "101950.0",
+      "fillSz": "0.01",
+      "fillTime": "1737400200100",
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "isTpLimit": "false",
+      "lever": "2.0",
+      "linkedAlgoOrd": {
+        "algoId": "706620792746729474"
+      },
+      "ordId": "706620792746729999",
+      "ordType": "trigger",
+      "pnl": "10.5",
+      "posSide": "long",
+      "px": "",
+      "pxType": "",
+      "pxUsd": "",
+      "pxVol": "",
+      "quickMgnType": "",
+      "rebate": "0",
+      "rebateCcy": "USDT",
+      "reduceOnly": "true",
+      "side": "sell",
+      "slOrdPx": "",
+      "slTriggerPx": "",
+      "slTriggerPxType": "",
+      "source": "algo",
+      "state": "filled",
+      "stpId": "",
+      "stpMode": "cancel_maker",
+      "sz": "0.01",
+      "tag": "",
+      "tdMode": "isolated",
+      "tgtCcy": "",
+      "tpOrdPx": "",
+      "tpTriggerPx": "",
+      "tpTriggerPxType": "",
+      "tradeId": "1518905530",
+      "uTime": "1737400200100"
+    }
+  ]
+}

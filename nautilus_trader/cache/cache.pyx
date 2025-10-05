@@ -826,7 +826,7 @@ cdef class Cache(CacheFacade):
         for client_order_id in self._index_orders_closed.copy():
             order = self._orders.get(client_order_id)
 
-            if order is not None and order.ts_closed + buffer_ns <= ts_now:
+            if order is not None and order.is_closed_c() and order.ts_closed + buffer_ns <= ts_now:
                 # Check any linked orders (contingency orders)
                 if order.linked_order_ids is not None:
                     for linked_order_id in order.linked_order_ids:
@@ -869,7 +869,7 @@ cdef class Cache(CacheFacade):
         for position_id in self._index_positions_closed.copy():
             position = self._positions.get(position_id)
 
-            if position is not None and position.ts_closed + buffer_ns <= ts_now:
+            if position is not None and position.is_closed_c() and position.ts_closed + buffer_ns <= ts_now:
                 self.purge_position(position_id, purge_from_database)
 
     cpdef void purge_order(self, ClientOrderId client_order_id, bint purge_from_database = False):
@@ -4180,7 +4180,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        self._index_order_client.get(client_order_id)
+        return self._index_order_client.get(client_order_id)
 
     cpdef list orders(
         self,

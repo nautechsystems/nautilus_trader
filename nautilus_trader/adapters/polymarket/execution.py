@@ -22,6 +22,7 @@ from typing import Any
 import msgspec
 from py_clob_client.client import BalanceAllowanceParams
 from py_clob_client.client import ClobClient
+from py_clob_client.client import MarketOrderArgs
 from py_clob_client.client import OpenOrderParams
 from py_clob_client.client import OrderArgs
 from py_clob_client.client import PartialCreateOrderOptions
@@ -31,8 +32,6 @@ from py_clob_client.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
 from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
@@ -826,61 +825,60 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 "use either MARKET, LIMIT",
             )
 
-    # TODO: Submitting native market orders is under development
+    def _deny_market_order_quantity(self, order: Order, reason: str) -> None:
+        self._log.error(
+            f"Cannot submit market order {order.client_order_id}: {reason}",
+            LogColor.RED,
+        )
+        self.generate_order_denied(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=reason,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
     async def _submit_market_order(self, command: SubmitOrder) -> None:
         self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
 
         order = command.order
 
-        # --------------------------------------------------------------------------------------
-        # MARKET ORDER CHANGE
-        # --------------------------------------------------------------------------------------
-        # if order.quantity.precision > POLYMARKET_MAX_PRECISION_TAKER:
-        #     self._log.error(
-        #         f"Market order quantity max precision {POLYMARKET_MAX_PRECISION_TAKER} on Polymarket, "
-        #         f"was {order.quantity.precision}",
-        #     )
-        #     return  # TODO: Change to deny after next release
+        if order.side == OrderSide.BUY:
+            if not order.is_quote_quantity:
+                self._deny_market_order_quantity(
+                    order,
+                    "Polymarket market BUY orders require quote-denominated quantities; "
+                    "resubmit with `quote_quantity=True`",
+                )
+                return
+        else:
+            if order.is_quote_quantity:
+                self._deny_market_order_quantity(
+                    order,
+                    "Polymarket market SELL orders require base-denominated quantities; "
+                    "resubmit with `quote_quantity=False`",
+                )
+                return
 
-        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+        amount = float(order.quantity)
+        order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
 
-        # # Create signed Polymarket market order
-        # market_order_args = MarketOrderArgs(
-        #     token_id=get_polymarket_token_id(order.instrument_id),
-        #     amount=amount,
-        #     side=order_side_to_str(order.side),
-        #     price=0,  # True market order
-        #     order_type=convert_tif_to_polymarket_order_type(order.time_in_force),
-        # )
-        # options = PartialCreateOrderOptions(neg_risk=False)
-        # signing_start = self._clock.timestamp()
-        # signed_order = await asyncio.to_thread(
-        #     self._http_client.create_market_order,
-        #     market_order_args,
-        #     options=options,
-        # )
-        # interval = self._clock.timestamp() - signing_start
-        # self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
-        # --------------------------------------------------------------------------------------
-
-        price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
-
-        # Create signed Polymarket limit order for now
-        order_args = OrderArgs(
-            price=price,
+        market_order_args = MarketOrderArgs(
             token_id=get_polymarket_token_id(order.instrument_id),
-            size=float(order.quantity),
+            amount=amount,
             side=order_side_to_str(order.side),
+            order_type=order_type,
         )
+
         options = PartialCreateOrderOptions(neg_risk=False)
         signing_start = self._clock.timestamp()
         signed_order = await asyncio.to_thread(
-            self._http_client.create_order,
-            order_args,
+            self._http_client.create_market_order,
+            market_order_args,
             options=options,
         )
         interval = self._clock.timestamp() - signing_start
-        self._log.info(f"Signed Polymarket order in {interval:.3f}s", LogColor.BLUE)
+        self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
 
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -960,15 +958,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     color=LogColor.MAGENTA,
                 )
 
-            ws_message = self._decoder_user_msg.decode(raw)
-            for msg in ws_message:
-                if isinstance(msg, PolymarketUserOrder):
-                    self._handle_ws_order_msg(msg, wait_for_ack=True)
-                elif isinstance(msg, PolymarketUserTrade):
-                    self._add_trade_to_cache(msg, raw)
-                    self._handle_ws_trade_msg(msg, wait_for_ack=True)
-                else:
-                    self._log.error(f"Unrecognized websocket message {msg}")
+            msg = self._decoder_user_msg.decode(raw)
+            if isinstance(msg, PolymarketUserOrder):
+                self._handle_ws_order_msg(msg, wait_for_ack=True)
+            elif isinstance(msg, PolymarketUserTrade):
+                self._add_trade_to_cache(msg, raw)
+                self._handle_ws_trade_msg(msg, wait_for_ack=True)
+            else:
+                self._log.error(f"Unrecognized websocket message {msg}")
         except Exception as e:
             self._log.exception(f"Error handling websocket message: {raw.decode()}", e)
 

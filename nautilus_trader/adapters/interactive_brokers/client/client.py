@@ -83,6 +83,7 @@ class InteractiveBrokersClient(
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
+        fetch_all_open_orders: bool = False,
     ) -> None:
         super().__init__(
             clock=clock,
@@ -97,6 +98,7 @@ class InteractiveBrokersClient(
         self._host = host
         self._port = port
         self._client_id = client_id
+        self._fetch_all_open_orders = fetch_all_open_orders
 
         # TWS API
         self._eclient: EClient = EClient(
@@ -145,6 +147,7 @@ class InteractiveBrokersClient(
             {}
         )  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
+        self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
         # OrderMixin
         self._exec_id_details: dict[
