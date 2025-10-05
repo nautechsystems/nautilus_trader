@@ -388,6 +388,33 @@ pub struct WsBasicOrderData {
     #[serde(rename = "origSz")]
     pub orig_sz: String,
     pub cloid: Option<String>,
+    /// Trigger price for conditional orders (stop/take-profit)
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: Option<String>,
+    /// Whether this is a market or limit trigger order
+    #[serde(rename = "isMarket")]
+    pub is_market: Option<bool>,
+    /// Take-profit or stop-loss indicator
+    pub tpsl: Option<String>,
+    /// Whether the trigger has been activated
+    #[serde(rename = "triggerActivated")]
+    pub trigger_activated: Option<bool>,
+    /// Trailing stop parameters if applicable
+    #[serde(rename = "trailingStop")]
+    pub trailing_stop: Option<WsTrailingStopData>,
+}
+
+/// Trailing stop data from WebSocket
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsTrailingStopData {
+    /// Trailing offset value
+    pub offset: String,
+    /// Offset type: "price", "percentage", or "basisPoints"
+    #[serde(rename = "offsetType")]
+    pub offset_type: String,
+    /// Current callback price (highest/lowest price reached)
+    #[serde(rename = "callbackPrice")]
+    pub callback_price: Option<String>,
 }
 
 /// WebSocket user event data
@@ -406,6 +433,16 @@ pub enum WsUserEventData {
     NonUserCancel {
         #[serde(rename = "nonUserCancel")]
         non_user_cancel: Vec<WsNonUserCancelData>,
+    },
+    /// Trigger order activated (moved from pending to active)
+    TriggerActivated {
+        #[serde(rename = "triggerActivated")]
+        trigger_activated: WsTriggerActivatedData,
+    },
+    /// Trigger order executed (trigger price reached, order placed)
+    TriggerTriggered {
+        #[serde(rename = "triggerTriggered")]
+        trigger_triggered: WsTriggerTriggeredData,
     },
 }
 
@@ -470,6 +507,33 @@ pub struct WsLiquidationData {
 pub struct WsNonUserCancelData {
     pub coin: Ustr,
     pub oid: u64,
+}
+
+/// Trigger order activated event data
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsTriggerActivatedData {
+    pub coin: Ustr,
+    pub oid: u64,
+    pub time: u64,
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    pub tpsl: String,
+}
+
+/// Trigger order triggered event data
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsTriggerTriggeredData {
+    pub coin: Ustr,
+    pub oid: u64,
+    pub time: u64,
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    #[serde(rename = "marketPx")]
+    pub market_px: String,
+    pub tpsl: String,
+    /// Order ID of the resulting market/limit order after trigger
+    #[serde(rename = "resultingOid")]
+    pub resulting_oid: Option<u64>,
 }
 
 /// WebSocket user fills data
@@ -710,5 +774,62 @@ mod tests {
         assert_eq!(book.coin, "ETH");
         assert_eq!(book.levels[0].len(), 1);
         assert_eq!(book.levels[1].len(), 1);
+    }
+
+    // ========================================================================
+    // Conditional Order WebSocket Message Tests
+    // ========================================================================
+
+    #[rstest]
+    fn test_ws_trailing_stop_data_deserialization() {
+        let json = r#"{
+            "offset": "100.0",
+            "offsetType": "price",
+            "callbackPrice": "50000.0"
+        }"#;
+
+        let data: WsTrailingStopData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.offset, "100.0");
+        assert_eq!(data.offset_type, "price");
+        assert_eq!(data.callback_price.unwrap(), "50000.0");
+    }
+
+    #[rstest]
+    fn test_ws_trigger_activated_data_deserialization() {
+        let json = r#"{
+            "coin": "BTC",
+            "oid": 12345,
+            "time": 1704470400000,
+            "triggerPx": "50000.0",
+            "tpsl": "sl"
+        }"#;
+
+        let data: WsTriggerActivatedData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.coin, Ustr::from("BTC"));
+        assert_eq!(data.oid, 12345);
+        assert_eq!(data.trigger_px, "50000.0");
+        assert_eq!(data.tpsl, "sl");
+        assert_eq!(data.time, 1704470400000);
+    }
+
+    #[rstest]
+    fn test_ws_trigger_triggered_data_deserialization() {
+        let json = r#"{
+            "coin": "ETH",
+            "oid": 67890,
+            "time": 1704470500000,
+            "triggerPx": "3000.0",
+            "marketPx": "3001.0",
+            "tpsl": "tp",
+            "resultingOid": 99999
+        }"#;
+
+        let data: WsTriggerTriggeredData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.coin, Ustr::from("ETH"));
+        assert_eq!(data.oid, 67890);
+        assert_eq!(data.trigger_px, "3000.0");
+        assert_eq!(data.market_px, "3001.0");
+        assert_eq!(data.tpsl, "tp");
+        assert_eq!(data.resulting_oid, Some(99999));
     }
 }

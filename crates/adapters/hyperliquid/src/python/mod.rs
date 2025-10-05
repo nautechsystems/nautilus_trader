@@ -26,5 +26,12 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HyperliquidHttpClient>()?;
+
+    // Register conditional order enums
+    m.add_class::<crate::common::enums::HyperliquidTpSl>()?;
+    m.add_class::<crate::common::enums::HyperliquidTriggerPriceType>()?;
+    m.add_class::<crate::common::enums::HyperliquidConditionalOrderType>()?;
+    m.add_class::<crate::common::enums::HyperliquidTrailingOffsetType>()?;
+
     Ok(())
 }
