@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy_primitives::{U160, U256};
+use alloy_primitives::{I256, U160, U256};
 
 pub const Q128: U256 = U256::from_limbs([0, 0, 1, 0]);
 pub const Q96_U160: U160 = U160::from_limbs([0, 1 << 32, 0]);
@@ -272,6 +272,28 @@ impl FullMath {
     #[must_use]
     pub fn truncate_to_u128(value: U256) -> u128 {
         (value & U256::from(u128::MAX)).to::<u128>()
+    }
+
+    /// Converts an I256 signed integer to U256, mimicking Solidity's `uint256(int256)` cast.
+    ///
+    /// This performs a reinterpret cast, preserving the bit pattern:
+    /// - Positive values: returns the value as-is
+    /// - Negative values: returns the two's complement representation as unsigned
+    #[must_use]
+    pub fn truncate_to_u256(value: I256) -> U256 {
+        value.into_raw()
+    }
+
+    /// Converts a U256 unsigned integer to I256, mimicking Solidity's `int256(uint256)` cast.
+    ///
+    /// This performs a reinterpret cast, preserving the bit pattern.
+    /// Solidity's SafeCast.toInt256() checks the value fits in I256::MAX, then reinterprets.
+    ///
+    /// # Panics
+    /// Panics if the value exceeds I256::MAX (matching Solidity's require check)
+    #[must_use]
+    pub fn truncate_to_i256(value: U256) -> I256 {
+        I256::from_raw(value)
     }
 }
 

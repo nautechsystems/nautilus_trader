@@ -55,6 +55,8 @@ pub fn compare_pool_profiler(
     positions: Vec<PoolPosition>,
 ) -> bool {
     let mut all_match = true;
+    let total_ticks = ticks.len();
+    let total_positions = positions.len();
 
     if current_tick != profiler.current_tick.unwrap() {
         tracing::error!(
@@ -144,7 +146,10 @@ pub fn compare_pool_profiler(
     }
 
     if tick_mismatches == 0 {
-        tracing::info!("✓ Provided ticks with liquidity net and gross are matching");
+        tracing::info!(
+            "✓ Provided {} ticks with liquidity net and gross are matching",
+            total_ticks
+        );
     }
 
     // Check positions
@@ -178,7 +183,10 @@ pub fn compare_pool_profiler(
     }
 
     if position_mismatches == 0 {
-        tracing::info!("✓ Provided positions with liquidity are matching");
+        tracing::info!(
+            "✓ Provided {} active positions with liquidity are matching",
+            total_positions
+        );
     } else {
         all_match = false;
     }
