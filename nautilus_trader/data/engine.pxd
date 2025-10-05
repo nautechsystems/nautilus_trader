@@ -99,9 +99,10 @@ cdef class DataEngine(Component):
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
-    cdef readonly dict[UUID4, int] _query_group_n_responses
+    cdef readonly dict[UUID4, int] _query_group_n_components
     cdef readonly dict[UUID4, list] _query_group_responses
-    cdef readonly dict[UUID4, RequestData] _query_group_requests
+    cdef readonly dict[UUID4, RequestData] _query_group_main_request
+    cdef readonly dict[UUID4, list[UUID4]] _query_group_request_ids
 
     cdef readonly dict[InstrumentId, str] _topic_cache_deltas
     cdef readonly dict[InstrumentId, str] _topic_cache_quotes

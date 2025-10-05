@@ -890,13 +890,16 @@ cdef class BacktestEngine:
 
         self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
 
-        self._data_requests[subscription_name] = request
-        request.params["end_ns"] = self._end_ns
+        request.params["backtest_end_ns"] = self._end_ns
+
         time_range_generator = TIME_RANGE_GENERATORS.get(
             request.params.get("time_range_generator", ""),
             BacktestEngine.default_time_range_generator
         )(self._last_ns, request.params)
+
         cdef bint append_data = request.params.get("append_data", True)
+
+        self._data_requests[subscription_name] = request
         self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, time_range_generator), append_data)
 
     def _subscription_generator(self, str subscription_name, time_range_generator):
@@ -982,7 +985,7 @@ cdef class BacktestEngine:
         cdef uint64_t end_time
         cdef uint64_t last_subscription_ts = initial_time
 
-        cdef uint64_t end_ns = params.get("end_ns", 0)
+        cdef uint64_t backtest_end_ns = params.get("backtest_end_ns", 0)
         cdef bint point_data = params.get("point_data", False)
         durations_seconds = params.get("durations_seconds", [None])
         durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
@@ -996,13 +999,13 @@ cdef class BacktestEngine:
                 offset = 1 if iteration_index > 0 and not point_data else 0
                 start_time = last_subscription_ts + offset
 
-                if start_time > end_ns:
+                if start_time > backtest_end_ns:
                     return
 
                 if duration_ns:
-                    end_time = min(start_time + duration_ns - offset, end_ns)
+                    end_time = min(start_time + duration_ns - offset, backtest_end_ns)
                 else:
-                    end_time = end_ns
+                    end_time = backtest_end_ns
 
                 last_subscription_ts = end_time
 

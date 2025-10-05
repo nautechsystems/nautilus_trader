@@ -177,9 +177,10 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_trades: list[InstrumentId] = []
         self._buffered_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
         self._snapshot_info: dict[str, SnapshotInfo] = {}
-        self._query_group_n_responses: dict[UUID4, int] = {}
+        self._query_group_n_components: dict[UUID4, int] = {}
         self._query_group_responses: dict[UUID4, list] = {}
-        self._query_group_requests: dict[UUID4, RequestData] = {}
+        self._query_group_main_request: dict[UUID4, RequestData] = {}
+        self._query_group_request_ids: dict[UUID4, list[UUID4]] = {}
 
         self._topic_cache_instruments: dict[InstrumentId, str] = {}
         self._topic_cache_deltas: dict[InstrumentId, str] = {}
@@ -712,7 +713,8 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_trades.clear()
         self._buffered_deltas_map.clear()
         self._snapshot_info.clear()
-        self._query_group_requests.clear()
+        self._query_group_main_request.clear()
+        self._query_group_request_ids.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -1493,8 +1495,12 @@ cdef class DataEngine(Component):
 
         skip_catalog_data = request.params.get("skip_catalog_data", False)
         n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data and not skip_catalog_data else 0)
+        request.params["identifier"] = identifier # Allows to update catalog file names when no data is returned
 
+        # From here the main request is split into subrequests
         if n_requests == 0:
+            self._new_query_group(request, 1)
+            self._query_group_request_ids[request.id].append(request.id)
             response = DataResponse(
                 client_id=request.client_id,
                 venue=request.venue,
@@ -1515,21 +1521,17 @@ cdef class DataEngine(Component):
         # Catalog query
         if has_catalog_data and not skip_catalog_data:
             new_request = request.with_dates(start, end, now.value)
-            new_request.params["identifier"] = identifier
+            self._query_group_request_ids[new_request.correlation_id].append(new_request.id)
             self._query_catalog(new_request)
 
         # Client requests
         if len(missing_intervals) > 0 and used_client:
             for request_start, request_end in missing_intervals:
                 new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end), now.value)
-                new_request.params["identifier"] = identifier
+                self._query_group_request_ids[new_request.correlation_id].append(new_request.id)
                 self._date_range_client_request(used_client, new_request)
 
     cpdef void _date_range_client_request(self, DataClient client, RequestData request):
-        if client is None:
-            self._log_request_warning(request)
-            return
-
         if isinstance(request, RequestBars):
             client.request_bars(request)
         elif isinstance(request, RequestQuoteTicks):
@@ -1921,7 +1923,15 @@ cdef class DataEngine(Component):
         self.response_count += 1
 
         # We may need to join responses from a catalog and a client
-        grouped_response = self._handle_query_group(response)
+        grouped_response = None
+
+        if response.data_type.type is Instrument:
+            instrument_properties = response.params.get("instrument_properties")
+            data = [self._modify_instrument_properties(instrument, instrument_properties) for instrument in response.data]
+            response.data = data
+            grouped_response = response
+        else:
+            grouped_response = self._handle_query_group(response)
 
         if grouped_response is None:
             return
@@ -1949,53 +1959,36 @@ cdef class DataEngine(Component):
         self._msgbus.response(grouped_response)
 
     cpdef void _new_query_group(self, RequestData request, int n_components):
-        self._query_group_n_responses[request.id] = n_components
-        self._query_group_requests[request.id] = request
+        # The main request is stored so the grouped response can use its information
+        self._query_group_n_components[request.id] = n_components
+        self._query_group_main_request[request.id] = request
+        self._query_group_request_ids[request.id] = []
+        self._query_group_responses[request.id] = []
 
     cpdef DataResponse _handle_query_group(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
         return self._handle_query_group_aux(response)
 
     cdef DataResponse _handle_query_group_aux(self, DataResponse response):
-        if response.data_type.type is Instrument:
-            instrument_properties = response.params.get("instrument_properties")
-            data = [self._modify_instrument_properties(instrument, instrument_properties) for instrument in response.data]
-            response.data = data
-
-            return response
-
         correlation_id = response.correlation_id
 
-        if correlation_id not in self._query_group_n_responses or self._query_group_n_responses[correlation_id] == 1:
-            self._check_bounds(response)
-            start = response.start.value if response.start is not None else None
-            end = response.end.value if response.end is not None else None
-            identifier = response.params.get("identifier")
-            update_catalog = response.params.get("update_catalog", False)
-
-            if update_catalog:
-                self._update_catalog(
-                    response.data,
-                    response.data_type.type,
-                    identifier,
-                    start,
-                    end,
-                )
-
-            self._query_group_n_responses.pop(correlation_id, None)
-
-            return response
+        # Look for main request id
+        for main_request_id in self._query_group_request_ids:
+            if correlation_id in self._query_group_request_ids[main_request_id]:
+                correlation_id = main_request_id
+                break
 
         if correlation_id not in self._query_group_responses:
-            self._query_group_responses[correlation_id] = []
+            self._log.error(f"_handle_query_group_aux: correlation_id {correlation_id} not found in _query_group_responses. Available keys: {list(self._query_group_responses.keys())}")
+            return None
 
         self._query_group_responses[correlation_id].append(response)
 
-        if len(self._query_group_responses[correlation_id]) != self._query_group_n_responses[correlation_id]:
+        if len(self._query_group_responses[correlation_id]) != self._query_group_n_components[correlation_id]:
             return None
 
         cdef list responses = self._query_group_responses[correlation_id]
-        cdef list result = []
+        cdef list data_result = []
 
         for response in responses:
             self._check_bounds(response)
@@ -2013,20 +2006,21 @@ cdef class DataEngine(Component):
                     end
                 )
 
-            result += response.data
+            data_result += response.data
 
-        result.sort(key=lambda x: x.ts_init)
+        data_result.sort(key=lambda x: x.ts_init)
 
-        # Use the original request from the group to ensure the correct response
-        # parameters are returned to the caller.
-        original_request = self._query_group_requests[correlation_id]
-        response.data = result
-        response.start = original_request.start
-        response.end = original_request.end
+        # Use the main request to ensure the correct response parameters are returned to the caller.
+        main_request = self._query_group_main_request[correlation_id]
+        response.data = data_result
+        response.start = main_request.start
+        response.end = main_request.end
+        response.correlation_id = main_request.id
 
-        del self._query_group_n_responses[correlation_id]
+        del self._query_group_n_components[correlation_id]
+        del self._query_group_main_request[correlation_id]
+        del self._query_group_request_ids[correlation_id]
         del self._query_group_responses[correlation_id]
-        del self._query_group_requests[correlation_id]
 
         return response
 
@@ -2431,9 +2425,10 @@ cdef class DataEngine(Component):
                 bar_type=composite_bar_type,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_subscribe_bars(client, subscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
@@ -2446,9 +2441,10 @@ cdef class DataEngine(Component):
                 instrument_id=command.bar_type.instrument_id,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_subscribe_trade_ticks(client, subscribe)
         else:
@@ -2461,9 +2457,10 @@ cdef class DataEngine(Component):
                 instrument_id=command.bar_type.instrument_id,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_subscribe_quote_ticks(client, subscribe)
 
@@ -2545,9 +2542,10 @@ cdef class DataEngine(Component):
                 bar_type=composite_bar_type,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_unsubscribe_bars(client, unsubscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
@@ -2559,9 +2557,10 @@ cdef class DataEngine(Component):
                 instrument_id=command.bar_type.instrument_id,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_unsubscribe_trade_ticks(client, unsubscribe)
         else:
@@ -2573,9 +2572,10 @@ cdef class DataEngine(Component):
                 instrument_id=command.bar_type.instrument_id,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
-                params=command.params
+                params=command.params,
+                correlation_id=command.id,
             )
             self._handle_unsubscribe_quote_ticks(client, unsubscribe)
 
