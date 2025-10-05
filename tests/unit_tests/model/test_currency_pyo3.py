@@ -19,7 +19,9 @@ import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import CurrencyType
+from nautilus_trader.model.currencies import register_currency
 from nautilus_trader.model.objects import FIXED_PRECISION
+from nautilus_trader.model.objects import Currency as CurrencyCython
 
 
 AUD = Currency.from_str("AUD")
@@ -264,3 +266,82 @@ class TestCurrency:
 
         # Assert
         assert result == expected
+
+
+def test_register_currency_helper_makes_available_to_both():
+    test_currency = CurrencyCython(
+        code="TESTCROSS1",
+        precision=8,
+        iso4217=0,
+        name="Test Cross Currency 1",
+        currency_type=CurrencyType.CRYPTO,
+    )
+
+    register_currency(test_currency, overwrite=True)
+
+    cython_result = CurrencyCython.from_str("TESTCROSS1")
+    assert cython_result.code == "TESTCROSS1"
+    assert cython_result.precision == 8
+    assert cython_result.name == "Test Cross Currency 1"
+
+    pyo3_result = Currency.from_str("TESTCROSS1", strict=True)
+    assert pyo3_result.code == "TESTCROSS1"
+    assert pyo3_result.precision == 8
+    assert pyo3_result.name == "Test Cross Currency 1"
+
+
+def test_cython_from_str_only_registers_in_cython_map():
+    cython_currency = CurrencyCython.from_str("TESTCROSS2")
+    assert cython_currency.code == "TESTCROSS2"
+    assert cython_currency.precision == 8
+
+    with pytest.raises(ValueError, match="Unknown currency"):
+        Currency.from_str("TESTCROSS2", strict=True)
+
+
+def test_pyo3_from_str_only_registers_in_pyo3_map():
+    pyo3_currency = Currency.from_str("TESTCROSS3")
+    assert pyo3_currency.code == "TESTCROSS3"
+    assert pyo3_currency.precision == 8
+
+    cython_result = CurrencyCython.from_str("TESTCROSS3", strict=True)
+    assert cython_result is None
+
+
+def test_pyo3_register_makes_available_to_pyo3_only():
+    test_currency = Currency(
+        code="TESTPYO3ONLY",
+        precision=6,
+        iso4217=0,
+        name="PyO3 Only Currency",
+        currency_type=CurrencyType.CRYPTO,
+    )
+
+    Currency.register(test_currency, overwrite=True)
+
+    pyo3_result = Currency.from_str("TESTPYO3ONLY", strict=True)
+    assert pyo3_result.code == "TESTPYO3ONLY"
+
+    cython_result = CurrencyCython.from_str("TESTPYO3ONLY")
+    assert cython_result.code == "TESTPYO3ONLY"
+    assert cython_result.precision == 8
+
+
+def test_cython_register_makes_available_to_cython_only():
+    test_currency = CurrencyCython(
+        code="TESTCYTHONONLY",
+        precision=6,
+        iso4217=0,
+        name="Cython Only Currency",
+        currency_type=CurrencyType.CRYPTO,
+    )
+
+    CurrencyCython.register(test_currency, overwrite=True)
+
+    cython_result = CurrencyCython.from_str("TESTCYTHONONLY")
+    assert cython_result.code == "TESTCYTHONONLY"
+    assert cython_result.precision == 6
+
+    pyo3_result = Currency.from_str("TESTCYTHONONLY")
+    assert pyo3_result.code == "TESTCYTHONONLY"
+    assert pyo3_result.precision == 8

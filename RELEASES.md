@@ -76,6 +76,7 @@ This will be the final release with support for Python 3.11.
 - Fixed position purge logic to prevent purging re-opened position
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
+- Fixed Currency registration to synchronize between Cython and PyO3 runtimes via new `register_currency()` helper
 - Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
