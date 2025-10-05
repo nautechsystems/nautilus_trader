@@ -75,6 +75,7 @@ This will be the final release with support for Python 3.11.
 ### Fixes
 - Fixed reduce-only order panic when quantity exceeds position
 - Fixed position purge logic to prevent purging re-opened position
+- Fixed order average price calculation that was double-counting current fill in weighted average
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed Currency registration to synchronize between Cython and PyO3 runtimes via new `register_currency()` helper

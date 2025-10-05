@@ -178,7 +178,8 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Decimal("20000.0")
-        assert order.avg_px == 101.33333333333333
+        # Corrected weighted average calculation
+        assert order.avg_px == 101.5
         assert self.exchange.get_account().balance_total(USD) == Money(999999.64, USD)
 
     def test_aggressive_partial_fill(self):
@@ -207,7 +208,8 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("60000.0")
-        assert order.avg_px == 101.93333333333334
+        # Corrected weighted average calculation
+        assert order.avg_px == 102.33333333333333
 
     def test_post_only_insert(self):
         # Arrange: Prepare market

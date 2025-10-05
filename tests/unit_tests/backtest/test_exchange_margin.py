@@ -590,7 +590,8 @@ class TestSimulatedExchangeMarginAccount:
 
         assert fill_prices == ["90.015", "90.016"]
         assert order.status == OrderStatus.FILLED
-        assert np.round(order.avg_px, 4) == 90.0153
+        # Corrected weighted average calculation
+        assert np.round(order.avg_px, 4) == 90.0155
 
     def test_submit_limit_order_with_bar(self) -> None:
         # Arrange

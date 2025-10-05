@@ -2254,7 +2254,8 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(60_000)
         assert order.leaves_qty == Quantity.from_int(40_000)
         assert order.signed_decimal_qty() == Decimal(40_000)
-        assert order.avg_px == 1.000014
+        # Correct weighted average: (20k * 1.00001 + 40k * 1.00002) / 60k = 1.0000166666...
+        assert order.avg_px == pytest.approx(1.0000166666666668, rel=1e-9)
         assert order.commissions() == [Money(4.0, USD)]
         assert len(order.trade_ids) == 2
         assert not order.is_inflight
@@ -2311,7 +2312,8 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
-        assert order.avg_px == pytest.approx(1.0000185714285712, rel=1e-9)
+        # Correct weighted average: (20k * 1.00001 + 40k * 1.00002 + 40k * 1.00003) / 100k = 1.000022
+        assert order.avg_px == pytest.approx(1.000022, rel=1e-9)
         assert order.commissions() == [Money(6.0, USD)]
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
