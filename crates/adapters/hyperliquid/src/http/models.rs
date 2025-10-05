@@ -17,7 +17,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::HyperliquidSide;
+use crate::common::enums::{
+    HyperliquidSide, HyperliquidTpSl, HyperliquidTrailingOffsetType, HyperliquidTriggerPriceType,
+};
 
 /// Represents metadata about available markets from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -363,6 +365,251 @@ pub enum HyperliquidExchangeResponse {
         /// Error message.
         error: String,
     },
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Conditional Order Models
+////////////////////////////////////////////////////////////////////////////////
+
+/// Extended trigger order parameters for advanced conditional orders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidTriggerOrderParams {
+    /// Whether this is a market order when triggered (true) or limit order (false).
+    #[serde(rename = "isMarket")]
+    pub is_market: bool,
+    /// Trigger price.
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    /// Take profit or stop loss type.
+    pub tpsl: HyperliquidTpSl,
+    /// Optional trigger price type (last, mark, oracle). Defaults to mark price if not specified.
+    #[serde(rename = "triggerPxType", skip_serializing_if = "Option::is_none")]
+    pub trigger_px_type: Option<HyperliquidTriggerPriceType>,
+}
+
+/// Trailing stop order parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidTrailingStopParams {
+    /// Trailing offset value.
+    #[serde(
+        rename = "trailingOffset",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub trailing_offset: Decimal,
+    /// Trailing offset type (price, percentage, basis_points).
+    #[serde(rename = "trailingOffsetType")]
+    pub trailing_offset_type: HyperliquidTrailingOffsetType,
+    /// Optional activation price - price at which the trailing stop becomes active.
+    #[serde(rename = "activationPx", skip_serializing_if = "Option::is_none")]
+    pub activation_px: Option<String>,
+    /// Take profit or stop loss type.
+    pub tpsl: HyperliquidTpSl,
+}
+
+/// Request to place a trigger order (stop or take profit).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidPlaceTriggerOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Whether to buy or sell.
+    #[serde(rename = "b")]
+    pub is_buy: bool,
+    /// Order size.
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
+    /// Limit price (required if is_market is false).
+    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
+    pub limit_px: Option<String>,
+    /// Trigger order parameters.
+    #[serde(flatten)]
+    pub trigger_params: HyperliquidTriggerOrderParams,
+    /// Whether this is a reduce-only order.
+    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// Optional client order ID for tracking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloid: Option<Cloid>,
+}
+
+/// Request to modify an existing trigger order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidModifyTriggerOrderRequest {
+    /// Order ID to modify.
+    pub oid: OrderId,
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// New trigger price.
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    /// New limit price (if applicable).
+    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
+    pub limit_px: Option<String>,
+    /// New order size (if changing).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub sz: Option<Decimal>,
+}
+
+/// Request to cancel a trigger order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidCancelTriggerOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Order ID to cancel.
+    pub oid: OrderId,
+}
+
+/// Trigger order status response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidTriggerOrderStatus {
+    /// Order ID.
+    pub oid: OrderId,
+    /// Order status string.
+    pub status: String,
+    /// Timestamp when status was updated (milliseconds).
+    #[serde(rename = "statusTimestamp")]
+    pub status_timestamp: u64,
+    /// Trigger order information.
+    pub order: HyperliquidTriggerOrderInfo,
+}
+
+/// Information about a trigger order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidTriggerOrderInfo {
+    /// Asset symbol.
+    pub coin: Ustr,
+    /// Order side.
+    pub side: HyperliquidSide,
+    /// Limit price (if limit order).
+    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
+    pub limit_px: Option<String>,
+    /// Trigger price.
+    #[serde(rename = "triggerPx")]
+    pub trigger_px: String,
+    /// Order size.
+    pub sz: String,
+    /// Whether this is a market order when triggered.
+    #[serde(rename = "isMarket")]
+    pub is_market: bool,
+    /// Take profit or stop loss type.
+    pub tpsl: HyperliquidTpSl,
+    /// Order ID.
+    pub oid: OrderId,
+    /// Order creation timestamp (milliseconds).
+    pub timestamp: u64,
+    /// Whether the order has been triggered.
+    #[serde(default)]
+    pub triggered: bool,
+    /// Trigger timestamp (milliseconds, if triggered).
+    #[serde(rename = "triggerTime", skip_serializing_if = "Option::is_none")]
+    pub trigger_time: Option<u64>,
+}
+
+/// Bracket order request (entry + TP + SL).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidBracketOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Whether to buy or sell.
+    #[serde(rename = "b")]
+    pub is_buy: bool,
+    /// Entry order size.
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
+    /// Entry order limit price.
+    #[serde(rename = "limitPx")]
+    pub limit_px: String,
+    /// Take profit trigger price.
+    #[serde(rename = "tpTriggerPx")]
+    pub tp_trigger_px: String,
+    /// Take profit limit price (if limit order).
+    #[serde(rename = "tpLimitPx", skip_serializing_if = "Option::is_none")]
+    pub tp_limit_px: Option<String>,
+    /// Whether TP is market order.
+    #[serde(rename = "tpIsMarket", default)]
+    pub tp_is_market: bool,
+    /// Stop loss trigger price.
+    #[serde(rename = "slTriggerPx")]
+    pub sl_trigger_px: String,
+    /// Stop loss limit price (if limit order).
+    #[serde(rename = "slLimitPx", skip_serializing_if = "Option::is_none")]
+    pub sl_limit_px: Option<String>,
+    /// Whether SL is market order.
+    #[serde(rename = "slIsMarket", default)]
+    pub sl_is_market: bool,
+    /// Optional client order ID for entry order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloid: Option<Cloid>,
+}
+
+/// OCO (One-Cancels-Other) order request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidOcoOrderRequest {
+    /// Asset ID.
+    #[serde(rename = "a")]
+    pub asset: AssetId,
+    /// Whether to buy or sell.
+    #[serde(rename = "b")]
+    pub is_buy: bool,
+    /// Order size.
+    #[serde(
+        rename = "s",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub sz: Decimal,
+    /// First order trigger price.
+    #[serde(rename = "triggerPx1")]
+    pub trigger_px_1: String,
+    /// First order limit price (if applicable).
+    #[serde(rename = "limitPx1", skip_serializing_if = "Option::is_none")]
+    pub limit_px_1: Option<String>,
+    /// Whether first order is market.
+    #[serde(rename = "isMarket1", default)]
+    pub is_market_1: bool,
+    /// First order TP/SL type.
+    #[serde(rename = "tpsl1")]
+    pub tpsl_1: HyperliquidTpSl,
+    /// Second order trigger price.
+    #[serde(rename = "triggerPx2")]
+    pub trigger_px_2: String,
+    /// Second order limit price (if applicable).
+    #[serde(rename = "limitPx2", skip_serializing_if = "Option::is_none")]
+    pub limit_px_2: Option<String>,
+    /// Whether second order is market.
+    #[serde(rename = "isMarket2", default)]
+    pub is_market_2: bool,
+    /// Second order TP/SL type.
+    #[serde(rename = "tpsl2")]
+    pub tpsl_2: HyperliquidTpSl,
+    /// Whether orders are reduce-only.
+    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -129,6 +129,10 @@ pub enum HyperliquidOrderType {
     Serialize,
     Deserialize,
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum HyperliquidTpSl {
@@ -136,6 +140,165 @@ pub enum HyperliquidTpSl {
     Tp,
     /// Stop Loss.
     Sl,
+}
+
+/// Represents trigger price types for conditional orders.
+///
+/// Hyperliquid supports different price references for trigger evaluation:
+/// - Last: Last traded price (most common)
+/// - Mark: Mark price (for risk management)
+/// - Oracle: Oracle/index price (for some perpetuals)
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum HyperliquidTriggerPriceType {
+    /// Last traded price.
+    Last,
+    /// Mark price.
+    Mark,
+    /// Oracle/index price.
+    Oracle,
+}
+
+impl From<HyperliquidTriggerPriceType> for nautilus_model::enums::TriggerType {
+    fn from(value: HyperliquidTriggerPriceType) -> Self {
+        match value {
+            HyperliquidTriggerPriceType::Last => Self::LastPrice,
+            HyperliquidTriggerPriceType::Mark => Self::MarkPrice,
+            HyperliquidTriggerPriceType::Oracle => Self::IndexPrice,
+        }
+    }
+}
+
+impl From<nautilus_model::enums::TriggerType> for HyperliquidTriggerPriceType {
+    fn from(value: nautilus_model::enums::TriggerType) -> Self {
+        match value {
+            nautilus_model::enums::TriggerType::LastPrice => Self::Last,
+            nautilus_model::enums::TriggerType::MarkPrice => Self::Mark,
+            nautilus_model::enums::TriggerType::IndexPrice => Self::Oracle,
+            _ => Self::Last, // Default fallback
+        }
+    }
+}
+
+/// Represents conditional/trigger order types.
+///
+/// Hyperliquid supports various conditional order types that trigger
+/// based on market conditions. These map to Nautilus OrderType variants.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum HyperliquidConditionalOrderType {
+    /// Stop market order (protective stop with market execution).
+    StopMarket,
+    /// Stop limit order (protective stop with limit price).
+    StopLimit,
+    /// Take profit market order (profit-taking with market execution).
+    TakeProfitMarket,
+    /// Take profit limit order (profit-taking with limit price).
+    TakeProfitLimit,
+    /// Trailing stop market order (dynamic stop with market execution).
+    TrailingStopMarket,
+    /// Trailing stop limit order (dynamic stop with limit price).
+    TrailingStopLimit,
+}
+
+impl From<HyperliquidConditionalOrderType> for nautilus_model::enums::OrderType {
+    fn from(value: HyperliquidConditionalOrderType) -> Self {
+        match value {
+            HyperliquidConditionalOrderType::StopMarket => Self::StopMarket,
+            HyperliquidConditionalOrderType::StopLimit => Self::StopLimit,
+            HyperliquidConditionalOrderType::TakeProfitMarket => Self::MarketIfTouched,
+            HyperliquidConditionalOrderType::TakeProfitLimit => Self::LimitIfTouched,
+            HyperliquidConditionalOrderType::TrailingStopMarket => Self::TrailingStopMarket,
+            HyperliquidConditionalOrderType::TrailingStopLimit => Self::TrailingStopLimit,
+        }
+    }
+}
+
+impl From<nautilus_model::enums::OrderType> for HyperliquidConditionalOrderType {
+    fn from(value: nautilus_model::enums::OrderType) -> Self {
+        match value {
+            nautilus_model::enums::OrderType::StopMarket => Self::StopMarket,
+            nautilus_model::enums::OrderType::StopLimit => Self::StopLimit,
+            nautilus_model::enums::OrderType::MarketIfTouched => Self::TakeProfitMarket,
+            nautilus_model::enums::OrderType::LimitIfTouched => Self::TakeProfitLimit,
+            nautilus_model::enums::OrderType::TrailingStopMarket => Self::TrailingStopMarket,
+            nautilus_model::enums::OrderType::TrailingStopLimit => Self::TrailingStopLimit,
+            _ => panic!("Unsupported OrderType for conditional orders: {:?}", value),
+        }
+    }
+}
+
+/// Represents trailing offset types for trailing stop orders.
+///
+/// Trailing stops adjust dynamically based on market movement:
+/// - Price: Fixed price offset (e.g., $100)
+/// - Percentage: Percentage offset (e.g., 5%)
+/// - BasisPoints: Basis points offset (e.g., 250 bps = 2.5%)
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum HyperliquidTrailingOffsetType {
+    /// Fixed price offset.
+    Price,
+    /// Percentage offset.
+    Percentage,
+    /// Basis points offset (1 bp = 0.01%).
+    #[serde(rename = "basispoints")]
+    #[strum(serialize = "basispoints")]
+    BasisPoints,
 }
 
 /// Represents the reduce only flag wrapper.
@@ -370,6 +533,7 @@ mod tests {
     use serde_json;
 
     use super::*;
+    use nautilus_model::enums::{OrderType, TriggerType};
 
     #[rstest]
     fn test_side_serde() {
@@ -604,5 +768,188 @@ mod tests {
             hyperliquid_status_to_order_status("unknown_status"),
             OrderStatus::Rejected
         );
+    }
+
+    // ========================================================================
+    // Conditional Order Tests
+    // ========================================================================
+
+    #[rstest]
+    fn test_hyperliquid_tpsl_serialization() {
+        let tp = HyperliquidTpSl::Tp;
+        let sl = HyperliquidTpSl::Sl;
+
+        assert_eq!(serde_json::to_string(&tp).unwrap(), r#""tp""#);
+        assert_eq!(serde_json::to_string(&sl).unwrap(), r#""sl""#);
+    }
+
+    #[rstest]
+    fn test_hyperliquid_tpsl_deserialization() {
+        let tp: HyperliquidTpSl = serde_json::from_str(r#""tp""#).unwrap();
+        let sl: HyperliquidTpSl = serde_json::from_str(r#""sl""#).unwrap();
+
+        assert_eq!(tp, HyperliquidTpSl::Tp);
+        assert_eq!(sl, HyperliquidTpSl::Sl);
+    }
+
+    #[rstest]
+    fn test_hyperliquid_trigger_price_type_serialization() {
+        let last = HyperliquidTriggerPriceType::Last;
+        let mark = HyperliquidTriggerPriceType::Mark;
+        let oracle = HyperliquidTriggerPriceType::Oracle;
+
+        assert_eq!(serde_json::to_string(&last).unwrap(), r#""last""#);
+        assert_eq!(serde_json::to_string(&mark).unwrap(), r#""mark""#);
+        assert_eq!(serde_json::to_string(&oracle).unwrap(), r#""oracle""#);
+    }
+
+    #[rstest]
+    fn test_hyperliquid_trigger_price_type_to_nautilus() {
+        assert_eq!(
+            TriggerType::from(HyperliquidTriggerPriceType::Last),
+            TriggerType::LastPrice
+        );
+        assert_eq!(
+            TriggerType::from(HyperliquidTriggerPriceType::Mark),
+            TriggerType::MarkPrice
+        );
+        assert_eq!(
+            TriggerType::from(HyperliquidTriggerPriceType::Oracle),
+            TriggerType::IndexPrice
+        );
+    }
+
+    #[rstest]
+    fn test_nautilus_trigger_type_to_hyperliquid() {
+        assert_eq!(
+            HyperliquidTriggerPriceType::from(TriggerType::LastPrice),
+            HyperliquidTriggerPriceType::Last
+        );
+        assert_eq!(
+            HyperliquidTriggerPriceType::from(TriggerType::MarkPrice),
+            HyperliquidTriggerPriceType::Mark
+        );
+        assert_eq!(
+            HyperliquidTriggerPriceType::from(TriggerType::IndexPrice),
+            HyperliquidTriggerPriceType::Oracle
+        );
+    }
+
+    #[rstest]
+    fn test_conditional_order_type_conversions() {
+        // Test all conditional order types
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::StopMarket),
+            OrderType::StopMarket
+        );
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::StopLimit),
+            OrderType::StopLimit
+        );
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::TakeProfitMarket),
+            OrderType::MarketIfTouched
+        );
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::TakeProfitLimit),
+            OrderType::LimitIfTouched
+        );
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::TrailingStopMarket),
+            OrderType::TrailingStopMarket
+        );
+        assert_eq!(
+            OrderType::from(HyperliquidConditionalOrderType::TrailingStopLimit),
+            OrderType::TrailingStopLimit
+        );
+
+        // Test reverse conversions
+        assert_eq!(
+            HyperliquidConditionalOrderType::from(OrderType::StopMarket),
+            HyperliquidConditionalOrderType::StopMarket
+        );
+        assert_eq!(
+            HyperliquidConditionalOrderType::from(OrderType::StopLimit),
+            HyperliquidConditionalOrderType::StopLimit
+        );
+    }
+
+    #[rstest]
+    fn test_trailing_offset_type_serialization() {
+        let price = HyperliquidTrailingOffsetType::Price;
+        let percentage = HyperliquidTrailingOffsetType::Percentage;
+        let basis_points = HyperliquidTrailingOffsetType::BasisPoints;
+
+        assert_eq!(serde_json::to_string(&price).unwrap(), r#""price""#);
+        assert_eq!(
+            serde_json::to_string(&percentage).unwrap(),
+            r#""percentage""#
+        );
+        assert_eq!(
+            serde_json::to_string(&basis_points).unwrap(),
+            r#""basispoints""#
+        );
+    }
+
+    #[rstest]
+    fn test_conditional_order_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::StopMarket).unwrap(),
+            r#""STOP_MARKET""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::StopLimit).unwrap(),
+            r#""STOP_LIMIT""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::TakeProfitMarket).unwrap(),
+            r#""TAKE_PROFIT_MARKET""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::TakeProfitLimit).unwrap(),
+            r#""TAKE_PROFIT_LIMIT""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::TrailingStopMarket).unwrap(),
+            r#""TRAILING_STOP_MARKET""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HyperliquidConditionalOrderType::TrailingStopLimit).unwrap(),
+            r#""TRAILING_STOP_LIMIT""#
+        );
+    }
+
+    #[rstest]
+    fn test_order_type_enum_coverage() {
+        // Ensure all conditional order types roundtrip correctly
+        let conditional_types = vec![
+            HyperliquidConditionalOrderType::StopMarket,
+            HyperliquidConditionalOrderType::StopLimit,
+            HyperliquidConditionalOrderType::TakeProfitMarket,
+            HyperliquidConditionalOrderType::TakeProfitLimit,
+            HyperliquidConditionalOrderType::TrailingStopMarket,
+            HyperliquidConditionalOrderType::TrailingStopLimit,
+        ];
+
+        for cond_type in conditional_types {
+            let order_type = OrderType::from(cond_type);
+            let back_to_cond = HyperliquidConditionalOrderType::from(order_type);
+            assert_eq!(cond_type, back_to_cond, "Roundtrip conversion failed");
+        }
+    }
+
+    #[rstest]
+    fn test_all_trigger_price_types() {
+        let trigger_types = vec![
+            HyperliquidTriggerPriceType::Last,
+            HyperliquidTriggerPriceType::Mark,
+            HyperliquidTriggerPriceType::Oracle,
+        ];
+
+        for trigger_type in trigger_types {
+            let nautilus_type = TriggerType::from(trigger_type);
+            let back_to_hl = HyperliquidTriggerPriceType::from(nautilus_type);
+            assert_eq!(trigger_type, back_to_hl, "Trigger type roundtrip failed");
+        }
     }
 }

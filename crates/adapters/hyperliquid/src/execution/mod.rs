@@ -75,6 +75,15 @@ impl HyperliquidExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the order cannot be submitted to Hyperliquid.
+    ///
+    /// # Supported Order Types
+    ///
+    /// - `Market`: Standard market orders
+    /// - `Limit`: Limit orders with GTC/IOC/ALO time-in-force
+    /// - `StopMarket`: Stop loss / protective stop with market execution
+    /// - `StopLimit`: Stop loss / protective stop with limit price
+    /// - `MarketIfTouched`: Profit taking / entry order with market execution
+    /// - `LimitIfTouched`: Profit taking / entry order with limit price
     fn validate_order_submission(&self, order: &OrderAny) -> Result<()> {
         // Check if instrument symbol is supported
         let symbol = order.instrument_id().symbol.to_string();
@@ -84,28 +93,43 @@ impl HyperliquidExecutionClient {
 
         // Check if order type is supported
         match order.order_type() {
-            OrderType::Market | OrderType::Limit | OrderType::StopMarket | OrderType::StopLimit => {
-            }
+            OrderType::Market
+            | OrderType::Limit
+            | OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched => {}
             _ => anyhow::bail!(
                 "Unsupported order type for Hyperliquid: {:?}",
                 order.order_type()
             ),
         }
 
-        // Check if stop orders have trigger price
+        // Check if conditional orders have trigger price
         if matches!(
             order.order_type(),
-            OrderType::StopMarket | OrderType::StopLimit
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
         ) && order.trigger_price().is_none()
         {
-            anyhow::bail!("Stop orders require a trigger price for Hyperliquid");
+            anyhow::bail!(
+                "Conditional orders require a trigger price for Hyperliquid: {:?}",
+                order.order_type()
+            );
         }
 
-        // Check if limit orders have price
-        if matches!(order.order_type(), OrderType::Limit | OrderType::StopLimit)
-            && order.price().is_none()
+        // Check if limit-based orders have price
+        if matches!(
+            order.order_type(),
+            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+        ) && order.price().is_none()
         {
-            anyhow::bail!("Limit orders require a price for Hyperliquid");
+            anyhow::bail!(
+                "Limit orders require a limit price for Hyperliquid: {:?}",
+                order.order_type()
+            );
         }
 
         Ok(())
