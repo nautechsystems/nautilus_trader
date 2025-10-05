@@ -258,7 +258,6 @@ pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> Strin
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;

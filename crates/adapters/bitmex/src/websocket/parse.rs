@@ -940,14 +940,9 @@ pub fn parse_margin_msg(msg: BitmexMarginMsg, instrument_id: InstrumentId) -> Ma
 mod tests {
     use chrono::{DateTime, Utc};
     use nautilus_model::{
-        data::quote::QuoteTick,
-        enums::{
-            AggressorSide, BookAction, LiquiditySide, OrderStatus, OrderType, PositionSide,
-            TimeInForce,
-        },
-        identifiers::{InstrumentId, Symbol},
-        instruments::{any::InstrumentAny, crypto_perpetual::CryptoPerpetual},
-        types::{Currency, Price, Quantity},
+        enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
+        identifiers::Symbol,
+        instruments::crypto_perpetual::CryptoPerpetual,
     };
     use rstest::rstest;
     use ustr::Ustr;

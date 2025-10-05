@@ -1365,9 +1365,7 @@ pub fn parse_account_state(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        enums::AggregationSource, identifiers::InstrumentId, instruments::Instrument,
-    };
+    use nautilus_model::instruments::Instrument;
     use rstest::rstest;
 
     use super::*;

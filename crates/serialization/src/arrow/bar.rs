@@ -368,8 +368,6 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
-
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 

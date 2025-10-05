@@ -1913,8 +1913,6 @@ mod tests {
 
     #[rstest]
     fn test_array_conversion_error_handling() {
-        use nautilus_model::{data::BookOrder, enums::OrderSide};
-
         let mut bids = Vec::new();
         let mut asks = Vec::new();
 

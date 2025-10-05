@@ -1066,10 +1066,8 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
-        enums::AggressorSide,
-        identifiers::{ClientOrderId, InstrumentId, Symbol},
+        identifiers::{ClientOrderId, Symbol},
         instruments::CryptoPerpetual,
-        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;

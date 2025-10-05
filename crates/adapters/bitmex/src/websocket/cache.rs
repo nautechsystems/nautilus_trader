@@ -102,9 +102,9 @@ impl QuoteCache {
 mod tests {
     use chrono::Utc;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol},
-        instruments::{InstrumentAny, currency_pair::CurrencyPair},
-        types::{Currency, Price, Quantity},
+        identifiers::Symbol,
+        instruments::currency_pair::CurrencyPair,
+        types::{Currency, Quantity},
     };
     use rstest::rstest;
 

@@ -741,8 +741,8 @@ pub fn load_funding_rates<P: AsRef<Path>>(
 mod tests {
     use nautilus_model::{
         enums::{AggressorSide, BookAction},
-        identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        identifiers::TradeId,
+        types::Price,
     };
     use nautilus_testkit::common::{
         ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,

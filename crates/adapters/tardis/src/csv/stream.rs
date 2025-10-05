@@ -1384,11 +1384,7 @@ pub fn stream_funding_rates<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        enums::AggressorSide,
-        identifiers::TradeId,
-        types::{Price, Quantity},
-    };
+    use nautilus_model::{enums::AggressorSide, identifiers::TradeId, types::Price};
     use rstest::*;
 
     use super::*;

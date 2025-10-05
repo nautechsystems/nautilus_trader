@@ -865,7 +865,6 @@ pub fn parse_position_status_report(
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
     use super::*;

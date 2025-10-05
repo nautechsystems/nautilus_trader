@@ -258,7 +258,6 @@ impl DefiDataSubscriptionManager {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::address;
-    use nautilus_model::defi::DexType;
     use rstest::{fixture, rstest};
 
     use super::*;

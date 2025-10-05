@@ -23,7 +23,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
         AccountType, AggressorSide, AssetClass, CurrencyType, LiquiditySide, OptionKind, OrderSide,
-        PositionSideSpecified,
+        OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -32,7 +32,7 @@ use nautilus_model::{
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
         option_contract::OptionContract,
     },
-    reports::{FillReport, PositionStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -790,12 +790,6 @@ pub fn parse_order_status_report(
     account_id: nautilus_model::identifiers::AccountId,
     ts_init: UnixNanos,
 ) -> Result<nautilus_model::reports::OrderStatusReport> {
-    use nautilus_model::{
-        enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-        identifiers::{ClientOrderId, VenueOrderId},
-        reports::OrderStatusReport,
-    };
-
     use crate::common::enums::{BybitOrderStatus, BybitOrderType, BybitTimeInForce};
 
     let instrument_id = instrument.id();
@@ -897,6 +891,10 @@ pub fn parse_order_status_report(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        data::BarSpecification,
+        enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -910,11 +908,6 @@ mod tests {
     };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
-
-    use nautilus_model::{
-        data::BarSpecification,
-        enums::{AggregationSource, BarAggregation, PriceType},
-    };
 
     fn sample_fee_rate(
         symbol: &str,
@@ -1060,8 +1053,6 @@ mod tests {
 
     #[rstest]
     fn parse_http_position_short_into_position_status_report() {
-        use nautilus_model::{enums::PositionSide, identifiers::AccountId};
-
         use crate::http::models::BybitPositionListResponse;
 
         let json = load_test_json("http_get_positions.json");

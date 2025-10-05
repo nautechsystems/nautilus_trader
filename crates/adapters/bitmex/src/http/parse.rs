@@ -820,7 +820,6 @@ mod tests {
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
-        types::Price,
     };
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};

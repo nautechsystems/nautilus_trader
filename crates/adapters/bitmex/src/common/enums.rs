@@ -1027,8 +1027,6 @@ mod tests {
 
     #[rstest]
     fn test_time_in_force_conversions() {
-        use nautilus_model::enums::TimeInForce;
-
         // BitMEX to Nautilus (all supported variants)
         assert_eq!(
             TimeInForce::try_from(BitmexTimeInForce::Day).unwrap(),

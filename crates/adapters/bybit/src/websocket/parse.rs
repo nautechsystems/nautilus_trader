@@ -22,7 +22,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
-        AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, RecordFlag, TimeInForce,
     },
     events::account::state::AccountState,
@@ -676,7 +676,7 @@ pub fn parse_ws_account_state(
 
     Ok(AccountState::new(
         account_id,
-        nautilus_model::enums::AccountType::Margin, // Bybit unified account
+        AccountType::Margin, // Bybit unified account
         balances,
         vec![], // margins - Bybit doesn't provide per-instrument margin in wallet updates
         true,   // is_reported
@@ -693,6 +693,10 @@ pub fn parse_ws_account_state(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        data::BarSpecification,
+        enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -710,7 +714,6 @@ mod tests {
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
-    use nautilus_model::enums::{AggressorSide, BookAction, OrderSide, RecordFlag};
     use ustr::Ustr;
 
     use crate::http::models::BybitFeeRate;
@@ -886,11 +889,6 @@ mod tests {
     fn parse_ws_kline_into_bar() {
         use std::num::NonZero;
 
-        use nautilus_model::{
-            data::{BarSpecification, BarType},
-            enums::{AggregationSource, BarAggregation, PriceType},
-        };
-
         let instrument = linear_instrument();
         let json = load_test_json("ws_kline.json");
         let msg: crate::websocket::messages::BybitWsKlineMsg = serde_json::from_str(&json).unwrap();
@@ -917,11 +915,6 @@ mod tests {
 
     #[rstest]
     fn parse_ws_order_into_order_status_report() {
-        use nautilus_model::{
-            enums::{OrderStatus, OrderType, TimeInForce},
-            identifiers::AccountId,
-        };
-
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_order_filled.json");
         let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
@@ -954,8 +947,6 @@ mod tests {
 
     #[rstest]
     fn parse_ws_execution_into_fill_report() {
-        use nautilus_model::{enums::LiquiditySide, identifiers::AccountId};
-
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_execution.json");
         let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
@@ -989,8 +980,6 @@ mod tests {
 
     #[rstest]
     fn parse_ws_position_into_position_status_report() {
-        use nautilus_model::{enums::PositionSide, identifiers::AccountId};
-
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_position.json");
         let msg: crate::websocket::messages::BybitWsAccountPositionMsg =
@@ -1015,8 +1004,6 @@ mod tests {
 
     #[rstest]
     fn parse_ws_position_short_into_position_status_report() {
-        use nautilus_model::{enums::PositionSide, identifiers::AccountId};
-
         // Create ETHUSDT instrument
         let instruments_json = load_test_json("http_get_instruments_linear.json");
         let instruments_response: crate::http::models::BybitInstrumentLinearResponse =
@@ -1054,8 +1041,6 @@ mod tests {
 
     #[rstest]
     fn parse_ws_wallet_into_account_state() {
-        use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
         let json = load_test_json("ws_account_wallet.json");
         let msg: crate::websocket::messages::BybitWsAccountWalletMsg =
             serde_json::from_str(&json).unwrap();

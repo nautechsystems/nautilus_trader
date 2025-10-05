@@ -446,12 +446,7 @@ pub fn parse_account_state(
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
-    use nautilus_model::{
-        enums::AccountType,
-        identifiers::{InstrumentId, Symbol},
-        instruments::CurrencyPair,
-        types::{Price, fixed::FIXED_PRECISION},
-    };
+    use nautilus_model::{instruments::CurrencyPair, types::fixed::FIXED_PRECISION};
     use rstest::rstest;
     use ustr::Ustr;
 
