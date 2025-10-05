@@ -49,6 +49,7 @@ use crate::{
 )]
 pub struct MarketOrder {
     core: OrderCore,
+    pub protection_price: Option<Price>,
 }
 
 impl MarketOrder {
@@ -125,6 +126,7 @@ impl MarketOrder {
 
         Ok(Self {
             core: OrderCore::new(init_order),
+            protection_price: None,
         })
     }
 
@@ -270,7 +272,7 @@ impl Order for MarketOrder {
     }
 
     fn price(&self) -> Option<Price> {
-        None
+        self.protection_price
     }
 
     fn trigger_price(&self) -> Option<Price> {
@@ -298,7 +300,7 @@ impl Order for MarketOrder {
     }
 
     fn has_price(&self) -> bool {
-        false
+        self.protection_price.is_some()
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -415,6 +417,7 @@ impl Order for MarketOrder {
             OrderError::InvalidOrderEvent
         );
 
+        self.protection_price = event.protection_price;
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
@@ -548,7 +551,7 @@ mod tests {
         events::{OrderEventAny, OrderUpdated, order::initialized::OrderInitializedBuilder},
         instruments::{CurrencyPair, stubs::*},
         orders::{MarketOrder, Order, builder::OrderTestBuilder, stubs::TestOrderStubs},
-        types::Quantity,
+        types::{Price, Quantity},
     };
 
     #[rstest]
@@ -672,5 +675,36 @@ mod tests {
                 order.client_order_id()
             )
         );
+    }
+
+    #[rstest]
+    fn test_stop_market_order_protection_price_update(audusd_sim: CurrencyPair) {
+        // Create and accept a basic MarketOrder
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy)
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Update with new values
+        let calculated_protection_price = Price::new(95.0, 2);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            protection_price: Some(calculated_protection_price),
+            ..Default::default()
+        };
+
+        assert_eq!(accepted_order.price(), None);
+        assert_eq!(accepted_order.has_price(), false);
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        // Verify updates were applied correctly
+        assert_eq!(accepted_order.price(), Some(calculated_protection_price));
+        assert_eq!(accepted_order.has_price(), true);
     }
 }

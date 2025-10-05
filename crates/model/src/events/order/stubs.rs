@@ -267,6 +267,7 @@ pub fn order_updated(
         Some(account_id),
         Some(Price::from("22000")),
         None,
+        None,
     )
 }
 

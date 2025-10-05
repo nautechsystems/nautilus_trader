@@ -631,6 +631,8 @@ pub fn parse_order_update_msg(
 
     // BitMEX doesn't send trigger price in regular order updates?
     let trigger_price = None;
+    // BitMEX doesn't send protection price in regular order updates
+    let protection_price = None;
 
     let event_id = UUID4::new();
     let ts_event = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
@@ -650,6 +652,7 @@ pub fn parse_order_update_msg(
         Some(account_id),
         price,
         trigger_price,
+        protection_price,
     ))
 }
 

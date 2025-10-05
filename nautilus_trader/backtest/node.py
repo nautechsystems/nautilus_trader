@@ -405,6 +405,7 @@ class BacktestNode:
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
+                price_protection_points=get_price_protection_points(venue_config),
             )
 
         # Add instruments
@@ -775,6 +776,15 @@ def get_leverages(config: BacktestVenueConfig) -> dict[InstrumentId, Decimal]:
         if config.leverages
         else {}
     )
+
+
+def get_price_protection_points(config: BacktestVenueConfig) -> Decimal | None:
+    value = config.price_protection_points
+
+    if value is None:
+        return None
+
+    return Decimal(value)
 
 
 def get_fill_model(config: BacktestVenueConfig) -> FillModel | None:
