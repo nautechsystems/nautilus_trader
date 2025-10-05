@@ -411,6 +411,261 @@ fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
 }
 
 #[rstest]
+fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
+    let depth = stub_depth10;
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    book.apply_depth(&depth);
+
+    // Verify exactly 10 bid levels
+    let bid_levels: Vec<_> = book.bids(None).collect();
+    assert_eq!(bid_levels.len(), 10, "Should have exactly 10 bid levels");
+
+    // Verify exactly 10 ask levels
+    let ask_levels: Vec<_> = book.asks(None).collect();
+    assert_eq!(ask_levels.len(), 10, "Should have exactly 10 ask levels");
+
+    // Verify bid prices in descending order (99, 98, 97, ..., 90)
+    let expected_bid_prices = vec![
+        Price::from("99.0"),
+        Price::from("98.0"),
+        Price::from("97.0"),
+        Price::from("96.0"),
+        Price::from("95.0"),
+        Price::from("94.0"),
+        Price::from("93.0"),
+        Price::from("92.0"),
+        Price::from("91.0"),
+        Price::from("90.0"),
+    ];
+    for (i, level) in bid_levels.iter().enumerate() {
+        assert_eq!(
+            level.price.value, expected_bid_prices[i],
+            "Bid level {} price mismatch",
+            i
+        );
+        assert!(level.size() > 0.0, "Bid level {} has zero size", i);
+    }
+
+    // Verify ask prices in ascending order (100, 101, 102, ..., 109)
+    let expected_ask_prices = vec![
+        Price::from("100.0"),
+        Price::from("101.0"),
+        Price::from("102.0"),
+        Price::from("103.0"),
+        Price::from("104.0"),
+        Price::from("105.0"),
+        Price::from("106.0"),
+        Price::from("107.0"),
+        Price::from("108.0"),
+        Price::from("109.0"),
+    ];
+    for (i, level) in ask_levels.iter().enumerate() {
+        assert_eq!(
+            level.price.value, expected_ask_prices[i],
+            "Ask level {} price mismatch",
+            i
+        );
+        assert!(level.size() > 0.0, "Ask level {} has zero size", i);
+    }
+
+    // Verify sizes increase with each level (100, 200, 300, ..., 1000)
+    let expected_sizes = [
+        100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0,
+    ];
+    for (i, level) in bid_levels.iter().enumerate() {
+        assert_eq!(
+            level.size(),
+            expected_sizes[i],
+            "Bid level {} size mismatch",
+            i
+        );
+    }
+    for (i, level) in ask_levels.iter().enumerate() {
+        assert_eq!(
+            level.size(),
+            expected_sizes[i],
+            "Ask level {} size mismatch",
+            i
+        );
+    }
+}
+
+#[rstest]
+fn test_book_apply_depth_empty_snapshot() {
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Create empty depth with all padding entries (NoOrderSide, zero size)
+    let empty_order = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("0.0"),
+        Quantity::from("0"),
+        0,
+    );
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        [empty_order; DEPTH10_LEN],
+        [empty_order; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        0,
+        12345,
+        UnixNanos::from(1000),
+        UnixNanos::from(2000),
+    );
+
+    book.apply_depth(&depth);
+
+    // Verify no phantom levels at price 0
+    assert_eq!(
+        book.best_bid_price(),
+        None,
+        "Empty snapshot should have no bids"
+    );
+    assert_eq!(
+        book.best_ask_price(),
+        None,
+        "Empty snapshot should have no asks"
+    );
+    assert!(!book.has_bid(), "Empty snapshot should not have bid");
+    assert!(!book.has_ask(), "Empty snapshot should not have ask");
+
+    let bid_levels: Vec<_> = book.bids(None).collect();
+    let ask_levels: Vec<_> = book.asks(None).collect();
+    assert_eq!(bid_levels.len(), 0, "Should have 0 bid levels");
+    assert_eq!(ask_levels.len(), 0, "Should have 0 ask levels");
+
+    // Verify metadata was still updated
+    assert_eq!(book.sequence, 12345);
+    assert_eq!(book.ts_last, UnixNanos::from(1000));
+    assert_eq!(book.update_count, 1);
+}
+
+#[rstest]
+fn test_book_apply_depth_partial_snapshot() {
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Create depth with only 3 valid levels, rest are padding
+    let mut bids = [BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("0.0"),
+        Quantity::from("0"),
+        0,
+    ); DEPTH10_LEN];
+    let mut asks = [BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("0.0"),
+        Quantity::from("0"),
+        0,
+    ); DEPTH10_LEN];
+
+    // Add 3 valid bids
+    bids[0] = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("99.0"),
+        Quantity::from("100"),
+        1,
+    );
+    bids[1] = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("98.0"),
+        Quantity::from("200"),
+        2,
+    );
+    bids[2] = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("97.0"),
+        Quantity::from("300"),
+        3,
+    );
+
+    // Add 3 valid asks
+    asks[0] = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.0"),
+        Quantity::from("100"),
+        11,
+    );
+    asks[1] = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.0"),
+        Quantity::from("200"),
+        12,
+    );
+    asks[2] = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("102.0"),
+        Quantity::from("300"),
+        13,
+    );
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+        0,
+        54321,
+        UnixNanos::from(3000),
+        UnixNanos::from(4000),
+    );
+
+    book.apply_depth(&depth);
+
+    // Verify exactly 3 levels on each side
+    let bid_levels: Vec<_> = book.bids(None).collect();
+    let ask_levels: Vec<_> = book.asks(None).collect();
+    assert_eq!(bid_levels.len(), 3, "Should have exactly 3 bid levels");
+    assert_eq!(ask_levels.len(), 3, "Should have exactly 3 ask levels");
+
+    // Verify no zero-price levels
+    for level in bid_levels.iter() {
+        assert!(
+            level.price.value > Price::from("0.0"),
+            "No zero-price bid levels"
+        );
+        assert!(level.size() > 0.0, "No zero-size bid levels");
+    }
+    for level in ask_levels.iter() {
+        assert!(
+            level.price.value > Price::from("0.0"),
+            "No zero-price ask levels"
+        );
+        assert!(level.size() > 0.0, "No zero-size ask levels");
+    }
+
+    // Verify metadata updated
+    assert_eq!(book.sequence, 54321);
+    assert_eq!(book.ts_last, UnixNanos::from(3000));
+    assert_eq!(book.update_count, 1);
+}
+
+#[rstest]
+fn test_book_apply_depth_updates_metadata_once(stub_depth10: OrderBookDepth10) {
+    let depth = stub_depth10;
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    book.apply_depth(&depth);
+
+    // Verify metadata updated exactly once (not 20 times for 20 orders)
+    assert_eq!(book.sequence, depth.sequence);
+    assert_eq!(book.ts_last, depth.ts_event);
+    assert_eq!(
+        book.update_count, 1,
+        "Should increment update_count exactly once"
+    );
+}
+
+#[rstest]
 fn test_book_orderbook_creation() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -483,6 +738,104 @@ fn test_book_update_trade_tick_l1() {
     assert_eq!(book.best_ask_price().unwrap(), price);
     assert_eq!(book.best_bid_size().unwrap(), size);
     assert_eq!(book.best_ask_size().unwrap(), size);
+}
+
+#[rstest]
+fn test_book_update_quote_tick_advances_sequence() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    // Initial state
+    assert_eq!(book.sequence, 0);
+    assert_eq!(book.update_count, 0);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("5000.000"),
+        Price::from("5100.000"),
+        Quantity::from("100.00000000"),
+        Quantity::from("99.00000000"),
+        UnixNanos::from(1000),
+        UnixNanos::from(2000),
+    );
+
+    book.update_quote_tick(&quote).unwrap();
+
+    // Verify sequence advanced
+    assert_eq!(book.sequence, 1, "Sequence should increment to 1");
+    assert_eq!(book.ts_last, UnixNanos::from(1000), "ts_last should update");
+    assert_eq!(book.update_count, 1, "update_count should increment");
+
+    // Apply another quote tick
+    let quote2 = QuoteTick::new(
+        instrument_id,
+        Price::from("5050.000"),
+        Price::from("5150.000"),
+        Quantity::from("110.00000000"),
+        Quantity::from("89.00000000"),
+        UnixNanos::from(2000),
+        UnixNanos::from(3000),
+    );
+
+    book.update_quote_tick(&quote2).unwrap();
+
+    // Verify sequence continues to advance
+    assert_eq!(book.sequence, 2, "Sequence should increment to 2");
+    assert_eq!(
+        book.ts_last,
+        UnixNanos::from(2000),
+        "ts_last should update again"
+    );
+    assert_eq!(book.update_count, 2, "update_count should increment to 2");
+}
+
+#[rstest]
+fn test_book_update_trade_tick_advances_sequence() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    // Initial state
+    assert_eq!(book.sequence, 0);
+    assert_eq!(book.update_count, 0);
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from("15000.000"),
+        Quantity::from("10.00000000"),
+        AggressorSide::Buyer,
+        TradeId::new("123456789"),
+        UnixNanos::from(5000),
+        UnixNanos::from(6000),
+    );
+
+    book.update_trade_tick(&trade).unwrap();
+
+    // Verify sequence advanced
+    assert_eq!(book.sequence, 1, "Sequence should increment to 1");
+    assert_eq!(book.ts_last, UnixNanos::from(5000), "ts_last should update");
+    assert_eq!(book.update_count, 1, "update_count should increment");
+
+    // Apply another trade tick
+    let trade2 = TradeTick::new(
+        instrument_id,
+        Price::from("15100.000"),
+        Quantity::from("20.00000000"),
+        AggressorSide::Seller,
+        TradeId::new("987654321"),
+        UnixNanos::from(7000),
+        UnixNanos::from(8000),
+    );
+
+    book.update_trade_tick(&trade2).unwrap();
+
+    // Verify sequence continues to advance
+    assert_eq!(book.sequence, 2, "Sequence should increment to 2");
+    assert_eq!(
+        book.ts_last,
+        UnixNanos::from(7000),
+        "ts_last should update again"
+    );
+    assert_eq!(book.update_count, 2, "update_count should increment to 2");
 }
 
 #[rstest]
