@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,     // max_retries
         None,     // retry_delay_ms
         None,     // retry_delay_max_ms
+        None,     // recv_window_ms
     )
     .expect("Failed to create HTTP client");
 

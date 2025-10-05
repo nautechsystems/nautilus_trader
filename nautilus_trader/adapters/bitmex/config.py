@@ -48,6 +48,10 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
         The initial delay (milliseconds) for retries.
     retry_delay_max_ms : PositiveInt, default 5_000
         The maximum delay (milliseconds) for exponential backoff.
+    recv_window_ms : PositiveInt, default 10_000
+        The expiration window (milliseconds) for signed requests.
+        Note: Specified in milliseconds for consistency with other adapters,
+        but BitMEX uses seconds-granularity timestamps (converted via integer division).
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
 
@@ -62,6 +66,7 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 5_000
+    recv_window_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
 
 
@@ -95,6 +100,10 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         The initial delay (milliseconds) for retries.
     retry_delay_max_ms : PositiveInt, default 5_000
         The maximum delay (milliseconds) for exponential backoff.
+    recv_window_ms : PositiveInt, default 10_000
+        The expiration window (milliseconds) for signed requests.
+        Note: Specified in milliseconds for consistency with other adapters,
+        but BitMEX uses seconds-granularity timestamps (converted via integer division).
 
     """
 
@@ -107,3 +116,4 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 5_000
+    recv_window_ms: PositiveInt | None = 10_000

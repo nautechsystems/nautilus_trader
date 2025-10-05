@@ -299,13 +299,43 @@ The BitMEX adapter utilizes HTTP keep-alive for optimal performance:
 This configuration ensures low-latency communication with BitMEX servers by maintaining
 persistent connections and avoiding the overhead of establishing new connections for each request.
 
-### Request expiration
+### Request authentication and expiration
 
-BitMEX uses an `api-expires` header for request authentication:
+BitMEX uses an `api-expires` header for request authentication to prevent replay attacks:
 
-- Requests include a UNIX timestamp indicating when they expire.
-- Default expiration window is 10 seconds from request creation.
-- Prevents replay attacks and ensures request freshness.
+- Each signed request includes a Unix timestamp (in seconds) indicating when it expires.
+- The timestamp is calculated as: `current_timestamp + (recv_window_ms / 1000)`.
+- BitMEX rejects requests where the `api-expires` timestamp has already passed.
+
+#### Configuring the expiration window
+
+The expiration window is controlled by the `recv_window_ms` configuration parameter (default: 10000ms = 10 seconds):
+
+```python
+from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
+
+config = BitmexExecClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    recv_window_ms=30000,  # 30 seconds for high-latency networks
+)
+```
+
+**When to adjust this value:**
+
+- **Default (10s)**: Sufficient for most deployments with accurate system clocks and low network latency.
+- **Increase (20-30s)**: If you experience "request has expired" errors due to:
+  - Clock skew between your system and BitMEX servers.
+  - High network latency or packet loss.
+  - Requests queued due to rate limiting.
+- **Decrease (5s)**: For tighter security in low-latency, time-synchronized environments.
+
+**Important considerations:**
+
+- **Milliseconds to seconds**: Specified in milliseconds for consistency with other adapters, but converted to seconds via integer division (`recv_window_ms / 1000`) since BitMEX uses seconds-granularity timestamps.
+- Larger windows increase tolerance for timing issues but widen the replay attack window.
+- Ensure your system clock is synchronized with NTP to minimize clock drift.
+- Network latency and processing time consume part of the window.
 
 ## Rate limiting
 
@@ -381,34 +411,36 @@ The adapter automatically routes requests to the correct endpoints when `testnet
 
 The BitMEX data client provides the following configuration options:
 
-| Option                            | Default | Description |
-|-----------------------------------|---------|-------------|
-| `api_key`                         | `None`  | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
-| `api_secret`                      | `None`  | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
-| `base_url_http`                   | `None`  | Override for the REST base URL (defaults to production). |
-| `base_url_ws`                     | `None`  | Override for the WebSocket base URL (defaults to production). |
-| `testnet`                         | `False` | Route requests to the BitMEX testnet when `True`. |
-| `http_timeout_secs`               | `60`    | Request timeout applied to HTTP calls. |
-| `max_retries`                     | `None`  | Maximum retry attempts for HTTP calls (disabled when `None`). |
-| `retry_delay_initial_ms`          | `1,000` | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`              | `5,000` | Maximum backoff delay (milliseconds) between retries. |
-| `update_instruments_interval_mins`| `60`    | Interval (minutes) between instrument catalogue refreshes. |
+| Option                            | Default  | Description |
+|-----------------------------------|----------|-------------|
+| `api_key`                         | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
+| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `base_url_http`                   | `None`   | Override for the REST base URL (defaults to production). |
+| `base_url_ws`                     | `None`   | Override for the WebSocket base URL (defaults to production). |
+| `testnet`                         | `False`  | Route requests to the BitMEX testnet when `True`. |
+| `http_timeout_secs`               | `60`     | Request timeout applied to HTTP calls. |
+| `max_retries`                     | `None`   | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `retry_delay_initial_ms`          | `1,000`  | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`              | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `recv_window_ms`                  | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
+| `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
 
 ### Execution client configuration options
 
 The BitMEX execution client provides the following configuration options:
 
-| Option                   | Default | Description |
-|--------------------------|---------|-------------|
-| `api_key`                | `None`  | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
-| `api_secret`             | `None`  | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
-| `base_url_http`          | `None`  | Override for the REST base URL (defaults to production). |
-| `base_url_ws`            | `None`  | Override for the WebSocket base URL (defaults to production). |
-| `testnet`                | `False` | Route orders to the BitMEX testnet when `True`. |
-| `http_timeout_secs`      | `60`    | Request timeout applied to HTTP calls. |
-| `max_retries`            | `None`  | Maximum retry attempts for HTTP calls (disabled when `None`). |
-| `retry_delay_initial_ms` | `1,000` | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`     | `5,000` | Maximum backoff delay (milliseconds) between retries. |
+| Option                   | Default  | Description |
+|--------------------------|----------|-------------|
+| `api_key`                | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
+| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `base_url_http`          | `None`   | Override for the REST base URL (defaults to production). |
+| `base_url_ws`            | `None`   | Override for the WebSocket base URL (defaults to production). |
+| `testnet`                | `False`  | Route orders to the BitMEX testnet when `True`. |
+| `http_timeout_secs`      | `60`     | Request timeout applied to HTTP calls. |
+| `max_retries`            | `None`   | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 
 ### Configuration examples
 

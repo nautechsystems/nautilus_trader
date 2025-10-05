@@ -134,13 +134,14 @@ pub struct BitmexHttpInnerClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
+    recv_window_ms: u64,
     retry_manager: RetryManager<BitmexHttpError>,
     cancellation_token: CancellationToken,
 }
 
 impl Default for BitmexHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None)
+        Self::new(None, Some(60), None, None, None, None)
             .expect("Failed to create default BitmexHttpInnerClient")
     }
 }
@@ -171,6 +172,7 @@ impl BitmexHttpInnerClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -197,6 +199,7 @@ impl BitmexHttpInnerClient {
                 timeout_secs,
             ),
             credential: None,
+            recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
             cancellation_token: CancellationToken::new(),
         })
@@ -217,6 +220,7 @@ impl BitmexHttpInnerClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -243,6 +247,7 @@ impl BitmexHttpInnerClient {
                 timeout_secs,
             ),
             credential: Some(Credential::new(api_key, api_secret)),
+            recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
             cancellation_token: CancellationToken::new(),
         })
@@ -302,7 +307,7 @@ impl BitmexHttpInnerClient {
             .as_ref()
             .ok_or(BitmexHttpError::MissingCredentials)?;
 
-        let expires = Utc::now().timestamp() + 10;
+        let expires = Utc::now().timestamp() + (self.recv_window_ms / 1000) as i64;
         let body_str = body.and_then(|b| std::str::from_utf8(b).ok()).unwrap_or("");
 
         let full_path = if endpoint.starts_with("/api/v1") {
@@ -718,7 +723,7 @@ pub struct BitmexHttpClient {
 
 impl Default for BitmexHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, false, Some(60), None, None, None)
+        Self::new(None, None, None, false, Some(60), None, None, None, None)
             .expect("Failed to create default BitmexHttpClient")
     }
 }
@@ -739,6 +744,7 @@ impl BitmexHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
     ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
         let url = base_url.unwrap_or_else(|| {
@@ -758,6 +764,7 @@ impl BitmexHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                recv_window_ms,
             )?,
             _ => BitmexHttpInnerClient::new(
                 Some(url),
@@ -765,6 +772,7 @@ impl BitmexHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                recv_window_ms,
             )?,
         };
 
@@ -781,7 +789,7 @@ impl BitmexHttpClient {
     ///
     /// Returns an error if required environment variables are not set or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None, None)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
 
@@ -803,6 +811,7 @@ impl BitmexHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
         let api_key = api_key.or_else(|| get_env_var("BITMEX_API_KEY").ok());
         let api_secret = api_secret.or_else(|| get_env_var("BITMEX_API_SECRET").ok());
@@ -827,6 +836,7 @@ impl BitmexHttpClient {
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
+            recv_window_ms,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
@@ -2137,6 +2147,7 @@ mod tests {
             None, // max_retries
             None, // retry_delay_ms
             None, // retry_delay_max_ms
+            None, // recv_window_ms
         )
         .expect("Failed to create test client");
 
@@ -2160,6 +2171,7 @@ mod tests {
             None, // max_retries
             None, // retry_delay_ms
             None, // retry_delay_max_ms
+            None, // recv_window_ms
         )
         .expect("Failed to create test client");
 
@@ -2178,6 +2190,57 @@ mod tests {
             headers_without_body.get("api-signature").unwrap(),
             headers_with_body.get("api-signature").unwrap()
         );
+    }
+
+    #[rstest]
+    fn test_sign_request_uses_custom_recv_window() {
+        let client_default = BitmexHttpInnerClient::with_credentials(
+            "test_api_key".to_string(),
+            "test_api_secret".to_string(),
+            "http://localhost:8080".to_string(),
+            Some(60),
+            None,
+            None,
+            None,
+            None, // Use default recv_window_ms (10000ms = 10s)
+        )
+        .expect("Failed to create test client");
+
+        let client_custom = BitmexHttpInnerClient::with_credentials(
+            "test_api_key".to_string(),
+            "test_api_secret".to_string(),
+            "http://localhost:8080".to_string(),
+            Some(60),
+            None,
+            None,
+            None,
+            Some(30_000), // 30 seconds
+        )
+        .expect("Failed to create test client");
+
+        let headers_default = client_default
+            .sign_request(&Method::GET, "/api/v1/order", None)
+            .unwrap();
+        let headers_custom = client_custom
+            .sign_request(&Method::GET, "/api/v1/order", None)
+            .unwrap();
+
+        // Parse expires timestamps
+        let expires_default: i64 = headers_default.get("api-expires").unwrap().parse().unwrap();
+        let expires_custom: i64 = headers_custom.get("api-expires").unwrap().parse().unwrap();
+
+        // Verify both are valid future timestamps
+        let now = Utc::now().timestamp();
+        assert!(expires_default > now);
+        assert!(expires_custom > now);
+
+        // Custom window should be greater than default
+        assert!(expires_custom > expires_default);
+
+        // The difference should be approximately 20 seconds (30s - 10s)
+        // Allow wider tolerance for delays between calls on slow CI runners
+        let diff = expires_custom - expires_default;
+        assert!((18..=25).contains(&diff));
     }
 
     #[rstest]

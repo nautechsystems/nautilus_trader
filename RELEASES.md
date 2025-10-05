@@ -18,6 +18,7 @@ This will be the final release with support for Python 3.11.
 - Added BitMEX batch cancel support
 - Added BitMEX contingent orders support (OCO, OTO, brackets)
 - Added BitMEX historical data requests (trades and bars)
+- Added BitMEX configurable `recv_window_ms` for signed HTTP request expiration
 - Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
 - Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
 - Added Databento CME sandbox example
