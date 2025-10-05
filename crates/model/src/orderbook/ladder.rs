@@ -31,6 +31,16 @@ use crate::{
 };
 
 /// Represents a price level with a specified side in an order books ladder.
+///
+/// # Comparison Semantics
+///
+/// `BookPrice` instances are only meaningfully compared within the same side
+/// (i.e., within a single `BookLadder`). Cross-side comparisons are not expected
+/// in normal use, as bid and ask ladders maintain separate `BTreeMap<BookPrice, BookLevel>`
+/// collections.
+///
+/// - Equality requires both `value` and `side` to match.
+/// - Ordering is side-dependent: Buy side sorts descending, Sell side ascending.
 #[derive(Clone, Copy, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
@@ -57,15 +67,24 @@ impl PartialOrd for BookPrice {
 
 impl PartialEq for BookPrice {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.side == other.side && self.value == other.value
     }
 }
 
 impl Ord for BookPrice {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.side {
-            OrderSideSpecified::Buy => other.value.cmp(&self.value),
-            OrderSideSpecified::Sell => self.value.cmp(&other.value),
+        assert_eq!(
+            self.side, other.side,
+            "BookPrice compared across sides: {:?} vs {:?}",
+            self.side, other.side
+        );
+
+        match self.side.cmp(&other.side) {
+            Ordering::Equal => match self.side {
+                OrderSideSpecified::Buy => other.value.cmp(&self.value),
+                OrderSideSpecified::Sell => self.value.cmp(&other.value),
+            },
+            non_equal => non_equal,
         }
     }
 }

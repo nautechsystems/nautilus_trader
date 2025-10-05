@@ -3124,6 +3124,127 @@ fn test_own_book_display() {
 }
 
 #[rstest]
+fn test_own_book_pprint() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    let order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("1.000"),
+        Quantity::from("1.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("1.500"),
+        Quantity::from("2.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let order3 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-3"),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Buy,
+        Price::from("2.000"),
+        Quantity::from("3.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let order4 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-4"),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Sell,
+        Price::from("3.000"),
+        Quantity::from("3.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let order5 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-5"),
+        Some(VenueOrderId::from("5")),
+        OrderSideSpecified::Sell,
+        Price::from("4.000"),
+        Quantity::from("4.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let order6 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-6"),
+        Some(VenueOrderId::from("6")),
+        OrderSideSpecified::Sell,
+        Price::from("5.000"),
+        Quantity::from("8.0"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    book.add(order1);
+    book.add(order2);
+    book.add(order3);
+    book.add(order4);
+    book.add(order5);
+    book.add(order6);
+
+    let pprint_output = book.pprint(3, None);
+    let expected_output = "bid_levels: 3\n\
+ask_levels: 3\n\
+╭───────┬───────┬───────╮\n\
+│ bids  │ price │ asks  │\n\
+├───────┼───────┼───────┤\n\
+│       │ 5.000 │ [8.0] │\n\
+│       │ 4.000 │ [4.0] │\n\
+│       │ 3.000 │ [3.0] │\n\
+│ [3.0] │ 2.000 │       │\n\
+│ [2.0] │ 1.500 │       │\n\
+│ [1.0] │ 1.000 │       │\n\
+╰───────┴───────┴───────╯";
+
+    println!("{pprint_output}");
+    assert_eq!(pprint_output, expected_output);
+}
+
+#[rstest]
 fn test_own_book_level_size_and_exposure() {
     let mut level = OwnBookLevel::new(BookPrice::new(
         Price::from("100.00"),
