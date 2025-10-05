@@ -265,7 +265,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 contract=contract,
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
-                params=command.params,
+                params=command.params.copy(),
             )
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
