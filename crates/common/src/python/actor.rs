@@ -216,8 +216,7 @@ impl PyDataActor {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the actor is already registered
-    /// or if the registration process fails.
+    /// Returns an error if the actor is already registered or if the registration process fails.
     pub fn register(
         &mut self,
         trader_id: TraderId,

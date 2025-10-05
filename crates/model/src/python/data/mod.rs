@@ -76,7 +76,7 @@ impl DataType {
 ///
 /// # Panics
 ///
-/// This function will panic if the `PyCapsule` creation fails, which may occur if
+/// This function panics if the `PyCapsule` creation fails, which may occur if
 /// there are issues with memory allocation or if the `Data` instance cannot be
 /// properly encapsulated.
 ///

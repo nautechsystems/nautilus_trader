@@ -708,7 +708,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - Order validation fails.
@@ -811,7 +811,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -881,7 +881,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -932,7 +932,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1013,7 +1013,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1059,7 +1059,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1127,7 +1127,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - Parsing fails.
     pub async fn request_instruments(
@@ -1249,7 +1249,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - Parsing fails.
@@ -1291,7 +1291,7 @@ impl BybitHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - Parsing fails.
@@ -1636,7 +1636,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1651,7 +1651,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1669,7 +1669,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1687,7 +1687,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1705,7 +1705,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1723,7 +1723,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1741,7 +1741,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1759,7 +1759,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1777,7 +1777,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1796,7 +1796,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - The response cannot be parsed.
     ///
@@ -1823,7 +1823,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - Order validation fails.
@@ -1861,7 +1861,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1882,7 +1882,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1900,7 +1900,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1931,7 +1931,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1951,7 +1951,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1971,7 +1971,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The request fails.
     /// - Parsing fails.
     pub async fn request_instruments(
@@ -1986,7 +1986,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - Parsing fails.
@@ -2009,7 +2009,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - Parsing fails.

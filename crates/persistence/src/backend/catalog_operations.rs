@@ -135,7 +135,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory listing fails.
     /// - File consolidation operations fail.
     /// - Interval validation fails (when `ensure_contiguous_files` is true).
@@ -194,7 +194,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - File consolidation operations fail.
     /// - Interval validation fails (when `ensure_contiguous_files` is true).
@@ -265,7 +265,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory listing fails.
     /// - File combination operations fail.
     /// - Interval validation fails (when `ensure_contiguous_files` is true).
@@ -365,7 +365,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory listing fails.
     /// - Data type extraction from path fails.
     /// - Period-based consolidation operations fail.
@@ -573,7 +573,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - File operations fail.
     /// - Data querying or writing fails.
@@ -1162,7 +1162,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory listing fails.
     /// - File metadata reading fails.
     /// - File rename operations fail.
@@ -1206,7 +1206,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - File metadata reading fails.
     /// - File rename operations fail.
@@ -1259,7 +1259,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory listing fails.
     /// - Metadata reading fails for any file.
     /// - File move operations fail.
@@ -1315,7 +1315,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store listing operations fail.
     /// - Directory structure cannot be analyzed.
     ///
@@ -1404,7 +1404,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - File operations fail.
     /// - Data querying or writing fails.
@@ -1481,7 +1481,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Directory traversal fails.
     /// - Data class extraction from paths fails.
     /// - Individual delete operations fail.

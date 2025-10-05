@@ -386,7 +386,7 @@ impl OKXHttpInnerClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The HTTP request fails.
     /// - Authentication is required but credentials are missing.
     /// - The response cannot be deserialized into the expected type.
