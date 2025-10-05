@@ -44,7 +44,7 @@ make purge-services  # Remove everything including data volumes
 
 ## Running tests
 
-Once services are running (and Nautilus Trader installed by `uv` or `make`):
+Once services are running (and NautilusTrader installed by `uv` or `make`):
 
 ### Python infrastructure integration tests
 
