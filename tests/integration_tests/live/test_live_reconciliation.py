@@ -736,3 +736,206 @@ async def test_concurrent_order_reconciliation(
     assert orders[2].filled_qty == Quantity.from_int(30_000)  # Verify complete fill
     assert orders[3].status == OrderStatus.REJECTED  # Venue reported REJECTED
     assert orders[4].status == OrderStatus.CANCELED  # Venue reported CANCELED
+
+
+@pytest.mark.asyncio()
+async def test_targeted_query_limiting(
+    msgbus,
+    cache,
+    clock,
+    trader_id,
+    account_id,
+    order_factory,
+):
+    """
+    Test that single-order queries are limited per cycle to prevent rate limit
+    exhaustion.
+
+    Simulates a scenario where:
+    1. Many orders fail the bulk query check
+    2. Single-order queries are needed for each order
+    3. System limits queries per cycle to prevent rate limit errors
+
+    """
+    # Arrange - Configure engine with low limits for testing
+    config = LiveExecEngineConfig(
+        open_check_interval_secs=1.0,
+        open_check_open_only=False,  # Full history mode so missing orders are detected
+        max_single_order_queries_per_cycle=3,  # Low limit for testing
+        single_order_query_delay_ms=50,  # Small delay for testing
+        open_check_missing_retries=0,  # Immediately trigger single-order queries
+    )
+
+    exec_engine = LiveExecutionEngine(
+        loop=asyncio.get_running_loop(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=config,
+    )
+
+    exec_client = MockLiveExecutionClient(
+        loop=asyncio.get_running_loop(),
+        client_id=ClientId(SIM.value),
+        venue=SIM,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    exec_engine.register_client(exec_client)
+    exec_engine.start()
+
+    # Create 10 orders and add them to cache as ACCEPTED
+    orders = []
+    for i in range(10):
+        order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100),
+            price=AUDUSD_SIM.make_price(1.0),
+        )
+        cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        cache.update_order(order)
+        orders.append(order)
+
+    # Mock returns empty reports (all orders "missing at venue")
+    # No reports added to exec_client, so generate_order_status_reports returns []
+
+    # Act - Run check_orders_consistency which should limit single-order queries
+    await exec_engine._check_orders_consistency()
+
+    # Assert - Only 3 single-order queries should have been attempted (max_single_order_queries_per_cycle)
+    # Since single-order queries return None, orders should be resolved as REJECTED
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 3)
+
+    # Run another cycle to process more orders
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 6)
+
+    # Run one more cycle
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 9)
+
+    # Final cycle for the last order
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 10)
+
+    # Cleanup
+    exec_engine.stop()
+    await eventually(lambda: exec_engine.is_stopped)
+
+
+@pytest.mark.asyncio()
+async def test_targeted_query_limiting_with_retry_accumulation(
+    msgbus,
+    cache,
+    clock,
+    trader_id,
+    account_id,
+    order_factory,
+):
+    """
+    Test that orders accumulate retries even when max_single_order_queries_per_cycle is
+    reached, ensuring reconciliation progresses over multiple cycles.
+
+    Simulates a scenario where:
+    1. Many orders need reconciliation simultaneously
+    2. Rate limits prevent querying all at once
+    3. Orders continue accumulating retries while waiting
+    4. All orders eventually get reconciled
+
+    """
+    # Arrange - Configure with realistic retry threshold
+    config = LiveExecEngineConfig(
+        open_check_interval_secs=1.0,
+        open_check_open_only=False,  # Full history mode
+        max_single_order_queries_per_cycle=3,  # Low limit for testing
+        single_order_query_delay_ms=10,  # Small delay for testing
+        open_check_missing_retries=5,  # Realistic retry threshold
+    )
+
+    exec_engine = LiveExecutionEngine(
+        loop=asyncio.get_running_loop(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=config,
+    )
+
+    exec_client = MockLiveExecutionClient(
+        loop=asyncio.get_running_loop(),
+        client_id=ClientId(SIM.value),
+        venue=SIM,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    exec_engine.register_client(exec_client)
+    exec_engine.start()
+
+    # Create 10 orders, all ACCEPTED (missing at venue)
+    orders = []
+    for i in range(10):
+        order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100),
+            price=AUDUSD_SIM.make_price(1.0),
+        )
+        cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        cache.update_order(order)
+        orders.append(order)
+
+    # Cycle 1: All orders get retry count 1 (none ready for query yet)
+    await exec_engine._check_orders_consistency()
+    for order in orders:
+        assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == 1
+    assert all(o.status == OrderStatus.ACCEPTED for o in orders)
+
+    # Cycle 2-5: Retry counts accumulate to 5 (threshold)
+    for cycle in range(2, 6):
+        await exec_engine._check_orders_consistency()
+        for order in orders:
+            assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == cycle
+
+    # Cycle 6: All 10 orders now at threshold (5), but only 3 can be queried
+    # First 3 get queried and resolved, remaining 7 increment to retry count 6
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 3)
+
+    # Check that the remaining 7 orders have retry count incremented
+    for order in orders:
+        if order.status == OrderStatus.ACCEPTED:
+            # These hit the limit, got retries incremented but not queried
+            assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == 6
+
+    # Cycle 7: 3 more get queried (total 6 resolved), remaining 4 at retry 7
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 6)
+
+    # Cycle 8: 3 more (total 9), 1 remaining at retry 8
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 9)
+
+    # Cycle 9: Last order resolved
+    await exec_engine._check_orders_consistency()
+    await eventually(lambda: len([o for o in orders if o.status == OrderStatus.REJECTED]) == 10)
+
+    # All orders eventually processed
+    await eventually(lambda: all(o.status == OrderStatus.REJECTED for o in orders))
+
+    # Cleanup
+    exec_engine.stop()
+    await eventually(lambda: exec_engine.is_stopped)

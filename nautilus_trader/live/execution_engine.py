@@ -180,6 +180,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self.open_check_lookback_mins: int = config.open_check_lookback_mins
         self.open_check_threshold_ms: int = config.open_check_threshold_ms
         self.open_check_missing_retries: int = config.open_check_missing_retries
+        self.max_single_order_queries_per_cycle: int = config.max_single_order_queries_per_cycle
+        self.single_order_query_delay_ms: int = config.single_order_query_delay_ms
         self.reconciliation_startup_delay_secs: float = config.reconciliation_startup_delay_secs
         self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
         self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
@@ -205,6 +207,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.open_check_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_missing_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.max_single_order_queries_per_cycle=}", LogColor.BLUE)
+        self._log.info(f"{config.single_order_query_delay_ms=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_startup_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_buffer_mins=}", LogColor.BLUE)
@@ -633,14 +637,14 @@ class LiveExecutionEngine(ExecutionEngine):
         no record of it, which typically means the order was never successfully placed
         or was rejected.
 
-        Before marking as rejected, performs a targeted query to check if the order
+        Before marking as rejected, performs a single-order query to check if the order
         exists but was missed due to API timing/processing delays.
 
         """
         ts_now = self._clock.timestamp_ns()
 
         self._log.debug(
-            f"Performing targeted query for {order.client_order_id!r} before marking as REJECTED",
+            f"Performing single-order query for {order.client_order_id!r} before marking as REJECTED",
             LogColor.BLUE,
         )
 
@@ -1032,6 +1036,10 @@ class LiveExecutionEngine(ExecutionEngine):
             missing_at_venue: set[ClientOrderId] = open_order_ids - venue_reported_ids
             ts_now = self._clock.timestamp_ns()
 
+            # Track targeted queries to prevent rate limit exhaustion
+            targeted_queries_count = 0
+            logged_limit_warning = False
+
             for client_order_id in missing_at_venue:
                 order = self._cache.order(client_order_id)
                 if order is None:
@@ -1058,12 +1066,43 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 retries = self._recon_check_retries.get(client_order_id, 0)
                 if retries >= self.open_check_missing_retries:
+                    if targeted_queries_count >= self.max_single_order_queries_per_cycle:
+                        self._recon_check_retries[client_order_id] = retries + 1
+
+                        if not logged_limit_warning:
+                            # Count how many orders at threshold are being deferred
+                            orders_at_threshold_remaining = (
+                                sum(
+                                    1
+                                    for cid in missing_at_venue
+                                    if self._recon_check_retries.get(cid, 0)
+                                    >= self.open_check_missing_retries
+                                )
+                                - targeted_queries_count
+                            )
+                            self._log.warning(
+                                f"Reached max single-order queries ({self.max_single_order_queries_per_cycle}) "
+                                f"this cycle, deferring {orders_at_threshold_remaining} order(s) at threshold to next cycle",
+                                LogColor.YELLOW,
+                            )
+                            logged_limit_warning = True
+
+                        continue  # Skip query but continue processing other orders
+
                     self._log.warning(
-                        f"Order {client_order_id!r} not found at venue after {retries} retries, performing targeted query",
+                        f"Order {client_order_id!r} not found at venue after {retries} retries, performing single-order query",
                         LogColor.YELLOW,
                     )
                     self._clear_recon_tracking(client_order_id, drop_last_query=False)
                     await self._resolve_order_not_found_at_venue(order)
+                    targeted_queries_count += 1
+
+                    # Add delay between single-order queries (skip after final query)
+                    if (
+                        targeted_queries_count < self.max_single_order_queries_per_cycle
+                        and self.single_order_query_delay_ms > 0
+                    ):
+                        await asyncio.sleep(self.single_order_query_delay_ms / 1000.0)
                 else:
                     self._recon_check_retries[client_order_id] = retries + 1
                     self._log.debug(

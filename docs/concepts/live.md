@@ -215,6 +215,8 @@ The execution engine reuses a single retry counter (`_recon_check_retries`) for 
 
 When the open-order loop exhausts its retries, the engine issues one targeted `GenerateOrderStatusReport` probe before applying a terminal state. If the venue returns the order, reconciliation proceeds and the retry counter resets automatically.
 
+**Single-order query protection**: To prevent rate limit exhaustion when many orders need individual queries, the engine limits single-order queries per reconciliation cycle via `max_single_order_queries_per_cycle` (default: 10). When this limit is reached, remaining orders are deferred to the next cycle. Additionally, the engine adds a configurable delay (`single_order_query_delay_ms`, default: 100ms) between single-order queries to further prevent rate limiting. This ensures the system can handle scenarios where bulk queries fail for hundreds of orders without overwhelming the venue API.
+
 Orders that age beyond `open_check_lookback_mins` rely on this targeted probe. Keep the lookback generous for venues with short history windows, and consider increasing `open_check_threshold_ms` if venue timestamps lag the local clock so recently updated orders are not marked missing prematurely.
 
 This ensures the trading node maintains a consistent execution state even under unreliable conditions.
@@ -228,8 +230,10 @@ This ensures the trading node maintains a consistent execution state even under 
 | `open_check_open_only`              | True           | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
 | `open_check_lookback_mins`          | 60&nbsp;min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
 | `open_check_threshold_ms`           | 5,000&nbsp;ms  | Minimum time since the order's last cached event before open-order checks act on venue discrepancies (missing, mismatched status, etc.). |
-| `open_check_missing_retries`        | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
-| `reconciliation_startup_delay_secs` | 10.0&nbsp;s    | Additional delay (seconds) applied *after* startup reconciliation completes before starting continuous reconciliation loop. Provides time for additional system stabilization. |
+| `open_check_missing_retries`           | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
+| `max_single_order_queries_per_cycle`   | 10             | Maximum number of single-order queries per reconciliation cycle. Prevents rate limit exhaustion when many orders fail bulk query checks. |
+| `single_order_query_delay_ms`          | 100&nbsp;ms    | Delay (milliseconds) between single-order queries to prevent rate limit exhaustion. |
+| `reconciliation_startup_delay_secs`    | 10.0&nbsp;s    | Additional delay (seconds) applied *after* startup reconciliation completes before starting continuous reconciliation loop. Provides time for additional system stabilization. |
 | `own_books_audit_interval_secs`     | None           | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
 
 :::warning

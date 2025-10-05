@@ -122,8 +122,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The interval (seconds) between checks for open orders at the venue.
         If there is a discrepancy then an order status report is generated and reconciled.
         A recommended setting is between 5-10 seconds, consider API rate limits and the additional
-        request weights.
-        If no value is specified then the open order checking task is not started.
+        request weights. If no value is specified then the open order checking task is not started.
     open_check_open_only : bool, default True
         If True, the **check_open_orders** requests only currently open orders from the venue.
         If False, it requests the entire order history, which can be a heavy API call.
@@ -138,6 +137,11 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The maximum number of retries before resolving an order that is open in cache but
         not found at the venue. This prevents race conditions where orders are resolved too
         quickly due to network delays or venue processing time.
+    max_single_order_queries_per_cycle : PositiveInt, default 10
+        The maximum number of single-order queries to perform per reconciliation cycle.
+        Prevents rate limit exhaustion when many orders fail bulk query checks.
+    single_order_query_delay_ms : NonNegativeInt, default 100
+        The delay (milliseconds) between single-order queries to prevent rate limit exhaustion.
     reconciliation_startup_delay_secs : PositiveFloat, default 10.0
         The additional delay (seconds) applied AFTER startup reconciliation
         completes before starting the continuous reconciliation loop. This provides time
@@ -193,6 +197,8 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     open_check_lookback_mins: PositiveInt = 60
     open_check_threshold_ms: NonNegativeInt = 5_000
     open_check_missing_retries: NonNegativeInt = 5
+    max_single_order_queries_per_cycle: PositiveInt = 10
+    single_order_query_delay_ms: NonNegativeInt = 100
     reconciliation_startup_delay_secs: PositiveFloat = 10.0
     purge_closed_orders_interval_mins: PositiveInt | None = None
     purge_closed_orders_buffer_mins: NonNegativeInt | None = None

@@ -368,7 +368,7 @@ Exceeding BitMEX rate limits returns HTTP 429 and may trigger temporary IP bans;
 All requests automatically consume both the global burst bucket and the rolling minute bucket. Endpoints that have their own minute quota (e.g. `/api/v1/order`) also queue against that per-route key, so repeated calls with different parameters still share a single rate bucket.
 
 :::info
-For more details on rate limiting, see the official documentation: <https://www.bitmex.com/app/restAPI#Rate-Limits>.
+For more details on rate limiting, see the [BitMEX API documentation on rate limits](https://www.bitmex.com/app/restAPI#Limits).
 :::
 
 ### Rate-limit headers
