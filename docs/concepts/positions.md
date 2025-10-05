@@ -23,7 +23,12 @@ and hedging position management styles through its OMS (Order Management System)
 
 ### Creation
 
-The system opens a position on the first fill for an instrument. A position tracks:
+The system opens a position on the first fill:
+
+- **NETTING OMS**: Opens on first fill for an instrument (one position per instrument).
+- **HEDGING OMS**: Opens on first fill for a new `position_id` (multiple positions per instrument).
+
+A position tracks:
 
 - Opening order and fill details.
 - Entry side (`LONG` or `SHORT`).
@@ -52,7 +57,7 @@ A position closes when the net quantity becomes zero (`FLAT`). At closure:
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
-- In `NETTING` OMS, the engine snapshots the closed position when it reopens to preserve the prior cycle's realized PnL (see [Position snapshotting](#position-snapshotting)).
+- In `NETTING` OMS, the engine preserves closed position state through snapshots to maintain historical PnL (see [Position snapshotting](#position-snapshotting)).
 
 ## Order fill aggregation
 
@@ -158,8 +163,8 @@ realized PnL from the previous position cycle would be lost.
 
 ### How it works
 
-When a `NETTING` position reopens after being closed, the engine takes a snapshot of the closed
-position state, preserving:
+When a `NETTING` position closes and then receives a new fill for the same instrument, the execution
+engine snapshots the closed position state before resetting it, preserving:
 
 - Final quantities and prices.
 - Realized PnL.
@@ -256,12 +261,17 @@ Positions track all trading costs:
 
 ```python
 commissions = position.commissions()
-# Returns list[Money] with all commission amounts
+# Returns list[Money] with aggregated commission totals per currency
 
-# Use notional_value to quantify exposure
 notional = position.notional_value(current_price)
 # Returns Money in quote currency (standard) or base currency (inverse)
 ```
+
+**Limitations:**
+
+- Panics if inverse instrument has no `base_currency` set.
+- Does not handle quanto contracts (returns quote currency instead of settlement currency).
+- For quanto instruments, use `instrument.calculate_notional_value()` instead.
 
 ## Position properties and state
 
@@ -278,9 +288,9 @@ notional = position.notional_value(current_price)
 ### Position state
 
 - `side`: Current position side (`LONG`, `SHORT`, or `FLAT`).
-- `entry`: Current entry side (BUY or SELL), reflecting the net direction; resets on reopen.
+- `entry`: Direction of the currently open position (`Buy` for `LONG`, `Sell` for `SHORT`). Updates when position flips direction.
 - `quantity`: Current absolute position size.
-- `signed_qty`: Signed position size (negative for `SHORT`).
+- `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
 - `peak_qty`: Maximum quantity reached during position lifetime.
 - `is_open`: Whether position is currently open.
 - `is_closed`: Whether position is closed (`FLAT`).
@@ -349,6 +359,39 @@ This historical data enables:
 Use `position.events` to access the full history of fills for reconciliation.
 The `position.trade_ids` property helps match against broker statements.
 See the [Execution guide](execution.md) for reconciliation best practices.
+:::
+
+## Numerical precision
+
+Position calculations use 64-bit floating-point (`f64`) arithmetic for PnL and average price computations.
+While fixed-point types (`Price`, `Quantity`, `Money`) preserve exact precision at configured decimal places,
+internal calculations convert to `f64` for performance and overflow safety.
+
+### Design rationale
+
+The platform uses `f64` for position calculations to balance performance and accuracy:
+
+- Floating-point operations are significantly faster than arbitrary-precision arithmetic.
+- Raw integer multiplication can overflow even with 128-bit integers.
+- Each calculation starts from precise fixed-point values, avoiding cumulative error.
+- IEEE-754 double precision provides ~15 decimal digits of accuracy.
+
+### Validated precision characteristics
+
+Testing confirms `f64` arithmetic maintains accuracy for typical trading scenarios:
+
+- Standard amounts: No precision loss for amounts ≥ 0.01 in standard currencies.
+- High-precision instruments: 9-decimal crypto prices preserved within 1e-6 tolerance.
+- Sequential fills: 100 fills show no drift (commission accuracy to 1e-10).
+- Extreme prices: Handles range from 0.00001 to 99,999.99999 without overflow.
+- Round-trip trades: Opening and closing at same price produces exact PnL (commissions only).
+
+For implementation details, see `test_position_pnl_precision_*` tests in `crates/model/src/position.rs`.
+
+:::note
+For regulatory compliance or audit trails requiring exact decimal arithmetic, consider using `Decimal`
+types from external libraries. Very small amounts below `f64` epsilon (~1e-15) may round to zero,
+though this does not affect realistic trading scenarios with standard currency precisions.
 :::
 
 ## Integration with other components
