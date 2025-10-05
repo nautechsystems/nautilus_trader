@@ -18,9 +18,7 @@ use std::collections::HashMap;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::{
-    liquidity_math::{liquidity_math_add, tick_spacing_to_max_liquidity_per_tick},
-    tick::Tick,
-    tick_bitmap::TickBitmap,
+    liquidity_math::tick_spacing_to_max_liquidity_per_tick, tick::Tick, tick_bitmap::TickBitmap,
 };
 
 pub mod bit_math;
@@ -203,58 +201,6 @@ impl TickMap {
         tick.update_fee_growth(fee_growth_global_0, fee_growth_global_1);
 
         tick.liquidity_net
-    }
-
-    /// Crosses ticks when price moves down (old_tick > new_tick).
-    pub fn cross_tick_down(&mut self, old_tick: i32, new_tick: i32) {
-        let mut current_tick = old_tick;
-
-        while current_tick > new_tick {
-            // Find next initialized tick at or below current_tick
-            let (next_tick, initialized) = self.next_initialized_tick(current_tick, true);
-
-            if !initialized || next_tick <= new_tick {
-                break;
-            }
-
-            // Cross the tick and update liquidity
-            let liquidity_net = self.cross_tick(
-                next_tick,
-                self.fee_growth_global_0,
-                self.fee_growth_global_1,
-            );
-
-            // When crossing down (zeroForOne = true), negate liquidity_net before adding
-            self.liquidity = liquidity_math_add(self.liquidity, -liquidity_net);
-
-            current_tick = next_tick - 1; // Move below the crossed tick
-        }
-    }
-
-    /// Crosses ticks when price moves up (old_tick < new_tick).
-    pub fn cross_tick_up(&mut self, old_tick: i32, new_tick: i32) {
-        let mut current_tick = old_tick;
-
-        while current_tick < new_tick {
-            // Find next initialized tick above current_tick
-            let (next_tick, initialized) = self.next_initialized_tick(current_tick, false);
-
-            if !initialized || next_tick > new_tick {
-                break;
-            }
-
-            // Cross the tick and update liquidity
-            let liquidity_net = self.cross_tick(
-                next_tick,
-                self.fee_growth_global_0,
-                self.fee_growth_global_1,
-            );
-
-            // When crossing up (zeroForOne = false), use liquidity_net as-is without negation
-            self.liquidity = liquidity_math_add(self.liquidity, liquidity_net);
-
-            current_tick = next_tick;
-        }
     }
 
     /// Returns the number of currently active (initialized) ticks.
