@@ -38,7 +38,7 @@ This will be the final release with support for Python 3.11.
 ### Internal Improvements
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
-- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019), thanks @filipmacek
+- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
@@ -54,6 +54,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid ExecutionClient in Rust (#3013), thanks @nicolad
 - Implemented Hyperliquid websocket tester for streaming market data (#3018), thanks @nicolad
 - Implemented Hyperliquid basic market and limit orders (#3022), thanks @nicolad
+- Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
@@ -65,6 +66,7 @@ This will be the final release with support for Python 3.11.
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
+- Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4

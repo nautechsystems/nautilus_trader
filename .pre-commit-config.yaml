@@ -151,7 +151,7 @@ repos:
         args: ["--fix"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+    rev: 6.1.0
     hooks:
       - id: isort
         name: isort (cython)
@@ -192,7 +192,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.22  # uv version
+    rev: 0.8.23  # uv version
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
