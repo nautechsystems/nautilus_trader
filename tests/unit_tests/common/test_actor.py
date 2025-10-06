@@ -1223,7 +1223,8 @@ class TestActor:
         bars = [TestDataStubs.bar_5decimal(), TestDataStubs.bar_5decimal()]
 
         # Act
-        actor.handle_bars(bars)
+        for bar in bars:
+            actor.handle_historical_data(bar)
 
         # Assert
         assert result == bars
