@@ -131,7 +131,7 @@ cdef class BacktestEngine:
 
     cpdef void _handle_data_command(self, DataCommand command)
     cdef void _handle_subscribe(self, SubscribeData command)
-    cpdef void _update_subscription_data(self, str subscription_name, uint64_t start_time, uint64_t end_time)
+    cpdef void _update_subscription_data(self, str subscription_name, uint64_t request_start_ns, uint64_t request_end_ns)
     cpdef void _handle_data_response(self, DataResponse response)
     cpdef void _handle_unsubscribe(self, UnsubscribeData command)
 
@@ -144,8 +144,10 @@ cdef inline bint should_skip_time_event(
 ):
     if only_now and ts_event_init < ts_now:
         return True
+
     if (not only_now) and (ts_event_init == ts_now):
         return True
+
     if as_of_now and ts_event_init > ts_now:
         return True
 
