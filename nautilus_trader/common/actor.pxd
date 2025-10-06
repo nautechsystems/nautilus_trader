@@ -21,6 +21,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport BookType
@@ -56,6 +57,7 @@ cdef class Actor(Component):
     cdef bint _log_events
     cdef bint _log_commands
     cdef set[type] _warning_events
+    cdef dict[UUID4, RequestData] _requests
     cdef dict[UUID4, object] _pending_requests
     cdef set[type] _pyo3_conversion_types
     cdef dict[str, type] _signal_classes
@@ -63,6 +65,7 @@ cdef class Actor(Component):
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
     cdef dict[BarType, list[Indicator]] _indicators_for_bars
+    cdef readonly TopicCache _topic_cache
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""
@@ -339,6 +342,7 @@ cdef class Actor(Component):
     cpdef void _handle_instruments_response(self, DataResponse response)
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
+    cpdef void _handle_order_book_depth_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _handle_aggregated_bars_response(self, DataResponse response)
     cpdef void _handle_order_filled(self, OrderFilled fill)

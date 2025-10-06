@@ -49,6 +49,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport is_logging_initialized
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
@@ -154,6 +155,7 @@ cdef class Actor(Component):
         )
 
         self._warning_events: set[type] = set()
+        self._requests: dict[UUID4, RequestData] = {}
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
         self._pyo3_conversion_types = set()
         self._signal_classes: dict[str, type] = {}
@@ -163,6 +165,9 @@ cdef class Actor(Component):
         self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
+
+        # Topic cache
+        self._topic_cache = TopicCache()
 
         # Configuration
         self._log_events = config.log_events
@@ -1203,6 +1208,7 @@ cdef class Actor(Component):
 
     cpdef void _reset(self):
         self.on_reset()
+        self._requests.clear()
         self._pending_requests.clear()
 
         self._indicators.clear()
@@ -1253,13 +1259,8 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        topic = f"data.{data_type.topic}"
-
-        if instrument_id and not data_type.metadata:
-            topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-
         self._msgbus.subscribe(
-            topic=topic,
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id),
             handler=self.handle_data,
         )
 
@@ -1312,7 +1313,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.instrument.{venue}.*",
+            topic=self._topic_cache.get_instruments_topic_pattern(venue),
             handler=self.handle_instrument,
         )
 
@@ -1359,9 +1360,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.instrument"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_instruments_topic(instrument_id),
             handler=self.handle_instrument,
         )
 
@@ -1422,9 +1421,7 @@ cdef class Actor(Component):
             self._pyo3_conversion_types.add(OrderBookDeltas)
 
         self._msgbus.subscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_deltas_topic(instrument_id),
             handler=self.handle_order_book_deltas,
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
@@ -1487,9 +1484,7 @@ cdef class Actor(Component):
             self._pyo3_conversion_types.add(OrderBookDepth10)
 
         self._msgbus.subscribe(
-            topic=f"data.book.depth"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_depth_topic(instrument_id),
             handler=self.handle_order_book_depth,
         )
 
@@ -1571,10 +1566,7 @@ cdef class Actor(Component):
             return
 
         self._msgbus.subscribe(
-            topic=f"data.book.snapshots"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}"
-                  f".{interval_ms}",
+            topic=self._topic_cache.get_snapshots_topic(instrument_id, interval_ms),
             handler=self.handle_order_book,
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
@@ -1623,9 +1615,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.quotes"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_quotes_topic(instrument_id),
             handler=self.handle_quote_tick,
         )
 
@@ -1673,9 +1663,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.trades"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_trades_topic(instrument_id),
             handler=self.handle_trade_tick,
         )
 
@@ -1719,9 +1707,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.mark_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_mark_prices_topic(instrument_id),
             handler=self.handle_mark_price,
         )
         cdef SubscribeMarkPrices command = SubscribeMarkPrices(
@@ -1761,9 +1747,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.index_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_index_prices_topic(instrument_id),
             handler=self.handle_index_price,
         )
         cdef SubscribeIndexPrices command = SubscribeIndexPrices(
@@ -1803,9 +1787,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.funding_rates"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id),
             handler=self.handle_funding_rate,
         )
         cdef SubscribeFundingRates command = SubscribeFundingRates(
@@ -1849,7 +1831,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.bars.{bar_type.standard()}",
+            topic=self._topic_cache.get_bars_topic(bar_type.standard()),
             handler=self.handle_bar,
         )
 
@@ -1893,7 +1875,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_status_topic(instrument_id),
             handler=self.handle_instrument_status,
         )
         cdef SubscribeInstrumentStatus command = SubscribeInstrumentStatus(
@@ -1934,7 +1916,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.close_price.{instrument_id.to_str()}",
+            topic=self._topic_cache.get_close_prices_topic(instrument_id),
             handler=self.handle_instrument_close,
         )
         cdef SubscribeInstrumentClose command = SubscribeInstrumentClose(
@@ -1992,13 +1974,8 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        topic = f"data.{data_type.topic}"
-
-        if instrument_id and not data_type.metadata:
-            topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-
         self._msgbus.unsubscribe(
-            topic=topic,
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id),
             handler=self.handle_data,
         )
 
@@ -2041,7 +2018,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.instrument.{venue}.*",
+            topic=self._topic_cache.get_instruments_topic_pattern(venue),
             handler=self.handle_instrument,
         )
         cdef UnsubscribeInstruments command = UnsubscribeInstruments(
@@ -2077,9 +2054,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.instrument"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_instruments_topic(instrument_id),
             handler=self.handle_instrument,
         )
         cdef UnsubscribeInstrument command = UnsubscribeInstrument(
@@ -2116,9 +2091,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_deltas_topic(instrument_id),
             handler=self.handle_order_book_deltas,
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
@@ -2156,9 +2129,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.depth"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_depth_topic(instrument_id),
             handler=self.handle_order_book_depth,
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
@@ -2201,10 +2172,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.snapshots"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}"
-                  f".{interval_ms}",
+            topic=self._topic_cache.get_snapshots_topic(instrument_id, interval_ms),
             handler=self.handle_order_book,
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
@@ -2242,9 +2210,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.quotes"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_quotes_topic(instrument_id),
             handler=self.handle_quote_tick,
         )
         cdef UnsubscribeQuoteTicks command = UnsubscribeQuoteTicks(
@@ -2281,9 +2247,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.trades"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_trades_topic(instrument_id),
             handler=self.handle_trade_tick,
         )
         cdef UnsubscribeTradeTicks command = UnsubscribeTradeTicks(
@@ -2320,9 +2284,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.mark_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_mark_prices_topic(instrument_id),
             handler=self.handle_mark_price,
         )
         cdef UnsubscribeMarkPrices command = UnsubscribeMarkPrices(
@@ -2359,9 +2321,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.index_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_index_prices_topic(instrument_id),
             handler=self.handle_index_price,
         )
         cdef UnsubscribeIndexPrices command = UnsubscribeIndexPrices(
@@ -2398,9 +2358,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.funding_rates"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id),
             handler=self.handle_funding_rate,
         )
         cdef UnsubscribeFundingRates command = UnsubscribeFundingRates(
@@ -2439,7 +2397,7 @@ cdef class Actor(Component):
         standard_bar_type = bar_type.standard()
 
         self._msgbus.unsubscribe(
-            topic=f"data.bars.{standard_bar_type}",
+            topic=self._topic_cache.get_bars_topic(standard_bar_type),
             handler=self.handle_bar,
         )
         cdef UnsubscribeBars command = UnsubscribeBars(
@@ -2477,7 +2435,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_status_topic(instrument_id),
             handler=self.handle_instrument_status,
         )
         cdef UnsubscribeInstrumentStatus command = UnsubscribeInstrumentStatus(
@@ -2564,7 +2522,7 @@ cdef class Actor(Component):
         Condition.type(data, data_type.type, "data", "data.type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
+        self._msgbus.publish_c(topic=self._topic_cache.get_custom_data_topic(data_type), msg=data)
 
     cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0):
         """
@@ -2620,9 +2578,8 @@ cdef class Actor(Component):
         """
         Condition.not_none(name, "name")
 
-        cdef str topic = f"Signal{name.title()}*"
         self._msgbus.subscribe(
-            topic=f"data.{topic}",
+            topic=self._topic_cache.get_signal_topic(name),
             handler=self.handle_signal,
         )
 
@@ -2762,8 +2719,14 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+        self._requests[request_id] = request
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id, historical=True),
+            handler=self.handle_data,
+        )
 
         return request_id
 
@@ -3090,13 +3053,19 @@ cdef class Actor(Component):
             depth=depth,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_data_response,
+            callback=self._handle_order_book_depth_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+        self._requests[request_id] = request
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_depth_topic(instrument_id, historical=True),
+            handler=self.handle_order_book_depth,
+        )
 
         return request_id
 
@@ -3186,8 +3155,14 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+        self._requests[request_id] = request
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_quotes_topic(instrument_id, historical=True),
+            handler=self.handle_quote_tick,
+        )
 
         return request_id
 
@@ -3277,8 +3252,14 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+        self._requests[request_id] = request
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_trades_topic(instrument_id, historical=True),
+            handler=self.handle_trade_tick,
+        )
 
         return request_id
 
@@ -3356,6 +3337,7 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
+        cdef BarType standard_bar_type = bar_type.standard()
         cdef RequestBars request = RequestBars(
             bar_type=bar_type,
             start=start,
@@ -3368,8 +3350,14 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+        self._requests[request_id] = request
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_bars_topic(standard_bar_type, historical=True),
+            handler=self.handle_bar,
+        )
 
         return request_id
 
@@ -4152,11 +4140,13 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
-        if isinstance(response.data, list):
-            for data in response.data:
-                self.handle_historical_data(data)
-        else:
-            self.handle_historical_data(response.data)
+        cdef RequestData request = self._requests.pop(response.correlation_id, None)
+
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_custom_data_topic(request.data_type, request.instrument_id, historical=True),
+                handler=self.handle_data,
+            )
 
         self._finish_response(response.correlation_id)
 
@@ -4165,15 +4155,47 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
-        self.handle_quote_ticks(response.data)
+        cdef RequestQuoteTicks request = self._requests.pop(response.correlation_id, None)
+
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_quotes_topic(request.instrument_id, historical=True),
+                handler=self.handle_quote_tick,
+            )
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
-        self.handle_trade_ticks(response.data)
+        cdef RequestTradeTicks request = self._requests.pop(response.correlation_id, None)
+
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_trades_topic(request.instrument_id, historical=True),
+                handler=self.handle_trade_tick,
+            )
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_book_depth_response(self, DataResponse response):
+        cdef RequestOrderBookDepth request = self._requests.pop(response.correlation_id, None)
+
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_depth_topic(request.instrument_id, historical=True),
+                handler=self.handle_order_book_depth,
+            )
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_bars_response(self, DataResponse response):
-        self.handle_bars(response.data)
+        cdef RequestBars request = self._requests.pop(response.correlation_id, None)
+
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_bars_topic(request.bar_type.standard(), historical=True),
+                handler=self.handle_bar,
+            )
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_aggregated_bars_response(self, DataResponse response):
