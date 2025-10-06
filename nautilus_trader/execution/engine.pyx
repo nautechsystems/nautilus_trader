@@ -1391,7 +1391,9 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
-            if should_handle_own_book_order(order):
+            own_book = self._cache.own_order_book(order.instrument_id)
+            # Only bypass should_handle check for closed orders (to ensure cleanup)
+            if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
                 self._cache.update_own_order_book(order)
             return
 

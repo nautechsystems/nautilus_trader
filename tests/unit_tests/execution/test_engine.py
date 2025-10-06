@@ -2646,6 +2646,99 @@ class TestExecutionEngine:
         assert self.cache.own_bid_orders(instrument.id) == {}
         assert self.cache.own_ask_orders(instrument.id) == {}
 
+    def test_rejected_order_removed_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        strategy.submit_order(order)
+
+        # Assert order was added to own book
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert len(own_book.bids_to_dict()) == 1
+
+        # Act - reject the order
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_rejected(order))
+
+        # Assert - order should be removed from own book
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(order.instrument_id) == {}
+
+    @pytest.mark.parametrize(
+        ("time_in_force"),
+        [
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        ],
+    )
+    def test_ioc_fok_not_added_to_existing_own_book(self, time_in_force: TimeInForce) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # First, create a normal limit order to establish an own book for this instrument
+        limit_order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+        strategy.submit_order(limit_order)
+
+        # Assert own book exists
+        own_book = self.cache.own_order_book(limit_order.instrument_id)
+        assert own_book is not None
+        assert len(own_book.bids_to_dict()) == 1
+
+        # Act - submit IOC/FOK order for same instrument
+        ioc_fok_order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50_000),
+            price=Price.from_str("10.5"),
+            time_in_force=time_in_force,
+        )
+        strategy.submit_order(ioc_fok_order)
+
+        # Assert - IOC/FOK order should NOT be in own book
+        assert len(own_book.bids_to_dict()) == 1  # Still just the limit order
+        assert Decimal("10.0") in own_book.bids_to_dict()
+        assert Decimal("10.5") not in own_book.bids_to_dict()
+
+        # Simulate rejection and ensure it doesn't cause issues
+        self.exec_engine.process(TestEventStubs.order_submitted(ioc_fok_order))
+        self.exec_engine.process(TestEventStubs.order_rejected(ioc_fok_order))
+
+        # Assert - still only the limit order in book
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("10.0") in own_book.bids_to_dict()
+
     def test_own_book_status_filtering(self) -> None:
         # Arrange
         self.exec_engine.set_manage_own_order_books(True)

@@ -2380,8 +2380,11 @@ cdef class Cache(CacheFacade):
             self._index_orders_emulated.add(order.client_order_id)
 
         # Update own book
-        if self._own_order_books and should_handle_own_book_order(order):
-            self.update_own_order_book(order)
+        if self._own_order_books:
+            own_book = self._own_order_books.get(order.instrument_id)
+            # Only bypass should_handle check for closed orders (to ensure cleanup)
+            if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
+                self.update_own_order_book(order)
 
         if self._database is None:
             return
@@ -2418,6 +2421,9 @@ cdef class Cache(CacheFacade):
         own_book = self._own_order_books.get(order.instrument_id)
 
         if own_book is None:
+            if order.is_closed_c():
+                # Don't create own book for closed orders
+                return
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._own_order_books[order.instrument_id] = own_book
