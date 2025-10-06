@@ -14,6 +14,7 @@ This will be the final release with support for Python 3.11.
 - Added `convert_quote_qty_to_base` config option to `ExecEngineConfig` (default `True` to retain current behavior) allows adapters to keep quote-denominated sizes when needed
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
 - Added `fs_rust_storage_options` to Python catalog (#3008), thanks @faysou and @Johnkhk
+- Added matching engine fallback to default order book for custom fill models (#3039), thanks @Hamish-Leahy
 - Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
@@ -102,15 +103,16 @@ This will be the final release with support for Python 3.11.
 - Fixed BitMEX instrument parsing of lot size
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
-- Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
-- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
-- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
-- Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
 - Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
 - Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
+- Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
+- Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
+- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
+- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
+- Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Tardis instruments `lot_size` mapping
 
 ### Documentation Updates
