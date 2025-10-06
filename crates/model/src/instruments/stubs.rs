@@ -202,6 +202,7 @@ pub fn crypto_option_btc_deribit(
         price_increment,
         size_increment,
         Some(Quantity::from(1)),
+        Some(Quantity::from(1)),
         Some(Quantity::from("9000.0")),
         Some(Quantity::from("0.1")),
         None,
