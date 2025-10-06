@@ -263,6 +263,7 @@ cdef class DataEngine(Component):
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
     cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, uint64_t start = *)
+    cpdef void _deactivate_historical_bar_aggregator(self, BarType bar_type)
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)

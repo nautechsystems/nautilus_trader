@@ -3412,7 +3412,8 @@ cdef class Actor(Component):
         include_external_data : bool, default False
             If True, includes the queried external data in the response.
         update_subscriptions : bool, default False
-            If True, updates the aggregators of any existing or future subscription with the queried external data.
+            If True, persists the aggregator of each bar_type so it's up to date for a subsequent
+            market data subscription.
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
         params : dict[str, Any], optional
@@ -3440,6 +3441,13 @@ cdef class Actor(Component):
         TypeError
             If `bar_types` is empty or contains elements not of type `BarType`.
 
+        Notes
+        -----
+        - Make sure no subscription is active for the same underlying market data as the requested bar types.
+        - A subscription can follow request_aggregated_bars and use an up to date aggregator when
+          using update_subscriptions.
+        - Subscribe to market data as a callback to request_aggregated_bars.
+
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_empty(bar_types, "bar_types")
@@ -3463,6 +3471,14 @@ cdef class Actor(Component):
         params["update_subscriptions"] = update_subscriptions
         params["update_catalog"] = update_catalog
 
+        # Subscribe to all requested bar types (historical topics for aggregated bars)
+        for bar_type in bar_types:
+            topic = self._topic_cache.get_bars_topic(bar_type.standard(), historical=True)
+            self._msgbus.subscribe(
+                topic=topic,
+                handler=self.handle_historical_data,
+            )
+
         if first_bar_type.is_composite():
             params["bars_market_data_type"] = "bars"
             request = RequestBars(
@@ -3477,6 +3493,12 @@ cdef class Actor(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=params,
             )
+
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite(), historical=True),
+                    handler=self.handle_historical_data,
+                )
         elif first_bar_type.spec.price_type == PriceType.LAST:
             params["bars_market_data_type"] = "trade_ticks"
             request = RequestTradeTicks(
@@ -3491,6 +3513,12 @@ cdef class Actor(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=params,
             )
+
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_data,
+                )
         else:
             params["bars_market_data_type"] = "quote_ticks"
             request = RequestQuoteTicks(
@@ -3505,6 +3533,12 @@ cdef class Actor(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=params,
             )
+
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_data,
+                )
 
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
@@ -3721,48 +3755,6 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks):
-        """
-        Handle the given historical quote tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[QuoteTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning("Received <QuoteTick[]> data with no ticks")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
-        cdef:
-            int i
-            QuoteTick tick
-
-        for i in range(length):
-            tick = ticks[i]
-
-            if indicators:
-                self._handle_indicators_for_quote(indicators, tick)
-
-            self.handle_historical_data(tick)
-
     cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Handle the given trade tick.
@@ -3869,48 +3861,6 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(funding_rate)}", e)
                 raise
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks):
-        """
-        Handle the given historical trade tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[TradeTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning("Received <TradeTick[]> data with no ticks")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
-        cdef:
-            int i
-            TradeTick tick
-
-        for i in range(length):
-            tick = ticks[i]
-
-            if indicators:
-                self._handle_indicators_for_trade(indicators, tick)
-
-            self.handle_historical_data(tick)
-
     cpdef void handle_bar(self, Bar bar):
         """
         Handle the given bar data.
@@ -3941,56 +3891,6 @@ cdef class Actor(Component):
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(bar)}", e)
                 raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_bars(self, list bars):
-        """
-        Handle the given historical bar data by handling each bar individually.
-
-        Parameters
-        ----------
-        bars : list[Bar]
-            The bars to handle.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        Raises
-        ------
-        RuntimeError
-            If bar data has incorrectly sorted timestamps (not monotonically increasing).
-
-        """
-        Condition.not_none(bars, "bars")  # Can be empty
-
-        cdef int length = len(bars)
-        cdef Bar first = bars[0] if length > 0 else None
-        cdef Bar last = bars[length - 1] if length > 0 else None
-
-        if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
-        else:
-            self._log.warning("Received empty bars response (no data returned)")
-            return
-
-        if length > 0 and first.ts_init > last.ts_init:
-            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
-        cdef:
-            int i
-            Bar bar
-
-        for i in range(length):
-            bar = bars[i]
-
-            if indicators:
-                self._handle_indicators_for_bar(indicators, bar)
-
-            self.handle_historical_data(bar)
 
     cpdef void handle_instrument_status(self, InstrumentStatus data):
         """
@@ -4199,15 +4099,39 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_aggregated_bars_response(self, DataResponse response):
-        if "bars" in response.data:
-            for bars in response.data["bars"].values():
-                self.handle_bars(bars)
+        # Unsubscribe from topics if include_external_data was True
+        include_external_data = response.params.get("include_external_data", False)
+        bar_types = response.params.get("bar_types", ())
+        first_bar_type = bar_types[0] if bar_types else None
 
-        if "quote_ticks" in response.data:
-            self.handle_quote_ticks(response.data["quote_ticks"])
+        # Unsubscribe from all requested bar types (historical topics)
+        if first_bar_type is not None:
+            for bar_type in bar_types:
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
+                    handler=self.handle_historical_data,
+                )
 
-        if "trade_ticks" in response.data:
-            self.handle_trade_ticks(response.data["trade_ticks"])
+        if include_external_data:
+            # Unsubscribe from underlying data topic based on first bar type (historical topics)
+            if first_bar_type.is_composite():
+                # Unsubscribe from composite bar topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite().standard(), historical=True),
+                    handler=self.handle_historical_data,
+                )
+            elif first_bar_type.spec.price_type == PriceType.LAST:
+                # Unsubscribe from trade ticks topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_data,
+                )
+            else:
+                # Unsubscribe from quote ticks topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_data,
+                )
 
         self._finish_response(response.correlation_id)
 

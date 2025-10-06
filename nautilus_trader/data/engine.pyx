@@ -438,6 +438,11 @@ cdef class DataEngine(Component):
         del self._clients[client.id]
         self._log.info(f"Deregistered {client}")
 
+    cpdef bint is_live_mode(self):
+        cdef ClientId backtest_client_id = ClientId("backtest_default_client")
+
+        return backtest_client_id not in self._clients
+
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_custom_data(self):
@@ -1968,14 +1973,14 @@ cdef class DataEngine(Component):
 
         if query_past_data or grouped_response.data_type.type == Instrument:
             if grouped_response.data_type.type == Instrument:
-                # TODO instruments should be subscribed as well by actor instead of received as a response
                 instrument_properties = response.params.get("instrument_properties")
+                update_catalog = grouped_response.params.get("update_catalog", False)
+                force_update_catalog = grouped_response.params.get("force_update_catalog", False)
+
                 modified_instruments = [self._modify_instrument_properties(instrument, instrument_properties)
                                         for instrument in response.data]
                 grouped_response.data = modified_instruments
 
-                update_catalog = grouped_response.params.get("update_catalog", False)
-                force_update_catalog = grouped_response.params.get("force_update_catalog", False)
                 self._handle_instruments(grouped_response.data, update_catalog, force_update_catalog)
             elif grouped_response.params.get("bars_market_data_type"):
                 self._handle_aggregated_bars(grouped_response)
@@ -2147,6 +2152,14 @@ cdef class DataEngine(Component):
         for instrument in instruments:
             self._handle_instrument(instrument, update_catalog, force_update_catalog)
 
+    cpdef void _handle_order_book_depths(self, list depths):
+        # Add order book depths to cache if needed
+        # Note: Currently no cache method for order book depths, but we can add individual depths
+        cdef OrderBookDepth10 depth
+        for depth in depths:
+            # Individual depths are handled by _handle_order_book_depth which publishes to msgbus
+            self._handle_order_book_depth(depth, historical=True)
+
     cpdef void _handle_quote_ticks(self, list ticks):
         cdef QuoteTick tick
         for tick in ticks:
@@ -2157,229 +2170,282 @@ cdef class DataEngine(Component):
         for tick in ticks:
             self._handle_trade_tick(tick, historical=True)
 
-    cpdef void _handle_order_book_depths(self, list depths):
-        # Add order book depths to cache if needed
-        # Note: Currently no cache method for order book depths, but we can add individual depths
-        cdef OrderBookDepth10 depth
-        for depth in depths:
-            # Individual depths are handled by _handle_order_book_depth which publishes to msgbus
-            self._handle_order_book_depth(depth, historical=True)
-
     cpdef void _handle_bars(self, list bars):
         cdef Bar bar
         for bar in bars:
             self._handle_bar(bar, historical=True)
 
-    cpdef dict _handle_aggregated_bars(self, DataResponse response):
-        # Closure is not allowed in cpdef functions so we call a cdef function
-        return self._handle_aggregated_bars_aux(response)
+    cpdef void _handle_aggregated_bars(self, DataResponse response):
+        # 1. Create aggregators with clock advanced to first data timestamp
+        bar_types = response.params.get("bar_types", ())
+        first_ts_init = response.data[0].ts_init if len(response.data) > 0 else 0
 
-    cdef dict _handle_aggregated_bars_aux(self, DataResponse response):
-        cdef dict result = {}
-        cdef list ticks = response.data
-        cdef dict params = response.params
+        for bar_type in bar_types:
+            self._create_bar_aggregator(bar_type, response.params)
+            self._setup_bar_aggregator(bar_type, historical=True, start=first_ts_init)
 
-        if len(ticks) == 0:
-            self._log.warning("_handle_aggregated_bars: No data to aggregate")
-            return result
+        # 2. Process underlying data through aggregators
+        bars_market_data_type = response.params.get("bars_market_data_type")
 
-        # Extract start and end time from original request timing
-        cdef uint64_t start_ns = dt_to_unix_nanos(response.start)
-        cdef uint64_t end_ns = dt_to_unix_nanos(response.end)
-        cdef dict bars_result = {}
+        if bars_market_data_type in ("quotes", "quote_ticks"):
+            self._handle_quote_ticks(response.data)
+        elif bars_market_data_type in ("trades", "trade_ticks"):
+            self._handle_trade_ticks(response.data)
+        elif bars_market_data_type == "bars":
+            self._handle_bars(response.data)
 
-        if params["include_external_data"]:
-            if params["bars_market_data_type"] == "quote_ticks":
-                self._cache.add_quote_ticks(ticks)
-                result["quote_ticks"] = ticks
-            elif params["bars_market_data_type"] == "trade_ticks":
-                self._cache.add_trade_ticks(ticks)
-                result["trade_ticks"] = ticks
+        # 3. Handle aggregator lifecycle based on update_subscriptions
+        for bar_type in bar_types:
+            self._deactivate_historical_bar_aggregator(bar_type)
 
-        if params["bars_market_data_type"] == "bars":
-            bars_result[params["bar_type"]] = ticks
+        update_subscriptions = response.params.get("update_subscriptions", False)
 
-        for bar_type in params["bar_types"]:
-            if params["update_subscriptions"] and bar_type.standard() in self._bar_aggregators:
-                aggregator = self._bar_aggregators[bar_type.standard()]
-            else:
-                instrument = self._cache.instrument(params["bar_type"].instrument_id)
+        if not update_subscriptions:
+            for bar_type in bar_types:
+                self._bar_aggregators.pop(bar_type.standard(), None)
 
-                if instrument is None:
-                    self._log.error(
-                        f"Cannot start bar aggregation: "
-                        f"no instrument found for {bar_type.instrument_id}",
-                    )
-                    continue
+    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params):
+        if bar_type.standard() in self._bar_aggregators:
+            self._log.debug(f"Aggregator for {bar_type} already exists. Skipping _create_bar_aggregator.")
+            return
 
-                aggregator = self._create_bar_aggregator(instrument, bar_type, params)
+        instrument = self._cache.instrument(bar_type.instrument_id)
 
-                if params["update_subscriptions"]:
-                    self._bar_aggregators[bar_type.standard()] = aggregator
+        if instrument is None:
+            self._log.error(
+                f"Cannot start bar aggregation: "
+                f"no instrument found for {bar_type.instrument_id}",
+            )
+            return
 
-            aggregated_bars = []
-            handler = aggregated_bars.append
-            aggregator.start_batch_update(handler, start_ns)
-
-            if params["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
-                for tick in ticks:
-                    aggregator.handle_quote_tick(tick)
-            elif params["bars_market_data_type"] == "trade_ticks" and not bar_type.is_composite():
-                for tick in ticks:
-                    aggregator.handle_trade_tick(tick)
-            else:
-                input_bars = bars_result[bar_type.composite()]
-
-                if len(input_bars) > 0:
-                    for bar in input_bars:
-                        aggregator.handle_bar(bar)
-
-            aggregator.stop_batch_update()
-            bars_result[bar_type.standard()] = aggregated_bars
-
-        if not params["include_external_data"] and params["bars_market_data_type"] == "bars":
-            del bars_result[params["bar_type"]]
-
-        # We need a second final dict as a we can't delete keys in a loop
-        result["bars"] = {}
-
-        for bar_type in bars_result:
-            if len(bars_result[bar_type]) > 0:
-                result["bars"][bar_type] = bars_result[bar_type]
-                self._cache.add_bars(bars_result[bar_type])
-
-        return result
-
-# -- INTERNAL -------------------------------------------------------------------------------------
-
-    cdef str _get_instruments_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_instruments.get(instrument_id)
-        if topic is None:
-            topic = f"data.instrument.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_instruments[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_book_topic(self, type book_data_type, InstrumentId instrument_id):
-        if book_data_type == OrderBookDelta:
-            return self._get_deltas_topic(instrument_id)
-        elif book_data_type == OrderBookDepth10:
-            return self._get_depth_topic(instrument_id)
-        else:  # pragma: no cover (design-time error)
-            raise TypeError(f"Invalid book data type, was {book_data_type}")
-
-    cdef str _get_deltas_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_deltas.get(instrument_id)
-        if topic is None:
-            topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-            self._topic_cache_deltas[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_depth_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_depth.get(instrument_id)
-        if topic is None:
-            topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-            self._topic_cache_depth[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_quotes_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_quotes.get(instrument_id)
-        if topic is None:
-            topic = f"data.quotes.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_quotes[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_trades_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_trades.get(instrument_id)
-        if topic is None:
-            topic = f"data.trades.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_trades[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_status_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_status.get(instrument_id)
-        if topic is None:
-            topic = f"data.status.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_status[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_mark_prices_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_mark_prices.get(instrument_id)
-        if topic is None:
-            topic = f"data.mark_prices.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_mark_prices[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_index_prices_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_index_prices.get(instrument_id)
-        if topic is None:
-            topic = f"data.index_prices.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_index_prices[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_funding_rates_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_funding_rates.get(instrument_id)
-        if topic is None:
-            topic = f"data.funding_rates.{instrument_id.venue}.{instrument_id.symbol}"
-            self._topic_cache_funding_rates[instrument_id] = topic
-        return topic
-
-    cdef str _get_close_prices_topic(self, InstrumentId instrument_id):
-        cdef str topic = self._topic_cache_close_prices.get(instrument_id)
-        if topic is None:
-            topic = f"data.venue.close_price.{instrument_id}"
-            self._topic_cache_close_prices[instrument_id] = topic
-
-        return topic
-
-    cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms):
-        cdef tuple key = (instrument_id, interval_ms)
-        cdef str topic = self._topic_cache_snapshots.get(key)
-        if topic is None:
-            topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}.{interval_ms}"
-            self._topic_cache_snapshots[key] = topic
-
-        return topic
-
-    cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = None):
-        cdef:
-            tuple[DataType, InstrumentId] key
-            str topic
-
-        # Handle both cases: with and without instrument_id
-        if instrument_id is not None and not data_type.metadata:
-            # Case 1: with instrument_id and no metadata - venue/symbol format
-            key = (data_type, instrument_id)
-            topic = self._topic_cache_custom.get(key)
-
-            if topic is None:
-                topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-                self._topic_cache_custom[key] = topic
-
-            return topic
+        if bar_type.spec.is_time_aggregated():
+            time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
+            aggregator = TimeBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+                clock=self._clock,
+                interval_type=self._time_bars_interval_type,
+                timestamp_on_close=self._time_bars_timestamp_on_close,
+                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
+                build_with_no_updates=self._time_bars_build_with_no_updates,
+                time_bars_origin_offset=time_bars_origin_offset,
+                bar_build_delay=self._time_bars_build_delay,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.TICK:
+            aggregator = TickBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VOLUME:
+            aggregator = VolumeBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VALUE:
+            aggregator = ValueBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.RENKO:
+            aggregator = RenkoBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+            )
         else:
-            # Case 2: without instrument_id or with metadata - use data_type.topic
-            topic = self._topic_cache_custom_simple.get(data_type)
-            if topic is None:
-                topic = f"data.{data_type.topic}"
-                self._topic_cache_custom_simple[data_type] = topic
+            raise NotImplementedError(  # pragma: no cover (design-time error)
+                bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
+            )
 
-            return topic
+        self._bar_aggregators[bar_type.standard()] = aggregator
 
-    cdef str _get_bars_topic(self, BarType bar_type):
-        cdef str topic = self._topic_cache_bars.get(bar_type)
-        if topic is None:
-            topic = f"data.bars.{bar_type}"
-            self._topic_cache_bars[bar_type] = topic
+    cpdef void _setup_bar_aggregator(
+        self,
+        BarType bar_type,
+        bint historical = False,
+        uint64_t start = 0,
+    ):
+        aggregator = self._bar_aggregators.get(bar_type.standard())
+        if aggregator is None:
+            self._log.error(f"Cannot setup bar aggregator: no aggregator found for {bar_type}")
+            return
 
-        return topic
+        if historical:
+            aggregator.set_historical_mode(historical, self.process_historical)
+        else:
+            aggregator.set_historical_mode(historical, self.process)
+
+        # Subscribe aggregator to message bus to receive underlying data
+        if bar_type.is_composite():
+            composite_topic = self._topic_cache.get_bars_topic(bar_type.composite(), historical=historical)
+            self._msgbus.subscribe(
+                topic=composite_topic,
+                handler=aggregator.handle_bar,
+            )
+        elif bar_type.spec.price_type == PriceType.LAST:
+            trades_topic = self._topic_cache.get_trades_topic(bar_type.instrument_id, historical=historical)
+            self._msgbus.subscribe(
+                topic=trades_topic,
+                handler=aggregator.handle_trade_tick,
+                priority=5,
+            )
+        else:
+            quotes_topic = self._topic_cache.get_quotes_topic(bar_type.instrument_id, historical=historical)
+            self._msgbus.subscribe(
+                topic=quotes_topic,
+                handler=aggregator.handle_quote_tick,
+                priority=5,
+            )
+
+        if isinstance(aggregator, TimeBarAggregator):
+            if historical:
+                # Each aggregator gets its own independent clock
+                test_clock = TestClock()
+                aggregator.set_clock(test_clock)
+                aggregator.set_time(start)
+
+            aggregator.start_timer()
+
+        aggregator.is_running = True
+
+    cpdef void _deactivate_historical_bar_aggregator(self, BarType bar_type):
+        aggregator = self._bar_aggregators.get(bar_type.standard())
+        if aggregator is None:
+            self._log.error(f"Cannot deactivate bar aggregator: no aggregator found for {bar_type}")
+            return
+
+        aggregator.set_historical_mode(False, self.process)
+
+        if bar_type.is_composite():
+            composite_topic = self._topic_cache.get_bars_topic(bar_type.composite(), historical=True)
+            self._msgbus.unsubscribe(
+                topic=composite_topic,
+                handler=aggregator.handle_bar,
+            )
+        elif bar_type.spec.price_type == PriceType.LAST:
+            trades_topic = self._topic_cache.get_trades_topic(bar_type.instrument_id, historical=True)
+            self._msgbus.unsubscribe(
+                topic=trades_topic,
+                handler=aggregator.handle_trade_tick,
+            )
+        else:
+            quotes_topic = self._topic_cache.get_quotes_topic(bar_type.instrument_id, historical=True)
+            self._msgbus.unsubscribe(
+                topic=quotes_topic,
+                handler=aggregator.handle_quote_tick,
+            )
+
+        if isinstance(aggregator, TimeBarAggregator):
+            aggregator.set_clock(self._clock)
+
+        aggregator.is_running = False
+
+    cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
+        # Subscribe to required market data
+        if command.bar_type.is_composite():
+            composite_bar_type = command.bar_type.composite()
+            subscribe = SubscribeBars(
+                bar_type=composite_bar_type,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_subscribe_bars(client, subscribe)
+        elif command.bar_type.spec.price_type == PriceType.LAST:
+            subscribe = SubscribeTradeTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_subscribe_trade_ticks(client, subscribe)
+        else:
+            subscribe = SubscribeQuoteTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_subscribe_quote_ticks(client, subscribe)
+
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
+        aggregator = self._bar_aggregators.get(command.bar_type.standard())
+
+        if aggregator is None:
+            self._log.warning(
+                f"Cannot stop bar aggregator: "
+                f"no aggregator to stop for {command.bar_type}",
+            )
+            return
+
+        if isinstance(aggregator, TimeBarAggregator):
+            aggregator.stop_timer()
+
+        # Unsubscribe from market data updates
+        if command.bar_type.is_composite():
+            composite_bar_type = command.bar_type.composite()
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_bars_topic(composite_bar_type),
+                handler=aggregator.handle_bar,
+            )
+            unsubscribe = UnsubscribeBars(
+                bar_type=composite_bar_type,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_unsubscribe_bars(client, unsubscribe)
+        elif command.bar_type.spec.price_type == PriceType.LAST:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_trades_topic(command.bar_type.instrument_id),
+                handler=aggregator.handle_trade_tick,
+            )
+            unsubscribe = UnsubscribeTradeTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_unsubscribe_trade_ticks(client, unsubscribe)
+        else:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_quotes_topic(command.bar_type.instrument_id),
+                handler=aggregator.handle_quote_tick,
+            )
+            unsubscribe = UnsubscribeQuoteTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=UUID4(),
+                ts_init=command.ts_init,
+                params=command.params,
+                correlation_id=command.id,
+            )
+            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
+
+        # Remove from aggregators
+        del self._bar_aggregators[command.bar_type.standard()]
+
+    # -- INTERNAL -------------------------------------------------------------------------------------
 
     # Python wrapper to enable callbacks
     cpdef void _internal_update_instruments(self, list instruments):
@@ -2452,195 +2518,6 @@ cdef class DataEngine(Component):
             topic=topic,
             msg=order_book,
         )
-
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
-        instrument = self._cache.instrument(command.bar_type.instrument_id)
-
-        if instrument is None:
-            self._log.error(
-                f"Cannot start bar aggregation: "
-                f"no instrument found for {command.bar_type.instrument_id}",
-            )
-            return
-
-        # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
-
-        if aggregator is None:
-            aggregator = self._create_bar_aggregator(instrument, command.bar_type, command.params)
-
-        # Add aggregator
-        self._bar_aggregators[command.bar_type.standard()] = aggregator
-        self._log.debug(f"Added {aggregator} for {command.bar_type} bars")
-
-        # Subscribe to required data
-        if command.bar_type.is_composite():
-            composite_bar_type = command.bar_type.composite()
-
-            self._msgbus.subscribe(
-                topic=self._get_bars_topic(composite_bar_type),
-                handler=aggregator.handle_bar,
-            )
-            subscribe = SubscribeBars(
-                bar_type=composite_bar_type,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_subscribe_bars(client, subscribe)
-        elif command.bar_type.spec.price_type == PriceType.LAST:
-            self._msgbus.subscribe(
-                topic=self._get_trades_topic(command.bar_type.instrument_id),
-                handler=aggregator.handle_trade_tick,
-                priority=5,
-            )
-            subscribe = SubscribeTradeTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_subscribe_trade_ticks(client, subscribe)
-        else:
-            self._msgbus.subscribe(
-                topic=self._get_quotes_topic(command.bar_type.instrument_id),
-                handler=aggregator.handle_quote_tick,
-                priority=5,
-            )
-            subscribe = SubscribeQuoteTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_subscribe_quote_ticks(client, subscribe)
-
-        aggregator.is_running = True
-
-    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type, dict params):
-        if bar_type.spec.is_time_aggregated():
-            # Use configured bar_build_delay, with special handling for composite bars
-            bar_build_delay = self._time_bars_build_delay
-            time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
-
-            if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
-                bar_build_delay = 15  # Default for composite bars when config is 0
-
-            aggregator = TimeBarAggregator(
-                instrument=instrument,
-                bar_type=bar_type,
-                handler=self.process,
-                clock=self._clock,
-                interval_type=self._time_bars_interval_type,
-                timestamp_on_close=self._time_bars_timestamp_on_close,
-                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
-                build_with_no_updates=self._time_bars_build_with_no_updates,
-                time_bars_origin_offset=time_bars_origin_offset,
-                bar_build_delay=bar_build_delay,
-            )
-        elif bar_type.spec.aggregation == BarAggregation.TICK:
-            aggregator = TickBarAggregator(
-                instrument=instrument,
-                bar_type=bar_type,
-                handler=self.process,
-            )
-        elif bar_type.spec.aggregation == BarAggregation.VOLUME:
-            aggregator = VolumeBarAggregator(
-                instrument=instrument,
-                bar_type=bar_type,
-                handler=self.process,
-            )
-        elif bar_type.spec.aggregation == BarAggregation.VALUE:
-            aggregator = ValueBarAggregator(
-                instrument=instrument,
-                bar_type=bar_type,
-                handler=self.process,
-            )
-        elif bar_type.spec.aggregation == BarAggregation.RENKO:
-            aggregator = RenkoBarAggregator(
-                instrument=instrument,
-                bar_type=bar_type,
-                handler=self.process,
-            )
-        else:
-            raise NotImplementedError(  # pragma: no cover (design-time error)
-                bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
-            )
-
-        return aggregator
-
-    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
-
-        if aggregator is None:
-            self._log.warning(
-                f"Cannot stop bar aggregator: "
-                f"no aggregator to stop for {command.bar_type}",
-            )
-            return
-
-        if isinstance(aggregator, TimeBarAggregator):
-            aggregator.stop()
-
-        # Unsubscribe from market data updates
-        if command.bar_type.is_composite():
-            composite_bar_type = command.bar_type.composite()
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_bars_topic(composite_bar_type),
-                handler=aggregator.handle_bar,
-            )
-            unsubscribe = UnsubscribeBars(
-                bar_type=composite_bar_type,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_unsubscribe_bars(client, unsubscribe)
-        elif command.bar_type.spec.price_type == PriceType.LAST:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_trades_topic(command.bar_type.instrument_id),
-                handler=aggregator.handle_trade_tick,
-            )
-            unsubscribe = UnsubscribeTradeTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_unsubscribe_trade_ticks(client, unsubscribe)
-        else:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_quotes_topic(command.bar_type.instrument_id),
-                handler=aggregator.handle_quote_tick,
-            )
-            unsubscribe = UnsubscribeQuoteTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
-
-        # Remove from aggregators
-        del self._bar_aggregators[command.bar_type.standard()]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic

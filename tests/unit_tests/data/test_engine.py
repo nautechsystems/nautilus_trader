@@ -3054,6 +3054,11 @@ class TestDataEngine:
         )
         self.mock_market_data_client.bars = [bar]
 
+        # Subscribe to bars on message bus
+        bars_received = []
+        topic = f"historical.data.bars.{bar_type}"
+        self.msgbus.subscribe(topic=topic, handler=bars_received.append)
+
         handler = []
         request = RequestBars(
             bar_type=bar_type,
@@ -3074,7 +3079,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [bar]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(bars_received) == 1  # Bar should flow through message bus
+        assert bars_received[0] == bar
 
     def test_request_bars_with_start_and_end(self):
         # Arrange
@@ -3092,6 +3099,11 @@ class TestDataEngine:
             0,
         )
         self.mock_market_data_client.bars = [bar]
+
+        # Subscribe to bars on message bus
+        bars_received = []
+        topic = f"historical.data.bars.{bar_type}"
+        self.msgbus.subscribe(topic=topic, handler=bars_received.append)
 
         handler = []
         request = RequestBars(
@@ -3113,7 +3125,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [bar]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(bars_received) == 1  # Bar should flow through message bus
+        assert bars_received[0] == bar
 
     def test_request_bars_when_catalog_registered(self):
         # Arrange
@@ -3132,6 +3146,11 @@ class TestDataEngine:
         )
         catalog.write_data([bar])
         self.data_engine.register_catalog(catalog)
+
+        # Subscribe to bars on message bus
+        bars_received = []
+        topic = f"historical.data.bars.{bar_type}"
+        self.msgbus.subscribe(topic=topic, handler=bars_received.append)
 
         handler = []
         request = RequestBars(
@@ -3153,7 +3172,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [bar]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(bars_received) == 1  # Bar should flow through message bus
+        assert bars_received[0] == bar
 
     def test_request_bars_when_catalog_and_client_registered(self):
         # Arrange
@@ -3186,6 +3207,11 @@ class TestDataEngine:
         )
         self.mock_market_data_client.bars = [bar2]
 
+        # Subscribe to bars on message bus
+        bars_received = []
+        topic = f"historical.data.bars.{bar_type}"
+        self.msgbus.subscribe(topic=topic, handler=bars_received.append)
+
         handler = []
         request = RequestBars(
             bar_type=bar_type,
@@ -3208,7 +3234,10 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [bar, bar2]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(bars_received) == 2  # Both bars should flow through message bus
+        assert bars_received[0] == bar
+        assert bars_received[1] == bar2
         assert catalog.query_last_timestamp(Bar, bar_type) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
@@ -3284,6 +3313,11 @@ class TestDataEngine:
         )
         self.mock_market_data_client.quote_ticks = [quote_tick]
 
+        # Subscribe to quote ticks on message bus
+        ticks_received = []
+        topic = f"historical.data.quotes.{ETHUSDT_BINANCE.venue}.{ETHUSDT_BINANCE.id.symbol}"
+        self.msgbus.subscribe(topic=topic, handler=ticks_received.append)
+
         handler = []
         request = RequestQuoteTicks(
             instrument_id=ETHUSDT_BINANCE.id,
@@ -3305,7 +3339,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [quote_tick]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(ticks_received) == 1  # Tick should flow through message bus
+        assert ticks_received[0] == quote_tick
 
     def test_request_quote_ticks_when_catalog_registered(self):
         # Arrange
@@ -3417,6 +3453,11 @@ class TestDataEngine:
         )
         self.mock_market_data_client.trade_ticks = [trade_tick]
 
+        # Subscribe to trade ticks on message bus
+        ticks_received = []
+        topic = f"historical.data.trades.{ETHUSDT_BINANCE.venue}.{ETHUSDT_BINANCE.id.symbol}"
+        self.msgbus.subscribe(topic=topic, handler=ticks_received.append)
+
         handler = []
         request = RequestTradeTicks(
             instrument_id=ETHUSDT_BINANCE.id,
@@ -3438,7 +3479,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [trade_tick]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(ticks_received) == 1  # Tick should flow through message bus
+        assert ticks_received[0] == trade_tick
 
     def test_request_trade_ticks_when_catalog_registered(self):
         # Arrange
@@ -3545,6 +3588,11 @@ class TestDataEngine:
         depth = TestDataStubs.order_book_depth10(instrument_id=ETHUSDT_BINANCE.id)
         self.mock_market_data_client.order_book_depths = [depth]
 
+        # Subscribe to order book depths on message bus
+        depths_received = []
+        topic = f"historical.data.book.depth.{ETHUSDT_BINANCE.venue}.{ETHUSDT_BINANCE.id.symbol.topic()}"
+        self.msgbus.subscribe(topic=topic, handler=depths_received.append)
+
         handler = []
         request = RequestOrderBookDepth(
             instrument_id=ETHUSDT_BINANCE.id,
@@ -3566,7 +3614,9 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [depth]
+        assert handler[0].data == []  # Response data should be empty
+        assert len(depths_received) == 1  # Depth should flow through message bus
+        assert depths_received[0] == depth
 
     def test_request_aggregated_bars_with_bars(self):
         # Arrange
@@ -3611,6 +3661,29 @@ class TestDataEngine:
         bar_type_3 = BarType.from_str("ESU4.GLBX-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
         bar_types = [bar_type_1, bar_type_2, bar_type_3]
 
+        # Subscribe to bars from message bus
+        bars_0_received = []
+        bars_1_received = []
+        bars_2_received = []
+        bars_3_received = []
+
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_0}",
+            handler=bars_0_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_1.standard()}",
+            handler=bars_1_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_2.standard()}",
+            handler=bars_2_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_3.standard()}",
+            handler=bars_3_received.append,
+        )
+
         handler = []
         params = {}
         params["bar_type"] = bar_types[0].composite()
@@ -3637,7 +3710,7 @@ class TestDataEngine:
         self.msgbus.request(endpoint="DataEngine.request", request=request)
 
         # Assert
-        last_1_minute_bar = Bar(
+        expected_last_1_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-EXTERNAL"),
             Price.from_str("5528.75"),
             Price.from_str("5529.25"),
@@ -3648,7 +3721,7 @@ class TestDataEngine:
             1719878100000000000,
         )
 
-        last_2_minute_bar = Bar(
+        expected_last_2_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL"),
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
@@ -3659,7 +3732,7 @@ class TestDataEngine:
             1719878040000000000,
         )
 
-        last_4_minute_bar = Bar(
+        expected_last_4_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-4-MINUTE-LAST-INTERNAL"),
             Price.from_str("5527.50"),
             Price.from_str("5528.50"),
@@ -3670,7 +3743,7 @@ class TestDataEngine:
             1719877920000000000,
         )
 
-        last_5_minute_bar = Bar(
+        expected_last_5_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-5-MINUTE-LAST-INTERNAL"),
             Price.from_str("5527.75"),
             Price.from_str("5529.25"),
@@ -3681,15 +3754,23 @@ class TestDataEngine:
             1719878100000000000,
         )
 
-        assert handler[0].data["bars"][bar_type_0][-1] == last_1_minute_bar
-        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_2_minute_bar
-        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_4_minute_bar
-        assert handler[0].data["bars"][bar_type_3.standard()][-1] == last_5_minute_bar
+        # Verify bars were received from message bus
+        assert bars_0_received, "No underlying 1-minute bars received"
+        assert bars_1_received, "No 2-minute aggregated bars received"
+        assert bars_2_received, "No 4-minute aggregated bars received"
+        assert bars_3_received, "No 5-minute aggregated bars received"
 
-        bars_0 = self.cache.bars(bar_type_0.standard())
-        bars_2 = self.cache.bars(bar_type_2.standard())
-        assert bars_0
-        assert bars_2
+        # Verify bar types are correct
+        assert all(bar.bar_type == bar_type_0 for bar in bars_0_received)
+        assert all(bar.bar_type == bar_type_1.standard() for bar in bars_1_received)
+        assert all(bar.bar_type == bar_type_2.standard() for bar in bars_2_received)
+        assert all(bar.bar_type == bar_type_3.standard() for bar in bars_3_received)
+
+        # Verify last bars match expected values
+        assert bars_0_received[-1] == expected_last_1_minute_bar
+        assert bars_1_received[-1] == expected_last_2_minute_bar
+        assert bars_2_received[-1] == expected_last_4_minute_bar
+        assert bars_3_received[-1] == expected_last_5_minute_bar
 
     def test_request_aggregated_bars_with_quotes(self):
         # Arrange
@@ -3732,6 +3813,19 @@ class TestDataEngine:
         bar_type_2 = BarType.from_str("ESU4.GLBX-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
         bar_types = [bar_type_1, bar_type_2]
 
+        # Subscribe to bars from message bus
+        bars_1_received = []
+        bars_2_received = []
+
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_1.standard()}",
+            handler=bars_1_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_2.standard()}",
+            handler=bars_2_received.append,
+        )
+
         handler = []
         params = {}
         params["bar_type"] = bar_types[0].composite()
@@ -3757,19 +3851,27 @@ class TestDataEngine:
         # Act
         self.msgbus.request(endpoint="DataEngine.request", request=request)
 
+        # Advance clock to trigger any pending timers (e.g., 2-minute bar aggregator)
+        # The 2-minute aggregator starts at 23:58:00 with fire_immediately=True,
+        # so it fires at 23:58:00 (no data) and then at 00:00:00 (with data)
+        # Since the clock is at 00:00:01, we need to advance it to trigger the timer
+        events = self.clock.advance_time(utc_now.value + 1)
+        for event in events:
+            event.handle()
+
         # Assert
-        last_1_minute_bar = Bar(
+        expected_last_1_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-1-MINUTE-BID-INTERNAL"),
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
-            Quantity.from_int(5806),
+            Quantity.from_int(5777),
             1719878400000000000,
             1719878400000000000,
         )
 
-        last_2_minute_bar = Bar(
+        expected_last_2_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-2-MINUTE-BID-INTERNAL"),
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
@@ -3780,11 +3882,17 @@ class TestDataEngine:
             1719878400000000000,
         )
 
-        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
-        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
+        # Verify bars were received from message bus
+        assert bars_1_received, "No 1-minute aggregated bars received"
+        assert bars_2_received, "No 2-minute aggregated bars received"
 
-        bars_2 = self.cache.bars(bar_type_2.standard())
-        assert bars_2
+        # Verify bar types are correct
+        assert all(bar.bar_type == bar_type_1.standard() for bar in bars_1_received)
+        assert all(bar.bar_type == bar_type_2.standard() for bar in bars_2_received)
+
+        # Verify last bars match expected values
+        assert bars_1_received[-1] == expected_last_1_minute_bar
+        assert bars_2_received[-1] == expected_last_2_minute_bar
 
     def test_request_aggregated_bars_with_trades(self):
         # Arrange
@@ -3827,6 +3935,19 @@ class TestDataEngine:
         bar_type_2 = BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
         bar_types = [bar_type_1, bar_type_2]
 
+        # Subscribe to bars from message bus
+        bars_1_received = []
+        bars_2_received = []
+
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_1.standard()}",
+            handler=bars_1_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type_2.standard()}",
+            handler=bars_2_received.append,
+        )
+
         handler = []
         params = {}
         params["bar_type"] = bar_types[0].composite()
@@ -3852,34 +3973,48 @@ class TestDataEngine:
         # Act
         self.msgbus.request(endpoint="DataEngine.request", request=request)
 
+        # Advance clock to trigger any pending timers (e.g., 2-minute bar aggregator)
+        # The 2-minute aggregator starts at 23:58:00 with fire_immediately=True,
+        # so it fires at 23:58:00 (no data) and then at 00:00:00 (with data)
+        # Since the clock is at 00:00:01, we need to advance it to trigger the timer
+        events = self.clock.advance_time(utc_now.value + 1)
+        for event in events:
+            event.handle()
+
         # Assert
-        last_1_minute_bar = Bar(
+        expected_last_1_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-INTERNAL"),
             Price.from_str("5528.50"),
-            Price.from_str("5528.75"),
+            Price.from_str("5529.00"),
             Price.from_str("5528.50"),
-            Price.from_str("5528.75"),
-            Quantity.from_int(23),
+            Price.from_str("5529.00"),
+            Quantity.from_int(31),
             1719878400000000000,
             1719878400000000000,
         )
 
-        last_2_minute_bar = Bar(
+        expected_last_2_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL"),
             Price.from_str("5528.75"),
-            Price.from_str("5528.75"),
+            Price.from_str("5529.00"),
             Price.from_str("5528.50"),
-            Price.from_str("5528.75"),
-            Quantity.from_int(41),
+            Price.from_str("5529.00"),
+            Quantity.from_int(50),
             1719878400000000000,
             1719878400000000000,
         )
 
-        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
-        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
+        # Verify bars were received from message bus
+        assert bars_1_received, "No 1-minute aggregated bars received"
+        assert bars_2_received, "No 2-minute aggregated bars received"
 
-        bars_2 = self.cache.bars(bar_type_2.standard())
-        assert bars_2
+        # Verify bar types are correct
+        assert all(bar.bar_type == bar_type_1.standard() for bar in bars_1_received)
+        assert all(bar.bar_type == bar_type_2.standard() for bar in bars_2_received)
+
+        # Verify last bars match expected values
+        assert bars_1_received[-1] == expected_last_1_minute_bar
+        assert bars_2_received[-1] == expected_last_2_minute_bar
 
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
