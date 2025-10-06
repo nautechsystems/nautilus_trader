@@ -13,21 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
+use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct AvgLoser {}
 
+impl Display for AvgLoser {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Avg Loser")
+    }
+}
+
 impl PortfolioStatistic for AvgLoser {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(AvgLoser).to_string()
+        self.to_string()
     }
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -48,7 +58,19 @@ impl PortfolioStatistic for AvgLoser {
         let sum: f64 = losers.iter().sum();
         Some(sum / losers.len() as f64)
     }
+
+    fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -119,6 +141,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let avg_loser = AvgLoser {};
-        assert_eq!(avg_loser.name(), "AvgLoser");
+        assert_eq!(avg_loser.name(), "Avg Loser");
     }
 }

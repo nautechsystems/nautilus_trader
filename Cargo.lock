@@ -5237,6 +5237,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.51.0"
 dependencies = [
+ "nautilus-analysis",
  "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-bybit",

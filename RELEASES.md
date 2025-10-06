@@ -32,12 +32,14 @@ This will be the final release with support for Python 3.11.
 - Added Polymarket native market orders support
 
 ### Breaking Changes
+- Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
 ### Internal Improvements
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
+- Ported `PortfolioAnalyzer` and all portfolio statistics to Rust
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
