@@ -131,8 +131,8 @@ impl BybitEnvironment {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
-        *self as u8
+    pub fn value(&self) -> String {
+        self.to_string().to_lowercase()
     }
 
     #[staticmethod]
@@ -200,8 +200,8 @@ impl BybitAccountType {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
-        *self as u8
+    pub fn value(&self) -> String {
+        self.to_string().to_uppercase()
     }
 
     #[staticmethod]

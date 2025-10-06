@@ -34,9 +34,12 @@ use crate::common::consts::BYBIT_NAUTILUS_BROKER_ID;
 pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
     m.add_class::<crate::common::enums::BybitAccountType>()?;
+    m.add_class::<crate::common::enums::BybitMarginMode>()?;
+    m.add_class::<crate::common::enums::BybitPositionMode>()?;
     m.add_class::<crate::common::enums::BybitProductType>()?;
     m.add_class::<crate::common::enums::BybitEnvironment>()?;
     m.add_class::<crate::http::client::BybitHttpClient>()?;
+    m.add_class::<crate::http::models::BybitTickerData>()?;
     m.add_class::<crate::websocket::client::BybitWebSocketClient>()?;
     m.add_class::<crate::websocket::messages::BybitWebSocketError>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_http_base_url, m)?)?;

@@ -188,6 +188,54 @@ impl BybitWebSocketClient {
                                 tracing::warn!("No instrument found for symbol {symbol}");
                             }
                         }
+                        BybitWebSocketMessage::TickerLinear(msg) => {
+                            let symbol = msg.data.symbol;
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                            {
+                                let instrument = instrument_entry.value();
+                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+                                match parse_ticker_linear_quote(&msg, instrument, ts_init) {
+                                    Ok(quote) => {
+                                        Python::attach(|py| {
+                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
+                                            call_python(py, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Error parsing linear ticker quote: {e}");
+                                    }
+                                }
+                            } else {
+                                tracing::warn!("No instrument found for symbol {symbol}");
+                            }
+                        }
+                        BybitWebSocketMessage::TickerOption(msg) => {
+                            let symbol = &msg.data.symbol;
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol)
+                            {
+                                let instrument = instrument_entry.value();
+                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+                                match parse_ticker_option_quote(&msg, instrument, ts_init) {
+                                    Ok(quote) => {
+                                        Python::attach(|py| {
+                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
+                                            call_python(py, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Error parsing option ticker quote: {e}");
+                                    }
+                                }
+                            } else {
+                                tracing::warn!("No instrument found for symbol {symbol}");
+                            }
+                        }
                         BybitWebSocketMessage::Trade(msg) => {
                             for trade in &msg.data {
                                 let symbol = trade.s;
@@ -216,7 +264,6 @@ impl BybitWebSocketClient {
                             }
                         }
                         BybitWebSocketMessage::Kline(msg) => {
-                            // Extract symbol and interval from topic (e.g., "kline.5.BTCUSDT")
                             let (interval_str, symbol) = match parse_kline_topic(&msg.topic) {
                                 Ok(parts) => parts,
                                 Err(e) => {
@@ -291,54 +338,7 @@ impl BybitWebSocketClient {
                                 call_python_with_json(&callback, &msg);
                             }
                         }
-                        BybitWebSocketMessage::TickerLinear(msg) => {
-                            let symbol = msg.data.symbol;
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                            {
-                                let instrument = instrument_entry.value();
-                                let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-                                match parse_ticker_linear_quote(&msg, instrument, ts_init) {
-                                    Ok(quote) => {
-                                        Python::attach(|py| {
-                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                                            call_python(py, &callback, py_obj);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Error parsing linear ticker quote: {e}");
-                                    }
-                                }
-                            } else {
-                                tracing::warn!("No instrument found for symbol {symbol}");
-                            }
-                        }
-                        BybitWebSocketMessage::TickerOption(msg) => {
-                            let symbol = &msg.data.symbol;
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol)
-                            {
-                                let instrument = instrument_entry.value();
-                                let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-                                match parse_ticker_option_quote(&msg, instrument, ts_init) {
-                                    Ok(quote) => {
-                                        Python::attach(|py| {
-                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                                            call_python(py, &callback, py_obj);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Error parsing option ticker quote: {e}");
-                                    }
-                                }
-                            } else {
-                                tracing::warn!("No instrument found for symbol {symbol}");
-                            }
-                        }
                         BybitWebSocketMessage::AccountOrder(msg) => {
                             if let Some(account_id) = account_id {
                                 for order in &msg.data {
@@ -486,6 +486,7 @@ impl BybitWebSocketClient {
                         }
                         BybitWebSocketMessage::Raw(value) => {
                             tracing::debug!("Received raw/unhandled message: {value}");
+                            call_python_with_json(&callback, &value);
                         }
                     }
                 }

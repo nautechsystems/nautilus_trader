@@ -1148,28 +1148,48 @@ impl BybitHttpInnerClient {
 
         let mut instruments = Vec::new();
 
+        let default_fee_rate = |symbol: ustr::Ustr| super::models::BybitFeeRate {
+            symbol,
+            taker_fee_rate: "0.001".to_string(),
+            maker_fee_rate: "0.001".to_string(),
+            base_coin: None,
+        };
+
         match product_type {
             BybitProductType::Spot => {
                 let response: super::models::BybitInstrumentSpotResponse =
                     self.http_get_instruments(&params).await?;
 
-                // Get fee rates for all symbols
-                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
-                fee_params.category(product_type);
-                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let fee_response = self.http_get_fee_rate(&fee_params).await?;
-
-                let fee_map: std::collections::HashMap<_, _> = fee_response
-                    .result
-                    .list
-                    .into_iter()
-                    .map(|f| (f.symbol, f))
-                    .collect();
+                // Try to get fee rates, use defaults if credentials are missing
+                let fee_map: std::collections::HashMap<_, _> = {
+                    let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                    fee_params.category(product_type);
+                    if let Ok(params) = fee_params.build() {
+                        match self.http_get_fee_rate(&params).await {
+                            Ok(fee_response) => fee_response
+                                .result
+                                .list
+                                .into_iter()
+                                .map(|f| (f.symbol, f))
+                                .collect(),
+                            Err(BybitHttpError::MissingCredentials) => {
+                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                std::collections::HashMap::new()
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                };
 
                 for definition in response.result.list {
-                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
-                        && let Ok(instrument) =
-                            parse_spot_instrument(&definition, fee_rate, ts_init, ts_init)
+                    let fee_rate = fee_map
+                        .get(&definition.symbol)
+                        .cloned()
+                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                    if let Ok(instrument) =
+                        parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
                     {
                         instruments.push(instrument);
                     }
@@ -1179,22 +1199,36 @@ impl BybitHttpInnerClient {
                 let response: super::models::BybitInstrumentLinearResponse =
                     self.http_get_instruments(&params).await?;
 
-                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
-                fee_params.category(product_type);
-                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let fee_response = self.http_get_fee_rate(&fee_params).await?;
-
-                let fee_map: std::collections::HashMap<_, _> = fee_response
-                    .result
-                    .list
-                    .into_iter()
-                    .map(|f| (f.symbol, f))
-                    .collect();
+                // Try to get fee rates, use defaults if credentials are missing
+                let fee_map: std::collections::HashMap<_, _> = {
+                    let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                    fee_params.category(product_type);
+                    if let Ok(params) = fee_params.build() {
+                        match self.http_get_fee_rate(&params).await {
+                            Ok(fee_response) => fee_response
+                                .result
+                                .list
+                                .into_iter()
+                                .map(|f| (f.symbol, f))
+                                .collect(),
+                            Err(BybitHttpError::MissingCredentials) => {
+                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                std::collections::HashMap::new()
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                };
 
                 for definition in response.result.list {
-                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
-                        && let Ok(instrument) =
-                            parse_linear_instrument(&definition, fee_rate, ts_init, ts_init)
+                    let fee_rate = fee_map
+                        .get(&definition.symbol)
+                        .cloned()
+                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                    if let Ok(instrument) =
+                        parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
                     {
                         instruments.push(instrument);
                     }
@@ -1204,22 +1238,36 @@ impl BybitHttpInnerClient {
                 let response: super::models::BybitInstrumentInverseResponse =
                     self.http_get_instruments(&params).await?;
 
-                let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
-                fee_params.category(product_type);
-                let fee_params = fee_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                let fee_response = self.http_get_fee_rate(&fee_params).await?;
-
-                let fee_map: std::collections::HashMap<_, _> = fee_response
-                    .result
-                    .list
-                    .into_iter()
-                    .map(|f| (f.symbol, f))
-                    .collect();
+                // Try to get fee rates, use defaults if credentials are missing
+                let fee_map: std::collections::HashMap<_, _> = {
+                    let mut fee_params = super::query::BybitFeeRateParamsBuilder::default();
+                    fee_params.category(product_type);
+                    if let Ok(params) = fee_params.build() {
+                        match self.http_get_fee_rate(&params).await {
+                            Ok(fee_response) => fee_response
+                                .result
+                                .list
+                                .into_iter()
+                                .map(|f| (f.symbol, f))
+                                .collect(),
+                            Err(BybitHttpError::MissingCredentials) => {
+                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                std::collections::HashMap::new()
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                };
 
                 for definition in response.result.list {
-                    if let Some(fee_rate) = fee_map.get(&definition.symbol)
-                        && let Ok(instrument) =
-                            parse_inverse_instrument(&definition, fee_rate, ts_init, ts_init)
+                    let fee_rate = fee_map
+                        .get(&definition.symbol)
+                        .cloned()
+                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                    if let Ok(instrument) =
+                        parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
                     {
                         instruments.push(instrument);
                     }

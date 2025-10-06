@@ -1150,7 +1150,14 @@ impl BybitWebSocketClient {
                         auth_tracker.fail(err.message.clone());
                     }
                     if let BybitWebSocketMessage::Error(err) = &event {
-                        tracing::debug!(code = err.code, message = %err.message, "Bybit websocket error frame");
+                        tracing::warn!(
+                            code = err.code,
+                            message = %err.message,
+                            conn_id = ?err.conn_id,
+                            topic = ?err.topic,
+                            req_id = ?err.req_id,
+                            "Bybit websocket error"
+                        );
                     }
                     return Ok(Some(event));
                 }
