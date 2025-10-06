@@ -61,13 +61,15 @@ use crate::{
         BookPrice::new(Price::from("99.00"), OrderSideSpecified::Sell),
     ))
 )]
-#[case::too_many_levels_l1(
+#[case::l1_ghost_levels_handled(
     BookType::L1_MBP,
     vec![
         (OrderSide::Buy, "99.00", 100, 1001),
         (OrderSide::Buy, "98.00", 100, 1002),
     ],
-    Err(BookIntegrityError::TooManyLevels(OrderSide::Buy, 2))
+    // With L1 ghost levels fix, adding two L1 orders at different prices
+    // properly removes the old level, leaving only 1 level (valid state)
+    Ok(())
 )]
 fn test_book_integrity_cases(
     #[case] book_type: BookType,

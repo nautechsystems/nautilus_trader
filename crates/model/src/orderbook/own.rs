@@ -504,6 +504,11 @@ fn group_quantities(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut grouped = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 
