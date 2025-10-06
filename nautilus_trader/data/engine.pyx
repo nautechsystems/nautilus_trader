@@ -29,7 +29,9 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
+from typing import Any
 from typing import Callable
+from typing import Generator
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import min_date
@@ -2712,3 +2714,65 @@ cdef class DataEngine(Component):
             topic=self._get_trades_topic(synthetic_instrument_id),
             msg=synthetic_trade,
         )
+
+
+TimeRangeGenerator = Callable[[int, dict[str, Any]], Generator[int, bool, None]]
+
+
+cdef dict[str, TimeRangeGenerator] TIME_RANGE_GENERATORS = {}
+
+
+def register_time_range_generator(name: str, function: TimeRangeGenerator):
+    TIME_RANGE_GENERATORS[name] = function
+
+
+def get_time_range_generator(name: str):
+    return TIME_RANGE_GENERATORS.get(name, default_time_range_generator)
+
+
+def default_time_range_generator(RequestData request):
+    """
+    Generator that yields (request_start_ns, request_end_ns) tuples for subrequests.
+
+    This generator handles the duration logic and receives data_received feedback via .send().
+    """
+    cdef uint64_t prev_request_end_ns = request.start.value
+    cdef uint64_t last_end_ns = request.end.value
+
+    point_data = request.params.get("point_data", False)
+    durations_seconds = request.params.get("durations_seconds", [None])
+    durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+
+    iteration_index = 0
+
+    while True:
+        for duration_ns in durations_ns:
+            # Possibility to use durations of various lengths to take into account weekends or market breaks
+            # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration], etc.
+            # When point_data we do a query for [request_start_ns, request_start_ns] only
+            offset = 1 if iteration_index > 0 and not point_data else 0
+            request_start_ns = prev_request_end_ns + offset
+
+            if request_start_ns > last_end_ns:
+                return
+
+            if duration_ns:
+                request_end_ns = min(request_start_ns + duration_ns - offset, last_end_ns)
+            else:
+                request_end_ns = last_end_ns
+
+            prev_request_end_ns = request_end_ns
+
+            if point_data:
+                request_end_ns = request_start_ns
+
+            # Yield the time range and wait for feedback
+            data_received = yield (request_start_ns, request_end_ns)
+            iteration_index += 1
+
+            # If we receive a success signal, break from the duration loop
+            if data_received:
+                break
+        else:
+            # If we complete the for loop without breaking (no success), exit the while loop
+            return
