@@ -534,7 +534,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._handle_bars(
                 request.bar_type,
                 bars,
-                bars[0],
                 request.id,
                 request.start,
                 request.end,
