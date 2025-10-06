@@ -61,6 +61,8 @@ cdef class CryptoPerpetual(Instrument):
         UNIX timestamp (nanoseconds) when the data object was initialized.
     multiplier : Quantity, default 1
         The contract multiplier.
+    lot_size : Quantity, default 1
+        The rounded lot unit size (standard/board).
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -136,6 +138,7 @@ cdef class CryptoPerpetual(Instrument):
         uint64_t ts_event,
         uint64_t ts_init,
         multiplier=Quantity.from_int_c(1),
+        lot_size=Quantity.from_int_c(1),
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
         Money max_notional: Money | None = None,
@@ -161,7 +164,7 @@ cdef class CryptoPerpetual(Instrument):
             price_increment=price_increment,
             size_increment=size_increment,
             multiplier=multiplier,
-            lot_size=Quantity.from_int_c(1),
+            lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
             max_notional=max_notional,
@@ -393,6 +396,7 @@ cdef class CryptoPerpetual(Instrument):
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
             multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw,pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
             min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw,pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
             max_notional=Money.from_str_c(str(pyo3_instrument.max_notional)) if pyo3_instrument.max_notional is not None else None,

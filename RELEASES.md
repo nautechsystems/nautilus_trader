@@ -82,6 +82,7 @@ This will be the final release with support for Python 3.11.
 - Fixed position purge logic to prevent purging re-opened position
 - Fixed order average price calculation that was double-counting current fill in weighted average
 - Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks
+- Fixed crypto instruments PyO3 -> Cython conversion for `lot_size` where it was not being passed through
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed edge case where rejected orders can remain in own order book
