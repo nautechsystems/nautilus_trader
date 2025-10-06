@@ -28,6 +28,41 @@ pub struct HyperliquidMeta {
     pub universe: Vec<HyperliquidAssetInfo>,
 }
 
+/// Represents a single candle (OHLCV bar) from Hyperliquid.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HyperliquidCandle {
+    /// Candle open timestamp in milliseconds.
+    #[serde(rename = "t")]
+    pub timestamp: u64,
+    /// Open price.
+    #[serde(rename = "o")]
+    pub open: String,
+    /// High price.
+    #[serde(rename = "h")]
+    pub high: String,
+    /// Low price.
+    #[serde(rename = "l")]
+    pub low: String,
+    /// Close price.
+    #[serde(rename = "c")]
+    pub close: String,
+    /// Volume.
+    #[serde(rename = "v")]
+    pub volume: String,
+    /// Number of trades (optional).
+    #[serde(rename = "n", default)]
+    pub num_trades: Option<u64>,
+}
+
+/// Response from candleSnapshot endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidCandleSnapshot {
+    /// Array of candles.
+    #[serde(default)]
+    pub data: Vec<HyperliquidCandle>,
+}
+
 /// Represents asset information from the meta endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1240,4 +1275,151 @@ pub enum HyperliquidExecModifyStatus {
         /// Error message.
         error: String,
     },
+}
+
+/// Complete clearinghouse state response from `POST /info` with `{ "type": "clearinghouseState", "user": "address" }`.
+/// This provides account positions, margin information, and balances.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearinghouseState {
+    /// List of asset positions (perpetual contracts).
+    #[serde(default)]
+    pub asset_positions: Vec<AssetPosition>,
+    /// Cross margin summary information.
+    #[serde(default)]
+    pub cross_margin_summary: Option<CrossMarginSummary>,
+    /// Time of the state snapshot (milliseconds since epoch).
+    #[serde(default)]
+    pub time: Option<u64>,
+}
+
+/// A single asset position in the clearinghouse state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetPosition {
+    /// Position information.
+    pub position: PositionData,
+    /// Type of position (e.g., "oneWay").
+    #[serde(rename = "type")]
+    pub position_type: String,
+}
+
+/// Detailed position data for an asset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PositionData {
+    /// Asset symbol/coin (e.g., "BTC").
+    pub coin: String,
+    /// Cumulative funding (entry price weighted by position size changes).
+    #[serde(
+        rename = "cumFunding",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub cum_funding: Decimal,
+    /// Entry price for the position.
+    #[serde(
+        rename = "entryPx",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str",
+        default
+    )]
+    pub entry_px: Option<Decimal>,
+    /// Leverage used for the position.
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub leverage: Decimal,
+    /// Liquidation price.
+    #[serde(
+        rename = "liquidationPx",
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str",
+        default
+    )]
+    pub liquidation_px: Option<Decimal>,
+    /// Margin used for this position.
+    #[serde(
+        rename = "marginUsed",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub margin_used: Decimal,
+    /// Maximum trade sizes allowed.
+    #[serde(
+        rename = "maxTradeSzs",
+        serialize_with = "crate::common::parse::serialize_vec_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_vec_decimal_from_str"
+    )]
+    pub max_trade_szs: Vec<Decimal>,
+    /// Position value.
+    #[serde(
+        rename = "positionValue",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub position_value: Decimal,
+    /// Return on equity percentage.
+    #[serde(
+        rename = "returnOnEquity",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub return_on_equity: Decimal,
+    /// Position size (positive for long, negative for short).
+    #[serde(
+        rename = "szi",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub szi: Decimal,
+    /// Unrealized PnL.
+    #[serde(
+        rename = "unrealizedPnl",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub unrealized_pnl: Decimal,
+}
+
+/// Cross margin summary information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossMarginSummary {
+    /// Account value in USD.
+    #[serde(
+        rename = "accountValue",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub account_value: Decimal,
+    /// Total notional position value.
+    #[serde(
+        rename = "totalNtlPos",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total_ntl_pos: Decimal,
+    /// Total raw USD value (collateral).
+    #[serde(
+        rename = "totalRawUsd",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total_raw_usd: Decimal,
+    /// Total margin used across all positions.
+    #[serde(
+        rename = "totalMarginUsed",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total_margin_used: Decimal,
+    /// Withdrawable balance.
+    #[serde(
+        rename = "withdrawable",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub withdrawable: Decimal,
 }

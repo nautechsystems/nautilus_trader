@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use anyhow::Context;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -436,5 +437,375 @@ mod tests {
         let defs = parse_perp_instruments(&meta).unwrap();
         assert_eq!(defs[0].price_decimals, 0);
         assert_eq!(defs[0].tick_size, Decimal::from(1));
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Order, Fill, and Position Report Parsing
+////////////////////////////////////////////////////////////////////////////////
+
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{
+    enums::{
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        TriggerType,
+    },
+    identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+    instruments::Instrument,
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+};
+use rust_decimal::prelude::ToPrimitive;
+
+use super::models::HyperliquidFill;
+use crate::common::enums::HyperliquidSide;
+use crate::websocket::messages::{WsBasicOrderData, WsOrderData};
+
+/// Map Hyperliquid order side to Nautilus OrderSide.
+fn parse_order_side(side: &str) -> OrderSide {
+    match side.to_lowercase().as_str() {
+        "a" | "buy" => OrderSide::Buy,
+        "b" | "sell" => OrderSide::Sell,
+        _ => OrderSide::NoOrderSide,
+    }
+}
+
+/// Map Hyperliquid fill side to Nautilus OrderSide.
+fn parse_fill_side(side: &HyperliquidSide) -> OrderSide {
+    match side {
+        HyperliquidSide::Buy => OrderSide::Buy,
+        HyperliquidSide::Sell => OrderSide::Sell,
+    }
+}
+
+/// Map Hyperliquid order status string to Nautilus OrderStatus.
+pub fn parse_order_status(status: &str) -> OrderStatus {
+    match status.to_lowercase().as_str() {
+        "open" => OrderStatus::Accepted,
+        "filled" => OrderStatus::Filled,
+        "canceled" | "cancelled" => OrderStatus::Canceled,
+        "rejected" => OrderStatus::Rejected,
+        "triggered" => OrderStatus::Triggered,
+        "partial_fill" | "partially_filled" => OrderStatus::PartiallyFilled,
+        _ => OrderStatus::Accepted, // Default to accepted for unknown statuses
+    }
+}
+
+/// Parse WebSocket order data to OrderStatusReport.
+///
+/// # Errors
+///
+/// Returns an error if required fields are missing or invalid.
+pub fn parse_order_status_report_from_ws(
+    order_data: &WsOrderData,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    parse_order_status_report_from_basic(
+        &order_data.order,
+        &order_data.status,
+        instrument,
+        account_id,
+        ts_init,
+    )
+}
+
+/// Parse basic order data to OrderStatusReport.
+///
+/// # Errors
+///
+/// Returns an error if required fields are missing or invalid.
+pub fn parse_order_status_report_from_basic(
+    order: &WsBasicOrderData,
+    status_str: &str,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    use nautilus_model::types::{Price, Quantity};
+    use rust_decimal::Decimal;
+
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(order.oid.to_string());
+    let order_side = parse_order_side(&order.side);
+
+    // Determine order type based on trigger parameters
+    let order_type = if order.trigger_px.is_some() {
+        if order.is_market == Some(true) {
+            // Check if it's stop-loss or take-profit based on tpsl field
+            match order.tpsl.as_deref() {
+                Some("tp") => OrderType::MarketIfTouched,
+                Some("sl") => OrderType::StopMarket,
+                _ => OrderType::StopMarket,
+            }
+        } else {
+            match order.tpsl.as_deref() {
+                Some("tp") => OrderType::LimitIfTouched,
+                Some("sl") => OrderType::StopLimit,
+                _ => OrderType::StopLimit,
+            }
+        }
+    } else {
+        OrderType::Limit
+    };
+
+    let time_in_force = TimeInForce::Gtc; // Hyperliquid uses GTC by default
+    let order_status = parse_order_status(status_str);
+
+    // Parse quantities
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let orig_sz: Decimal = order
+        .orig_sz
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse orig_sz: {}", e))?;
+    let current_sz: Decimal = order
+        .sz
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse sz: {}", e))?;
+
+    let quantity = Quantity::new(orig_sz.abs().to_f64().unwrap_or(0.0), size_precision);
+    let filled_sz = orig_sz.abs() - current_sz.abs();
+    let filled_qty = Quantity::new(filled_sz.to_f64().unwrap_or(0.0), size_precision);
+
+    // Timestamps
+    let ts_accepted = UnixNanos::from(order.timestamp * 1_000_000); // Convert ms to ns
+    let ts_last = ts_accepted;
+
+    let report_id = UUID4::new();
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None, // client_order_id - will be set if present
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force,
+        order_status,
+        quantity,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        Some(report_id),
+    );
+
+    // Add client order ID if present
+    if let Some(cloid) = &order.cloid {
+        report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
+    }
+
+    // Add price
+    let limit_px: Decimal = order
+        .limit_px
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {}", e))?;
+    report = report.with_price(Price::new(
+        limit_px.to_f64().unwrap_or(0.0),
+        price_precision,
+    ));
+
+    // Add trigger price if present
+    if let Some(trigger_px) = &order.trigger_px {
+        let trig_px: Decimal = trigger_px
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {}", e))?;
+        report = report
+            .with_trigger_price(Price::new(trig_px.to_f64().unwrap_or(0.0), price_precision))
+            .with_trigger_type(TriggerType::Default);
+    }
+
+    Ok(report)
+}
+
+/// Parse Hyperliquid fill to FillReport.
+///
+/// # Errors
+///
+/// Returns an error if required fields are missing or invalid.
+pub fn parse_fill_report(
+    fill: &HyperliquidFill,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    use nautilus_model::types::{Money, Price, Quantity};
+    use rust_decimal::Decimal;
+
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(fill.oid.to_string());
+    let trade_id = TradeId::new(format!("{}-{}", fill.hash, fill.time));
+    let order_side = parse_fill_side(&fill.side);
+
+    // Parse price and quantity
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let px: Decimal = fill
+        .px
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse fill price: {}", e))?;
+    let sz: Decimal = fill
+        .sz
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse fill size: {}", e))?;
+
+    let last_px = Price::new(px.to_f64().unwrap_or(0.0), price_precision);
+    let last_qty = Quantity::new(sz.abs().to_f64().unwrap_or(0.0), size_precision);
+
+    // Parse fee - Hyperliquid fees are typically in USDC for perps
+    let fee_amount: Decimal = fill
+        .fee
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee: {}", e))?;
+
+    // Determine fee currency - Hyperliquid perp fees are in USDC
+    let fee_currency = Currency::from("USDC");
+    let commission = Money::new(fee_amount.abs().to_f64().unwrap_or(0.0), fee_currency);
+
+    // Determine liquidity side based on 'crossed' flag
+    let liquidity_side = if fill.crossed {
+        LiquiditySide::Taker
+    } else {
+        LiquiditySide::Maker
+    };
+
+    // Timestamp
+    let ts_event = UnixNanos::from(fill.time * 1_000_000); // Convert ms to ns
+
+    let report_id = UUID4::new();
+
+    let report = FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        None, // client_order_id - to be linked by execution engine
+        None, // venue_position_id
+        ts_event,
+        ts_init,
+        Some(report_id),
+    );
+
+    Ok(report)
+}
+
+/// Parse position data from clearinghouse state to PositionStatusReport.
+///
+/// # Errors
+///
+/// Returns an error if required fields are missing or invalid.
+pub fn parse_position_status_report(
+    position_data: &serde_json::Value,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
+    use super::models::AssetPosition;
+    use nautilus_model::types::Quantity;
+
+    // Deserialize the position data
+    let asset_position: AssetPosition = serde_json::from_value(position_data.clone())
+        .context("Failed to deserialize AssetPosition")?;
+
+    let position = &asset_position.position;
+    let instrument_id = instrument.id();
+
+    // Determine position side based on size (szi)
+    let (position_side, quantity_value) = if position.szi.is_zero() {
+        (PositionSideSpecified::Flat, Decimal::ZERO)
+    } else if position.szi.is_sign_positive() {
+        (PositionSideSpecified::Long, position.szi)
+    } else {
+        (PositionSideSpecified::Short, position.szi.abs())
+    };
+
+    // Create quantity
+    let quantity = Quantity::new(
+        quantity_value
+            .to_f64()
+            .context("Failed to convert quantity to f64")?,
+        instrument.size_precision(),
+    );
+
+    // Generate report ID
+    let report_id = UUID4::new();
+
+    // Use current time as ts_last (could be enhanced with actual last update time if available)
+    let ts_last = ts_init;
+
+    // Create position ID from coin symbol
+    let venue_position_id = Some(PositionId::new(format!("{}_{}", account_id, position.coin)));
+
+    // Entry price (if available)
+    let avg_px_open = position.entry_px;
+
+    Ok(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        quantity,
+        ts_last,
+        ts_init,
+        Some(report_id),
+        venue_position_id,
+        avg_px_open,
+    ))
+}
+
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_order_side() {
+        assert_eq!(parse_order_side("A"), OrderSide::Buy);
+        assert_eq!(parse_order_side("buy"), OrderSide::Buy);
+        assert_eq!(parse_order_side("B"), OrderSide::Sell);
+        assert_eq!(parse_order_side("sell"), OrderSide::Sell);
+        assert_eq!(parse_order_side("unknown"), OrderSide::NoOrderSide);
+    }
+
+    #[test]
+    fn test_parse_order_status() {
+        assert_eq!(parse_order_status("open"), OrderStatus::Accepted);
+        assert_eq!(parse_order_status("filled"), OrderStatus::Filled);
+        assert_eq!(parse_order_status("canceled"), OrderStatus::Canceled);
+        assert_eq!(parse_order_status("cancelled"), OrderStatus::Canceled);
+        assert_eq!(parse_order_status("rejected"), OrderStatus::Rejected);
+        assert_eq!(parse_order_status("triggered"), OrderStatus::Triggered);
+    }
+
+    #[test]
+    fn test_parse_fill_side() {
+        assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy);
+        assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell);
+    }
+
+    #[test]
+    fn test_parse_order_side_case_insensitive() {
+        assert_eq!(parse_order_side("A"), OrderSide::Buy);
+        assert_eq!(parse_order_side("a"), OrderSide::Buy);
+        assert_eq!(parse_order_side("BUY"), OrderSide::Buy);
+        assert_eq!(parse_order_side("Buy"), OrderSide::Buy);
+        assert_eq!(parse_order_side("B"), OrderSide::Sell);
+        assert_eq!(parse_order_side("b"), OrderSide::Sell);
+        assert_eq!(parse_order_side("SELL"), OrderSide::Sell);
+        assert_eq!(parse_order_side("Sell"), OrderSide::Sell);
+    }
+
+    #[test]
+    fn test_parse_order_status_edge_cases() {
+        assert_eq!(parse_order_status("OPEN"), OrderStatus::Accepted);
+        assert_eq!(parse_order_status("FILLED"), OrderStatus::Filled);
+        assert_eq!(parse_order_status(""), OrderStatus::Accepted);
+        assert_eq!(parse_order_status("unknown_status"), OrderStatus::Accepted);
     }
 }

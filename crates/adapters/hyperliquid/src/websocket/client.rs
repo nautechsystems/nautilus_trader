@@ -21,6 +21,7 @@ use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_mess
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
+use ustr::Ustr;
 
 use crate::{
     http::error::{Error, Result as HyperliquidResult},
@@ -265,6 +266,12 @@ impl HyperliquidWebSocketInnerClient {
         self.ws_send_once(&request).await
     }
 
+    /// Low-level method to unsubscribe from a specific channel.
+    pub async fn ws_unsubscribe(&mut self, subscription: SubscriptionRequest) -> Result<()> {
+        let request = HyperliquidWsRequest::Unsubscribe { subscription };
+        self.ws_send(&request).await
+    }
+
     /// Get the next event from the WebSocket stream.
     /// Returns None when the connection is closed or the receiver is exhausted.
     pub async fn ws_next_event(&mut self) -> Option<HyperliquidWsMessage> {
@@ -437,6 +444,134 @@ impl HyperliquidWebSocketClient {
         self.subscribe_order_updates(user).await?;
         self.subscribe_user_events(user).await?;
         Ok(())
+    }
+
+    /// Subscribe to trades for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_trades(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Trades { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from trades for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_trades(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Trades { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to L2 order book for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_book(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            n_sig_figs: None,
+            mantissa: None,
+        };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from L2 order book for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_book(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            n_sig_figs: None,
+            mantissa: None,
+        };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to BBO (best bid/offer) for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_bbo(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Bbo { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from BBO (best bid/offer) for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_bbo(&mut self, coin: Ustr) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Bbo { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to candlestick data for a specific coin and interval.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_candle(&mut self, coin: Ustr, interval: String) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Candle { coin, interval };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from candlestick data for a specific coin and interval.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_candle(&mut self, coin: Ustr, interval: String) -> Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Candle { coin, interval };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
     }
 
     /// Get the next event from the WebSocket stream.

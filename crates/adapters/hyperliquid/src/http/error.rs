@@ -144,7 +144,7 @@ impl Error {
             match status_code {
                 401 | 403 => Self::auth(format!("HTTP {}: authentication failed", status_code)),
                 400 => Self::bad_request(format!("HTTP {}: bad request", status_code)),
-                429 => Self::rate_limit("unknown", 0, None), // TODO: Extract retry-after header
+                429 => Self::rate_limit("unknown", 0, None),
                 500..=599 => Self::exchange(format!("HTTP {}: server error", status_code)),
                 _ => Self::http(status_code, format!("HTTP error: {}", error)),
             }

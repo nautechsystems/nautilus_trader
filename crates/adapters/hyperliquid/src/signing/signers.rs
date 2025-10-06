@@ -13,10 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy_primitives::{B256, keccak256};
+use alloy_signer::SignerSync;
+use alloy_signer_local::PrivateKeySigner;
 use serde_json::Value;
+use std::str::FromStr;
 
 use super::{nonce::TimeNonce, types::HyperliquidActionType};
-use crate::{common::credential::EvmPrivateKey, http::error::Result};
+use crate::{
+    common::credential::EvmPrivateKey,
+    http::error::{Error, Result},
+};
 
 /// Request to be signed by the Hyperliquid EIP-712 signer.
 #[derive(Debug, Clone)]
@@ -56,18 +63,121 @@ impl HyperliquidEip712Signer {
         Ok(SignatureBundle { signature })
     }
 
-    pub fn sign_l1_action(&self, action: &Value, nonce: TimeNonce) -> Result<String> {
-        let _canonicalized = Self::canonicalize_action(action)?;
-        // TODO: Implement actual EIP-712 signing with self.private_key
-        let _key_hash = self.private_key.to_string().len(); // Use private_key to avoid dead_code warning
-        Ok(format!("0x{:064x}{:064x}", nonce.as_millis(), 1))
+    pub fn sign_l1_action(&self, action: &Value, _nonce: TimeNonce) -> Result<String> {
+        let canonicalized = Self::canonicalize_action(action)?;
+
+        // EIP-712 domain separator for Hyperliquid
+        let domain_hash = self.get_domain_hash()?;
+
+        // Create the structured data hash
+        let action_hash = self.hash_typed_data(&canonicalized)?;
+
+        // Combine with EIP-712 prefix
+        let message_hash = self.create_eip712_hash(&domain_hash, &action_hash)?;
+
+        // Sign with private key
+        self.sign_hash(&message_hash)
     }
 
-    pub fn sign_user_signed_action(&self, action: &Value, nonce: TimeNonce) -> Result<String> {
-        let _canonicalized = Self::canonicalize_action(action)?;
-        // TODO: Implement actual EIP-712 signing with self.private_key
-        let _key_hash = self.private_key.to_string().len(); // Use private_key to avoid dead_code warning
-        Ok(format!("0x{:064x}{:064x}", nonce.as_millis(), 2))
+    pub fn sign_user_signed_action(&self, action: &Value, _nonce: TimeNonce) -> Result<String> {
+        let canonicalized = Self::canonicalize_action(action)?;
+
+        // EIP-712 domain separator for Hyperliquid user-signed actions
+        let domain_hash = self.get_domain_hash()?;
+
+        // Create the structured data hash
+        let action_hash = self.hash_typed_data(&canonicalized)?;
+
+        // Combine with EIP-712 prefix
+        let message_hash = self.create_eip712_hash(&domain_hash, &action_hash)?;
+
+        // Sign with private key
+        self.sign_hash(&message_hash)
+    }
+
+    fn get_domain_hash(&self) -> Result<[u8; 32]> {
+        // Hyperliquid EIP-712 domain separator
+        // This needs to match Hyperliquid's exact domain configuration
+        let domain_type_hash = keccak256(
+            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+        );
+
+        let name_hash = keccak256(b"Hyperliquid");
+        let version_hash = keccak256(b"1");
+
+        // Mainnet chainId = 1, testnet might differ
+        let chain_id: [u8; 32] = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 1; // chainId = 1 for mainnet
+            bytes
+        };
+
+        // Verifying contract address (needs to be the actual Hyperliquid contract)
+        // This is a placeholder and needs to be replaced with the actual contract address
+        let verifying_contract = hex::decode("0000000000000000000000000000000000000000")
+            .map_err(|e| Error::transport(format!("Failed to decode verifying contract: {}", e)))?;
+        let mut contract_bytes = [0u8; 32];
+        contract_bytes[12..].copy_from_slice(&verifying_contract);
+
+        // Hash all components together
+        let mut combined = Vec::with_capacity(160);
+        combined.extend_from_slice(domain_type_hash.as_slice());
+        combined.extend_from_slice(name_hash.as_slice());
+        combined.extend_from_slice(version_hash.as_slice());
+        combined.extend_from_slice(&chain_id);
+        combined.extend_from_slice(&contract_bytes);
+
+        Ok(*keccak256(&combined))
+    }
+
+    fn hash_typed_data(&self, data: &Value) -> Result<[u8; 32]> {
+        // Convert JSON to canonical encoding and hash
+        // This is a simplified version - full implementation needs proper EIP-712 encoding
+        let json_str = serde_json::to_string(data)?;
+        Ok(*keccak256(json_str.as_bytes()))
+    }
+
+    fn create_eip712_hash(
+        &self,
+        domain_hash: &[u8; 32],
+        message_hash: &[u8; 32],
+    ) -> Result<[u8; 32]> {
+        // EIP-712 prefix: "\x19\x01" + domain_separator + message_hash
+        let mut combined = Vec::with_capacity(66);
+        combined.extend_from_slice(b"\x19\x01");
+        combined.extend_from_slice(domain_hash);
+        combined.extend_from_slice(message_hash);
+        Ok(*keccak256(&combined))
+    }
+
+    fn sign_hash(&self, hash: &[u8; 32]) -> Result<String> {
+        // Parse private key and create signer
+        let key_hex = self.private_key.as_hex();
+        let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
+
+        // Create PrivateKeySigner from hex string
+        let signer = PrivateKeySigner::from_str(key_hex)
+            .map_err(|e| Error::transport(format!("Failed to create signer: {}", e)))?;
+
+        // Convert [u8; 32] to B256 for signing
+        let hash_b256 = B256::from(*hash);
+
+        // Sign the hash - alloy-signer handles the signing internally
+        let signature = signer
+            .sign_hash_sync(&hash_b256)
+            .map_err(|e| Error::transport(format!("Failed to sign hash: {}", e)))?;
+
+        // Extract r, s, v components for Ethereum signature format
+        // Ethereum signature format: 0x + r (64 hex) + s (64 hex) + v (2 hex) = 132 total
+        let r = signature.r();
+        let s = signature.s();
+        let v = signature.v(); // Get the y_parity as bool (true = 1, false = 0)
+
+        // Convert v from bool to Ethereum recovery ID (27 or 28)
+        let v_byte = if v { 28u8 } else { 27u8 };
+
+        // Format as Ethereum signature: 0x + r + s + v (132 hex chars total)
+        Ok(format!("0x{:064x}{:064x}{:02x}", r, s, v_byte))
     }
 
     fn canonicalize_action(action: &Value) -> Result<Value> {
@@ -126,8 +236,10 @@ impl HyperliquidEip712Signer {
     }
 
     pub fn address(&self) -> Result<String> {
-        // TODO: Derive actual address from self.private_key
-        let _key_hash = self.private_key.to_string().len(); // Use private_key to avoid dead_code warning
+        // NOTE: Address derivation from private key is implemented in
+        // HyperliquidExecutionClient::get_user_address() using k256 and sha3
+        // This placeholder method exists for API compatibility during refactoring
+        let _key = self.private_key.as_hex(); // Use private_key to avoid dead_code warning
         Ok("0x0000000000000000000000000000000000000000".to_string())
     }
 }
@@ -214,7 +326,9 @@ mod tests {
         };
 
         let result = signer.sign(&request).unwrap();
-        assert!(result.signature.ends_with("0000000000000001"));
+        // Verify signature format: 0x + 64 hex chars (r) + 64 hex chars (s) + 2 hex chars (v)
+        assert!(result.signature.starts_with("0x"));
+        assert_eq!(result.signature.len(), 132); // 0x + 130 hex chars
     }
 
     #[rstest]
@@ -237,6 +351,8 @@ mod tests {
         };
 
         let result = signer.sign(&request).unwrap();
-        assert!(result.signature.ends_with("0000000000000002"));
+        // Verify signature format: 0x + 64 hex chars (r) + 64 hex chars (s) + 2 hex chars (v)
+        assert!(result.signature.starts_with("0x"));
+        assert_eq!(result.signature.len(), 132); // 0x + 130 hex chars
     }
 }

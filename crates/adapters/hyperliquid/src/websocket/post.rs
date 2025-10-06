@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Hyperliquid WebSocket 'post' RPC helpers: envelope, router, builders, batching.
-
 use std::{
     collections::HashMap,
     sync::{
@@ -24,6 +22,7 @@ use std::{
     time::Duration,
 };
 
+use derive_builder::Builder;
 use futures_util::future::BoxFuture;
 use tokio::{
     sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
@@ -312,7 +311,7 @@ impl Grouping {
 }
 
 /// Parameters for creating a limit order
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct LimitOrderParams {
     pub asset: u32,
     pub is_buy: bool,
@@ -324,7 +323,7 @@ pub struct LimitOrderParams {
 }
 
 /// Parameters for creating a trigger order
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct TriggerOrderParams {
     pub asset: u32,
     pub is_buy: bool,
@@ -442,6 +441,48 @@ impl OrderBuilder {
             grouping: self.grouping.as_str().to_string(),
         }
     }
+
+    /// Create a single limit order action directly (convenience method)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = OrderBuilder::single_limit_order(
+    ///     LimitOrderParamsBuilder::default()
+    ///         .asset(0)
+    ///         .is_buy(true)
+    ///         .px("40000.0")
+    ///         .sz("0.01")
+    ///         .reduce_only(false)
+    ///         .tif(TimeInForceRequest::Gtc)
+    ///         .build()
+    ///         .unwrap()
+    /// );
+    /// ```
+    pub fn single_limit_order(params: LimitOrderParams) -> ActionRequest {
+        Self::new().push_limit_order(params).build()
+    }
+
+    /// Create a single trigger order action directly (convenience method)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = OrderBuilder::single_trigger_order(
+    ///     TriggerOrderParamsBuilder::default()
+    ///         .asset(0)
+    ///         .is_buy(false)
+    ///         .px("39000.0")
+    ///         .sz("0.01")
+    ///         .reduce_only(false)
+    ///         .is_market(true)
+    ///         .trigger_px("39500.0")
+    ///         .tpsl(TpSlRequest::Sl)
+    ///         .build()
+    ///         .unwrap()
+    /// );
+    /// ```
+    pub fn single_trigger_order(params: TriggerOrderParams) -> ActionRequest {
+        Self::new().push_trigger_order(params).build()
+    }
 }
 
 pub fn cancel_many(cancels: Vec<(u32, u64)>) -> ActionRequest {
@@ -525,7 +566,6 @@ pub fn parse_order_status(payload: &serde_json::Value) -> Result<HyperliquidOrde
 }
 
 /// Heuristic classification for action responses.
-/// TODO: replace with exact schema once finalized.
 #[derive(Debug)]
 pub enum ActionOutcome<'a> {
     Resting {
@@ -616,7 +656,8 @@ mod tests {
     use crate::{
         common::consts::INFLIGHT_MAX,
         websocket::messages::{
-            ActionRequest, HyperliquidWsRequest, OrderRequest, OrderTypeRequest, TimeInForceRequest,
+            ActionRequest, CancelByCloidRequest, CancelRequest, HyperliquidWsRequest, OrderRequest,
+            OrderRequestBuilder, OrderTypeRequest, TimeInForceRequest,
         },
     };
 
@@ -753,6 +794,202 @@ mod tests {
             grouping: "na".to_string(),
         };
         assert_eq!(lane_for_action(&action), expected);
+    }
+
+    // --- Builder Pattern Tests -----------------------------------------------------------------
+
+    #[test]
+    fn test_order_request_builder() {
+        // Test OrderRequestBuilder derived from #[derive(Builder)]
+        let order = OrderRequestBuilder::default()
+            .a(0)
+            .b(true)
+            .p("40000.0".to_string())
+            .s("0.01".to_string())
+            .r(false)
+            .t(OrderTypeRequest::Limit {
+                tif: TimeInForceRequest::Gtc,
+            })
+            .c(Some("test-order-1".to_string()))
+            .build()
+            .expect("should build order");
+
+        assert_eq!(order.a, 0);
+        assert!(order.b);
+        assert_eq!(order.p, "40000.0");
+        assert_eq!(order.s, "0.01");
+        assert!(!order.r);
+        assert_eq!(order.c, Some("test-order-1".to_string()));
+    }
+
+    #[test]
+    fn test_limit_order_params_builder() {
+        // Test LimitOrderParamsBuilder
+        let params = LimitOrderParamsBuilder::default()
+            .asset(0)
+            .is_buy(true)
+            .px("40000.0".to_string())
+            .sz("0.01".to_string())
+            .reduce_only(false)
+            .tif(TimeInForceRequest::Alo)
+            .cloid(Some("test-limit-1".to_string()))
+            .build()
+            .expect("should build limit params");
+
+        assert_eq!(params.asset, 0);
+        assert!(params.is_buy);
+        assert_eq!(params.px, "40000.0");
+        assert_eq!(params.sz, "0.01");
+        assert!(!params.reduce_only);
+        assert_eq!(params.cloid, Some("test-limit-1".to_string()));
+    }
+
+    #[test]
+    fn test_trigger_order_params_builder() {
+        // Test TriggerOrderParamsBuilder
+        let params = TriggerOrderParamsBuilder::default()
+            .asset(1)
+            .is_buy(false)
+            .px("39000.0".to_string())
+            .sz("0.02".to_string())
+            .reduce_only(false)
+            .is_market(true)
+            .trigger_px("39500.0".to_string())
+            .tpsl(TpSlRequest::Sl)
+            .cloid(Some("test-trigger-1".to_string()))
+            .build()
+            .expect("should build trigger params");
+
+        assert_eq!(params.asset, 1);
+        assert!(!params.is_buy);
+        assert_eq!(params.px, "39000.0");
+        assert!(params.is_market);
+        assert_eq!(params.trigger_px, "39500.0");
+    }
+
+    #[test]
+    fn test_order_builder_single_limit_convenience() {
+        // Test OrderBuilder::single_limit_order convenience method
+        let params = LimitOrderParamsBuilder::default()
+            .asset(0)
+            .is_buy(true)
+            .px("40000.0".to_string())
+            .sz("0.01".to_string())
+            .reduce_only(false)
+            .tif(TimeInForceRequest::Gtc)
+            .cloid(None)
+            .build()
+            .unwrap();
+
+        let action = OrderBuilder::single_limit_order(params);
+
+        match action {
+            ActionRequest::Order { orders, grouping } => {
+                assert_eq!(orders.len(), 1);
+                assert_eq!(orders[0].a, 0);
+                assert!(orders[0].b);
+                assert_eq!(grouping, "na");
+            }
+            _ => panic!("Expected ActionRequest::Order variant"),
+        }
+    }
+
+    #[test]
+    fn test_order_builder_single_trigger_convenience() {
+        // Test OrderBuilder::single_trigger_order convenience method
+        let params = TriggerOrderParamsBuilder::default()
+            .asset(1)
+            .is_buy(false)
+            .px("39000.0".to_string())
+            .sz("0.02".to_string())
+            .reduce_only(false)
+            .is_market(true)
+            .trigger_px("39500.0".to_string())
+            .tpsl(TpSlRequest::Sl)
+            .cloid(Some("sl-order".to_string()))
+            .build()
+            .unwrap();
+
+        let action = OrderBuilder::single_trigger_order(params);
+
+        match action {
+            ActionRequest::Order { orders, grouping } => {
+                assert_eq!(orders.len(), 1);
+                assert_eq!(orders[0].a, 1);
+                assert_eq!(orders[0].c, Some("sl-order".to_string()));
+                assert_eq!(grouping, "na");
+            }
+            _ => panic!("Expected ActionRequest::Order variant"),
+        }
+    }
+
+    #[test]
+    fn test_order_builder_batch_orders() {
+        // Test existing batch order functionality still works
+        let params1 = LimitOrderParams {
+            asset: 0,
+            is_buy: true,
+            px: "40000.0".to_string(),
+            sz: "0.01".to_string(),
+            reduce_only: false,
+            tif: TimeInForceRequest::Gtc,
+            cloid: Some("order-1".to_string()),
+        };
+
+        let params2 = LimitOrderParams {
+            asset: 1,
+            is_buy: false,
+            px: "2000.0".to_string(),
+            sz: "0.5".to_string(),
+            reduce_only: false,
+            tif: TimeInForceRequest::Ioc,
+            cloid: Some("order-2".to_string()),
+        };
+
+        let action = OrderBuilder::new()
+            .grouping(Grouping::NormalTpsl)
+            .push_limit_order(params1)
+            .push_limit_order(params2)
+            .build();
+
+        match action {
+            ActionRequest::Order { orders, grouping } => {
+                assert_eq!(orders.len(), 2);
+                assert_eq!(orders[0].c, Some("order-1".to_string()));
+                assert_eq!(orders[1].c, Some("order-2".to_string()));
+                assert_eq!(grouping, "normalTpsl");
+            }
+            _ => panic!("Expected ActionRequest::Order variant"),
+        }
+    }
+
+    #[test]
+    fn test_action_request_constructors() {
+        // Test ActionRequest::order() constructor
+        let order1 = mk_limit_gtc(0);
+        let order2 = mk_limit_gtc(1);
+        let action = ActionRequest::order(vec![order1, order2], "na");
+
+        match action {
+            ActionRequest::Order { orders, grouping } => {
+                assert_eq!(orders.len(), 2);
+                assert_eq!(grouping, "na");
+            }
+            _ => panic!("Expected ActionRequest::Order variant"),
+        }
+
+        // Test ActionRequest::cancel() constructor
+        let cancels = vec![CancelRequest { a: 0, o: 12345 }];
+        let action = ActionRequest::cancel(cancels);
+        assert!(matches!(action, ActionRequest::Cancel { .. }));
+
+        // Test ActionRequest::cancel_by_cloid() constructor
+        let cancels = vec![CancelByCloidRequest {
+            asset: 0,
+            cloid: "order-1".to_string(),
+        }];
+        let action = ActionRequest::cancel_by_cloid(cancels);
+        assert!(matches!(action, ActionRequest::CancelByCloid { .. }));
     }
 
     // --- Batcher (tick flush path) --------------------------------------------------------------

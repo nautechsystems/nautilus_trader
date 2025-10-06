@@ -102,16 +102,19 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    identifiers::{InstrumentId, Symbol, Venue},
     orders::{Order, any::OrderAny},
+    types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 
 use crate::http::models::{
-    AssetId, Cloid, HyperliquidExchangeResponse, HyperliquidExecCancelByCloidRequest,
-    HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-    HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
+    AssetId, Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
+    HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+    HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
+    HyperliquidExecTriggerParams,
 };
 
 /// Serializes decimal as string (lossless, no scientific notation).
@@ -160,6 +163,34 @@ where
         }
         None => Ok(None),
     }
+}
+
+/// Serialize vector of decimals as strings
+pub fn serialize_vec_decimal_as_str<S>(
+    decimals: &Vec<Decimal>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeSeq;
+    let mut seq = serializer.serialize_seq(Some(decimals.len()))?;
+    for decimal in decimals {
+        seq.serialize_element(&decimal.normalize().to_string())?;
+    }
+    seq.end()
+}
+
+/// Deserialize vector of decimals from strings
+pub fn deserialize_vec_decimal_from_str<'de, D>(deserializer: D) -> Result<Vec<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let strings = Vec::<String>::deserialize(deserializer)?;
+    strings
+        .into_iter()
+        .map(|s| Decimal::from_str(&s).map_err(serde::de::Error::custom))
+        .collect()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -777,6 +808,66 @@ pub fn validate_conditional_order_params(
 pub fn parse_trigger_price(trigger_px: &str) -> Result<Decimal> {
     Decimal::from_str_exact(trigger_px)
         .with_context(|| format!("Failed to parse trigger price: {}", trigger_px))
+}
+
+/// Parses Hyperliquid clearinghouse state into Nautilus account balances and margins.
+///
+/// # Errors
+///
+/// Returns an error if the data cannot be parsed.
+pub fn parse_account_balances_and_margins(
+    cross_margin_summary: &CrossMarginSummary,
+) -> Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+    let mut balances = Vec::new();
+    let mut margins = Vec::new();
+
+    // Parse balance from cross margin summary
+    let currency = Currency::USD(); // Hyperliquid uses USDC/USD
+
+    // Account value represents total collateral
+    let total_value = cross_margin_summary
+        .account_value
+        .to_string()
+        .parse::<f64>()?;
+
+    // Withdrawable represents available balance
+    let withdrawable = cross_margin_summary
+        .withdrawable
+        .to_string()
+        .parse::<f64>()?;
+
+    // Total margin used is locked in positions
+    let margin_used = cross_margin_summary
+        .total_margin_used
+        .to_string()
+        .parse::<f64>()?;
+
+    // Calculate total, locked, and free
+    let total = Money::new(total_value, currency);
+    let locked = Money::new(margin_used, currency);
+    let free = Money::new(withdrawable, currency);
+
+    let balance = AccountBalance::new(total, locked, free);
+    balances.push(balance);
+
+    // Create margin balance for the account
+    // Initial margin = margin used (locked in positions)
+    // Maintenance margin can be approximated from leverage and position values
+    // For now, use margin_used as both initial and maintenance (conservative)
+    if margin_used > 0.0 {
+        let margin_instrument_id =
+            InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("HYPERLIQUID"));
+
+        let initial_margin = Money::new(margin_used, currency);
+        let maintenance_margin = Money::new(margin_used, currency);
+
+        let margin_balance =
+            MarginBalance::new(initial_margin, maintenance_margin, margin_instrument_id);
+
+        margins.push(margin_balance);
+    }
+
+    Ok((balances, margins))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

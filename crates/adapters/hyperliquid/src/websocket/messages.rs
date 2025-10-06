@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -146,8 +147,60 @@ pub enum ActionRequest {
     Modify { modifies: Vec<ModifyRequest> },
 }
 
+impl ActionRequest {
+    /// Create a simple order action with default "na" grouping
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = ActionRequest::order(vec![order1, order2], "na");
+    /// ```
+    pub fn order(orders: Vec<OrderRequest>, grouping: impl Into<String>) -> Self {
+        Self::Order {
+            orders,
+            grouping: grouping.into(),
+        }
+    }
+
+    /// Create a cancel action for multiple orders
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = ActionRequest::cancel(vec![
+    ///     CancelRequest { a: 0, o: 12345 },
+    ///     CancelRequest { a: 1, o: 67890 },
+    /// ]);
+    /// ```
+    pub fn cancel(cancels: Vec<CancelRequest>) -> Self {
+        Self::Cancel { cancels }
+    }
+
+    /// Create a cancel-by-cloid action
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = ActionRequest::cancel_by_cloid(vec![
+    ///     CancelByCloidRequest { asset: 0, cloid: "order-1".to_string() },
+    /// ]);
+    /// ```
+    pub fn cancel_by_cloid(cancels: Vec<CancelByCloidRequest>) -> Self {
+        Self::CancelByCloid { cancels }
+    }
+
+    /// Create a modify action for multiple orders
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = ActionRequest::modify(vec![
+    ///     ModifyRequest { oid: 12345, order: new_order },
+    /// ]);
+    /// ```
+    pub fn modify(modifies: Vec<ModifyRequest>) -> Self {
+        Self::Modify { modifies }
+    }
+}
+
 /// Order placement request
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Builder)]
 pub struct OrderRequest {
     /// Asset ID
     pub a: u32,

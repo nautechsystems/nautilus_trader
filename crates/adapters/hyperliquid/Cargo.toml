@@ -67,6 +67,10 @@ derive_builder = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
+alloy = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
