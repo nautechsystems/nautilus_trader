@@ -97,10 +97,10 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
-      - id: check-anyhow-imports
-        name: check anyhow imports
-        description: Ensures only anyhow::Context is imported (anyhow::bail!, anyhow::Result must be fully qualified)
-        entry: .pre-commit-hooks/check_anyhow_imports.sh
+      - id: check-anyhow-usage
+        name: check anyhow usage
+        description: Enforces anyhow conventions (only import Context, use anyhow::bail! not return Err(anyhow::anyhow!))
+        entry: .pre-commit-hooks/check_anyhow_usage.sh
         language: script
         files: '\.rs$'
         pass_filenames: false
