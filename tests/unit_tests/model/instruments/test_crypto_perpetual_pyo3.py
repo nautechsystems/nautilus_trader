@@ -40,6 +40,7 @@ _ETHUSD_PERP_QUANTO = nautilus_pyo3.CryptoPerpetual(
     taker_fee=Decimal("0"),
     margin_init=Decimal("0.01"),
     margin_maint=Decimal("0.005"),
+    multiplier=None,
     lot_size=None,
     max_quantity=nautilus_pyo3.Quantity.from_int(1_000_000),
     min_quantity=nautilus_pyo3.Quantity.from_int(1),
