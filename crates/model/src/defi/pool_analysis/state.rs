@@ -40,6 +40,10 @@ pub struct PoolState {
     pub protocol_fees_token1: U256,
     /// Protocol fee packed: lower 4 bits for token0, upper 4 bits for token1.
     pub fee_protocol: u8,
+    /// Global fee growth for token0 as Q128.128 fixed-point number.
+    pub fee_growth_global_0: U256,
+    /// Global fee growth for token1 as Q128.128 fixed-point number.
+    pub fee_growth_global_1: U256,
 }
 
 impl PoolState {
@@ -63,6 +67,8 @@ impl PoolState {
             protocol_fees_token0,
             protocol_fees_token1,
             fee_protocol,
+            fee_growth_global_0: U256::ZERO,
+            fee_growth_global_1: U256::ZERO,
         }
     }
 }
@@ -79,6 +85,8 @@ impl Default for PoolState {
             protocol_fees_token0: U256::ZERO,
             protocol_fees_token1: U256::ZERO,
             fee_protocol: 0,
+            fee_growth_global_0: U256::ZERO,
+            fee_growth_global_1: U256::ZERO,
         }
     }
 }

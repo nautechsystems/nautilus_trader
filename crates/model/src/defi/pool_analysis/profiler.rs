@@ -327,9 +327,9 @@ impl PoolProfiler {
 
         // Track current fee growth during swap
         let mut current_fee_growth_global = if zero_for_one {
-            self.tick_map.fee_growth_global_0
+            self.state.fee_growth_global_0
         } else {
-            self.tick_map.fee_growth_global_1
+            self.state.fee_growth_global_1
         };
 
         // Continue swapping as long as we haven't used the entire input/output or haven't reached the price limit
@@ -408,10 +408,10 @@ impl PoolProfiler {
                         if zero_for_one {
                             current_fee_growth_global
                         } else {
-                            self.tick_map.fee_growth_global_0
+                            self.state.fee_growth_global_0
                         },
                         if zero_for_one {
-                            self.tick_map.fee_growth_global_1
+                            self.state.fee_growth_global_1
                         } else {
                             current_fee_growth_global
                         },
@@ -450,10 +450,10 @@ impl PoolProfiler {
 
         // Update fee growth global and if necessary, protocol fees
         if zero_for_one {
-            self.tick_map.fee_growth_global_0 = current_fee_growth_global;
+            self.state.fee_growth_global_0 = current_fee_growth_global;
             self.state.protocol_fees_token0 += protocol_fee;
         } else {
-            self.tick_map.fee_growth_global_1 = current_fee_growth_global;
+            self.state.fee_growth_global_1 = current_fee_growth_global;
             self.state.protocol_fees_token1 += protocol_fee;
         }
 
@@ -904,16 +904,30 @@ impl PoolProfiler {
         }
 
         // Update tickmaps.
-        let flipped_lower = self
-            .tick_map
-            .update(tick_lower, current_tick, liquidity_delta, false);
-        let flipped_upper = self
-            .tick_map
-            .update(tick_upper, current_tick, liquidity_delta, true);
+        let flipped_lower = self.tick_map.update(
+            tick_lower,
+            current_tick,
+            liquidity_delta,
+            false,
+            self.state.fee_growth_global_0,
+            self.state.fee_growth_global_1,
+        );
+        let flipped_upper = self.tick_map.update(
+            tick_upper,
+            current_tick,
+            liquidity_delta,
+            true,
+            self.state.fee_growth_global_0,
+            self.state.fee_growth_global_1,
+        );
 
-        let (fee_growth_inside_0, fee_growth_inside_1) =
-            self.tick_map
-                .get_fee_growth_inside(tick_lower, tick_upper, current_tick);
+        let (fee_growth_inside_0, fee_growth_inside_1) = self.tick_map.get_fee_growth_inside(
+            tick_lower,
+            tick_upper,
+            current_tick,
+            self.state.fee_growth_global_0,
+            self.state.fee_growth_global_1,
+        );
         position.update_liquidity(liquidity_delta);
         position.update_fees(fee_growth_inside_0, fee_growth_inside_1);
         position.update_amounts(liquidity_delta, amount0, amount1);
@@ -1158,7 +1172,7 @@ impl PoolProfiler {
         // 2. Add accumulated swap fees (fee_growth_global represents total fees accumulated)
         // Note: In a real pool, fees are distributed as liquidity, but for balance estimation
         // we can use a simplified approach by converting fee growth to token amounts
-        let fee_growth_0 = self.tick_map.fee_growth_global_0;
+        let fee_growth_0 = self.state.fee_growth_global_0;
         if fee_growth_0 > U256::ZERO {
             // Convert fee growth to actual token amount using FullMath for precision
             // Fee growth is in Q128.128 format, so we need to scale it properly
@@ -1225,7 +1239,7 @@ impl PoolProfiler {
         }
 
         // 2. Add accumulated swap fees for token1
-        let fee_growth_1 = self.tick_map.fee_growth_global_1;
+        let fee_growth_1 = self.state.fee_growth_global_1;
         if fee_growth_1 > U256::ZERO {
             let active_liquidity = self.get_active_liquidity();
             if active_liquidity > 0 {
@@ -1255,7 +1269,7 @@ impl PoolProfiler {
     /// * `fee_growth_global_0` - New global fee growth for token0
     /// * `fee_growth_global_1` - New global fee growth for token1
     pub fn set_fee_growth_global(&mut self, fee_growth_global_0: U256, fee_growth_global_1: U256) {
-        self.tick_map
-            .set_global_fee_growth(fee_growth_global_0, fee_growth_global_1);
+        self.state.fee_growth_global_0 = fee_growth_global_0;
+        self.state.fee_growth_global_1 = fee_growth_global_1;
     }
 }

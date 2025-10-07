@@ -42,10 +42,6 @@ pub struct TickMap {
     tick_bitmap: TickBitmap,
     /// Current active liquidity
     pub liquidity: u128,
-    /// Global fee growth for token0
-    pub fee_growth_global_0: U256,
-    /// Global fee growth for token1
-    pub fee_growth_global_1: U256,
     /// Maximum liquidity that can be concentrated in a single tick based on tick spacing.
     pub max_liquidity_per_tick: u128,
 }
@@ -63,16 +59,8 @@ impl TickMap {
             ticks: HashMap::new(),
             tick_bitmap: TickBitmap::new(tick_spacing),
             liquidity: 0,
-            fee_growth_global_0: U256::ZERO,
-            fee_growth_global_1: U256::ZERO,
             max_liquidity_per_tick: tick_spacing_to_max_liquidity_per_tick(tick_spacing as i32),
         }
-    }
-
-    /// Sets the global fee growth values for both tokens.
-    pub fn set_global_fee_growth(&mut self, fee_growth_global_0: U256, fee_growth_global_1: U256) {
-        self.fee_growth_global_0 = fee_growth_global_0;
-        self.fee_growth_global_1 = fee_growth_global_1;
     }
 
     /// Retrieves a reference to the tick data at the specified tick index.
@@ -93,6 +81,8 @@ impl TickMap {
         lower_tick: i32,
         upper_tick: i32,
         current_tick: i32,
+        fee_growth_global_0: U256,
+        fee_growth_global_1: U256,
     ) -> (U256, U256) {
         // Ensure both ticks exist by initializing them first
         self.ticks
@@ -110,31 +100,29 @@ impl TickMap {
         let fee_growth_below_0 = if current_tick >= lower_tick.value {
             lower_tick.fee_growth_outside_0
         } else {
-            self.fee_growth_global_0 - lower_tick.fee_growth_outside_0
+            fee_growth_global_0 - lower_tick.fee_growth_outside_0
         };
         let fee_growth_below_1 = if current_tick >= lower_tick.value {
             lower_tick.fee_growth_outside_1
         } else {
-            self.fee_growth_global_1 - lower_tick.fee_growth_outside_1
+            fee_growth_global_1 - lower_tick.fee_growth_outside_1
         };
 
         // Calculate the fee growth above
         let fee_growth_above_0 = if current_tick < upper_tick.value {
             upper_tick.fee_growth_outside_0
         } else {
-            self.fee_growth_global_0 - upper_tick.fee_growth_outside_0
+            fee_growth_global_0 - upper_tick.fee_growth_outside_0
         };
         let fee_growth_above_1 = if current_tick < upper_tick.value {
             upper_tick.fee_growth_outside_1
         } else {
-            self.fee_growth_global_1 - upper_tick.fee_growth_outside_1
+            fee_growth_global_1 - upper_tick.fee_growth_outside_1
         };
 
         // Calculate the fee growth inside
-        let fee_growth_inside_0 =
-            self.fee_growth_global_0 - fee_growth_below_0 - fee_growth_above_0;
-        let fee_growth_inside_1 =
-            self.fee_growth_global_1 - fee_growth_below_1 - fee_growth_above_1;
+        let fee_growth_inside_0 = fee_growth_global_0 - fee_growth_below_0 - fee_growth_above_0;
+        let fee_growth_inside_1 = fee_growth_global_1 - fee_growth_below_1 - fee_growth_above_1;
 
         (fee_growth_inside_0, fee_growth_inside_1)
     }
@@ -146,10 +134,10 @@ impl TickMap {
         tick_current: i32,
         liquidity_delta: i128,
         upper: bool,
+        fee_growth_global_0: U256,
+        fee_growth_global_1: U256,
     ) -> bool {
         let max_liquidity_per_tick = self.max_liquidity_per_tick;
-        let fee_growth_global_0 = self.fee_growth_global_0;
-        let fee_growth_global_1 = self.fee_growth_global_1;
         let tick = self.get_tick_or_init(tick);
 
         let liquidity_gross_before = tick.update_liquidity(liquidity_delta, upper);
@@ -179,8 +167,17 @@ impl TickMap {
         tick_current: i32,
         liquidity_delta: i128,
         upper: bool,
+        fee_growth_global_0: U256,
+        fee_growth_global_1: U256,
     ) -> bool {
-        let flipped = self.update_tick_data(tick, tick_current, liquidity_delta, upper);
+        let flipped = self.update_tick_data(
+            tick,
+            tick_current,
+            liquidity_delta,
+            upper,
+            fee_growth_global_0,
+            fee_growth_global_1,
+        );
 
         // Only flip the bitmap if the tick actually flipped state
         if flipped {
@@ -268,25 +265,28 @@ mod tests {
     fn test_new_tick_maps(tick_map: TickMap) {
         assert_eq!(tick_map.active_tick_count(), 0);
         assert_eq!(tick_map.liquidity, 0);
-        assert_eq!(tick_map.fee_growth_global_0, U256::ZERO);
-        assert_eq!(tick_map.fee_growth_global_1, U256::ZERO);
     }
 
     #[rstest]
     fn test_get_fee_growth_inside_uninitialized_ticks(mut tick_map: TickMap) {
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(15));
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(15);
+
         // If tick is inside: Tick 0 is inside -2 and 2
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 0);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from_str("15").unwrap());
         assert_eq!(fee_growth_inside_1, U256::from_str("15").unwrap());
 
         // If tick is above: Tick 4 is not in [-2,2] so above 2
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 4);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 4, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::ZERO);
         assert_eq!(fee_growth_inside_1, U256::ZERO);
 
         // If tick is below: Tick -4 is not in [-2,2] so below -2
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, -4);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, -4, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::ZERO);
         assert_eq!(fee_growth_inside_1, U256::ZERO);
     }
@@ -302,8 +302,10 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(15));
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 0);
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(15);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from(13));
         assert_eq!(fee_growth_inside_1, U256::from(12));
     }
@@ -319,8 +321,10 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(15));
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 0);
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(15);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from(13));
         assert_eq!(fee_growth_inside_1, U256::from(12));
     }
@@ -345,8 +349,10 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(15));
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 0);
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(15);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from(9));
         assert_eq!(fee_growth_inside_1, U256::from(11));
     }
@@ -371,8 +377,10 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(15));
-        let (fee_growth_inside_0, fee_growth_inside_1) = tick_map.get_fee_growth_inside(-2, 2, 0);
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(15);
+        let (fee_growth_inside_0, fee_growth_inside_1) =
+            tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from(16u32));
         assert_eq!(fee_growth_inside_1, U256::from(13u32));
     }
@@ -382,7 +390,7 @@ mod tests {
         // Initially tick should not be initialized in bitmap
         assert!(!tick_map.is_tick_initialized(0));
 
-        let flipped = tick_map.update(0, 0, 1, false);
+        let flipped = tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
         assert!(flipped);
 
         // After flipping from zero to nonzero, tick should be initialized in bitmap
@@ -392,11 +400,11 @@ mod tests {
     #[rstest]
     fn test_update_does_not_flip_from_nonzero_to_greater_nonzero(mut tick_map: TickMap) {
         // First update: flip from 0 to 1
-        tick_map.update(0, 0, 1, false);
+        tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
         assert!(tick_map.is_tick_initialized(0));
 
         // Second update: should not flip from 1 to 2
-        let flipped = tick_map.update(0, 0, 1, false);
+        let flipped = tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
         assert!(!flipped);
 
         // Bitmap should remain unchanged (still initialized)
@@ -406,12 +414,12 @@ mod tests {
     #[rstest]
     fn test_update_flips_from_nonzero_to_zero(mut tick_map: TickMap) {
         // First update: flip from 0 to 1
-        let flipped_first = tick_map.update(0, 0, 1, false);
+        let flipped_first = tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
         assert!(flipped_first);
         assert!(tick_map.is_tick_initialized(0));
 
         // Second update: flip from 1 to 0 (remove all liquidity)
-        let flipped_second = tick_map.update(0, 0, -1, false);
+        let flipped_second = tick_map.update(0, 0, -1, false, U256::ZERO, U256::ZERO);
         assert!(flipped_second);
 
         // After flipping back to zero, tick should not be initialized in bitmap
@@ -421,11 +429,11 @@ mod tests {
     #[rstest]
     fn test_update_does_not_flip_from_nonzero_to_lesser_nonzero(mut tick_map: TickMap) {
         // First update: flip from 0 to 2
-        tick_map.update(0, 0, 2, false);
+        tick_map.update(0, 0, 2, false, U256::ZERO, U256::ZERO);
         assert!(tick_map.is_tick_initialized(0));
 
         // Second update: should not flip from 2 to 1 (remove some but not all liquidity)
-        let flipped = tick_map.update(0, 0, -1, false);
+        let flipped = tick_map.update(0, 0, -1, false, U256::ZERO, U256::ZERO);
         assert!(!flipped);
 
         // Bitmap should remain unchanged (still initialized)
@@ -439,23 +447,37 @@ mod tests {
 
         // Add liquidity close to max
         let max_liquidity = tick_map.max_liquidity_per_tick;
-        tick_map.update(0, 0, (max_liquidity / 2) as i128, false);
-        tick_map.update(0, 0, (max_liquidity / 2) as i128, true);
+        tick_map.update(
+            0,
+            0,
+            (max_liquidity / 2) as i128,
+            false,
+            U256::ZERO,
+            U256::ZERO,
+        );
+        tick_map.update(
+            0,
+            0,
+            (max_liquidity / 2) as i128,
+            true,
+            U256::ZERO,
+            U256::ZERO,
+        );
 
         // This should panic as it exceeds max liquidity per tick
-        tick_map.update(0, 0, 1, false);
+        tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
     }
 
     #[rstest]
     fn test_update_nets_liquidity_based_on_upper_flag(mut tick_map: TickMap) {
         // Update with upper=false: liquidity_net += delta
-        tick_map.update(0, 0, 2, false);
+        tick_map.update(0, 0, 2, false, U256::ZERO, U256::ZERO);
         // Update with upper=true: liquidity_net -= delta
-        tick_map.update(0, 0, 1, true);
+        tick_map.update(0, 0, 1, true, U256::ZERO, U256::ZERO);
         // Update with upper=true: liquidity_net -= delta
-        tick_map.update(0, 0, 3, true);
+        tick_map.update(0, 0, 3, true, U256::ZERO, U256::ZERO);
         // Update with upper=false: liquidity_net += delta
-        tick_map.update(0, 0, 1, false);
+        tick_map.update(0, 0, 1, false, U256::ZERO, U256::ZERO);
 
         let tick = tick_map.get_tick(0).unwrap();
 
@@ -469,9 +491,10 @@ mod tests {
     #[rstest]
     fn test_update_assumes_all_growth_happens_below_ticks_lte_current_tick() {
         let mut tick_map = TickMap::new(1);
-        tick_map.set_global_fee_growth(U256::from(15), U256::from(2));
+        let fee_growth_global_0 = U256::from(15);
+        let fee_growth_global_1 = U256::from(2);
         // Update tick 1 when current tick is 1 (tick <= current_tick)
-        tick_map.update(1, 1, 1, false);
+        tick_map.update(1, 1, 1, false, fee_growth_global_0, fee_growth_global_1);
 
         let tick = tick_map.get_tick(1).unwrap();
 
@@ -486,13 +509,15 @@ mod tests {
     #[rstest]
     fn test_update_does_not_set_growth_fields_if_tick_already_initialized() {
         let mut tick_map = TickMap::new(1);
-        tick_map.set_global_fee_growth(U256::from(1), U256::from(2));
+        let fee_growth_0_initial = U256::from(1);
+        let fee_growth_1_initial = U256::from(2);
         // First update: Initialize the tick
-        tick_map.update(1, 1, 1, false);
+        tick_map.update(1, 1, 1, false, fee_growth_0_initial, fee_growth_1_initial);
 
         // Second update: Different fee growth values, but tick is already initialized
-        tick_map.set_global_fee_growth(U256::from(6), U256::from(7));
-        tick_map.update(1, 1, 1, false);
+        let fee_growth_0_second = U256::from(6);
+        let fee_growth_1_second = U256::from(7);
+        tick_map.update(1, 1, 1, false, fee_growth_0_second, fee_growth_1_second);
 
         let tick = tick_map.get_tick(1).unwrap();
 
@@ -507,9 +532,10 @@ mod tests {
     #[rstest]
     fn test_update_does_not_set_growth_fields_for_ticks_gt_current_tick() {
         let mut tick_map = TickMap::new(1);
-        tick_map.set_global_fee_growth(U256::from(1), U256::from(2u32));
+        let fee_growth_global_0 = U256::from(1);
+        let fee_growth_global_1 = U256::from(2u32);
         // Update tick 2 when current tick is 1 (tick > current_tick)
-        tick_map.update(2, 1, 1, false);
+        tick_map.update(2, 1, 1, false, fee_growth_global_0, fee_growth_global_1);
 
         let tick = tick_map.get_tick(2).unwrap();
 

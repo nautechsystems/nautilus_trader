@@ -2219,11 +2219,11 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
                     expected_result.pool_price_after
                 );
                 assert_eq!(
-                    profiler.tick_map.fee_growth_global_0,
+                    profiler.state.fee_growth_global_0,
                     expected_result.fee_growth_global_0
                 );
                 assert_eq!(
-                    profiler.tick_map.fee_growth_global_1,
+                    profiler.state.fee_growth_global_1,
                     expected_result.fee_growth_global_1
                 );
                 assert_eq!(
