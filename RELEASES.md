@@ -101,6 +101,7 @@ This will be the final release with support for Python 3.11.
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
+- Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)

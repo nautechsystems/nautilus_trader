@@ -18,6 +18,7 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteMsg
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
@@ -82,3 +83,112 @@ class TestBinanceWebSocketParsing:
         assert wrapper.data.L == "117290.77000000"
         assert wrapper.data.W == 1759347763167  # Working time field
         assert wrapper.data.V == "EXPIRE_MAKER"  # Self-Trade Prevention Mode
+
+    def test_parse_to_order_status_report_with_filled_status(self):
+        # Arrange: Load Binance US execution report with FILLED status
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_binance_us.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
+        from nautilus_trader.core.datetime import millis_to_nanos
+        from nautilus_trader.model.identifiers import AccountId
+        from nautilus_trader.model.identifiers import ClientOrderId
+        from nautilus_trader.model.identifiers import VenueOrderId
+
+        enum_parser = BinanceSpotEnumParser()
+        report = wrapper.data.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId("test-001"),
+            venue_order_id=VenueOrderId("12345"),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        # Assert: Status should be FILLED, not ACCEPTED
+        from decimal import Decimal
+
+        from nautilus_trader.model.enums import OrderStatus
+
+        assert report.order_status == OrderStatus.FILLED
+        assert report.filled_qty.as_decimal() == Decimal(wrapper.data.z)
+        assert report.quantity.as_decimal() == Decimal(wrapper.data.q)
+
+    def test_parse_to_order_status_report_with_rejected_status(self):
+        # Arrange: Load execution report with REJECTED status (e.g., GTX post-only order)
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_rejected.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
+        from nautilus_trader.core.datetime import millis_to_nanos
+        from nautilus_trader.model.identifiers import AccountId
+        from nautilus_trader.model.identifiers import ClientOrderId
+        from nautilus_trader.model.identifiers import VenueOrderId
+
+        enum_parser = BinanceSpotEnumParser()
+        report = wrapper.data.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId("test-reject"),
+            venue_order_id=VenueOrderId("1234567890"),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        # Assert: Status should be REJECTED (not crash with RuntimeError)
+        from nautilus_trader.model.enums import OrderStatus
+
+        assert report.order_status == OrderStatus.REJECTED
+        assert wrapper.data.X == BinanceOrderStatus.REJECTED
+        assert wrapper.data.r == "GTX_ORDER_REJECT"
+
+    def test_parse_to_order_status_report_with_pending_cancel_status(self):
+        # Arrange: Load execution report with PENDING_CANCEL status
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_pending_cancel.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
+        from nautilus_trader.core.datetime import millis_to_nanos
+        from nautilus_trader.model.identifiers import AccountId
+        from nautilus_trader.model.identifiers import ClientOrderId
+        from nautilus_trader.model.identifiers import VenueOrderId
+
+        enum_parser = BinanceSpotEnumParser()
+        report = wrapper.data.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId("test-cancel"),
+            venue_order_id=VenueOrderId("9876543210"),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        # Assert: Status should be PENDING_CANCEL (not crash with RuntimeError)
+        from nautilus_trader.model.enums import OrderStatus
+
+        assert report.order_status == OrderStatus.PENDING_CANCEL
+        assert wrapper.data.X == BinanceOrderStatus.PENDING_CANCEL
