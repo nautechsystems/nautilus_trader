@@ -59,6 +59,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid websocket tester for streaming market data (#3018), thanks @nicolad
 - Implemented Hyperliquid basic market and limit orders (#3022), thanks @nicolad
 - Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
+- Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
