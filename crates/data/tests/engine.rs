@@ -2373,7 +2373,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .borrow()
         .pool_profiler(&instrument_id)
         .unwrap()
-        .current_tick;
+        .state.current_tick;
     let initial_fee_growth_0 = cache
         .borrow()
         .pool_profiler(&instrument_id)
@@ -2424,7 +2424,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .borrow()
         .pool_profiler(&instrument_id)
         .unwrap()
-        .current_tick;
+        .state.current_tick;
     let final_fee_growth_0 = cache
         .borrow()
         .pool_profiler(&instrument_id)
@@ -2809,8 +2809,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         .borrow()
         .pool_profiler(&instrument_id)
         .unwrap()
-        .current_tick
-        .is_some();
+        .is_initialized;
 
     // PoolProfiler should still be valid and initialized
     assert!(is_initialized, "PoolProfiler should remain initialized");

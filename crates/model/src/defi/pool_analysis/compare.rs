@@ -40,7 +40,7 @@ use crate::defi::tick_map::tick::Tick;
 ///
 /// # Panics
 ///
-/// Panics if the profiler has not been initialized (current_tick or price_sqrt_ratio_x96 is None).
+/// Panics if the profiler has not been initialized
 ///
 /// # Returns
 ///
@@ -54,14 +54,18 @@ pub fn compare_pool_profiler(
     ticks: HashMap<i32, Tick>,
     positions: Vec<PoolPosition>,
 ) -> bool {
+    if !profiler.is_initialized {
+        panic!("Profiler is not initialized");
+    }
+
     let mut all_match = true;
     let total_ticks = ticks.len();
     let total_positions = positions.len();
 
-    if current_tick != profiler.current_tick.unwrap() {
+    if current_tick != profiler.state.current_tick {
         tracing::error!(
             "Tick mismatch: profiler={}, compared={}",
-            profiler.current_tick.unwrap(),
+            profiler.state.current_tick,
             current_tick
         );
         all_match = false;
@@ -69,24 +73,24 @@ pub fn compare_pool_profiler(
         tracing::info!("✓ current_tick matches: {}", current_tick);
     }
 
-    if price_sqrt_ratio_x96 != profiler.price_sqrt_ratio_x96.unwrap() {
+    if price_sqrt_ratio_x96 != profiler.state.price_sqrt_ratio_x96 {
         tracing::error!(
             "Sqrt ratio mismatch: profiler={}, compared={}",
-            profiler.price_sqrt_ratio_x96.unwrap(),
+            profiler.state.price_sqrt_ratio_x96,
             price_sqrt_ratio_x96
         );
         all_match = false;
     } else {
         tracing::info!(
             "✓ sqrt_price_x96 matches: {}",
-            profiler.price_sqrt_ratio_x96.unwrap()
+            profiler.state.price_sqrt_ratio_x96,
         );
     }
 
-    if fee_protocol != profiler.fee_protocol {
+    if fee_protocol != profiler.state.fee_protocol {
         tracing::error!(
             "Fee protocol mismatch: profiler={}, compared={}",
-            profiler.fee_protocol,
+            profiler.state.fee_protocol,
             fee_protocol
         );
         all_match = false;

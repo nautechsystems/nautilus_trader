@@ -27,13 +27,15 @@ use crate::defi::{
         TickMap,
         full_math::{FullMath, Q128},
         liquidity_math::liquidity_math_add,
-        sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
+        sqrt_price_math::{get_amounts_for_liquidity},
         tick::Tick,
         tick_math::{
             MAX_SQRT_RATIO, MIN_SQRT_RATIO, get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio,
         },
     },
 };
+use crate::defi::pool_analysis::state::PoolState;
+use crate::defi::tick_map::sqrt_price_math::{get_amount0_delta, get_amount1_delta};
 
 /// A DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
@@ -64,24 +66,10 @@ pub struct PoolProfiler {
     positions: HashMap<String, PoolPosition>,
     /// Tick map managing liquidity distribution across price ranges.
     pub tick_map: TickMap,
-    /// Current tick position of the pool price.
-    pub current_tick: Option<i32>,
-    /// Current sqrt price ratio as Q64.96 fixed point number.
-    pub price_sqrt_ratio_x96: Option<U160>,
-    /// Total amount of token0 deposited through mints.
-    pub total_amount0_deposited: U256,
-    /// Total amount of token1 deposited through mints.
-    pub total_amount1_deposited: U256,
-    /// Total amount of token0 withdrawn through burns.
-    pub total_amount0_withdrawn: U256,
-    /// Total amount of token1 withdrawn through burns.
-    pub total_amount1_withdrawn: U256,
-    /// Accumulated protocol fees in token0 units.
-    pub protocol_fees_token0: U256,
-    /// Accumulated protocol fees in token1 units.
-    pub protocol_fees_token1: U256,
-    /// Protocol fee packed: lower 4 bits for token0, upper 4 bits for token1.
-    pub fee_protocol: u8,
+    /// Global pool state including current price, tick, and cumulative flows with fees.
+    pub state: PoolState,
+    /// Flag indicating whether the pool has been initialized with a starting price.
+    pub is_initialized: bool
 }
 
 impl PoolProfiler {
@@ -97,27 +85,20 @@ impl PoolProfiler {
             pool,
             positions: HashMap::new(),
             tick_map: TickMap::new(tick_spacing),
-            current_tick: None,
-            price_sqrt_ratio_x96: None,
-            total_amount0_deposited: U256::ZERO,
-            total_amount1_deposited: U256::ZERO,
-            total_amount0_withdrawn: U256::ZERO,
-            total_amount1_withdrawn: U256::ZERO,
-            protocol_fees_token0: U256::ZERO,
-            protocol_fees_token1: U256::ZERO,
-            fee_protocol: 0,
+            state: PoolState::default(),
+            is_initialized: false,
         }
     }
 
-    /// Initializes the pool with a starting price.
+    /// Initializes the pool with a starting price and activates the profiler.
     ///
     /// # Panics
     ///
     /// This function panics if:
-    /// - Pool is already initialized.
-    /// - Calculated tick does not match the pool's initial tick (if set).
+    /// - Pool is already initialized (checked via `is_initialized` flag)
+    /// - Calculated tick from price doesn't match pool's `initial_tick` (if set)
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
-        if self.current_tick.is_some() || self.price_sqrt_ratio_x96.is_some() {
+        if self.is_initialized {
             panic!("Pool already initialized");
         }
 
@@ -134,19 +115,19 @@ impl PoolProfiler {
             calculated_tick,
             price_sqrt_ratio_x96
         );
-        self.current_tick = Some(calculated_tick);
-        self.price_sqrt_ratio_x96 = Some(price_sqrt_ratio_x96);
+
+        self.state.current_tick = calculated_tick;
+        self.state.price_sqrt_ratio_x96 = price_sqrt_ratio_x96;
+        self.is_initialized = true;
     }
 
     /// Verifies that the pool has been initialized.
     ///
-    /// Internal helper method to ensure operations are only performed on initialized pools.
-    ///
     /// # Panics
     ///
-    /// Panics if the pool hasn't been initialized with a starting price.
+    /// Panics if the pool hasn't been initialized with a starting price via [`initialize()`](Self::initialize).
     pub fn check_if_initialized(&self) {
-        if self.current_tick.is_none() || self.price_sqrt_ratio_x96.is_none() {
+        if !self.is_initialized {
             panic!("Pool is not initialized");
         }
     }
@@ -205,7 +186,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if the pool has not been initialized (current_tick is None).
+    /// Panics if the pool has not been initialized.
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
         let zero_for_one = swap.amount0.is_positive();
@@ -221,13 +202,13 @@ impl PoolProfiler {
             self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
 
         // Verify simulation against event data - correct with event values if mismatch detected
-        if swap.tick != self.current_tick.unwrap() {
+        if swap.tick != self.state.current_tick {
             tracing::error!(
                 "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
-                self.current_tick.unwrap(),
+                self.state.current_tick,
                 swap.tick
             );
-            self.current_tick = Some(swap.tick);
+            self.state.current_tick = swap.tick;
         }
         if swap.liquidity != self.tick_map.liquidity {
             tracing::error!(
@@ -258,7 +239,7 @@ impl PoolProfiler {
     ///
     /// This function panics if:
     /// - Pool fee is not initialized
-    /// - Pool is not initialized (current_tick/price is None)
+    /// - Pool is not initialized
     pub fn execute_swap(
         &mut self,
         sender: Address,
@@ -285,9 +266,9 @@ impl PoolProfiler {
             recipient,
             amount0,
             amount1,
-            self.price_sqrt_ratio_x96.unwrap(),
+            self.state.price_sqrt_ratio_x96,
             self.tick_map.liquidity,
-            self.current_tick.unwrap(),
+            self.state.current_tick,
             None,
             None,
             None,
@@ -321,15 +302,15 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if pool is not initialized (current_tick or price_sqrt_ratio_x96 is None).
+    /// Panics if pool is not initialized
     pub fn simulate_swap_through_ticks(
         &mut self,
         amount_specified: I256,
         zero_for_one: bool,
         sqrt_price_limit_x96: U160,
     ) -> anyhow::Result<(I256, I256)> {
-        let mut current_sqrt_price = self.price_sqrt_ratio_x96.unwrap();
-        let mut current_tick = self.current_tick.unwrap();
+        let mut current_sqrt_price = self.state.price_sqrt_ratio_x96;
+        let mut current_tick = self.state.current_tick;
         let exact_input = amount_specified.is_positive();
         let mut amount_specified_remaining = amount_specified;
         let mut amount_calculated = I256::ZERO;
@@ -338,10 +319,10 @@ impl PoolProfiler {
         // Swapping cache variables
         let fee_protocol = if zero_for_one {
             // Extract lower 4 bits for token0 protocol fee
-            self.fee_protocol % 16
+            self.state.fee_protocol % 16
         } else {
             // Extract upper 4 bits for token1 protocol fee
-            self.fee_protocol >> 4
+            self.state.fee_protocol >> 4
         };
 
         // Track current fee growth during swap
@@ -459,21 +440,21 @@ impl PoolProfiler {
         }
 
         // Update pool state - match Solidity exactly
-        if self.current_tick.unwrap() != current_tick {
-            self.current_tick = Some(current_tick);
-            self.price_sqrt_ratio_x96 = Some(current_sqrt_price);
+        if self.state.current_tick != current_tick {
+            self.state.current_tick = current_tick;
+            self.state.price_sqrt_ratio_x96 = current_sqrt_price;
         } else {
             // Otherwise just update the price
-            self.price_sqrt_ratio_x96 = Some(current_sqrt_price);
+            self.state.price_sqrt_ratio_x96 = current_sqrt_price;
         }
 
         // Update fee growth global and if necessary, protocol fees
         if zero_for_one {
             self.tick_map.fee_growth_global_0 = current_fee_growth_global;
-            self.protocol_fees_token0 += protocol_fee;
+            self.state.protocol_fees_token0 += protocol_fee;
         } else {
             self.tick_map.fee_growth_global_1 = current_fee_growth_global;
-            self.protocol_fees_token1 += protocol_fee;
+            self.state.protocol_fees_token1 += protocol_fee;
         }
 
         // Calculate final amounts
@@ -700,8 +681,8 @@ impl PoolProfiler {
         )?;
 
         // Track deposited amounts
-        self.total_amount0_deposited += amount0;
-        self.total_amount1_deposited += amount1;
+        self.state.total_amount0_deposited += amount0;
+        self.state.total_amount1_deposited += amount1;
 
         Ok(())
     }
@@ -732,7 +713,7 @@ impl PoolProfiler {
         self.check_if_initialized();
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
-            self.price_sqrt_ratio_x96.unwrap(),
+            self.state.price_sqrt_ratio_x96,
             tick_lower,
             tick_upper,
             liquidity,
@@ -790,8 +771,8 @@ impl PoolProfiler {
         )?;
 
         // Track withdrawn amounts
-        self.total_amount0_withdrawn += update.amount0;
-        self.total_amount1_withdrawn += update.amount1;
+        self.state.total_amount0_withdrawn += update.amount0;
+        self.state.total_amount1_withdrawn += update.amount1;
 
         Ok(())
     }
@@ -823,7 +804,7 @@ impl PoolProfiler {
         self.check_if_initialized();
         self.validate_ticks(tick_lower, tick_upper)?;
         let (amount0, amount1) = get_amounts_for_liquidity(
-            self.price_sqrt_ratio_x96.unwrap(),
+            self.state.price_sqrt_ratio_x96,
             tick_lower,
             tick_upper,
             liquidity,
@@ -841,8 +822,8 @@ impl PoolProfiler {
         )?;
 
         // Track withdrawn amounts
-        self.total_amount0_withdrawn += amount0;
-        self.total_amount1_withdrawn += amount1;
+        self.state.total_amount0_withdrawn += amount0;
+        self.state.total_amount1_withdrawn += amount1;
 
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
@@ -903,7 +884,7 @@ impl PoolProfiler {
         amount0: U256,
         amount1: U256,
     ) -> anyhow::Result<()> {
-        let current_tick = self.current_tick.expect("Pool should be initialized");
+        let current_tick = self.state.current_tick;
         let position_key = PoolPosition::get_position_key(owner, tick_lower, tick_upper);
         let position = self
             .positions
@@ -1003,20 +984,14 @@ impl PoolProfiler {
     /// This computes liquidity by iterating through all positions and summing those that
     /// span the current tick. Unlike [`Self::get_active_liquidity`], which returns the maintained
     /// tick map value, this method performs a fresh calculation from position data.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `current_tick` is `None` (pool not initialized).
     #[must_use]
     pub fn get_total_liquidity_from_active_positions(&self) -> u128 {
-        let current_tick = self.current_tick.unwrap();
-
         self.positions
             .values()
             .filter(|position| {
                 position.liquidity > 0
-                    && position.tick_lower <= current_tick
-                    && current_tick < position.tick_upper
+                    && position.tick_lower <= self.state.current_tick
+                    && self.state.current_tick < position.tick_upper
             })
             .map(|position| position.liquidity)
             .sum()
@@ -1053,12 +1028,8 @@ impl PoolProfiler {
     ///
     /// Returns the tick that corresponds to the current pool price.
     /// The pool must be initialized before calling this method.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pool has not been initialized
     pub fn get_current_tick(&self) -> i32 {
-        self.current_tick.expect("Pool should be initialized")
+        self.state.current_tick
     }
 
     /// Gets the total number of ticks tracked by the tick map.
@@ -1107,6 +1078,18 @@ impl PoolProfiler {
             .collect()
     }
 
+    /// Returns a list of all positions tracked by the profiler.
+    ///
+    /// This includes both active and inactive positions, regardless of their
+    /// liquidity or tick range relative to the current pool tick.
+    ///
+    /// # Returns
+    ///
+    /// A vector of references to all [`PoolPosition`] objects.
+    pub fn get_all_positions(&self) -> Vec<&PoolPosition> {
+        self.positions.values().collect()
+    }
+
     /// Gets the count of positions that are currently active.
     ///
     /// Active positions are those with liquidity > 0 and whose tick range
@@ -1139,8 +1122,8 @@ impl PoolProfiler {
     /// - Protocol fees collected
     pub fn estimate_balance_of_token0(&self) -> U256 {
         let mut total_amount0 = U256::ZERO;
-        let current_sqrt_price = self.price_sqrt_ratio_x96.unwrap_or_default();
-        let current_tick = self.current_tick.unwrap_or_default();
+        let current_sqrt_price = self.state.price_sqrt_ratio_x96;
+        let current_tick = self.state.current_tick;
         let mut total_fees_0_collected: u128 = 0;
 
         // 1. Calculate token0 from active liquidity positions
@@ -1194,7 +1177,7 @@ impl PoolProfiler {
         let total_fees_0_left = fee_growth_0 - U256::from(total_fees_0_collected);
 
         // 4. Add protocol fees
-        total_amount0 += self.protocol_fees_token0;
+        total_amount0 += self.state.protocol_fees_token0;
 
         total_amount0 + total_fees_0_left
     }
@@ -1207,8 +1190,8 @@ impl PoolProfiler {
     /// - Protocol fees collected
     pub fn estimate_balance_of_token1(&self) -> U256 {
         let mut total_amount1 = U256::ZERO;
-        let current_sqrt_price = self.price_sqrt_ratio_x96.unwrap_or_default();
-        let current_tick = self.current_tick.unwrap_or_default();
+        let current_sqrt_price = self.state.price_sqrt_ratio_x96;
+        let current_tick = self.state.current_tick;
         let mut total_fees_1_collected: u128 = 0;
 
         // 1. Calculate token1 from active liquidity positions
@@ -1258,7 +1241,7 @@ impl PoolProfiler {
         let total_fees_1_left = fee_growth_1 - U256::from(total_fees_1_collected);
 
         // 4. Add protocol fees
-        total_amount1 += self.protocol_fees_token1;
+        total_amount1 += self.state.protocol_fees_token1;
 
         total_amount1 + total_fees_1_left
     }

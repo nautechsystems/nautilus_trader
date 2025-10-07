@@ -232,8 +232,8 @@ fn test_initial_state() {
     let pool_definition = pool_definition(None, None, None);
     let profiler = PoolProfiler::new(Arc::new(pool_definition));
     let max_liquidity = tick_spacing_to_max_liquidity_per_tick(60);
-    assert!(profiler.price_sqrt_ratio_x96.is_none());
-    assert!(profiler.current_tick.is_none());
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, U160::ZERO);
+    assert_eq!(profiler.state.current_tick,0);
     assert_eq!(profiler.tick_map.active_tick_count(), 0);
     assert_eq!(profiler.pool.tick_spacing.unwrap(), 60);
     assert_eq!(profiler.tick_map.max_liquidity_per_tick, max_liquidity);
@@ -241,16 +241,8 @@ fn test_initial_state() {
 
 #[rstest]
 fn test_initialize_success(profiler: PoolProfiler) {
-    assert!(
-        profiler
-            .price_sqrt_ratio_x96
-            .is_some_and(|value| value == sqrt_price_x98())
-    );
-    assert!(
-        profiler
-            .current_tick
-            .is_some_and(|value| value == get_tick_at_sqrt_ratio(sqrt_price_x98()))
-    );
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, sqrt_price_x98());
+    assert_eq!(profiler.state.current_tick, get_tick_at_sqrt_ratio(sqrt_price_x98()));
 }
 
 #[rstest]
@@ -384,10 +376,10 @@ fn test_execute_mint_equivalence() {
     assert_eq!(executed_event.tick_upper, mint_event.tick_upper);
 
     // Verify profiler states are identical
-    assert_eq!(profiler1.current_tick, profiler2.current_tick);
+    assert_eq!(profiler1.state.current_tick, profiler2.state.current_tick);
     assert_eq!(
-        profiler1.price_sqrt_ratio_x96,
-        profiler2.price_sqrt_ratio_x96
+        profiler1.state.price_sqrt_ratio_x96,
+        profiler2.state.price_sqrt_ratio_x96
     );
     assert_eq!(
         profiler1.get_active_tick_count(),
@@ -402,12 +394,12 @@ fn test_execute_mint_equivalence() {
         profiler2.get_total_inactive_positions()
     );
     assert_eq!(
-        profiler1.total_amount0_deposited,
-        profiler2.total_amount0_deposited
+        profiler1.state.total_amount0_deposited,
+        profiler2.state.total_amount0_deposited
     );
     assert_eq!(
-        profiler1.total_amount1_deposited,
-        profiler2.total_amount1_deposited
+        profiler1.state.total_amount1_deposited,
+        profiler2.state.total_amount1_deposited
     );
 
     // Verify position states
@@ -491,10 +483,10 @@ fn test_execute_burn_equivalence() {
     assert_eq!(executed_event.tick_upper, burn_event.tick_upper);
 
     // Verify profiler states are identical
-    assert_eq!(profiler1.current_tick, profiler2.current_tick);
+    assert_eq!(profiler1.state.current_tick, profiler2.state.current_tick);
     assert_eq!(
-        profiler1.price_sqrt_ratio_x96,
-        profiler2.price_sqrt_ratio_x96
+        profiler1.state.price_sqrt_ratio_x96,
+        profiler2.state.price_sqrt_ratio_x96
     );
     assert_eq!(
         profiler1.get_active_tick_count(),
@@ -509,20 +501,20 @@ fn test_execute_burn_equivalence() {
         profiler2.get_total_inactive_positions()
     );
     assert_eq!(
-        profiler1.total_amount0_deposited,
-        profiler2.total_amount0_deposited
+        profiler1.state.total_amount0_deposited,
+        profiler2.state.total_amount0_deposited
     );
     assert_eq!(
-        profiler1.total_amount1_deposited,
-        profiler2.total_amount1_deposited
+        profiler1.state.total_amount1_deposited,
+        profiler2.state.total_amount1_deposited
     );
     assert_eq!(
-        profiler1.total_amount0_withdrawn,
-        profiler2.total_amount0_withdrawn
+        profiler1.state.total_amount0_withdrawn,
+        profiler2.state.total_amount0_withdrawn
     );
     assert_eq!(
-        profiler1.total_amount1_withdrawn,
-        profiler2.total_amount1_withdrawn
+        profiler1.state.total_amount1_withdrawn,
+        profiler2.state.total_amount1_withdrawn
     );
 
     // Verify position states
@@ -601,10 +593,10 @@ fn test_execute_swap_equivalence() {
         .unwrap();
 
     // Verify profiler states are equivalent
-    assert_eq!(profiler1.current_tick, profiler2.current_tick);
+    assert_eq!(profiler1.state.current_tick, profiler2.state.current_tick);
     assert_eq!(
-        profiler1.price_sqrt_ratio_x96,
-        profiler2.price_sqrt_ratio_x96
+        profiler1.state.price_sqrt_ratio_x96,
+        profiler2.state.price_sqrt_ratio_x96
     );
     assert_eq!(
         profiler1.get_active_tick_count(),
@@ -717,7 +709,7 @@ fn empty_low_fee_pool_profiler() -> PoolProfiler {
 
 #[rstest]
 fn test_uni_pool_profiler_initial_state(uni_pool_profiler: PoolProfiler) {
-    assert_eq!(uni_pool_profiler.current_tick.unwrap(), -23028);
+    assert_eq!(uni_pool_profiler.state.current_tick, -23028);
     assert_eq!(uni_pool_profiler.get_active_tick_count(), 2);
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
     let max_tick = Tick::get_max_tick(TICK_SPACING);
@@ -1794,7 +1786,7 @@ fn test_overflow_boundary_token0_and_token1(mut empty_low_fee_pool_profiler: Poo
 fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolProfiler) {
     // Initial state: current tick is -23028, liquidity is 3161
     let initial_liquidity = uni_pool_profiler.get_active_liquidity();
-    let initial_tick = uni_pool_profiler.current_tick.unwrap();
+    let initial_tick = uni_pool_profiler.state.current_tick;
     assert_eq!(initial_liquidity, 3161);
     assert_eq!(initial_tick, -23028);
 
@@ -1828,7 +1820,7 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
         .unwrap();
 
     // Verify price moved down past the upper tick of the position
-    let new_tick = uni_pool_profiler.current_tick.unwrap();
+    let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick <= upper_tick,
         "Price should have crossed to or below tick {}, got {}",
@@ -1861,7 +1853,7 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
 fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProfiler) {
     // Initial state: current tick is -23028, liquidity is 3161
     let initial_liquidity = uni_pool_profiler.get_active_liquidity();
-    let initial_tick = uni_pool_profiler.current_tick.unwrap();
+    let initial_tick = uni_pool_profiler.state.current_tick;
     assert_eq!(initial_liquidity, 3161);
     assert_eq!(initial_tick, -23028);
 
@@ -1895,7 +1887,7 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
         .unwrap();
 
     // Verify price moved up past the lower tick of the position
-    let new_tick = uni_pool_profiler.current_tick.unwrap();
+    let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick >= lower_tick,
         "Price should have crossed above or at tick {}, got {}",
@@ -2207,12 +2199,12 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
 
         let pool_balance0 = profiler.estimate_balance_of_token0();
         let pool_balance1 = profiler.estimate_balance_of_token1();
-        let tick_before = profiler.current_tick.unwrap();
+        let tick_before = profiler.state.current_tick;
         assert_eq!(pool_balance0, expected_result.amount0_before);
         assert_eq!(pool_balance1, expected_result.amount1_before);
         assert_eq!(tick_before, expected_result.tick_before);
         assert_eq!(
-            format_price(profiler.price_sqrt_ratio_x96.unwrap()),
+            format_price(profiler.state.price_sqrt_ratio_x96),
             expected_result.pool_price_before
         );
 
@@ -2221,9 +2213,9 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
             Ok(swap_event) => {
                 assert_eq!(swap_event.amount0, expected_result.amount0_delta);
                 assert_eq!(swap_event.amount1, expected_result.amount1_delta);
-                assert_eq!(profiler.current_tick.unwrap(), expected_result.tick_after);
+                assert_eq!(profiler.state.current_tick, expected_result.tick_after);
                 assert_eq!(
-                    format_price(profiler.price_sqrt_ratio_x96.unwrap()),
+                    format_price(profiler.state.price_sqrt_ratio_x96),
                     expected_result.pool_price_after
                 );
                 assert_eq!(
