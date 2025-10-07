@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use alloy_primitives::{B256, keccak256};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use serde_json::Value;
-use std::str::FromStr;
 
 use super::{nonce::TimeNonce, types::HyperliquidActionType};
 use crate::{

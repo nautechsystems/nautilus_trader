@@ -457,8 +457,10 @@ use nautilus_model::{
 use rust_decimal::prelude::ToPrimitive;
 
 use super::models::HyperliquidFill;
-use crate::common::enums::HyperliquidSide;
-use crate::websocket::messages::{WsBasicOrderData, WsOrderData};
+use crate::{
+    common::enums::HyperliquidSide,
+    websocket::messages::{WsBasicOrderData, WsOrderData},
+};
 
 /// Map Hyperliquid order side to Nautilus OrderSide.
 fn parse_order_side(side: &str) -> OrderSide {
@@ -708,8 +710,9 @@ pub fn parse_position_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    use super::models::AssetPosition;
     use nautilus_model::types::Quantity;
+
+    use super::models::AssetPosition;
 
     // Deserialize the position data
     let asset_position: AssetPosition = serde_json::from_value(position_data.clone())
