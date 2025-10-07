@@ -18,7 +18,7 @@
 //! These utilities maintain the confirmed/pending topic sets and expose shared
 //! topic-splitting primitives for the client and handler.
 
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use ahash::AHashSet;
 use dashmap::DashMap;
@@ -68,6 +68,7 @@ pub(crate) struct SubscriptionState {
     confirmed: Arc<DashMap<String, AHashSet<Ustr>>>,
     pending_subscribe: Arc<DashMap<String, AHashSet<Ustr>>>,
     pending_unsubscribe: Arc<DashMap<String, AHashSet<Ustr>>>,
+    reference_counts: Arc<DashMap<String, NonZeroUsize>>,
 }
 
 impl SubscriptionState {
@@ -76,6 +77,7 @@ impl SubscriptionState {
             confirmed: Arc::new(DashMap::new()),
             pending_subscribe: Arc::new(DashMap::new()),
             pending_unsubscribe: Arc::new(DashMap::new()),
+            reference_counts: Arc::new(DashMap::new()),
         }
     }
 
@@ -202,5 +204,57 @@ impl SubscriptionState {
         // Do NOT include pending_unsubscribe - we don't want to resubscribe to topics being removed
 
         topics
+    }
+
+    /// Increments the reference count for a topic.
+    ///
+    /// Returns `true` if this is the first subscription (should send subscribe message to Bybit).
+    pub(crate) fn add_reference(&self, topic: &str) -> bool {
+        let mut should_subscribe = false;
+
+        self.reference_counts
+            .entry(topic.to_string())
+            .and_modify(|count| {
+                // Increment existing count
+                *count = NonZeroUsize::new(count.get() + 1).expect("reference count overflow");
+            })
+            .or_insert_with(|| {
+                // First subscription
+                should_subscribe = true;
+                NonZeroUsize::new(1).expect("NonZeroUsize::new(1) should never fail")
+            });
+
+        should_subscribe
+    }
+
+    /// Decrements the reference count for a topic.
+    ///
+    /// Returns `true` if this was the last subscription (should send unsubscribe message to Bybit).
+    pub(crate) fn remove_reference(&self, topic: &str) -> bool {
+        if let Some(mut entry) = self.reference_counts.get_mut(topic) {
+            let current = entry.get();
+
+            if current == 1 {
+                // Last reference - remove and signal to unsubscribe
+                drop(entry); // Drop the mutable reference before removing
+                self.reference_counts.remove(topic);
+                return true;
+            }
+
+            // Decrement count
+            *entry = NonZeroUsize::new(current - 1)
+                .expect("reference count should never reach zero here");
+        }
+
+        false
+    }
+
+    /// Returns the current reference count for a topic.
+    #[allow(dead_code)]
+    pub(crate) fn get_reference_count(&self, topic: &str) -> usize {
+        self.reference_counts
+            .get(topic)
+            .map(|count| count.get())
+            .unwrap_or(0)
     }
 }

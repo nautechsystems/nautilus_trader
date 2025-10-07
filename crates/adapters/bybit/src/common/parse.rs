@@ -22,8 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, CurrencyType, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        AccountType, AggressorSide, AssetClass, BarAggregation, CurrencyType, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{BybitContractType, BybitOptionType},
+        enums::{BybitContractType, BybitOptionType, BybitProductType},
         symbol::BybitSymbol,
     },
     http::models::{
@@ -49,6 +49,96 @@ use crate::{
         BybitWalletBalance,
     },
 };
+
+const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
+const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
+
+/// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(extract_raw_symbol("ETHUSDT-LINEAR"), "ETHUSDT");
+/// assert_eq!(extract_raw_symbol("BTCUSDT-SPOT"), "BTCUSDT");
+/// assert_eq!(extract_raw_symbol("ETHUSDT"), "ETHUSDT"); // No suffix
+/// ```
+#[must_use]
+pub fn extract_raw_symbol(symbol: &str) -> &str {
+    symbol
+        .rsplit_once('-')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(symbol)
+}
+
+/// Constructs a full Bybit symbol from a raw symbol and product type.
+///
+/// Returns a `Ustr` for efficient string interning and comparisons.
+///
+/// # Examples
+/// ```ignore
+/// let symbol = make_bybit_symbol("ETHUSDT", BybitProductType::Linear);
+/// assert_eq!(symbol.as_str(), "ETHUSDT-LINEAR");
+/// ```
+#[must_use]
+pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Ustr {
+    let suffix = match product_type {
+        BybitProductType::Spot => "-SPOT",
+        BybitProductType::Linear => "-LINEAR",
+        BybitProductType::Inverse => "-INVERSE",
+        BybitProductType::Option => "-OPTION",
+    };
+    Ustr::from(&format!("{raw_symbol}{suffix}"))
+}
+
+/// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
+///
+/// Bybit supported intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes), D, W, M
+///
+/// # Errors
+///
+/// Returns an error if the aggregation type or step is not supported by Bybit.
+pub fn bar_spec_to_bybit_interval(aggregation: BarAggregation, step: u64) -> Result<String> {
+    match aggregation {
+        BarAggregation::Minute => {
+            if !BYBIT_MINUTE_INTERVALS.contains(&step) {
+                anyhow::bail!(
+                    "Bybit only supports the following minute intervals: {:?}",
+                    BYBIT_MINUTE_INTERVALS
+                );
+            }
+            Ok(step.to_string())
+        }
+        BarAggregation::Hour => {
+            if !BYBIT_HOUR_INTERVALS.contains(&step) {
+                anyhow::bail!(
+                    "Bybit only supports the following hour intervals: {:?}",
+                    BYBIT_HOUR_INTERVALS
+                );
+            }
+            Ok((step * 60).to_string())
+        }
+        BarAggregation::Day => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 DAY interval bars");
+            }
+            Ok("D".to_string())
+        }
+        BarAggregation::Week => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 WEEK interval bars");
+            }
+            Ok("W".to_string())
+        }
+        BarAggregation::Month => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 MONTH interval bars");
+            }
+            Ok("M".to_string())
+        }
+        _ => {
+            anyhow::bail!("Bybit does not support {:?} bars", aggregation);
+        }
+    }
+}
 
 fn default_margin() -> Decimal {
     Decimal::new(1, 1)

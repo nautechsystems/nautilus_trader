@@ -309,7 +309,7 @@ pub fn parse_ticker_option_quote(
     .context("failed to construct QuoteTick from Bybit option ticker message")
 }
 
-fn parse_millis_i64(value: i64, field: &str) -> Result<UnixNanos> {
+pub(crate) fn parse_millis_i64(value: i64, field: &str) -> Result<UnixNanos> {
     if value < 0 {
         Err(anyhow!("{field} must be non-negative, was {value}"))
     } else {

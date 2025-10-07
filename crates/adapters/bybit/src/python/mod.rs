@@ -20,9 +20,42 @@ pub mod http;
 pub mod urls;
 pub mod websocket;
 
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::enums::BarAggregation;
 use pyo3::prelude::*;
 
-use crate::common::consts::BYBIT_NAUTILUS_BROKER_ID;
+use crate::common::{
+    consts::BYBIT_NAUTILUS_BROKER_ID,
+    parse::{bar_spec_to_bybit_interval, extract_raw_symbol},
+};
+
+/// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
+///
+/// # Examples
+/// - `"ETHUSDT-LINEAR"` → `"ETHUSDT"`
+/// - `"BTCUSDT-SPOT"` → `"BTCUSDT"`
+/// - `"ETHUSDT"` → `"ETHUSDT"` (no suffix)
+#[pyfunction]
+#[pyo3(name = "extract_raw_symbol")]
+fn py_extract_raw_symbol(symbol: &str) -> &str {
+    extract_raw_symbol(symbol)
+}
+
+/// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
+///
+/// # Errors
+///
+/// Returns an error if the aggregation type or step is not supported by Bybit.
+#[pyfunction]
+#[pyo3(name = "bar_spec_to_bybit_interval")]
+fn py_bar_spec_to_bybit_interval(aggregation: u8, step: u64) -> PyResult<String> {
+    let aggregation = BarAggregation::from_repr(aggregation as usize).ok_or_else(|| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "Invalid BarAggregation value: {aggregation}"
+        ))
+    })?;
+    bar_spec_to_bybit_interval(aggregation, step).map_err(to_pyvalue_err)
+}
 
 /// Loaded as `nautilus_pyo3.bybit`.
 ///
@@ -46,5 +79,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_public, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_private, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_trade, m)?)?;
+    m.add_function(wrap_pyfunction!(py_extract_raw_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(py_bar_spec_to_bybit_interval, m)?)?;
     Ok(())
 }

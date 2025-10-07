@@ -511,6 +511,11 @@ impl BitmexHttpClient {
         Ok(())
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     #[pyo3(name = "http_get_margin")]
     fn py_http_get_margin<'py>(
         &self,

@@ -111,12 +111,30 @@ impl BybitWebSocketError {
     /// Builds an error payload from a generic response frame.
     #[must_use]
     pub fn from_response(response: &BybitWsResponse) -> Self {
+        // Build a more informative error message when ret_msg is missing
+        let message = response.ret_msg.clone().unwrap_or_else(|| {
+            let mut parts = vec![];
+
+            if let Some(op) = &response.op {
+                parts.push(format!("op={}", op));
+            }
+            if let Some(topic) = &response.topic {
+                parts.push(format!("topic={}", topic));
+            }
+            if let Some(success) = response.success {
+                parts.push(format!("success={}", success));
+            }
+
+            if parts.is_empty() {
+                "Bybit websocket error (no error message provided)".to_string()
+            } else {
+                format!("Bybit websocket error: {}", parts.join(", "))
+            }
+        });
+
         Self {
             code: response.ret_code.unwrap_or_default(),
-            message: response
-                .ret_msg
-                .clone()
-                .unwrap_or_else(|| "Bybit websocket error".to_string()),
+            message,
             conn_id: response.conn_id.clone(),
             topic: response.topic.clone(),
             req_id: response.req_id.clone(),
@@ -233,7 +251,6 @@ pub struct BybitWsCancelOrderParams {
 
 /// Subscription acknowledgement returned by Bybit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BybitWsSubscriptionMsg {
     pub success: bool,
     pub op: String,
@@ -247,7 +264,6 @@ pub struct BybitWsSubscriptionMsg {
 
 /// Generic response returned by the endpoint when subscribing or authenticating.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BybitWsResponse {
     #[serde(default)]
     pub op: Option<String>,
