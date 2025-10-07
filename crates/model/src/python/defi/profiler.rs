@@ -57,25 +57,25 @@ impl PoolProfiler {
     #[getter]
     #[pyo3(name = "total_amount0_deposited")]
     fn py_total_amount0_deposited(&self) -> String {
-        self.state.total_amount0_deposited.to_string()
+        self.analytics.total_amount0_deposited.to_string()
     }
 
     #[getter]
     #[pyo3(name = "total_amount1_deposited")]
     fn py_total_amount1_deposited(&self) -> String {
-        self.state.total_amount1_deposited.to_string()
+        self.analytics.total_amount1_deposited.to_string()
     }
 
     #[getter]
     #[pyo3(name = "total_amount0_withdrawn")]
     fn py_total_amount0_withdrawn(&self) -> String {
-        self.state.total_amount0_withdrawn.to_string()
+        self.analytics.total_amount0_withdrawn.to_string()
     }
 
     #[getter]
     #[pyo3(name = "total_amount1_withdrawn")]
     fn py_total_amount1_withdrawn(&self) -> String {
-        self.state.total_amount1_withdrawn.to_string()
+        self.analytics.total_amount1_withdrawn.to_string()
     }
 
     #[getter]

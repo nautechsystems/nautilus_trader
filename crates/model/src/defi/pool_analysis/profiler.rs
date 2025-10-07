@@ -22,20 +22,22 @@ use alloy_primitives::{Address, I256, U160, U256};
 use crate::defi::{
     PoolLiquidityUpdate, PoolSwap, SharedPool,
     data::{DexPoolData, PoolFeeCollect, PoolLiquidityUpdateType, block::BlockPosition},
-    pool_analysis::{position::PoolPosition, swap_math::compute_swap_step},
+    pool_analysis::{
+        position::PoolPosition,
+        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        swap_math::compute_swap_step,
+    },
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
         liquidity_math::liquidity_math_add,
-        sqrt_price_math::{get_amounts_for_liquidity},
+        sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
         tick::Tick,
         tick_math::{
             MAX_SQRT_RATIO, MIN_SQRT_RATIO, get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio,
         },
     },
 };
-use crate::defi::pool_analysis::state::PoolState;
-use crate::defi::tick_map::sqrt_price_math::{get_amount0_delta, get_amount1_delta};
 
 /// A DeFi pool state tracker and event processor for UniswapV3-style AMM pools.
 ///
@@ -68,8 +70,9 @@ pub struct PoolProfiler {
     pub tick_map: TickMap,
     /// Global pool state including current price, tick, and cumulative flows with fees.
     pub state: PoolState,
+    pub analytics: PoolAnalytics,
     /// Flag indicating whether the pool has been initialized with a starting price.
-    pub is_initialized: bool
+    pub is_initialized: bool,
 }
 
 impl PoolProfiler {
@@ -86,6 +89,7 @@ impl PoolProfiler {
             positions: HashMap::new(),
             tick_map: TickMap::new(tick_spacing),
             state: PoolState::default(),
+            analytics: PoolAnalytics::new(),
             is_initialized: false,
         }
     }
@@ -148,17 +152,21 @@ impl PoolProfiler {
         match event {
             DexPoolData::Swap(swap) => {
                 self.process_swap(swap)?;
+                self.analytics.total_swaps += 1;
             }
             DexPoolData::LiquidityUpdate(update) => match update.kind {
                 PoolLiquidityUpdateType::Mint => {
                     self.process_mint(update)?;
+                    self.analytics.total_mints += 1;
                 }
                 PoolLiquidityUpdateType::Burn => {
                     self.process_burn(update)?;
+                    self.analytics.total_burns += 1;
                 }
             },
             DexPoolData::FeeCollect(collect) => {
                 self.process_collect(collect)?;
+                self.analytics.total_fee_collects += 1;
             }
         }
         Ok(())
@@ -253,6 +261,7 @@ impl PoolProfiler {
         let (amount0, amount1) =
             self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
 
+        self.analytics.total_swaps += 1;
         let swap_event = PoolSwap::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -681,8 +690,8 @@ impl PoolProfiler {
         )?;
 
         // Track deposited amounts
-        self.state.total_amount0_deposited += amount0;
-        self.state.total_amount1_deposited += amount1;
+        self.analytics.total_amount0_deposited += amount0;
+        self.analytics.total_amount1_deposited += amount1;
 
         Ok(())
     }
@@ -723,6 +732,7 @@ impl PoolProfiler {
             &recipient, tick_lower, tick_upper, liquidity, amount0, amount1,
         )?;
 
+        self.analytics.total_mints += 1;
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -769,10 +779,6 @@ impl PoolProfiler {
             update.amount0,
             update.amount1,
         )?;
-
-        // Track withdrawn amounts
-        self.state.total_amount0_withdrawn += update.amount0;
-        self.state.total_amount1_withdrawn += update.amount1;
 
         Ok(())
     }
@@ -821,10 +827,7 @@ impl PoolProfiler {
             amount1,
         )?;
 
-        // Track withdrawn amounts
-        self.state.total_amount0_withdrawn += amount0;
-        self.state.total_amount1_withdrawn += amount1;
-
+        self.analytics.total_burns += 1;
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -867,6 +870,9 @@ impl PoolProfiler {
         if let Some(position) = self.positions.get_mut(&position_key) {
             position.collect_fees(collect.amount0, collect.amount1);
         }
+
+        self.analytics.total_amount0_withdrawn += U256::from(collect.amount0);
+        self.analytics.total_amount1_withdrawn += U256::from(collect.amount1);
 
         Ok(())
     }
@@ -1102,6 +1108,22 @@ impl PoolProfiler {
     /// A vector of references to all [`PoolPosition`] objects.
     pub fn get_all_positions(&self) -> Vec<&PoolPosition> {
         self.positions.values().collect()
+    }
+
+    /// Extracts a complete snapshot of the current pool state.
+    ///
+    /// Extracts and bundles the complete pool state including global variables,
+    /// all liquidity positions, and the full tick distribution into a portable
+    /// [`PoolSnapshot`] structure. This snapshot can be serialized, persisted
+    /// to database, or used to restore pool state later.
+    pub fn extract_snapshot(&self) -> PoolSnapshot {
+        let positions: Vec<_> = self.positions.values().cloned().collect();
+        let ticks: Vec<_> = self.tick_map.get_all_ticks().values().cloned().collect();
+
+        let mut state = self.state.clone();
+        state.liquidity = self.tick_map.liquidity;
+
+        PoolSnapshot::new(state, positions, ticks)
     }
 
     /// Gets the count of positions that are currently active.

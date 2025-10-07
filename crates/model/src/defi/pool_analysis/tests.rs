@@ -233,7 +233,7 @@ fn test_initial_state() {
     let profiler = PoolProfiler::new(Arc::new(pool_definition));
     let max_liquidity = tick_spacing_to_max_liquidity_per_tick(60);
     assert_eq!(profiler.state.price_sqrt_ratio_x96, U160::ZERO);
-    assert_eq!(profiler.state.current_tick,0);
+    assert_eq!(profiler.state.current_tick, 0);
     assert_eq!(profiler.tick_map.active_tick_count(), 0);
     assert_eq!(profiler.pool.tick_spacing.unwrap(), 60);
     assert_eq!(profiler.tick_map.max_liquidity_per_tick, max_liquidity);
@@ -242,7 +242,10 @@ fn test_initial_state() {
 #[rstest]
 fn test_initialize_success(profiler: PoolProfiler) {
     assert_eq!(profiler.state.price_sqrt_ratio_x96, sqrt_price_x98());
-    assert_eq!(profiler.state.current_tick, get_tick_at_sqrt_ratio(sqrt_price_x98()));
+    assert_eq!(
+        profiler.state.current_tick,
+        get_tick_at_sqrt_ratio(sqrt_price_x98())
+    );
 }
 
 #[rstest]
@@ -394,12 +397,12 @@ fn test_execute_mint_equivalence() {
         profiler2.get_total_inactive_positions()
     );
     assert_eq!(
-        profiler1.state.total_amount0_deposited,
-        profiler2.state.total_amount0_deposited
+        profiler1.analytics.total_amount0_deposited,
+        profiler2.analytics.total_amount0_deposited
     );
     assert_eq!(
-        profiler1.state.total_amount1_deposited,
-        profiler2.state.total_amount1_deposited
+        profiler1.analytics.total_amount1_deposited,
+        profiler2.analytics.total_amount1_deposited
     );
 
     // Verify position states
@@ -501,20 +504,20 @@ fn test_execute_burn_equivalence() {
         profiler2.get_total_inactive_positions()
     );
     assert_eq!(
-        profiler1.state.total_amount0_deposited,
-        profiler2.state.total_amount0_deposited
+        profiler1.analytics.total_amount0_deposited,
+        profiler2.analytics.total_amount0_deposited
     );
     assert_eq!(
-        profiler1.state.total_amount1_deposited,
-        profiler2.state.total_amount1_deposited
+        profiler1.analytics.total_amount1_deposited,
+        profiler2.analytics.total_amount1_deposited
     );
     assert_eq!(
-        profiler1.state.total_amount0_withdrawn,
-        profiler2.state.total_amount0_withdrawn
+        profiler1.analytics.total_amount0_withdrawn,
+        profiler2.analytics.total_amount0_withdrawn
     );
     assert_eq!(
-        profiler1.state.total_amount1_withdrawn,
-        profiler2.state.total_amount1_withdrawn
+        profiler1.analytics.total_amount1_withdrawn,
+        profiler2.analytics.total_amount1_withdrawn
     );
 
     // Verify position states
@@ -865,6 +868,10 @@ fn test_if_removing_of_liquidity_works_after_mint(mut uni_pool_profiler: PoolPro
     // Active tick count stay the same from min and max_tick in init fixture
     assert_eq!(uni_pool_profiler.get_active_tick_count(), 2);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
+    assert_eq!(uni_pool_profiler.analytics.total_mints, 2);
+    assert_eq!(uni_pool_profiler.analytics.total_burns, 1);
+    assert_eq!(uni_pool_profiler.analytics.total_fee_collects, 0);
+    assert_eq!(uni_pool_profiler.analytics.total_swaps, 0);
     // Lets inspect the state before fee collect
     if let Some(position) = uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick) {
         let (amount0, amount1) =
@@ -1233,6 +1240,10 @@ fn test_does_not_clear_position_fee_growth_snapshot_if_no_more_liquidity(
         position.fee_growth_inside_1_last,
         U256::from_str("340282366920938576890830247744589365").unwrap()
     );
+    assert_eq!(medium_fee_pool_profiler.analytics.total_burns, 1);
+    assert_eq!(medium_fee_pool_profiler.analytics.total_fee_collects, 0);
+    assert_eq!(medium_fee_pool_profiler.analytics.total_swaps, 2);
+    assert_eq!(medium_fee_pool_profiler.analytics.total_mints, 2);
 }
 
 // ---------- TEST MINTS INCLUDING CURRENT PRICE ----------
@@ -1914,6 +1925,10 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
     // Verify the position is now active
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 2);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0);
+    assert_eq!(uni_pool_profiler.analytics.total_mints, 2);
+    assert_eq!(uni_pool_profiler.analytics.total_burns, 0);
+    assert_eq!(uni_pool_profiler.analytics.total_swaps, 1);
+    assert_eq!(uni_pool_profiler.analytics.total_fee_collects, 0);
 }
 
 // ----------- SWAP TESTING ----------

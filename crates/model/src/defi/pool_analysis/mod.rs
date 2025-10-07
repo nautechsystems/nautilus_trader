@@ -16,8 +16,8 @@
 pub mod compare;
 pub mod position;
 pub mod profiler;
+pub mod snapshot;
 pub mod swap_math;
-pub mod state;
 
 // Re-exports
 pub use profiler::PoolProfiler;
