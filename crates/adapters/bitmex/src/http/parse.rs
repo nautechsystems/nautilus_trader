@@ -615,12 +615,12 @@ pub fn parse_order_status_report(
                 OrderStatus::Canceled
             }
             _ => {
-                return Err(anyhow::anyhow!(
+                anyhow::bail!(
                     "Order missing ord_status and cannot infer (order_id={}, leaves_qty={:?}, cum_qty={:?})",
                     order.order_id,
                     order.leaves_qty,
                     order.cum_qty
-                ));
+                );
             }
         }
     };

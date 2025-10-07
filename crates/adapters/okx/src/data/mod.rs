@@ -24,7 +24,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use anyhow::{Context, Result};
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
@@ -89,7 +89,7 @@ impl OKXDataClient {
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
-    pub fn new(client_id: ClientId, config: OKXDataClientConfig) -> Result<Self> {
+    pub fn new(client_id: ClientId, config: OKXDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
@@ -159,25 +159,25 @@ impl OKXDataClient {
         self.config.vip_level.map(|vip| vip as u8)
     }
 
-    fn public_ws(&self) -> Result<&OKXWebSocketClient> {
+    fn public_ws(&self) -> anyhow::Result<&OKXWebSocketClient> {
         self.ws_public
             .as_ref()
             .context("public websocket client not initialized")
     }
 
-    fn public_ws_mut(&mut self) -> Result<&mut OKXWebSocketClient> {
+    fn public_ws_mut(&mut self) -> anyhow::Result<&mut OKXWebSocketClient> {
         self.ws_public
             .as_mut()
             .context("public websocket client not initialized")
     }
 
-    fn business_ws(&self) -> Result<&OKXWebSocketClient> {
+    fn business_ws(&self) -> anyhow::Result<&OKXWebSocketClient> {
         self.ws_business
             .as_ref()
             .context("business websocket client not available (credentials required)")
     }
 
-    fn business_ws_mut(&mut self) -> Result<&mut OKXWebSocketClient> {
+    fn business_ws_mut(&mut self) -> anyhow::Result<&mut OKXWebSocketClient> {
         self.ws_business
             .as_mut()
             .context("business websocket client not available (credentials required)")
@@ -191,7 +191,7 @@ impl OKXDataClient {
 
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
     where
-        F: Future<Output = Result<()>> + Send + 'static,
+        F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         tokio::spawn(async move {
             if let Err(err) = fut.await {
@@ -200,7 +200,7 @@ impl OKXDataClient {
         });
     }
 
-    async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
+    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instrument_types = if self.config.instrument_types.is_empty() {
             vec![OKXInstrumentType::Spot]
         } else {
@@ -294,13 +294,13 @@ impl OKXDataClient {
         }
     }
 
-    fn spawn_public_stream(&mut self) -> Result<()> {
+    fn spawn_public_stream(&mut self) -> anyhow::Result<()> {
         let ws = self.public_ws_mut()?;
         let stream = ws.stream();
         self.spawn_stream_task(stream)
     }
 
-    fn spawn_business_stream(&mut self) -> Result<()> {
+    fn spawn_business_stream(&mut self) -> anyhow::Result<()> {
         if self.ws_business.is_none() {
             return Ok(());
         }
@@ -313,7 +313,7 @@ impl OKXDataClient {
     fn spawn_stream_task(
         &mut self,
         stream: impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let data_sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
         let cancellation = self.cancellation_token.clone();
@@ -346,7 +346,7 @@ impl OKXDataClient {
         Ok(())
     }
 
-    fn maybe_spawn_instrument_refresh(&mut self) -> Result<()> {
+    fn maybe_spawn_instrument_refresh(&mut self) -> anyhow::Result<()> {
         let Some(minutes) = self.config.update_instruments_interval_mins else {
             return Ok(());
         };
@@ -476,12 +476,12 @@ impl DataClient for OKXDataClient {
         Some(self.venue())
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!("Starting OKX data client {id}", id = self.client_id);
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         tracing::info!("Stopping OKX data client {id}", id = self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -489,7 +489,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn reset(&mut self) -> Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Resetting OKX data client {id}", id = self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -502,12 +502,12 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn dispose(&mut self) -> Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disposing OKX data client {id}", id = self.client_id);
         self.stop()
     }
 
-    async fn connect(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_connected() {
             return Ok(());
         }
@@ -572,7 +572,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         if self.is_disconnected() {
             return Ok(());
         }
@@ -611,7 +611,7 @@ impl DataClient for OKXDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("OKX only supports L2_MBP order book deltas");
         }
@@ -672,7 +672,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> Result<()> {
+    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("OKX only supports L2_MBP order book snapshots");
         }
@@ -694,7 +694,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> Result<()> {
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -708,7 +708,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> Result<()> {
+    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -722,7 +722,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -736,7 +736,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -750,7 +750,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -764,7 +764,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> Result<()> {
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         let ws = self.business_ws()?.clone();
         let bar_type = cmd.bar_type;
         self.spawn_ws(
@@ -778,7 +778,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> Result<()> {
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         let channel = self
@@ -817,7 +817,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> Result<()> {
+    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -831,7 +831,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> Result<()> {
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -845,7 +845,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> Result<()> {
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -859,7 +859,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> Result<()> {
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -873,7 +873,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> Result<()> {
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -887,7 +887,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> Result<()> {
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         self.spawn_ws(
@@ -901,7 +901,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> Result<()> {
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         let ws = self.business_ws()?.clone();
         let bar_type = cmd.bar_type;
         self.spawn_ws(
@@ -915,7 +915,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> Result<()> {
+    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         let instruments = {
             let guard = self
                 .instruments
@@ -942,7 +942,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> Result<()> {
+    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         let instrument = {
             let guard = self
                 .instruments
@@ -972,7 +972,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> Result<()> {
+    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
@@ -1014,7 +1014,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> Result<()> {
+    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let bar_type = request.bar_type;

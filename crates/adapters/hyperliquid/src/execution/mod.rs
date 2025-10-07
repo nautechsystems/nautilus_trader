@@ -18,7 +18,7 @@
 use std::{str::FromStr, sync::Mutex};
 
 use alloy_signer_local::PrivateKeySigner;
-use anyhow::{Context, Result};
+use anyhow::Context;
 use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
@@ -86,7 +86,7 @@ impl HyperliquidExecutionClient {
     /// - `StopLimit`: Stop loss / protective stop with limit price
     /// - `MarketIfTouched`: Profit taking / entry order with market execution
     /// - `LimitIfTouched`: Profit taking / entry order with limit price
-    fn validate_order_submission(&self, order: &OrderAny) -> Result<()> {
+    fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
         // Check if instrument symbol is supported
         let symbol = order.instrument_id().symbol.to_string();
         if !symbol.ends_with("-USD") {
@@ -142,7 +142,10 @@ impl HyperliquidExecutionClient {
     /// # Errors
     ///
     /// Returns an error if either the HTTP or WebSocket client fail to construct.
-    pub fn new(core: ExecutionClientCore, config: HyperliquidExecClientConfig) -> Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: HyperliquidExecClientConfig,
+    ) -> anyhow::Result<Self> {
         if !config.has_credentials() {
             anyhow::bail!("Hyperliquid execution client requires private key");
         }
@@ -173,7 +176,7 @@ impl HyperliquidExecutionClient {
         })
     }
 
-    async fn ensure_instruments_initialized_async(&mut self) -> Result<()> {
+    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
         if self.instruments_initialized {
             return Ok(());
         }
@@ -194,7 +197,7 @@ impl HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn ensure_instruments_initialized(&mut self) -> Result<()> {
+    fn ensure_instruments_initialized(&mut self) -> anyhow::Result<()> {
         if self.instruments_initialized {
             return Ok(());
         }
@@ -203,7 +206,7 @@ impl HyperliquidExecutionClient {
         runtime.block_on(self.ensure_instruments_initialized_async())
     }
 
-    async fn refresh_account_state(&self) -> Result<()> {
+    async fn refresh_account_state(&self) -> anyhow::Result<()> {
         // Get account information from Hyperliquid using the user address
         // We need to derive the user address from the private key in the config
         let user_address = self.get_user_address()?;
@@ -255,7 +258,7 @@ impl HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn get_user_address(&self) -> Result<String> {
+    fn get_user_address(&self) -> anyhow::Result<String> {
         // Derive Ethereum address from private key using alloy-signer
         // Strip "0x" prefix if present
         let key_str = self
@@ -277,7 +280,7 @@ impl HyperliquidExecutionClient {
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
     where
-        F: std::future::Future<Output = Result<()>> + Send + 'static,
+        F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
@@ -298,7 +301,7 @@ impl HyperliquidExecutionClient {
         }
     }
 
-    fn update_account_state(&self) -> Result<()> {
+    fn update_account_state(&self) -> anyhow::Result<()> {
         let runtime = get_runtime();
         runtime.block_on(self.refresh_account_state())
     }
@@ -335,12 +338,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         self.core
             .generate_account_state(balances, margins, reported, ts_event)
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         if self.started {
             return Ok(());
         }
@@ -361,7 +364,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         info!("Hyperliquid execution client started");
         Ok(())
     }
-    fn stop(&mut self) -> Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         if !self.started {
             return Ok(());
         }
@@ -388,7 +391,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, command: &SubmitOrder) -> Result<()> {
+    fn submit_order(&self, command: &SubmitOrder) -> anyhow::Result<()> {
         let order = &command.order;
 
         if order.is_closed() {
@@ -467,7 +470,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, command: &SubmitOrderList) -> Result<()> {
+    fn submit_order_list(&self, command: &SubmitOrderList) -> anyhow::Result<()> {
         debug!(
             "Submitting order list with {} orders",
             command.order_list.orders.len()
@@ -530,7 +533,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, command: &ModifyOrder) -> Result<()> {
+    fn modify_order(&self, command: &ModifyOrder) -> anyhow::Result<()> {
         debug!("Modifying order: {:?}", command);
 
         // Parse venue_order_id as u64
@@ -589,7 +592,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, command: &CancelOrder) -> Result<()> {
+    fn cancel_order(&self, command: &CancelOrder) -> anyhow::Result<()> {
         debug!("Cancelling order: {:?}", command);
 
         let http_client = self.http_client.clone();
@@ -644,7 +647,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, command: &CancelAllOrders) -> Result<()> {
+    fn cancel_all_orders(&self, command: &CancelAllOrders) -> anyhow::Result<()> {
         debug!("Cancelling all orders: {:?}", command);
 
         // Query cache for all open orders matching the instrument and side
@@ -702,7 +705,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, command: &BatchCancelOrders) -> Result<()> {
+    fn batch_cancel_orders(&self, command: &BatchCancelOrders) -> anyhow::Result<()> {
         debug!("Batch cancelling orders: {:?}", command);
 
         if command.cancels.is_empty() {
@@ -751,7 +754,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, command: &QueryAccount) -> Result<()> {
+    fn query_account(&self, command: &QueryAccount) -> anyhow::Result<()> {
         debug!("Querying account: {:?}", command);
 
         // Use existing infrastructure to refresh account state
@@ -765,7 +768,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, command: &QueryOrder) -> Result<()> {
+    fn query_order(&self, command: &QueryOrder) -> anyhow::Result<()> {
         debug!("Querying order: {:?}", command);
 
         // Get venue order ID from cache
@@ -831,7 +834,7 @@ use nautilus_model::reports::{
 
 #[async_trait(?Send)]
 impl LiveExecutionClient for HyperliquidExecutionClient {
-    async fn connect(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
         }
@@ -867,7 +870,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         if !self.connected {
             return Ok(());
         }
@@ -893,7 +896,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
     async fn generate_order_status_report(
         &self,
         _cmd: &GenerateOrderStatusReport,
-    ) -> Result<Option<OrderStatusReport>> {
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
         // NOTE: Single order status report generation requires instrument cache integration.
         // The HTTP client methods and parsing functions are implemented and ready to use.
         // When implemented: query via info_order_status(), parse with parse_order_status_report_from_basic().
@@ -904,7 +907,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReport,
-    ) -> Result<Vec<OrderStatusReport>> {
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
         // NOTE: Order status reports generation infrastructure is complete:
         // HTTP methods: info_open_orders(), info_frontend_open_orders()
         // Parsing: parse_order_status_report_from_basic() and parse_order_status_report_from_ws()
@@ -928,7 +931,10 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         Ok(Vec::new())
     }
 
-    async fn generate_fill_reports(&self, cmd: GenerateFillReports) -> Result<Vec<FillReport>> {
+    async fn generate_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
         // NOTE: Fill reports generation infrastructure is complete:
         // HTTP methods: info_user_fills() returns HyperliquidFills
         // Parsing: parse_fill_report() with fee handling, liquidity side detection
@@ -955,7 +961,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionReports,
-    ) -> Result<Vec<PositionStatusReport>> {
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
         // Get user address for API queries
         let user_address = self.get_user_address()?;
 
@@ -994,7 +1000,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
     async fn generate_mass_status(
         &self,
         lookback_mins: Option<u64>,
-    ) -> Result<Option<ExecutionMassStatus>> {
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         warn!("generate_mass_status not yet implemented (lookback_mins={lookback_mins:?})");
         // Full implementation would require:
         // 1. Query all orders within lookback window

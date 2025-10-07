@@ -99,7 +99,7 @@
 
 use std::str::FromStr;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{InstrumentId, Symbol, Venue},
@@ -281,7 +281,7 @@ pub fn normalize_order(
 pub fn time_in_force_to_hyperliquid_tif(
     tif: TimeInForce,
     is_post_only: bool,
-) -> Result<HyperliquidExecTif> {
+) -> anyhow::Result<HyperliquidExecTif> {
     match (tif, is_post_only) {
         (_, true) => Ok(HyperliquidExecTif::Alo), // Always use ALO for post-only orders
         (TimeInForce::Gtc, false) => Ok(HyperliquidExecTif::Gtc),
@@ -299,7 +299,7 @@ pub fn time_in_force_to_hyperliquid_tif(
 /// # Errors
 ///
 /// Returns an error if the symbol format is unsupported or the asset is not found.
-pub fn extract_asset_id_from_symbol(symbol: &str) -> Result<AssetId> {
+pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
     // For perpetuals, remove "-USD" suffix to get the base asset
     if let Some(base) = symbol.strip_suffix("-USD") {
         // Convert symbol like "BTC-USD" to asset index
@@ -401,7 +401,9 @@ fn determine_tpsl_type(
 ///
 /// Hyperliquid currently uses last traded price for all triggers.
 /// Future enhancement: Add support for mark/index price triggers if Hyperliquid API supports it.
-pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecPlaceOrderRequest> {
+pub fn order_to_hyperliquid_request(
+    order: &OrderAny,
+) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let instrument_id = order.instrument_id();
     let symbol = instrument_id.symbol.as_str();
     let asset = extract_asset_id_from_symbol(symbol)
@@ -584,7 +586,7 @@ pub fn order_to_hyperliquid_request(order: &OrderAny) -> Result<HyperliquidExecP
 /// Converts a list of Nautilus orders into Hyperliquid order requests.
 pub fn orders_to_hyperliquid_requests(
     orders: &[&OrderAny],
-) -> Result<Vec<HyperliquidExecPlaceOrderRequest>> {
+) -> anyhow::Result<Vec<HyperliquidExecPlaceOrderRequest>> {
     orders
         .iter()
         .map(|order| order_to_hyperliquid_request(order))
@@ -592,7 +594,7 @@ pub fn orders_to_hyperliquid_requests(
 }
 
 /// Creates a JSON value representing multiple orders for the Hyperliquid exchange action.
-pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> Result<Value> {
+pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> anyhow::Result<Value> {
     let requests = orders_to_hyperliquid_requests(orders)?;
     serde_json::to_value(requests).context("Failed to serialize orders to JSON")
 }
@@ -600,7 +602,7 @@ pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> Result<Value>
 /// Converts an OrderAny into a Hyperliquid order request.
 pub fn order_any_to_hyperliquid_request(
     order: &OrderAny,
-) -> Result<HyperliquidExecPlaceOrderRequest> {
+) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     order_to_hyperliquid_request(order)
 }
 
@@ -612,7 +614,7 @@ pub fn order_any_to_hyperliquid_request(
 pub fn client_order_id_to_cancel_request(
     client_order_id: &str,
     symbol: &str,
-) -> Result<HyperliquidExecCancelByCloidRequest> {
+) -> anyhow::Result<HyperliquidExecCancelByCloidRequest> {
     let asset = extract_asset_id_from_symbol(symbol)
         .with_context(|| format!("Failed to extract asset ID from symbol: {}", symbol))?;
 
@@ -630,7 +632,7 @@ pub fn client_order_id_to_cancel_request(
 /// Creates a JSON value representing cancel requests for the Hyperliquid exchange action.
 pub fn cancel_requests_to_hyperliquid_action_value(
     requests: &[HyperliquidExecCancelByCloidRequest],
-) -> Result<Value> {
+) -> anyhow::Result<Value> {
     serde_json::to_value(requests).context("Failed to serialize cancel requests to JSON")
 }
 
@@ -775,7 +777,7 @@ pub fn validate_conditional_order_params(
     trigger_px: Option<&str>,
     tpsl: Option<&str>,
     is_market: Option<bool>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     if trigger_px.is_none() {
         anyhow::bail!("Conditional order missing trigger price");
     }
@@ -805,7 +807,7 @@ pub fn validate_conditional_order_params(
 /// # Returns
 ///
 /// Parsed Decimal value or error.
-pub fn parse_trigger_price(trigger_px: &str) -> Result<Decimal> {
+pub fn parse_trigger_price(trigger_px: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str_exact(trigger_px)
         .with_context(|| format!("Failed to parse trigger price: {}", trigger_px))
 }
@@ -817,7 +819,7 @@ pub fn parse_trigger_price(trigger_px: &str) -> Result<Decimal> {
 /// Returns an error if the data cannot be parsed.
 pub fn parse_account_balances_and_margins(
     cross_margin_summary: &CrossMarginSummary,
-) -> Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     let mut balances = Vec::new();
     let mut margins = Vec::new();
 

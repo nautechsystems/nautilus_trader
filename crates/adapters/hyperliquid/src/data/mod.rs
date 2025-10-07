@@ -19,7 +19,7 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
     messages::{
@@ -80,7 +80,7 @@ impl HyperliquidDataClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client fails to initialize.
-    pub fn new(client_id: ClientId, config: HyperliquidDataClientConfig) -> Result<Self> {
+    pub fn new(client_id: ClientId, config: HyperliquidDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
@@ -123,7 +123,7 @@ impl HyperliquidDataClient {
         *HYPERLIQUID_VENUE
     }
 
-    async fn bootstrap_instruments(&mut self) -> Result<Vec<InstrumentAny>> {
+    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http_client
             .request_instruments()
@@ -139,7 +139,7 @@ impl HyperliquidDataClient {
         Ok(instruments)
     }
 
-    async fn spawn_ws(&mut self) -> Result<()> {
+    async fn spawn_ws(&mut self) -> anyhow::Result<()> {
         tracing::info!("Connecting to Hyperliquid WebSocket");
 
         self.ws_client
@@ -154,12 +154,12 @@ impl HyperliquidDataClient {
         Ok(())
     }
 
-    fn get_instrument(&self, instrument_id: &InstrumentId) -> Result<InstrumentAny> {
+    fn get_instrument(&self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {
         let instruments = self.instruments.read().unwrap();
         instruments
             .get(instrument_id)
             .cloned()
-            .ok_or_else(|| anyhow!("Instrument {instrument_id} not found"))
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))
     }
 }
 
@@ -189,19 +189,19 @@ impl DataClient for HyperliquidDataClient {
         Some(self.venue())
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!("Starting Hyperliquid data client {}", self.client_id);
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         tracing::info!("Stopping Hyperliquid data client {}", self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
-    fn reset(&mut self) -> Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Resetting Hyperliquid data client {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -209,7 +209,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn dispose(&mut self) -> Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disposing Hyperliquid data client {}", self.client_id);
         self.stop()
     }
@@ -222,7 +222,7 @@ impl DataClient for HyperliquidDataClient {
         !self.is_connected()
     }
 
-    async fn connect(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_connected() {
             return Ok(());
         }
@@ -246,7 +246,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         if !self.is_connected() {
             return Ok(());
         }
@@ -280,7 +280,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> Result<()> {
+    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         tracing::debug!("Requesting all instruments");
 
         let instruments = {
@@ -306,7 +306,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> Result<()> {
+    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         tracing::debug!("Requesting instrument: {}", request.instrument_id);
 
         let instrument = self.get_instrument(&request.instrument_id)?;
@@ -329,7 +329,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> Result<()> {
+    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
         tracing::debug!("Requesting bars for {}", request.bar_type);
 
         let http = self.http_client.clone();
@@ -370,7 +370,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> Result<()> {
+    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
         tracing::debug!("Requesting trades for {}", request.instrument_id);
 
         let trades = Vec::new();
@@ -393,16 +393,13 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, subscription: &SubscribeTrades) -> Result<()> {
+    fn subscribe_trades(&mut self, subscription: &SubscribeTrades) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to trades: {}", subscription.instrument_id);
 
         // Validate instrument exists
         let instruments = self.instruments.read().unwrap();
         if !instruments.contains_key(&subscription.instrument_id) {
-            return Err(anyhow!(
-                "Instrument {} not found",
-                subscription.instrument_id
-            ));
+            anyhow::bail!("Instrument {} not found", subscription.instrument_id);
         }
 
         // Extract coin symbol from instrument ID
@@ -431,7 +428,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> Result<()> {
+    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
         tracing::debug!(
             "Unsubscribing from trades: {}",
             unsubscription.instrument_id
@@ -466,7 +463,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> Result<()> {
+    fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
 
         // Validate book type
@@ -477,10 +474,7 @@ impl DataClient for HyperliquidDataClient {
         // Validate instrument exists
         let instruments = self.instruments.read().unwrap();
         if !instruments.contains_key(&subscription.instrument_id) {
-            return Err(anyhow!(
-                "Instrument {} not found",
-                subscription.instrument_id
-            ));
+            anyhow::bail!("Instrument {} not found", subscription.instrument_id);
         }
         drop(instruments);
 
@@ -513,7 +507,10 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, unsubscription: &UnsubscribeBookDeltas) -> Result<()> {
+    fn unsubscribe_book_deltas(
+        &mut self,
+        unsubscription: &UnsubscribeBookDeltas,
+    ) -> anyhow::Result<()> {
         tracing::debug!(
             "Unsubscribing from book deltas: {}",
             unsubscription.instrument_id
@@ -548,7 +545,10 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, subscription: &SubscribeBookSnapshots) -> Result<()> {
+    fn subscribe_book_snapshots(
+        &mut self,
+        subscription: &SubscribeBookSnapshots,
+    ) -> anyhow::Result<()> {
         tracing::debug!(
             "Subscribing to book snapshots: {}",
             subscription.instrument_id
@@ -562,10 +562,7 @@ impl DataClient for HyperliquidDataClient {
         // Validate instrument exists
         let instruments = self.instruments.read().unwrap();
         if !instruments.contains_key(&subscription.instrument_id) {
-            return Err(anyhow!(
-                "Instrument {} not found",
-                subscription.instrument_id
-            ));
+            anyhow::bail!("Instrument {} not found", subscription.instrument_id);
         }
         drop(instruments);
 
@@ -601,7 +598,7 @@ impl DataClient for HyperliquidDataClient {
     fn unsubscribe_book_snapshots(
         &mut self,
         unsubscription: &UnsubscribeBookSnapshots,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         tracing::debug!(
             "Unsubscribing from book snapshots: {}",
             unsubscription.instrument_id
@@ -636,16 +633,13 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, subscription: &SubscribeQuotes) -> Result<()> {
+    fn subscribe_quotes(&mut self, subscription: &SubscribeQuotes) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to quotes: {}", subscription.instrument_id);
 
         // Validate instrument exists
         let instruments = self.instruments.read().unwrap();
         if !instruments.contains_key(&subscription.instrument_id) {
-            return Err(anyhow!(
-                "Instrument {} not found",
-                subscription.instrument_id
-            ));
+            anyhow::bail!("Instrument {} not found", subscription.instrument_id);
         }
         drop(instruments);
 
@@ -675,7 +669,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> Result<()> {
+    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
         tracing::debug!(
             "Unsubscribing from quotes: {}",
             unsubscription.instrument_id
@@ -710,15 +704,16 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, subscription: &SubscribeBars) -> Result<()> {
+    fn subscribe_bars(&mut self, subscription: &SubscribeBars) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to bars: {}", subscription.bar_type);
 
         // Validate instrument exists
         let instruments = self.instruments.read().unwrap();
         let instrument_id = subscription.bar_type.instrument_id();
         if !instruments.contains_key(&instrument_id) {
-            return Err(anyhow!("Instrument {} not found", instrument_id));
+            anyhow::bail!("Instrument {} not found", instrument_id);
         }
+
         drop(instruments);
 
         // Convert bar type to interval
@@ -749,7 +744,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> Result<()> {
+    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
 
         // Convert bar type to interval
@@ -783,7 +778,7 @@ impl DataClient for HyperliquidDataClient {
 }
 
 /// Convert BarType to Hyperliquid interval string.
-fn bar_type_to_interval(bar_type: &BarType) -> Result<String> {
+fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<String> {
     let spec = bar_type.spec();
     let step = spec.step.get();
 
@@ -808,7 +803,7 @@ fn candle_to_bar(
     bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
-) -> Result<Bar> {
+) -> anyhow::Result<Bar> {
     let ts_init = UnixNanos::from(candle.timestamp * 1_000_000); // Convert ms to ns
     let ts_event = ts_init;
 
@@ -838,7 +833,7 @@ async fn request_bars_from_http(
     end: Option<DateTime<Utc>>,
     limit: Option<u32>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-) -> Result<Vec<Bar>> {
+) -> anyhow::Result<Vec<Bar>> {
     // Get instrument details for precision
     let instrument_id = bar_type.instrument_id();
     let instrument = {

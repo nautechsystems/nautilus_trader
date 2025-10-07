@@ -17,7 +17,7 @@
 
 use std::convert::TryFrom;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
@@ -48,7 +48,7 @@ use crate::common::{
 /// # Errors
 ///
 /// Returns an error if the topic format is invalid.
-pub fn parse_topic(topic: &str) -> Result<Vec<&str>> {
+pub fn parse_topic(topic: &str) -> anyhow::Result<Vec<&str>> {
     let parts: Vec<&str> = topic.split('.').collect();
     if parts.is_empty() {
         anyhow::bail!("Invalid topic format: empty topic");
@@ -63,7 +63,7 @@ pub fn parse_topic(topic: &str) -> Result<Vec<&str>> {
 /// # Errors
 ///
 /// Returns an error if the topic format is invalid.
-pub fn parse_kline_topic(topic: &str) -> Result<(&str, &str)> {
+pub fn parse_kline_topic(topic: &str) -> anyhow::Result<(&str, &str)> {
     let parts = parse_topic(topic)?;
     if parts.len() != 3 || parts[0] != "kline" {
         anyhow::bail!(
@@ -78,7 +78,7 @@ pub fn parse_ws_trade_tick(
     trade: &BybitWsTrade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<TradeTick> {
+) -> anyhow::Result<TradeTick> {
     let price = parse_price_with_precision(&trade.p, instrument.price_precision(), "trade.p")?;
     let size = parse_quantity_with_precision(&trade.v, instrument.size_precision(), "trade.v")?;
     let aggressor: AggressorSide = trade.taker_side.into();
@@ -103,7 +103,7 @@ pub fn parse_orderbook_deltas(
     msg: &BybitWsOrderbookDepthMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<OrderBookDeltas> {
+) -> anyhow::Result<OrderBookDeltas> {
     let is_snapshot = msg.msg_type.eq_ignore_ascii_case("snapshot");
     let ts_event = parse_millis_i64(msg.ts, "orderbook.ts")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
@@ -131,7 +131,7 @@ pub fn parse_orderbook_deltas(
     let total_levels = depth.b.len() + depth.a.len();
     let mut processed = 0_usize;
 
-    let mut push_level = |values: &[String], side: OrderSide| -> Result<()> {
+    let mut push_level = |values: &[String], side: OrderSide| -> anyhow::Result<()> {
         let (price, size) = parse_book_level(values, price_precision, size_precision, "orderbook")?;
         let action = if size.is_zero() {
             BookAction::Delete
@@ -185,19 +185,20 @@ pub fn parse_orderbook_quote(
     instrument: &InstrumentAny,
     last_quote: Option<&QuoteTick>,
     ts_init: UnixNanos,
-) -> Result<QuoteTick> {
+) -> anyhow::Result<QuoteTick> {
     let ts_event = parse_millis_i64(msg.ts, "orderbook.ts")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let get_best = |levels: &[Vec<String>], label: &str| -> Result<Option<(Price, Quantity)>> {
-        if let Some(values) = levels.first() {
-            parse_book_level(values, price_precision, size_precision, label).map(Some)
-        } else {
-            Ok(None)
-        }
-    };
+    let get_best =
+        |levels: &[Vec<String>], label: &str| -> anyhow::Result<Option<(Price, Quantity)>> {
+            if let Some(values) = levels.first() {
+                parse_book_level(values, price_precision, size_precision, label).map(Some)
+            } else {
+                Ok(None)
+            }
+        };
 
     let bids = get_best(&msg.data.b, "bid")?;
     let asks = get_best(&msg.data.a, "ask")?;
@@ -206,9 +207,9 @@ pub fn parse_orderbook_quote(
         (Some(level), _) => level,
         (None, Some(prev)) => (prev.bid_price, prev.bid_size),
         (None, None) => {
-            return Err(anyhow!(
+            anyhow::bail!(
                 "Bybit order book update missing bid levels and no previous quote provided"
-            ));
+            );
         }
     };
 
@@ -216,9 +217,9 @@ pub fn parse_orderbook_quote(
         (Some(level), _) => level,
         (None, Some(prev)) => (prev.ask_price, prev.ask_size),
         (None, None) => {
-            return Err(anyhow!(
+            anyhow::bail!(
                 "Bybit order book update missing ask levels and no previous quote provided"
-            ));
+            );
         }
     };
 
@@ -239,7 +240,7 @@ pub fn parse_ticker_linear_quote(
     msg: &BybitWsTickerLinearMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<QuoteTick> {
+) -> anyhow::Result<QuoteTick> {
     let ts_event = parse_millis_i64(msg.ts, "ticker.ts")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
     let price_precision = instrument.price_precision();
@@ -283,7 +284,7 @@ pub fn parse_ticker_option_quote(
     msg: &BybitWsTickerOptionMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<QuoteTick> {
+) -> anyhow::Result<QuoteTick> {
     let ts_event = parse_millis_i64(msg.ts, "ticker.ts")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
     let price_precision = instrument.price_precision();
@@ -309,9 +310,9 @@ pub fn parse_ticker_option_quote(
     .context("failed to construct QuoteTick from Bybit option ticker message")
 }
 
-pub(crate) fn parse_millis_i64(value: i64, field: &str) -> Result<UnixNanos> {
+pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
     if value < 0 {
-        Err(anyhow!("{field} must be non-negative, was {value}"))
+        Err(anyhow::anyhow!("{field} must be non-negative, was {value}"))
     } else {
         parse_millis_timestamp(&value.to_string(), field)
     }
@@ -322,13 +323,13 @@ fn parse_book_level(
     price_precision: u8,
     size_precision: u8,
     label: &str,
-) -> Result<(Price, Quantity)> {
+) -> anyhow::Result<(Price, Quantity)> {
     let price_str = level
         .first()
-        .ok_or_else(|| anyhow!("missing price component in {label} level"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing price component in {label} level"))?;
     let size_str = level
         .get(1)
-        .ok_or_else(|| anyhow!("missing size component in {label} level"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing size component in {label} level"))?;
     let price = parse_price_with_precision(price_str, price_precision, label)?;
     let size = parse_quantity_with_precision(size_str, size_precision, label)?;
     Ok((price, size))
@@ -345,7 +346,7 @@ pub fn parse_ws_kline_bar(
     bar_type: BarType,
     timestamp_on_close: bool,
     ts_init: UnixNanos,
-) -> Result<Bar> {
+) -> anyhow::Result<Bar> {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -386,7 +387,7 @@ pub fn parse_ws_order_status_report(
     instrument: &InstrumentAny,
     account_id: AccountId,
     ts_init: UnixNanos,
-) -> Result<OrderStatusReport> {
+) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
     let order_side: OrderSide = order.side.into();
@@ -498,7 +499,7 @@ pub fn parse_ws_fill_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<FillReport> {
+) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
@@ -567,7 +568,7 @@ pub fn parse_ws_position_status_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<PositionStatusReport> {
+) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
     // Parse absolute size as unsigned Quantity
@@ -640,7 +641,7 @@ pub fn parse_ws_account_state(
     account_id: AccountId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<AccountState> {
+) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
 
     for coin_data in &wallet.coin {

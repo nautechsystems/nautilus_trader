@@ -97,6 +97,14 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
+      - id: check-anyhow-imports
+        name: check anyhow imports
+        description: Ensures only anyhow::Context is imported (anyhow::bail!, anyhow::Result must be fully qualified)
+        entry: .pre-commit-hooks/check_anyhow_imports.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.

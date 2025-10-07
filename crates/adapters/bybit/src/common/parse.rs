@@ -17,7 +17,7 @@
 
 use std::{convert::TryFrom, str::FromStr};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -96,7 +96,10 @@ pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Us
 /// # Errors
 ///
 /// Returns an error if the aggregation type or step is not supported by Bybit.
-pub fn bar_spec_to_bybit_interval(aggregation: BarAggregation, step: u64) -> Result<String> {
+pub fn bar_spec_to_bybit_interval(
+    aggregation: BarAggregation,
+    step: u64,
+) -> anyhow::Result<String> {
     match aggregation {
         BarAggregation::Minute => {
             if !BYBIT_MINUTE_INTERVALS.contains(&step) {
@@ -150,7 +153,7 @@ pub fn parse_spot_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
 
@@ -210,7 +213,7 @@ pub fn parse_linear_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -312,7 +315,9 @@ pub fn parse_linear_instrument(
             );
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
-        other => Err(anyhow!("unsupported linear contract variant: {other:?}")),
+        other => Err(anyhow::anyhow!(
+            "unsupported linear contract variant: {other:?}"
+        )),
     }
 }
 
@@ -322,7 +327,7 @@ pub fn parse_inverse_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -424,7 +429,9 @@ pub fn parse_inverse_instrument(
             );
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
-        other => Err(anyhow!("unsupported inverse contract variant: {other:?}")),
+        other => Err(anyhow::anyhow!(
+            "unsupported inverse contract variant: {other:?}"
+        )),
     }
 }
 
@@ -433,7 +440,7 @@ pub fn parse_option_instrument(
     definition: &BybitInstrumentOption,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let quote_currency = get_currency(definition.quote_coin.as_str());
 
     let symbol = BybitSymbol::new(format!("{}-OPTION", definition.symbol))?;
@@ -506,7 +513,7 @@ pub fn parse_trade_tick(
     trade: &BybitTrade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<TradeTick> {
+) -> anyhow::Result<TradeTick> {
     let price =
         parse_price_with_precision(&trade.price, instrument.price_precision(), "trade.price")?;
     let size =
@@ -535,7 +542,7 @@ pub fn parse_kline_bar(
     bar_type: BarType,
     timestamp_on_close: bool,
     ts_init: UnixNanos,
-) -> Result<Bar> {
+) -> anyhow::Result<Bar> {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -579,7 +586,7 @@ pub fn parse_fill_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<FillReport> {
+) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
@@ -653,7 +660,7 @@ pub fn parse_position_status_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<PositionStatusReport> {
+) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
     // Parse position size
@@ -801,7 +808,11 @@ pub fn parse_account_state(
     ))
 }
 
-pub(crate) fn parse_price_with_precision(value: &str, precision: u8, field: &str) -> Result<Price> {
+pub(crate) fn parse_price_with_precision(
+    value: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Price> {
     let parsed = value
         .parse::<f64>()
         .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
@@ -814,7 +825,7 @@ pub(crate) fn parse_quantity_with_precision(
     value: &str,
     precision: u8,
     field: &str,
-) -> Result<Quantity> {
+) -> anyhow::Result<Quantity> {
     let parsed = value
         .parse::<f64>()
         .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
@@ -823,20 +834,22 @@ pub(crate) fn parse_quantity_with_precision(
     })
 }
 
-pub(crate) fn parse_price(value: &str, field: &str) -> Result<Price> {
-    Price::from_str(value).map_err(|err| anyhow!("Failed to parse {field}='{value}': {err}"))
+pub(crate) fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
+    Price::from_str(value)
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
 }
 
-pub(crate) fn parse_quantity(value: &str, field: &str) -> Result<Quantity> {
-    Quantity::from_str(value).map_err(|err| anyhow!("Failed to parse {field}='{value}': {err}"))
+pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
+    Quantity::from_str(value)
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
 }
 
-pub(crate) fn parse_decimal(value: &str, field: &str) -> Result<Decimal> {
+pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(value)
-        .map_err(|err| anyhow!("Failed to parse {field}='{value}' as Decimal: {err}"))
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {err}"))
 }
 
-pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> Result<UnixNanos> {
+pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
     let millis: u64 = value
         .parse()
         .with_context(|| format!("Failed to parse {field}='{value}' as u64 millis"))?;
@@ -850,13 +863,15 @@ fn resolve_settlement_currency(
     settle_coin: &str,
     base_currency: Currency,
     quote_currency: Currency,
-) -> Result<Currency> {
+) -> anyhow::Result<Currency> {
     if settle_coin.eq_ignore_ascii_case(base_currency.code.as_str()) {
         Ok(base_currency)
     } else if settle_coin.eq_ignore_ascii_case(quote_currency.code.as_str()) {
         Ok(quote_currency)
     } else {
-        Err(anyhow!("unrecognised settlement currency '{settle_coin}'"))
+        Err(anyhow::anyhow!(
+            "unrecognised settlement currency '{settle_coin}'"
+        ))
     }
 }
 
@@ -865,11 +880,11 @@ fn get_currency(code: &str) -> Currency {
         .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
-fn extract_strike_from_symbol(symbol: &str) -> Result<Price> {
+fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
     let parts: Vec<&str> = symbol.split('-').collect();
     let strike = parts
         .get(2)
-        .ok_or_else(|| anyhow!("invalid option symbol '{symbol}'"))?;
+        .ok_or_else(|| anyhow::anyhow!("invalid option symbol '{symbol}'"))?;
     parse_price(strike, "option strike")
 }
 
@@ -879,7 +894,7 @@ pub fn parse_order_status_report(
     instrument: &InstrumentAny,
     account_id: nautilus_model::identifiers::AccountId,
     ts_init: UnixNanos,
-) -> Result<nautilus_model::reports::OrderStatusReport> {
+) -> anyhow::Result<nautilus_model::reports::OrderStatusReport> {
     use crate::common::enums::{BybitOrderStatus, BybitOrderType, BybitTimeInForce};
 
     let instrument_id = instrument.id();

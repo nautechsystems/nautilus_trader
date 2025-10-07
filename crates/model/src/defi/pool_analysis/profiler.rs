@@ -914,11 +914,11 @@ impl PoolProfiler {
         if liquidity_delta < 0 {
             let burn_amount = liquidity_delta.unsigned_abs();
             if position.liquidity < burn_amount {
-                return Err(anyhow::anyhow!(
+                anyhow::bail!(
                     "Position liquidity {} is less than the requested burn amount of {}",
                     position.liquidity,
                     burn_amount
-                ));
+                );
             }
         }
 

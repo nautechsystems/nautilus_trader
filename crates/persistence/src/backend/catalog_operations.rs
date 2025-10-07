@@ -20,7 +20,6 @@
 
 use std::collections::HashSet;
 
-use anyhow::Result;
 use futures::StreamExt;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
@@ -164,7 +163,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
@@ -233,7 +232,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let directory = self.make_path(type_name, instrument_id)?;
         self.consolidate_directory(&directory, start, end, ensure_contiguous_files)
     }
@@ -276,7 +275,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
 
         if parquet_files.len() <= 1 {
@@ -412,7 +411,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
@@ -522,7 +521,7 @@ impl ParquetDataCatalog {
     pub fn extract_data_cls_and_identifier_from_path(
         &self,
         path: &str,
-    ) -> Result<(Option<String>, Option<String>)> {
+    ) -> anyhow::Result<(Option<String>, Option<String>)> {
         // Use cross-platform path parsing
         let path_components = extract_path_components(path);
 
@@ -629,7 +628,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         // Use match statement to call the generic consolidate_data_by_period for various types
         match type_name {
             "quotes" => {
@@ -739,7 +738,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
-    ) -> Result<()>
+    ) -> anyhow::Result<()>
     where
         T: DecodeDataFromRecordBatch
             + CatalogPathPrefix
@@ -892,7 +891,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: bool,
-    ) -> Result<Vec<ConsolidationQuery>> {
+    ) -> anyhow::Result<Vec<ConsolidationQuery>> {
         // Filter intervals by time range if specified
         let used_start = start.map(|s| s.as_u64());
         let used_end = end.map(|e| e.as_u64());
@@ -1108,7 +1107,7 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if the object store operation fails due to network issues,
     /// authentication problems, or other I/O errors.
-    fn file_exists(&self, path: &str) -> Result<bool> {
+    fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
         let object_path = self.to_object_path(path);
         let exists =
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
@@ -1139,7 +1138,7 @@ impl ParquetDataCatalog {
     /// # Safety
     ///
     /// This operation is irreversible. Ensure the file is no longer needed before deletion.
-    fn delete_file(&self, path: &str) -> Result<()> {
+    fn delete_file(&self, path: &str) -> anyhow::Result<()> {
         let object_path = self.to_object_path(path);
         self.execute_async(async {
             self.object_store
@@ -1179,7 +1178,7 @@ impl ParquetDataCatalog {
     /// catalog.reset_all_file_names()?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn reset_all_file_names(&self) -> Result<()> {
+    pub fn reset_all_file_names(&self) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
@@ -1230,7 +1229,7 @@ impl ParquetDataCatalog {
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let directory = self.make_path(data_cls, instrument_id)?;
         self.reset_file_names(&directory)
     }
@@ -1271,7 +1270,7 @@ impl ParquetDataCatalog {
     /// - This operation can be time-consuming for directories with many files.
     /// - Files are processed sequentially to avoid conflicts.
     /// - The operation is atomic per file but not across the entire directory.
-    fn reset_file_names(&self, directory: &str) -> Result<()> {
+    fn reset_file_names(&self, directory: &str) -> anyhow::Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
 
         for file in parquet_files {
@@ -1447,7 +1446,7 @@ impl ParquetDataCatalog {
         identifier: Option<String>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         // Use match statement to call the generic delete_data_range for various types
         match type_name {
             "quotes" => self.delete_data_range_generic::<QuoteTick>(identifier, start, end),
@@ -1527,7 +1526,7 @@ impl ParquetDataCatalog {
         &mut self,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
@@ -1569,7 +1568,7 @@ impl ParquetDataCatalog {
         identifier: Option<String>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> Result<()>
+    ) -> anyhow::Result<()>
     where
         T: DecodeDataFromRecordBatch
             + CatalogPathPrefix
@@ -1599,7 +1598,7 @@ impl ParquetDataCatalog {
         }
 
         // Execute all operations
-        let mut files_to_remove = std::collections::HashSet::new();
+        let mut files_to_remove = HashSet::<String>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation to ensure fresh data is loaded
@@ -1698,7 +1697,7 @@ impl ParquetDataCatalog {
         intervals: &[(u64, u64)],
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> Result<Vec<DeleteOperation>> {
+    ) -> anyhow::Result<Vec<DeleteOperation>> {
         // Convert start/end to nanoseconds
         let delete_start_ns = start.map(|s| s.as_u64());
         let delete_end_ns = end.map(|e| e.as_u64());

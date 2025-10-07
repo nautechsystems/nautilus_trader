@@ -18,7 +18,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use anyhow;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
