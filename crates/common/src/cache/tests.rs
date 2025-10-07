@@ -27,7 +27,9 @@ use nautilus_model::{
     data::{Bar, FundingRateUpdate, MarkPriceUpdate, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue, VenueOrderId,
+    },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
     orders::{
@@ -1492,4 +1494,219 @@ fn test_purge_closed_positions_does_not_purge_reopened_position() {
     assert_eq!(cache.positions_total_count(None, None, None, None), 1);
     assert_eq!(cache.positions_open_count(None, None, None, None), 1);
     assert_eq!(cache.positions_closed_count(None, None, None, None), 0);
+}
+
+#[rstest]
+fn test_update_own_order_book_with_market_order_does_not_panic(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    // Create a LIMIT order to establish an own book for the instrument
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+    assert!(cache.own_order_book(&audusd_sim.id()).is_some());
+
+    // Create a MARKET order (no price) and transition it to FILLED
+    let market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(50_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+        .build();
+
+    cache
+        .add_order(market_order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&market_order, AccountId::new("SIM-001"));
+    let mut market_order_mut = market_order;
+    market_order_mut.apply(submitted).unwrap();
+
+    let accepted = TestOrderEventStubs::accepted(
+        &market_order_mut,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-001"),
+    );
+    market_order_mut.apply(accepted).unwrap();
+
+    let filled = TestOrderEventStubs::filled(
+        &market_order_mut,
+        &InstrumentAny::CurrencyPair(audusd_sim),
+        Some(TradeId::new("T-001")),
+        None,
+        Some(Price::from("1.00010")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    market_order_mut.apply(filled).unwrap();
+
+    // Should not panic - previously would panic at `.expect("OwnBookOrder must have a price")`
+    cache.update_own_order_book(&market_order_mut);
+
+    assert!(cache.own_order_book(&audusd_sim.id()).is_some());
+}
+
+#[rstest]
+fn test_force_remove_from_own_order_book(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
+    let mut limit_order_mut = limit_order;
+    limit_order_mut.apply(submitted).unwrap();
+    cache.update_order(&limit_order_mut).unwrap();
+
+    assert!(cache.order_exists(&limit_order_mut.client_order_id()));
+    assert!(
+        cache
+            .index
+            .orders_inflight
+            .contains(&limit_order_mut.client_order_id())
+    );
+    assert!(cache.own_order_book(&audusd_sim.id()).is_some());
+
+    cache.force_remove_from_own_order_book(&limit_order_mut.client_order_id());
+
+    assert!(
+        !cache
+            .index
+            .orders_open
+            .contains(&limit_order_mut.client_order_id())
+    );
+    assert!(
+        !cache
+            .index
+            .orders_inflight
+            .contains(&limit_order_mut.client_order_id())
+    );
+    assert!(
+        !cache
+            .index
+            .orders_emulated
+            .contains(&limit_order_mut.client_order_id())
+    );
+    assert!(
+        !cache
+            .index
+            .orders_pending_cancel
+            .contains(&limit_order_mut.client_order_id())
+    );
+    assert!(
+        cache
+            .index
+            .orders_closed
+            .contains(&limit_order_mut.client_order_id())
+    );
+}
+
+#[rstest]
+fn test_audit_own_order_books_with_inflight_orders(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
+    let mut limit_order_mut = limit_order;
+    limit_order_mut.apply(submitted).unwrap();
+    cache.update_order(&limit_order_mut).unwrap();
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    cache.audit_own_order_books();
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+}
+
+#[rstest]
+fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
+    let mut limit_order_mut = limit_order;
+    limit_order_mut.apply(submitted).unwrap();
+    cache.update_order(&limit_order_mut).unwrap();
+
+    let accepted = TestOrderEventStubs::accepted(
+        &limit_order_mut,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-001"),
+    );
+    limit_order_mut.apply(accepted).unwrap();
+    cache.update_order(&limit_order_mut).unwrap();
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    let canceled = TestOrderEventStubs::canceled(
+        &limit_order_mut,
+        AccountId::new("SIM-001"),
+        Some(VenueOrderId::new("V-001")),
+    );
+    limit_order_mut.apply(canceled).unwrap();
+    cache.update_order(&limit_order_mut).unwrap();
+
+    cache.update_own_order_book(&limit_order_mut);
+
+    cache.audit_own_order_books();
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert_eq!(own_book.bids().count(), 0);
 }

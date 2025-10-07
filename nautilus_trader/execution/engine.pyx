@@ -74,9 +74,12 @@ from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -1391,10 +1394,19 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
-            own_book = self._cache.own_order_book(order.instrument_id)
-            # Only bypass should_handle check for closed orders (to ensure cleanup)
-            if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
-                self._cache.update_own_order_book(order)
+
+            if isinstance(event, (OrderRejected, OrderCanceled, OrderExpired, OrderDenied)):
+                self._log.warning(
+                    f"Terminal event {event!r} failed to apply to {order.client_order_id!r}, "
+                    f"forcing cleanup from own book",
+                    LogColor.YELLOW,
+                )
+                self._cache.force_remove_from_own_order_book(order.client_order_id)
+            else:
+                own_book = self._cache.own_order_book(order.instrument_id)
+                # Only bypass should_handle check for closed orders (to ensure cleanup)
+                if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
+                    self._cache.update_own_order_book(order)
             return
 
         self._cache.update_order(order)
