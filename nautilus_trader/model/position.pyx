@@ -700,7 +700,7 @@ cdef class Position:
         cdef double last_px = fill.last_px.as_f64_c()
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
-        
+
         # For crypto spot instruments, adjust position quantity to reflect commission deducted from wallet
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
             # Commission is paid in base currency (the asset being bought)
@@ -738,7 +738,7 @@ cdef class Position:
         cdef double last_px = fill.last_px.as_f64_c()
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
-        
+
         # For crypto spot instruments, adjust position quantity to reflect commission deducted from wallet
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
             # Commission is paid in base currency (the asset being sold)

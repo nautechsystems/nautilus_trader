@@ -263,16 +263,15 @@ impl Position {
         let mut last_qty_object = fill.last_qty;
 
         // For crypto spot instruments, adjust position quantity to reflect commission deducted from wallet
-        if let Some(commission) = fill.commission {
-            if let Some(base_currency) = self.base_currency {
-                if commission.currency == base_currency {
-                    // Commission is paid in base currency (the asset being bought)
-                    // Adjust the position quantity to reflect the commission deducted from wallet
-                    let commission_qty = commission.as_f64() / last_px;
-                    last_qty -= commission_qty;
-                    last_qty_object = Quantity::new(last_qty, self.size_precision);
-                }
-            }
+        if let Some(commission) = fill.commission
+            && let Some(base_currency) = self.base_currency
+            && commission.currency == base_currency
+        {
+            // Commission is paid in base currency (the asset being bought)
+            // Adjust the position quantity to reflect the commission deducted from wallet
+            let commission_qty = commission.as_f64() / last_px;
+            last_qty -= commission_qty;
+            last_qty_object = Quantity::new(last_qty, self.size_precision);
         }
 
         if self.signed_qty > 0.0 {
@@ -315,16 +314,15 @@ impl Position {
         let mut last_qty_object = fill.last_qty;
 
         // For crypto spot instruments, adjust position quantity to reflect commission deducted from wallet
-        if let Some(commission) = fill.commission {
-            if let Some(base_currency) = self.base_currency {
-                if commission.currency == base_currency {
-                    // Commission is paid in base currency (the asset being sold)
-                    // Adjust the position quantity to reflect the commission deducted from wallet
-                    let commission_qty = commission.as_f64() / last_px;
-                    last_qty -= commission_qty;
-                    last_qty_object = Quantity::new(last_qty, self.size_precision);
-                }
-            }
+        if let Some(commission) = fill.commission
+            && let Some(base_currency) = self.base_currency
+            && commission.currency == base_currency
+        {
+            // Commission is paid in base currency (the asset being sold)
+            // Adjust the position quantity to reflect the commission deducted from wallet
+            let commission_qty = commission.as_f64() / last_px;
+            last_qty -= commission_qty;
+            last_qty_object = Quantity::new(last_qty, self.size_precision);
         }
 
         if self.signed_qty < 0.0 {
