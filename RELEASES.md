@@ -62,7 +62,9 @@ This will be the final release with support for Python 3.11.
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
+- Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
+- Improved socket client URL parsing
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
