@@ -6329,6 +6329,7 @@ class OKXHttpClient:
         instrument_id: InstrumentId,
         algo_id: str,
     ) -> Any: ...
+    async def http_get_server_time(self) -> int: ...
 
 class OKXWebSocketClient:
     def __init__(
@@ -6640,6 +6641,7 @@ class BitmexHttpClient:
         price: Price | None = None,
         trigger_price: Price | None = None,
     ) -> OrderStatusReport: ...
+    async def http_get_server_time(self) -> int: ...
 
 
 class BitmexWebSocketClient:

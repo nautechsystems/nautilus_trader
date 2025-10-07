@@ -68,7 +68,7 @@ use super::{
     models::{
         OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXIndexTicker,
         OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
-        OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier,
+        OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
         OKXTransactionDetail,
     },
     query::{
@@ -571,6 +571,29 @@ impl OKXHttpInnerClient {
         self.send_request(Method::GET, &path, None, false).await
     }
 
+    /// Requests the current server time from OKX.
+    ///
+    /// Retrieves the OKX system time in Unix timestamp (milliseconds). This is useful for
+    /// synchronizing local clocks with the exchange server and logging time drift.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response body
+    /// cannot be parsed into [`OKXServerTime`].
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-system-time>
+    pub async fn http_get_server_time(&self) -> Result<u64, OKXHttpError> {
+        let response: Vec<OKXServerTime> = self
+            .send_request(Method::GET, "/api/v5/public/time", None, false)
+            .await?;
+        response
+            .first()
+            .map(|t| t.ts)
+            .ok_or_else(|| OKXHttpError::JsonError("Empty server time response".to_string()))
+    }
+
     /// Requests a mark price.
     ///
     /// We set the mark price based on the SPOT index and at a reasonable basis to prevent individual
@@ -980,6 +1003,17 @@ impl OKXHttpClient {
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+    }
+
+    /// Requests the current server time from OKX.
+    ///
+    /// Returns the OKX system time as a Unix timestamp in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
+    pub async fn http_get_server_time(&self) -> Result<u64, OKXHttpError> {
+        self.inner.http_get_server_time().await
     }
 
     /// Checks if the client is initialized.

@@ -62,8 +62,8 @@ use ustr::Ustr;
 use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
     models::{
-        BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder, BitmexPosition, BitmexTrade,
-        BitmexTradeBin, BitmexWallet,
+        BitmexApiInfo, BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder,
+        BitmexPosition, BitmexTrade, BitmexTradeBin, BitmexWallet,
     },
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
@@ -451,6 +451,20 @@ impl BitmexHttpInnerClient {
             "/instrument"
         };
         self.send_request(Method::GET, path, None, false).await
+    }
+
+    /// Requests the current server time from BitMEX.
+    ///
+    /// Retrieves the BitMEX API info including the system time in Unix timestamp (milliseconds).
+    /// This is useful for synchronizing local clocks with the exchange server and logging time drift.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response body
+    /// cannot be parsed into [`BitmexApiInfo`].
+    pub async fn http_get_server_time(&self) -> Result<u64, BitmexHttpError> {
+        let response: BitmexApiInfo = self.send_request(Method::GET, "", None, false).await?;
+        Ok(response.timestamp)
     }
 
     /// Get the instrument definition for the specified symbol.
@@ -851,6 +865,17 @@ impl BitmexHttpClient {
     #[must_use]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+    }
+
+    /// Requests the current server time from BitMEX.
+    ///
+    /// Returns the BitMEX system time as a Unix timestamp in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
+    pub async fn http_get_server_time(&self) -> Result<u64, BitmexHttpError> {
+        self.inner.http_get_server_time().await
     }
 
     /// Generates a timestamp for initialization.

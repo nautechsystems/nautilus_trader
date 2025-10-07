@@ -781,6 +781,15 @@ pub struct OKXCancelAlgoOrderResponse {
     pub s_msg: Option<String>,
 }
 
+/// Represents the response from `GET /api/v5/public/time` (get system time).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXServerTime {
+    /// Server timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
