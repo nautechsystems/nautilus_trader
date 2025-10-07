@@ -37,6 +37,7 @@ This will be the final release with support for Python 3.11.
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
 ### Internal Improvements
+- Added ARM64 support to Docker builds
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
 - Ported `PortfolioAnalyzer` and all portfolio statistics to Rust

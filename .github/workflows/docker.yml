@@ -82,72 +82,80 @@ jobs:
           echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
 
       - name: Build nautilus_trader image (nightly)
-        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        if: steps.branch-name.outputs.current_branch == 'nightly'
         id: docker_build_trader_nightly
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           file: ".docker/nautilus_trader.dockerfile"
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:nightly
           cache-from: type=gha
-          cache-to: type=gha
-      - name: Digest nautilus_trader image
+          cache-to: type=gha,mode=max
+      - name: Digest nautilus_trader image (nightly)
+        if: steps.branch-name.outputs.current_branch == 'nightly'
         env:
           DIGEST: ${{ steps.docker_build_trader_nightly.outputs.digest }}
         run: |
           printf '%s\n' "$DIGEST"
 
       - name: Build nautilus_trader image (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+        if: steps.branch-name.outputs.current_branch == 'master'
         id: docker_build_trader_latest
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           file: ".docker/nautilus_trader.dockerfile"
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
           cache-from: type=gha
-          cache-to: type=gha
-      - name: Digest nautilus_trader image
+          cache-to: type=gha,mode=max
+      - name: Digest nautilus_trader image (latest)
+        if: steps.branch-name.outputs.current_branch == 'master'
         env:
           DIGEST: ${{ steps.docker_build_trader_latest.outputs.digest }}
         run: |
           printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (nightly)
-        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        if: steps.branch-name.outputs.current_branch == 'nightly'
         id: docker_build_jupyterlab_nightly
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           file: ".docker/jupyterlab.dockerfile"
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:nightly
           cache-from: type=gha
-          cache-to: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
-      - name: Digest jupyterlab image
+      - name: Digest jupyterlab image (nightly)
+        if: steps.branch-name.outputs.current_branch == 'nightly'
         env:
           DIGEST: ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
         run: |
           printf '%s\n' "$DIGEST"
 
       - name: Build jupyterlab image (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+        if: steps.branch-name.outputs.current_branch == 'master'
         id: docker_build_jupyterlab_latest
         # https://github.com/docker/build-push-action
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           file: ".docker/jupyterlab.dockerfile"
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
           cache-from: type=gha
-          cache-to: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             GIT_TAG=latest
-      - name: Digest jupyterlab image
+      - name: Digest jupyterlab image (latest)
+        if: steps.branch-name.outputs.current_branch == 'master'
         env:
           DIGEST: ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
         run: |
