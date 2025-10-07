@@ -106,6 +106,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
+- Fixed BitMEX order rejection handling and response parsing
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki

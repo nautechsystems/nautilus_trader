@@ -56,10 +56,10 @@ use crate::{
         consts::BITMEX_VENUE,
         enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
         parse::{
-            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
-            parse_contracts_quantity, parse_fractional_quantity, parse_instrument_id,
-            parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
-            parse_signed_contracts_quantity,
+            clean_reason, map_bitmex_currency, normalize_trade_bin_prices,
+            normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
+            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+            parse_position_side, parse_signed_contracts_quantity,
         },
     },
     websocket::messages::BitmexOrderUpdateMsg,
@@ -601,15 +601,15 @@ pub fn parse_order_msg(
     // Extract rejection reason for rejected orders
     if order_status == OrderStatus::Rejected {
         if let Some(reason_str) = msg.ord_rej_reason.or(msg.text) {
-            tracing::trace!(
+            tracing::debug!(
                 order_id = ?venue_order_id,
                 client_order_id = ?msg.cl_ord_id,
                 reason = ?reason_str,
                 "Order rejected with reason"
             );
-            report = report.with_cancel_reason(reason_str.to_string());
+            report = report.with_cancel_reason(clean_reason(reason_str.as_ref()));
         } else {
-            tracing::trace!(
+            tracing::debug!(
                 order_id = ?venue_order_id,
                 client_order_id = ?msg.cl_ord_id,
                 ord_status = ?msg.ord_status,
@@ -625,7 +625,7 @@ pub fn parse_order_msg(
     if order_status == OrderStatus::Canceled
         && let Some(reason_str) = msg.ord_rej_reason.or(msg.text)
     {
-        report = report.with_cancel_reason(reason_str.to_string());
+        report = report.with_cancel_reason(clean_reason(reason_str.as_ref()));
     }
 
     Ok(report)
