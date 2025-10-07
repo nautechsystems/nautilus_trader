@@ -94,6 +94,10 @@ alloy = { version = "1.0.37", default-features = false, features = [
   "contract",
 ] }
 alloy-primitives = { version = "1.4.0", features = ["serde"] }
+alloy-signer = { version = "1.0.37", default-features = false }
+alloy-signer-local = { version = "1.0.37", default-features = false, features = [
+  "mnemonic",
+] }
 anyhow = "1.0.100"
 arraydeque = "0.5.1"
 # Keep arrow major version in line with datafusion

@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Minimal WS post example: info (l2Book) and a stubbed order action.
+//! Minimal WS post example: info (l2Book) and an order action with real signing.
 
 use std::{env, time::Duration};
 
 use nautilus_hyperliquid::{
-    common::consts::ws_url,
+    common::{consts::ws_url, credential::EvmPrivateKey},
+    signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
     websocket::{
         client::HyperliquidWebSocketClient,
         messages::{ActionPayload, ActionRequest, SignatureData, TimeInForceRequest},
@@ -60,12 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
     info!(component = "ws_post", best_bid = %best_bid, best_ask = %best_ask, "BTC top of book");
 
-    // Only attempt the action when explicitly requested (HL_SEND=1).
-    let should_send = std::env::var("HL_SEND").map(|v| v == "1").unwrap_or(false);
+    // Only attempt the action when explicitly requested (HYPERLIQUID_SEND=1).
+    let should_send = env::var("HYPERLIQUID_SEND")
+        .map(|v| v == "1")
+        .unwrap_or(false);
     if !should_send {
         warn!(
             component = "ws_post",
-            "skipping action: set HL_SEND=1 to send the stubbed order"
+            "skipping action: set HYPERLIQUID_SEND=1 to send the order"
         );
         return Ok(());
     }
@@ -92,15 +95,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .build();
 
-    // TODO: sign properly; below is a placeholder signature (r,s,v must be valid!)
+    // Get private key from environment for signing
+    let private_key_str = env::var("HYPERLIQUID_PK").map_err(
+        |_| "HYPERLIQUID_PK environment variable not set. Example: export HYPERLIQUID_PK=0x...",
+    )?;
+    let private_key = EvmPrivateKey::new(private_key_str)?;
+    let signer = HyperliquidEip712Signer::new(private_key);
+
+    // Convert action to JSON for signing
+    let action_json = serde_json::to_value(&action)?;
+
+    // Get current nonce (Unix timestamp in milliseconds)
+    let nonce = TimeNonce::now_millis();
+
+    // Sign the action
+    let sign_request = SignRequest {
+        action: action_json,
+        time_nonce: nonce,
+        action_type: HyperliquidActionType::UserSigned,
+    };
+
+    let signature_bundle = signer.sign(&sign_request)?;
+
+    // Parse signature into r, s, v components
+    // Format is: 0x + r(64 hex) + s(64 hex) + v(2 hex) = 132 chars total
+    let sig = signature_bundle.signature;
+    if sig.len() != 132 || !sig.starts_with("0x") {
+        return Err(format!("Invalid signature format: {}", sig).into());
+    }
+
+    let signature = SignatureData {
+        r: format!("0x{}", &sig[2..66]),    // Extract r component
+        s: format!("0x{}", &sig[66..130]),  // Extract s component
+        v: format!("0x{}", &sig[130..132]), // Extract v component
+    };
+
+    info!(component = "ws_post", "action signed successfully");
+
     let payload = ActionPayload {
         action,
-        nonce: 0, // e.g., time-based nonce or your NonceManager
-        signature: SignatureData {
-            r: "0x0".into(),
-            s: "0x0".into(),
-            v: "0x1b".into(),
-        },
+        nonce: nonce.as_millis() as u64,
+        signature,
         vault_address: None,
     };
 
@@ -108,9 +143,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .post_action_raw(payload, Duration::from_secs(2))
         .await
     {
-        Ok(resp) => info!(component = "ws_post", ?resp, "action response"),
+        Ok(resp) => info!(component = "ws_post", ?resp, "action response (success)"),
         Err(e) => {
-            warn!(component = "ws_post", error = %e, "action failed (expected with dummy signature)")
+            warn!(component = "ws_post", error = %e, "action failed")
         }
     }
 

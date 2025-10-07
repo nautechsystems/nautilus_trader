@@ -40,10 +40,6 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 if __name__ == "__main__":
-    # You must set your Hyperliquid API credentials through environment variables:
-    # - HYPERLIQUID_WALLET_ADDRESS
-    # - HYPERLIQUID_PRIVATE_KEY
-
     # Configure the trading node
     config_node = TradingNodeConfig(
         trader_id=TraderId("TESTER-001"),
@@ -55,12 +51,14 @@ if __name__ == "__main__":
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 instrument_provider=InstrumentProviderConfig(load_all=True),
-                testnet=True,  # Set to False for mainnet
+                testnet=True,  # If client uses the testnet
             ),
         },
         exec_clients={
             HYPERLIQUID: HyperliquidExecClientConfig(
-                testnet=True,  # Set to False for mainnet
+                private_key=None,  # 'HYPERLIQUID_PK' env var
+                vault_address=None,  # 'HYPERLIQUID_VAULT' env var
+                testnet=True,  # If client uses the testnet
             ),
         },
         timeout_connection=20.0,

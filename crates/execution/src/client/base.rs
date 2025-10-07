@@ -111,6 +111,12 @@ impl ExecutionClientCore {
         &self.clock
     }
 
+    /// Returns a reference to the cache.
+    #[must_use]
+    pub const fn cache(&self) -> &Rc<RefCell<Cache>> {
+        &self.cache
+    }
+
     /// Returns the account associated with this execution client.
     #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
