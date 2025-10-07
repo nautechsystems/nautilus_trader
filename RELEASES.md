@@ -120,6 +120,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Tardis instruments `lot_size` mapping
+- Fixed Tardis adapter error handling and connection robustness
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International

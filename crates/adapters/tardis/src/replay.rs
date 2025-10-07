@@ -169,7 +169,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     }
 
     tracing::info!("Starting tardis-machine stream");
-    let stream = machine_client.replay(config.options).await;
+    let stream = machine_client.replay(config.options).await?;
     pin_mut!(stream);
 
     // Initialize date cursors
@@ -188,24 +188,38 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     let mut msg_count = 0;
 
-    while let Some(msg) = stream.next().await {
-        match msg {
-            Data::Deltas(msg) => {
-                handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
-            }
-            Data::Depth10(msg) => {
-                handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
-            }
-            Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
-            Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
-            Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
-            Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
-            _ => panic!("Not implemented"),
-        }
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(msg) => {
+                match msg {
+                    Data::Deltas(msg) => {
+                        handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
+                    }
+                    Data::Depth10(msg) => {
+                        handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
+                    }
+                    Data::Quote(msg) => {
+                        handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path)
+                    }
+                    Data::Trade(msg) => {
+                        handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path)
+                    }
+                    Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
+                    Data::Delta(_) => {
+                        panic!("Individual delta message not implemented (or required)")
+                    }
+                    _ => panic!("Not implemented"),
+                }
 
-        msg_count += 1;
-        if msg_count % 100_000 == 0 {
-            tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+                msg_count += 1;
+                if msg_count % 100_000 == 0 {
+                    tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+                }
+            }
+            Err(e) => {
+                tracing::error!("Stream error: {e:?}");
+                break;
+            }
         }
     }
 

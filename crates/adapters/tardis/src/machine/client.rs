@@ -83,7 +83,7 @@ impl TardisMachineClient {
 
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        self.replay_signal.load(Ordering::Relaxed) && self.stream_signal.load(Ordering::Relaxed)
+        self.replay_signal.load(Ordering::Relaxed) || self.stream_signal.load(Ordering::Relaxed)
     }
 
     pub fn close(&mut self) {
@@ -97,39 +97,43 @@ impl TardisMachineClient {
 
     /// Connects to the Tardis Machine replay WebSocket and yields parsed `Data` items.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the WebSocket connection cannot be established.
+    /// Returns an error if the WebSocket connection cannot be established.
     pub async fn replay(
         &self,
         options: Vec<ReplayNormalizedRequestOptions>,
-    ) -> impl Stream<Item = Data> {
-        let stream = replay_normalized(&self.base_url, options, self.replay_signal.clone())
-            .await
-            .expect("Failed to connect to WebSocket");
+    ) -> Result<impl Stream<Item = Result<Data, Error>>, Error> {
+        let stream = replay_normalized(&self.base_url, options, self.replay_signal.clone()).await?;
 
         // We use Box::pin to heap-allocate the stream and ensure it implements
         // Unpin for safe async handling across lifetimes.
-        handle_ws_stream(Box::pin(stream), None, Some(self.instruments.clone()))
+        Ok(handle_ws_stream(
+            Box::pin(stream),
+            None,
+            Some(self.instruments.clone()),
+        ))
     }
 
     /// Connects to the Tardis Machine stream WebSocket for a single instrument and yields parsed `Data` items.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the WebSocket connection cannot be established.
+    /// Returns an error if the WebSocket connection cannot be established.
     pub async fn stream(
         &self,
         instrument: TardisInstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
-    ) -> impl Stream<Item = Data> {
-        let stream = stream_normalized(&self.base_url, options, self.stream_signal.clone())
-            .await
-            .expect("Failed to connect to WebSocket");
+    ) -> Result<impl Stream<Item = Result<Data, Error>>, Error> {
+        let stream = stream_normalized(&self.base_url, options, self.stream_signal.clone()).await?;
 
         // We use Box::pin to heap-allocate the stream and ensure it implements
         // Unpin for safe async handling across lifetimes.
-        handle_ws_stream(Box::pin(stream), Some(Arc::new(instrument)), None)
+        Ok(handle_ws_stream(
+            Box::pin(stream),
+            Some(Arc::new(instrument)),
+            None,
+        ))
     }
 }
 
@@ -137,7 +141,7 @@ fn handle_ws_stream<S>(
     stream: S,
     instrument: Option<Arc<TardisInstrumentMiniInfo>>,
     instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
-) -> impl Stream<Item = Data>
+) -> impl Stream<Item = Result<Data, Error>>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
@@ -148,22 +152,36 @@ where
 
     async_stream::stream! {
         pin_mut!(stream);
+
         while let Some(result) = stream.next().await {
             match result {
                 Ok(msg) => {
+                    if matches!(msg, WsMessage::Disconnect(_)) {
+                        tracing::debug!("Received disconnect message: {msg:?}");
+                        continue;
+                    }
+
                     let info = instrument.clone().or_else(|| {
                         instrument_map
                             .as_ref()
                             .and_then(|map| determine_instrument_info(&msg, map))
                     });
 
-                    if let Some(info) = info
-                        && let Some(data) = parse_tardis_ws_message(msg, info) {
-                            yield data;
+                    if let Some(info) = info {
+                        if let Some(data) = parse_tardis_ws_message(msg, info) {
+                            yield Ok(data);
                         }
+                    } else {
+                        tracing::error!("Missing instrument info for message: {msg:?}");
+                        yield Err(Error::ConnectionClosed {
+                            reason: "Missing instrument definition info".to_string()
+                        });
+                        break;
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Error in WebSocket stream: {e:?}");
+                    yield Err(e);
                     break;
                 }
             }
