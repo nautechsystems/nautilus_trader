@@ -25,6 +25,7 @@ pub mod sma;
 pub mod vidya;
 pub mod vwap;
 pub mod wma;
+pub mod mfi;
 
 use nautilus_model::enums::PriceType;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
