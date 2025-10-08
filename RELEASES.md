@@ -45,6 +45,7 @@ This will be the final release with support for Python 3.11.
 - Added OKX adapter integration tests
 - Ported `PortfolioAnalyzer` and all portfolio statistics to Rust
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
+- Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad

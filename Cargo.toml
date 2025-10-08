@@ -89,7 +89,7 @@ nautilus-okx = { path = "crates/adapters/okx", version = "0.51.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.51.0" }
 
 ahash = "0.8.12"
-alloy = { version = "1.0.37", default-features = false, features = [
+alloy = { version = "1.0.38", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
