@@ -1390,7 +1390,7 @@ class BybitExecutionClient(LiveExecutionClient):
             is_leverage=is_leverage,
         )
 
-    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
+    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder, _: bool = False) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
