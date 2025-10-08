@@ -33,34 +33,6 @@ A high-performance order book implemented in Rust is available to maintain order
 Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
 :::
 
-## Own order books
-
-Own order books are L3 order books that track only your own (user) orders organized by price level, maintained separately from the venue's public order books.
-
-### Purpose
-
-Own order books serve several critical functions:
-
-- Monitor the state of your orders within the venue's book in real-time.
-- Validate order placement by checking available liquidity at price levels before submission.
-- Help prevent self-trading by identifying price levels where your own orders already exist.
-- Support advanced order management strategies that depend on queue position.
-- Enable reconciliation between internal state and venue state during live trading.
-
-### Lifecycle
-
-Own order books are maintained per instrument and automatically updated as orders transition through their lifecycle.
-Orders are added when submitted or accepted, updated when modified, and removed when filled, canceled, rejected, or expired.
-
-Only orders with prices can be represented in own order books. Market orders and other order types without explicit prices are excluded since they cannot be positioned at specific price levels.
-
-### Auditing
-
-During live trading, own order books can be periodically audited against the cache's order indexes to ensure consistency.
-The audit mechanism verifies that closed orders are properly removed and that inflight orders (submitted but not yet accepted) remain tracked during venue latency windows.
-
-The audit interval can be configured using the `own_books_audit_interval_secs` parameter in live trading configurations.
-
 ## Instruments
 
 The following instrument definitions are available:

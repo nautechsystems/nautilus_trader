@@ -38,6 +38,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }

@@ -15,8 +15,9 @@
 
 //! Enumerations for the trading domain model.
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::OnceLock};
 
+use ahash::AHashSet;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
@@ -1008,6 +1009,35 @@ pub enum OrderStatus {
     PartiallyFilled = 13,
     /// The order has been completely filled on a trading venue (closed/done).
     Filled = 14,
+}
+
+impl OrderStatus {
+    /// Returns a cached `AHashSet` of order statuses safe for cancellation queries.
+    ///
+    /// These are statuses where an order is working on the venue but not already
+    /// in the process of being cancelled or updated. Including `PENDING_CANCEL`
+    /// in cancellation filters can cause duplicate cancel attempts or incorrect open order counts.
+    ///
+    /// Returns:
+    /// - `ACCEPTED`: Order is working on the venue.
+    /// - `TRIGGERED`: Stop order has been triggered.
+    /// - `PENDING_UPDATE`: Order being updated.
+    /// - `PARTIALLY_FILLED`: Order is partially filled but still working.
+    ///
+    /// Excludes:
+    /// - `PENDING_CANCEL`: Already being cancelled.
+    #[must_use]
+    pub fn cancellable_statuses_set() -> &'static AHashSet<Self> {
+        static CANCELLABLE_SET: OnceLock<AHashSet<OrderStatus>> = OnceLock::new();
+        CANCELLABLE_SET.get_or_init(|| {
+            AHashSet::from_iter([
+                Self::Accepted,
+                Self::Triggered,
+                Self::PendingUpdate,
+                Self::PartiallyFilled,
+            ])
+        })
+    }
 }
 
 /// The type of order.

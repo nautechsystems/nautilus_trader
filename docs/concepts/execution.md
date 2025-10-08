@@ -326,3 +326,44 @@ def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
 :::note
 This also includes the primary (original) order.
 :::
+
+## Own order books
+
+Own order books are L3 order books that track only your own (user) orders organized by price level, maintained separately from the venue's public order books.
+
+### Purpose
+
+Own order books serve several purposes:
+
+- Monitor the state of your orders within the venue's public book in real-time.
+- Validate order placement by checking available liquidity at price levels before submission.
+- Help prevent self-trading by identifying price levels where your own orders already exist.
+- Support advanced order management strategies that depend on queue position.
+- Enable reconciliation between internal state and venue state during live trading.
+
+### Lifecycle
+
+Own order books are maintained per instrument and automatically updated as orders transition through their lifecycle.
+Orders are added when submitted or accepted, updated when modified, and removed when filled, canceled, rejected, or expired.
+
+Only orders with prices can be represented in own order books. Market orders and other order types without explicit prices are excluded since they cannot be positioned at specific price levels.
+
+### Safe cancellation queries
+
+When querying own order books for orders to cancel, use a `status` filter that **excludes** `PENDING_CANCEL` to avoid processing orders already being cancelled.
+
+:::warning
+Including `PENDING_CANCEL` in status filters can cause:
+
+- Duplicate cancel attempts on the same order.
+- Inflated open order counts (orders in `PENDING_CANCEL` remain "open" until confirmed canceled).
+- Order state explosion when multiple strategies attempt to cancel the same orders.
+
+:::
+
+### Auditing
+
+During live trading, own order books can be periodically audited against the cache's order indexes to ensure consistency.
+The audit mechanism verifies that closed orders are properly removed and that inflight orders (submitted but not yet accepted) remain tracked during venue latency windows.
+
+The audit interval can be configured using the `own_books_audit_interval_secs` parameter in live trading configurations.

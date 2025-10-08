@@ -2840,7 +2840,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
@@ -2893,7 +2892,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
