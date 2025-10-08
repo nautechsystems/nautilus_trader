@@ -96,10 +96,11 @@ impl BaseContract {
         &self,
         contract_address: &Address,
         call_data: &[u8],
+        block: Option<u64>,
     ) -> Result<Vec<u8>, BlockchainRpcClientError> {
-        let rpc_request = self
-            .client
-            .construct_eth_call(&contract_address.to_string(), call_data);
+        let rpc_request =
+            self.client
+                .construct_eth_call(&contract_address.to_string(), call_data, block);
 
         let encoded_response = self
             .client
@@ -118,6 +119,7 @@ impl BaseContract {
     pub async fn execute_multicall(
         &self,
         calls: Vec<ContractCall>,
+        block: Option<u64>,
     ) -> Result<Vec<Multicall3::Result>, BlockchainRpcClientError> {
         // Convert to Multicall3 format.
         let multicall_calls: Vec<Multicall3::Call3> = calls
@@ -136,6 +138,7 @@ impl BaseContract {
         let rpc_request = self.client.construct_eth_call(
             &self.multicall_address.to_string(),
             multicall_data.as_slice(),
+            block,
         );
 
         let encoded_response = self

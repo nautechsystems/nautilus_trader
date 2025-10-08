@@ -137,18 +137,29 @@ impl BlockchainHttpRpcClient {
 
     /// Creates a properly formatted `eth_call` JSON-RPC request object targeting a specific contract address with encoded function data.
     #[must_use]
-    pub fn construct_eth_call(&self, to: &str, call_data: &[u8]) -> serde_json::Value {
+    pub fn construct_eth_call(
+        &self,
+        to: &str,
+        call_data: &[u8],
+        block: Option<u64>,
+    ) -> serde_json::Value {
         let encoded_data = format!("0x{}", hex::encode(call_data));
         let call = serde_json::json!({
             "to": to,
             "data": encoded_data
         });
 
+        let block_param = if let Some(block_number) = block {
+            serde_json::json!(format!("0x{:x}", block_number))
+        } else {
+            serde_json::json!("latest")
+        };
+
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "eth_call",
-            "params": [call, "latest"]
+            "params": [call, block_param]
         })
     }
 }
