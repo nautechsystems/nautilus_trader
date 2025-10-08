@@ -224,24 +224,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     Some(HyperliquidWsMessage::Candle { data }) => {
                         message_count += 1;
-                        tracing::info!(
-                            "[Message #{message_count}] Candle update: {} candles",
-                            data.len()
+                        tracing::info!("[Message #{message_count}] Candle update");
+                        tracing::debug!(
+                            symbol = %data.s,
+                            interval = %data.i,
+                            time = data.t,
+                            open = %data.o,
+                            high = %data.h,
+                            low = %data.l,
+                            close = %data.c,
+                            volume = %data.v,
+                            trades = data.n,
+                            "candle data"
                         );
-                        for candle in &data {
-                            tracing::debug!(
-                                symbol = %candle.s,
-                                interval = %candle.i,
-                                time = candle.t,
-                                open = candle.o,
-                                high = candle.h,
-                                low = candle.l,
-                                close = candle.c,
-                                volume = candle.v,
-                                trades = candle.n,
-                                "candle"
-                            );
-                        }
                     }
                     Some(HyperliquidWsMessage::SubscriptionResponse { data: sub_data }) => {
                         tracing::info!(

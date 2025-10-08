@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
@@ -28,12 +28,13 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core.nautilus_pyo3.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
 if TYPE_CHECKING:
-    pass  # TODO: Add imports for actual HyperliquidHttpClient when available
+    pass
 
 
 @lru_cache(1)
@@ -43,7 +44,7 @@ def get_cached_hyperliquid_http_client(
     base_url: str | None = None,
     timeout_secs: int = 10,
     testnet: bool = False,
-) -> Any:  # TODO: Replace with actual HyperliquidHttpClient when available
+) -> HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
 
@@ -53,10 +54,17 @@ def get_cached_hyperliquid_http_client(
     ----------
     private_key : str, optional
         The EVM private key for the client.
+        If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
+        environment variable (depending on the `testnet` setting).
+        Note: The PyO3 client handles credentials internally.
     vault_address : str, optional
         The vault address for vault trading.
+        If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
+        environment variable (depending on the `testnet` setting).
+        Note: The PyO3 client handles credentials internally.
     base_url : str, optional
         The base URL for the API endpoints.
+        Note: Currently not supported by PyO3 client.
     timeout_secs : int, default 10
         The timeout (seconds) for HTTP requests to Hyperliquid.
     testnet : bool, default False
@@ -64,40 +72,21 @@ def get_cached_hyperliquid_http_client(
 
     Returns
     -------
-    Any
-        Placeholder for HyperliquidHttpClient
+    HyperliquidHttpClient
+        The Hyperliquid HTTP client instance.
 
     """
-
-    # TODO: Implement actual HyperliquidHttpClient instantiation
-    # This is a placeholder that returns a mock client
-    class MockHyperliquidHttpClient:
-        def __init__(self, **kwargs):
-            self.params = kwargs
-
-        async def load_instrument_definitions(
-            self,
-            *,
-            include_perp: bool = True,
-            include_spot: bool = True,
-        ) -> list[Any]:
-            # Placeholder implementation used in documentation/tests until the real
-            # PyO3 HTTP client is wired in. Returning an empty list mirrors the
-            # behaviour of a venue with no available instruments.
-            return []
-
-    return MockHyperliquidHttpClient(
-        private_key=private_key,
-        vault_address=vault_address,
-        base_url=base_url,
+    # The PyO3 HyperliquidHttpClient only takes is_testnet and timeout_secs
+    # Credentials are handled via environment variables internally
+    return HyperliquidHttpClient(
+        is_testnet=testnet,
         timeout_secs=timeout_secs,
-        testnet=testnet,
     )
 
 
 @lru_cache(1)
 def get_cached_hyperliquid_instrument_provider(
-    client: Any,  # TODO: Replace with actual HyperliquidHttpClient when available
+    client: HyperliquidHttpClient,
     config: InstrumentProviderConfig | None = None,
 ) -> HyperliquidInstrumentProvider:
     """
@@ -107,8 +96,8 @@ def get_cached_hyperliquid_instrument_provider(
 
     Parameters
     ----------
-    client : Any
-        The Hyperliquid HTTP client (placeholder).
+    client : HyperliquidHttpClient
+        The Hyperliquid HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 

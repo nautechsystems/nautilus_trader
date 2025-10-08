@@ -165,23 +165,30 @@ impl Secrets {
     /// Load secrets from environment variables
     ///
     /// Expected environment variables:
-    /// - `HYPERLIQUID_PK`: EVM private key (required)
-    /// - `HYPERLIQUID_VAULT`: Vault address (optional)
-    /// - `HYPERLIQUID_NETWORK`: Network type - "mainnet" or "testnet" (optional, defaults to "mainnet")
+    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required for mainnet)
+    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required for testnet)
+    /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
+    /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
+    ///
+    /// The method will first try to load testnet credentials. If not found, it will fall back to mainnet.
     pub fn from_env() -> Result<Self> {
-        let private_key_str = env::var("HYPERLIQUID_PK")
-            .map_err(|_| Error::bad_request("HYPERLIQUID_PK environment variable not set"))?;
+        // Try testnet credentials first
+        let (private_key_str, vault_env_var, is_testnet) =
+            if let Ok(testnet_pk) = env::var("HYPERLIQUID_TESTNET_PK") {
+                (testnet_pk, "HYPERLIQUID_TESTNET_VAULT", true)
+            } else if let Ok(mainnet_pk) = env::var("HYPERLIQUID_PK") {
+                (mainnet_pk, "HYPERLIQUID_VAULT", false)
+            } else {
+                return Err(Error::bad_request(
+                    "Neither HYPERLIQUID_PK nor HYPERLIQUID_TESTNET_PK environment variable is set",
+                ));
+            };
 
         let private_key = EvmPrivateKey::new(private_key_str)?;
 
-        let vault_address = match env::var("HYPERLIQUID_VAULT") {
+        let vault_address = match env::var(vault_env_var) {
             Ok(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(&addr_str)?),
             _ => None,
-        };
-
-        let is_testnet = match env::var("HYPERLIQUID_NETWORK") {
-            Ok(network) => matches!(network.to_lowercase().as_str(), "testnet" | "test"),
-            Err(_) => false, // Default to mainnet if not specified
         };
 
         Ok(Self {

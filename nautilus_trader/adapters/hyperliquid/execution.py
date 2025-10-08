@@ -28,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
@@ -36,6 +37,7 @@ from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
@@ -116,6 +118,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
         return self._instrument_provider
 
+    def _cache_instruments(self) -> None:
+        """
+        Cache instruments into HTTP client following OKX/BitMEX pattern.
+        """
+        # Check if the HTTP client supports add_instrument
+        if not hasattr(self._client, "add_instrument"):
+            self._log.debug(
+                "HTTP client does not have add_instrument method, skipping instrument caching",
+                LogColor.YELLOW,
+            )
+            return
+
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self._instrument_provider.instruments_pyo3()
+        for inst in instruments_pyo3:
+            self._client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
     # -- CONNECTION HANDLERS -----------------------------------------------------------------------
 
     async def _connect(self) -> None:
@@ -124,11 +146,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         """
         self._log.info("Connecting to Hyperliquid execution...", LogColor.BLUE)
 
-        # TODO: Implement actual connection logic when HyperliquidHttpClient is available
-        # await self._instrument_provider.initialize()
-        # self._cache_instruments()
+        # Initialize instruments (required for the execution client to work)
+        self._log.info("Loading instruments...", LogColor.BLUE)
+        await self._instrument_provider.initialize()
+        self._cache_instruments()
+        self._log.info(
+            f"Loaded {len(self._instrument_provider.list_all())} instruments",
+            LogColor.GREEN,
+        )
+
+        # TODO: Implement account state updates when API is available
         # await self._update_account_state()
 
+        # TODO: Implement WebSocket connection when available
         # Placeholder for WebSocket connection setup
         # self._ws_client.set_account_id(self.pyo3_account_id)
         # await self._ws_client.connect(instruments, self._handle_msg)
@@ -138,9 +168,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # await self._ws_client.subscribe_positions()
         # await self._ws_client.subscribe_wallet()
 
-        self._log.warning("Hyperliquid execution connection logic not yet implemented")
-        await asyncio.sleep(0.1)  # Placeholder
-        self._log.info("Hyperliquid execution connection established (placeholder)", LogColor.GREEN)
+        self._log.info("Hyperliquid execution client connected", LogColor.GREEN)
 
     async def _disconnect(self) -> None:
         """
@@ -168,7 +196,66 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             The command to submit the order.
 
         """
-        self._log.warning(f"Order submission not yet implemented for {command.order}")
+        order = command.order
+
+        if order.is_closed:
+            self._log.warning(f"Order {order} is already closed")
+            return
+
+        # Generate order submitted event, to ensure correct ordering of events
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        try:
+            self._log.info(f"Submitting order to Hyperliquid: {order}")
+
+            # Convert order to PyO3 format and then to Hyperliquid JSON
+            from nautilus_trader.core.nautilus_pyo3.hyperliquid import order_to_json
+            from nautilus_trader.model.orders import order_to_pyo3
+
+            pyo3_order = order_to_pyo3(order)
+            order_json = order_to_json(pyo3_order)
+
+            # Submit via HTTP client
+            response_json = await self._client.submit_order(order_json)
+
+            # Parse the response
+            import json
+
+            response = json.loads(response_json)
+
+            self._log.debug(f"Hyperliquid order response: {response}")
+
+            # Check if submission was successful
+            if response.get("status") == "ok":
+                self._log.info(f"Order {order.client_order_id} submitted successfully")
+                # The order acceptance will be confirmed via WebSocket or status polling
+            else:
+                # Extract error message
+                error_msg = response.get("response", str(response))
+                self._log.error(f"Order {order.client_order_id} rejected: {error_msg}")
+
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=str(error_msg),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+        except Exception as e:
+            self._log.error(f"Error submitting order {order.client_order_id}: {e}")
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         """
@@ -180,7 +267,82 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             The command to submit the order list.
 
         """
-        self._log.warning(f"Order list submission not yet implemented for {command.order_list}")
+        order_list = command.order_list
+        orders = order_list.orders
+
+        if not orders:
+            self._log.warning("Order list is empty, nothing to submit")
+            return
+
+        # Check if all orders are open
+        closed_orders = [order for order in orders if order.is_closed]
+        if closed_orders:
+            self._log.warning(f"Skipping {len(closed_orders)} closed orders in batch")
+            orders = [order for order in orders if not order.is_closed]
+
+        if not orders:
+            return
+
+        # Generate submitted events for all orders
+        now_ns = self._clock.timestamp_ns()
+        for order in orders:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=now_ns,
+            )
+
+        try:
+            self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
+
+            # Convert orders to PyO3 format and then to Hyperliquid JSON array
+            from nautilus_trader.core.nautilus_pyo3.hyperliquid import orders_to_json
+            from nautilus_trader.model.orders import order_to_pyo3
+
+            pyo3_orders = [order_to_pyo3(order) for order in orders]
+            orders_json = orders_to_json(pyo3_orders)
+
+            # Submit all orders via HTTP client
+            response_json = await self._client.submit_orders(orders_json)
+
+            # Parse the response
+            import json
+
+            response = json.loads(response_json)
+
+            self._log.debug(f"Hyperliquid batch order response: {response}")
+
+            # Check if submission was successful
+            if response.get("status") == "ok":
+                self._log.info(f"Batch of {len(orders)} orders submitted successfully")
+                # The order acceptances will be confirmed via WebSocket or status polling
+            else:
+                # Extract error message
+                error_msg = response.get("response", str(response))
+                self._log.error(f"Batch order submission rejected: {error_msg}")
+
+                # Generate rejection events for all orders
+                for order in orders:
+                    self.generate_order_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        reason=str(error_msg),
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+
+        except Exception as e:
+            self._log.error(f"Error submitting order batch: {e}")
+            # Generate rejection events for all orders
+            for order in orders:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         """
@@ -277,6 +439,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         """
         self._log.warning("Order status reports generation not yet implemented")
+        return []
+
+    async def generate_fill_reports(
+        self,
+        command: GenerateFillReports,
+    ) -> list[FillReport]:
+        """
+        Generate fill reports.
+
+        Parameters
+        ----------
+        command : GenerateFillReports
+            The command to generate the reports.
+
+        Returns
+        -------
+        list[FillReport]
+
+        """
+        self._log.warning("Fill reports generation not yet implemented")
         return []
 
     async def generate_position_status_reports(

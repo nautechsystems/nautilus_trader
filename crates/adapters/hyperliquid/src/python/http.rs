@@ -21,7 +21,7 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyList};
 use serde_json::to_string;
 
-use crate::http::client::HyperliquidHttpClient;
+use crate::http::{client::HyperliquidHttpClient, query::ExchangeAction};
 
 #[pymethods]
 impl HyperliquidHttpClient {
@@ -83,6 +83,101 @@ impl HyperliquidHttpClient {
                 let py_list = PyList::new(py, &py_instruments)?;
                 Ok(py_list.into_any().unbind())
             })
+        })
+    }
+
+    /// Submit a single order to the Hyperliquid exchange.
+    ///
+    /// Takes order parameters as JSON string and submits via the authenticated POST /exchange endpoint.
+    ///
+    /// Returns the response from the exchange as a JSON string.
+    #[pyo3(name = "submit_order")]
+    fn py_submit_order<'py>(
+        &self,
+        py: Python<'py>,
+        order_request_json: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Parse the order request from JSON
+            let order_request: serde_json::Value =
+                serde_json::from_str(&order_request_json).map_err(to_pyvalue_err)?;
+
+            // Create orders array with single order
+            let orders_value = serde_json::to_value(vec![order_request]).map_err(to_pyvalue_err)?;
+
+            // Create exchange action
+            let action = ExchangeAction::order(orders_value);
+
+            // Submit to exchange
+            let response = client.post_action(&action).await.map_err(to_pyvalue_err)?;
+
+            // Return response as JSON string
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Submit multiple orders to the Hyperliquid exchange in a single request.
+    ///
+    /// Takes a JSON string of order requests and submits them via the authenticated POST /exchange endpoint.
+    ///
+    /// Returns the response from the exchange as a JSON string.
+    #[pyo3(name = "submit_orders")]
+    fn py_submit_orders<'py>(
+        &self,
+        py: Python<'py>,
+        orders_json: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Parse the orders from JSON
+            let orders_value: serde_json::Value =
+                serde_json::from_str(&orders_json).map_err(to_pyvalue_err)?;
+
+            // Create exchange action
+            let action = ExchangeAction::order(orders_value);
+
+            // Submit to exchange
+            let response = client.post_action(&action).await.map_err(to_pyvalue_err)?;
+
+            // Return response as JSON string
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Get open orders for the authenticated user.
+    ///
+    /// Returns the response from the exchange as a JSON string.
+    #[pyo3(name = "get_open_orders")]
+    fn py_get_open_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let response = client
+                .info_open_orders(&user_address)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Get clearinghouse state (balances, positions, margin) for the authenticated user.
+    ///
+    /// Returns the response from the exchange as a JSON string.
+    #[pyo3(name = "get_clearinghouse_state")]
+    fn py_get_clearinghouse_state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let response = client
+                .info_clearinghouse_state(&user_address)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
         })
     }
 }

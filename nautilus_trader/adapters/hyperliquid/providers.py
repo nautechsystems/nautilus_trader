@@ -18,17 +18,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from nautilus_trader._libnautilus.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class HyperliquidInstrumentProvider(InstrumentProvider):
@@ -97,10 +98,14 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
     async def _load_instruments(self) -> list[Instrument]:
         try:
-            return await self._client.load_instrument_definitions(
+            pyo3_instruments = await self._client.load_instrument_definitions(
                 include_perp=HyperliquidProductType.PERP in self._product_types,
                 include_spot=HyperliquidProductType.SPOT in self._product_types,
             )
+            # Convert PyO3 instruments to Python (Cython) instruments
+            # This is necessary because the data engine expects Python instruments
+            instruments = instruments_from_pyo3(pyo3_instruments)
+            return instruments
         except AttributeError:  # method missing (old wheel?)
             self._log.error("HyperliquidHttpClient is missing load_instrument_definitions")
             raise
@@ -143,15 +148,16 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self,
         instrument: Instrument,
     ) -> HyperliquidProductType | None:
-        if isinstance(instrument, CryptoPerpetual):
+        # Check by type name to handle both Python and PyO3 instrument types
+        type_name = type(instrument).__name__
+
+        if type_name == "CryptoPerpetual" or isinstance(instrument, CryptoPerpetual):
             return HyperliquidProductType.PERP
-        if isinstance(instrument, CurrencyPair):
+        if type_name == "CurrencyPair" or isinstance(instrument, CurrencyPair):
             return HyperliquidProductType.SPOT
 
         self._log.warning(
-            "Ignoring Hyperliquid instrument %s (unsupported type %s)",
-            instrument.id.value,
-            type(instrument).__name__,
+            f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type_name})",
         )
         return None
 
@@ -217,7 +223,13 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
                 if isinstance(item, str)
             }
 
-        market_type = "perp" if isinstance(instrument, CryptoPerpetual) else "spot"
+        # Check by type name to handle both Python and PyO3 instrument types
+        type_name = type(instrument).__name__
+        market_type = (
+            "perp"
+            if (type_name == "CryptoPerpetual" or isinstance(instrument, CryptoPerpetual))
+            else "spot"
+        )
         kinds = _normalize(filters.get("market_types") or filters.get("kinds"), to_lower=True)
         if kinds and market_type not in kinds:
             return False

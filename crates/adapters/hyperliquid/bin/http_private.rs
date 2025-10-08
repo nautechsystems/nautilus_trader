@@ -39,8 +39,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Hyperliquid HTTP private example");
     if testnet {
         tracing::info!(
-            "Testnet parameter provided - set HYPERLIQUID_NETWORK=testnet environment variable"
+            "Testnet parameter provided - ensure HYPERLIQUID_TESTNET_PK environment variable is set"
         );
+    } else {
+        tracing::info!("Mainnet mode - ensure HYPERLIQUID_PK environment variable is set");
     }
     if test_conditional {
         tracing::info!("Conditional orders test mode enabled");

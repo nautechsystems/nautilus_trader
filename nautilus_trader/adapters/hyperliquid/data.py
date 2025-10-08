@@ -127,7 +127,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         # HTTP client
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        # Note: PyO3 HyperliquidHttpClient doesn't expose api_key attribute
+        self._log.info("HTTP client initialized", LogColor.BLUE)
 
         # WebSocket client
         ws_url = self._determine_ws_url(config)
@@ -179,8 +180,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
         """
         Disconnect the client following standard patterns.
         """
-        # Cancel all HTTP client requests
-        self._http_client.cancel_all_requests()
+        # Note: PyO3 HyperliquidHttpClient doesn't expose cancel_all_requests method
+        # The client will be cleaned up automatically when the object is destroyed
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
@@ -210,6 +211,14 @@ class HyperliquidDataClient(LiveMarketDataClient):
         """
         Cache instruments following OKX/BitMEX pattern.
         """
+        # Check if the HTTP client supports add_instrument
+        if not hasattr(self._http_client, "add_instrument"):
+            self._log.debug(
+                "HTTP client does not have add_instrument method, skipping instrument caching",
+                LogColor.YELLOW,
+            )
+            return
+
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
@@ -220,7 +229,11 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     def _send_all_instruments_to_data_engine(self) -> None:
         """
-        Send all instruments to data engine following standard pattern.
+        Send all instruments to data engine.
+
+        Follows the same pattern as other PyO3-based venues (BitMEX, OKX). Uses
+        _handle_data() which properly routes instruments through the data engine.
+
         """
         for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
