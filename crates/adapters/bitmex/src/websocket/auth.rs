@@ -28,7 +28,7 @@ use crate::websocket::error::BitmexWsError;
 pub(crate) type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub(crate) type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
 
-pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 5;
+pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AuthTracker {
@@ -95,5 +95,38 @@ impl AuthTracker {
                 ))
             }
         }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn begin_supersedes_previous_sender() {
+        let tracker = AuthTracker::new();
+
+        let first = tracker.begin();
+        let second = tracker.begin();
+
+        // Completing the first receiver should yield an error indicating it was superseded
+        let result = first.await.expect("oneshot closed unexpectedly");
+        assert_eq!(result, Err("Authentication attempt superseded".to_string()));
+
+        // Fulfil the second attempt to keep the mutex state clean
+        tracker.succeed();
+        tracker
+            .wait_for_result(Duration::from_secs(1), second)
+            .await
+            .expect("expected successful authentication");
     }
 }

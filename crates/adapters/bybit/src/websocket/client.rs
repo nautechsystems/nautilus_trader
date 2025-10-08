@@ -120,7 +120,7 @@ pub struct BybitWebSocketClient {
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
     is_authenticated: Arc<AtomicBool>,
-    instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
+    instruments_cache: Arc<DashMap<InstrumentId, InstrumentAny>>,
     account_id: Option<AccountId>,
     quote_cache: Arc<RwLock<cache::QuoteCache>>,
     retry_manager: Arc<RetryManager<BybitWsError>>,
@@ -156,7 +156,7 @@ impl Clone for BybitWebSocketClient {
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
             is_authenticated: Arc::clone(&self.is_authenticated),
-            instruments: Arc::clone(&self.instruments),
+            instruments_cache: Arc::clone(&self.instruments_cache),
             account_id: self.account_id,
             quote_cache: Arc::clone(&self.quote_cache),
             retry_manager: Arc::clone(&self.retry_manager),
@@ -203,7 +203,7 @@ impl BybitWebSocketClient {
             task_handle: None,
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
-            instruments: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -239,7 +239,7 @@ impl BybitWebSocketClient {
             task_handle: None,
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
-            instruments: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -275,7 +275,7 @@ impl BybitWebSocketClient {
             task_handle: None,
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
-            instruments: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -362,36 +362,67 @@ impl BybitWebSocketClient {
                 .await
                 {
                     Ok(Some(BybitWebSocketMessage::Reconnected)) => {
-                        if let Err(err) = BybitWebSocketClient::authenticate_inner(
-                            &inner,
-                            requires_auth,
-                            credential.clone(),
-                            &auth_tracker,
-                            &is_authenticated,
-                        )
-                        .await
-                        {
-                            let error = BybitWebSocketError::from_message(err.to_string());
-                            if event_tx.send(BybitWebSocketMessage::Error(error)).is_err() {
-                                break;
-                            }
-                        }
+                        tracing::info!("Handling WebSocket reconnection");
 
-                        // Clear the quote cache to prevent stale data after reconnection
-                        quote_cache.write().await.clear();
+                        let inner_for_task = inner.clone();
+                        let subscriptions_for_task = subscriptions.clone();
+                        let auth_tracker_for_task = auth_tracker.clone();
+                        let is_authenticated_for_task = is_authenticated.clone();
+                        let credential_for_task = credential.clone();
+                        let quote_cache_for_task = quote_cache.clone();
+                        let event_tx_for_task = event_tx.clone();
 
-                        if let Err(err) =
-                            BybitWebSocketClient::resubscribe_all_inner(&inner, &subscriptions)
+                        get_runtime().spawn(async move {
+                            // Authenticate if required
+                            let auth_succeeded = if requires_auth {
+                                match BybitWebSocketClient::authenticate_inner(
+                                    &inner_for_task,
+                                    requires_auth,
+                                    credential_for_task,
+                                    &auth_tracker_for_task,
+                                    &is_authenticated_for_task,
+                                )
                                 .await
-                        {
-                            let error = BybitWebSocketError::from_message(err.to_string());
-                            if event_tx.send(BybitWebSocketMessage::Error(error)).is_err() {
-                                break;
+                                {
+                                    Ok(()) => {
+                                        tracing::info!(
+                                            "Authentication successful after reconnect, proceeding with resubscription"
+                                        );
+                                        true
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Authentication after reconnect failed: {e}");
+                                        let error = BybitWebSocketError::from_message(e.to_string());
+                                        let _ = event_tx_for_task.send(BybitWebSocketMessage::Error(error));
+                                        false
+                                    }
+                                }
+                            } else {
+                                true
+                            };
+
+                            if !auth_succeeded {
+                                return;
                             }
-                        }
-                        if event_tx.send(BybitWebSocketMessage::Reconnected).is_err() {
-                            break;
-                        }
+
+                            // Clear the quote cache to prevent stale data after reconnection
+                            quote_cache_for_task.write().await.clear();
+
+                            // Resubscribe to all topics
+                            if let Err(err) = BybitWebSocketClient::resubscribe_all_inner(
+                                &inner_for_task,
+                                &subscriptions_for_task,
+                            )
+                            .await
+                            {
+                                tracing::error!("Failed to restore subscriptions after reconnection: {err}");
+                                let error = BybitWebSocketError::from_message(err.to_string());
+                                let _ = event_tx_for_task.send(BybitWebSocketMessage::Error(error));
+                            } else {
+                                tracing::info!("Restored subscriptions after reconnection");
+                                let _ = event_tx_for_task.send(BybitWebSocketMessage::Reconnected);
+                            }
+                        });
                     }
                     Ok(Some(event)) => {
                         if event_tx.send(event).is_err() {
@@ -556,14 +587,14 @@ impl BybitWebSocketClient {
     /// Adds an instrument to the cache for parsing WebSocket messages.
     pub fn add_instrument(&self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
-        self.instruments.insert(instrument_id, instrument);
+        self.instruments_cache.insert(instrument_id, instrument);
         tracing::debug!("Added instrument {instrument_id} to WebSocket client cache");
     }
 
     /// Returns a reference to the instruments cache.
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<InstrumentId, InstrumentAny>> {
-        &self.instruments
+        &self.instruments_cache
     }
 
     /// Sets the account ID for account message parsing.
