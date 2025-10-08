@@ -15,7 +15,9 @@
 
 use alloy_primitives::{U160, U256};
 
-use crate::defi::{pool_analysis::position::PoolPosition, tick_map::tick::Tick};
+use crate::defi::{
+    data::block::BlockPosition, pool_analysis::position::PoolPosition, tick_map::tick::Tick,
+};
 
 /// Complete snapshot of a liquidity pool's state at a specific point in time.
 ///
@@ -30,15 +32,27 @@ pub struct PoolSnapshot {
     pub positions: Vec<PoolPosition>,
     /// Complete tick distribution across the pool's price range.
     pub ticks: Vec<Tick>,
+    /// Analytics counters for the pool.
+    pub analytics: PoolAnalytics,
+    /// Block position where this snapshot was taken.
+    pub block_position: BlockPosition,
 }
 
 impl PoolSnapshot {
-    /// Creates a new `PoolSnapshot` with the specified state, positions, and ticks.
-    pub fn new(state: PoolState, positions: Vec<PoolPosition>, ticks: Vec<Tick>) -> Self {
+    /// Creates a new `PoolSnapshot` with the specified state, positions, ticks, analytics, and block position.
+    pub fn new(
+        state: PoolState,
+        positions: Vec<PoolPosition>,
+        ticks: Vec<Tick>,
+        analytics: PoolAnalytics,
+        block_position: BlockPosition,
+    ) -> Self {
         Self {
             state,
             positions,
             ticks,
+            analytics,
+            block_position,
         }
     }
 }
@@ -99,32 +113,61 @@ impl Default for PoolState {
     }
 }
 
+/// Analytics counters and metrics for pool operations.
+///
+/// It tracks cumulative statistics about pool activity, including
+/// deposit and collection flows, event counts, and performance metrics for debugging.
 #[derive(Debug, Clone)]
 pub struct PoolAnalytics {
     /// Total amount of token0 deposited through mints.
     pub total_amount0_deposited: U256,
     /// Total amount of token1 deposited through mints.
     pub total_amount1_deposited: U256,
-    /// Total amount of token0 withdrawn through burns.
-    pub total_amount0_withdrawn: U256,
-    pub total_amount1_withdrawn: U256,
+    /// Total amount of token0 collected
+    pub total_amount0_collected: U256,
+    /// Total amount of token1 collected.
+    pub total_amount1_collected: U256,
+    /// Total number of swap events processed.
     pub total_swaps: u64,
+    /// Total number of mint events processed.
     pub total_mints: u64,
+    /// Total number of burn events processed.
     pub total_burns: u64,
+    /// Total number of fee collection events processed.
     pub total_fee_collects: u64,
+    /// Time spent processing swap events (debug builds only).
+    #[cfg(debug_assertions)]
+    pub swap_processing_time: std::time::Duration,
+    /// Time spent processing mint events (debug builds only).
+    #[cfg(debug_assertions)]
+    pub mint_processing_time: std::time::Duration,
+    /// Time spent processing burn events (debug builds only).
+    #[cfg(debug_assertions)]
+    pub burn_processing_time: std::time::Duration,
+    /// Time spent processing collect events (debug builds only).
+    #[cfg(debug_assertions)]
+    pub collect_processing_time: std::time::Duration,
 }
 
-impl PoolAnalytics {
-    pub fn new() -> Self {
+impl Default for PoolAnalytics {
+    fn default() -> Self {
         Self {
             total_amount0_deposited: U256::ZERO,
             total_amount1_deposited: U256::ZERO,
-            total_amount0_withdrawn: U256::ZERO,
-            total_amount1_withdrawn: U256::ZERO,
+            total_amount0_collected: U256::ZERO,
+            total_amount1_collected: U256::ZERO,
             total_swaps: 0,
             total_mints: 0,
             total_burns: 0,
             total_fee_collects: 0,
+            #[cfg(debug_assertions)]
+            swap_processing_time: std::time::Duration::ZERO,
+            #[cfg(debug_assertions)]
+            mint_processing_time: std::time::Duration::ZERO,
+            #[cfg(debug_assertions)]
+            burn_processing_time: std::time::Duration::ZERO,
+            #[cfg(debug_assertions)]
+            collect_processing_time: std::time::Duration::ZERO,
         }
     }
 }

@@ -135,6 +135,8 @@ pub async fn run_analyze_pool(
         let mut stream =
             cache_database.stream_pool_events(pool.chain.clone(), pool.dex.clone(), &pool_address);
 
+        #[cfg(debug_assertions)]
+        let total_start = std::time::Instant::now();
         while let Some(result) = stream.next().await {
             match result {
                 Ok(event) => {
@@ -143,32 +145,48 @@ pub async fn run_analyze_pool(
                 Err(e) => log::error!("Error processing event: {}", e),
             }
         }
+
+        #[cfg(debug_assertions)]
+        {
+            let total_time = total_start.elapsed();
+            let processing_time = profiler.get_total_processing_time();
+            let streaming_time = total_time - processing_time;
+            // Log performance report
+            profiler.log_performance_report(total_time, streaming_time);
+        }
     }
 
+    let snapshot = profiler.extract_snapshot();
+
+    // Save complete pool snapshot to database (includes state, positions, and ticks)
+    log::info!(
+        "Saving pool snapshot with {} positions and {} ticks to database...",
+        snapshot.positions.len(),
+        snapshot.ticks.len()
+    );
+    data_client
+        .cache
+        .add_pool_snapshot(&pool.address, &snapshot)
+        .await?;
+    log::info!("Saved complete pool snapshot to database");
+
     if dex_type == DexType::UniswapV3 {
+        log::info!("Comparing profiler state with on-chain state...");
         let pool_contract = UniswapV3PoolContract::new(http_rpc_client.clone());
 
-        let on_chain_state = pool_contract.get_global_state(&pool_address).await?;
-        let on_chain_ticks = pool_contract
-            .batch_get_ticks(&pool_address, &profiler.get_active_tick_values())
-            .await?;
+        // Prepare data for snapshot fetch
+        let tick_values = profiler.get_active_tick_values();
         let position_keys: Vec<(Address, i32, i32)> = profiler
             .get_active_positions()
             .iter()
             .map(|position| (position.owner, position.tick_lower, position.tick_upper))
             .collect();
-        let on_chain_positions = pool_contract
-            .batch_get_positions(&pool_address, &position_keys)
+
+        // Fetch on-chain snapshot
+        let on_chain_snapshot = pool_contract
+            .fetch_snapshot(&pool_address, &tick_values, &position_keys)
             .await?;
-        let result = compare_pool_profiler(
-            &profiler,
-            on_chain_state.tick,
-            on_chain_state.sqrt_price_x96,
-            on_chain_state.fee_protocol,
-            on_chain_state.liquidity,
-            on_chain_ticks,
-            on_chain_positions,
-        );
+        let result = compare_pool_profiler(&profiler, &on_chain_snapshot);
 
         if result {
             log::info!("✅  Pool profiler state matches on-chain smart contract state.");

@@ -20,7 +20,14 @@ use alloy::{
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
-use nautilus_model::defi::{pool_analysis::position::PoolPosition, tick_map::tick::Tick};
+use nautilus_model::defi::{
+    data::block::BlockPosition,
+    pool_analysis::{
+        position::PoolPosition,
+        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+    },
+    tick_map::tick::Tick,
+};
 use thiserror::Error;
 
 use super::base::{BaseContract, ContractCall};
@@ -408,5 +415,60 @@ impl UniswapV3PoolContract {
             .collect();
 
         Ok(position_infos)
+    }
+
+    /// Fetches a complete pool snapshot directly from on-chain state.
+    ///
+    /// Retrieves global state, tick data, and position data from the blockchain
+    /// and constructs a `PoolSnapshot` representing the current on-chain state.
+    /// This snapshot can be compared against profiler state for validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if any RPC calls fail or data cannot be decoded.
+    pub async fn fetch_snapshot(
+        &self,
+        pool_address: &Address,
+        tick_values: &[i32],
+        position_keys: &[(Address, i32, i32)],
+    ) -> Result<PoolSnapshot, UniswapV3PoolError> {
+        // Fetch all data
+        let global_state = self.get_global_state(pool_address).await?;
+        let ticks_map = self.batch_get_ticks(pool_address, tick_values).await?;
+        let positions = self
+            .batch_get_positions(pool_address, position_keys)
+            .await?;
+
+        // Convert HashMap<i32, Tick> to Vec<Tick>
+        let ticks: Vec<Tick> = ticks_map.into_values().collect();
+
+        // Construct PoolState from on-chain global state
+        let pool_state = PoolState {
+            current_tick: global_state.tick,
+            price_sqrt_ratio_x96: global_state.sqrt_price_x96,
+            liquidity: global_state.liquidity,
+            protocol_fees_token0: U256::ZERO,
+            protocol_fees_token1: U256::ZERO,
+            fee_protocol: global_state.fee_protocol,
+            fee_growth_global_0: global_state.fee_growth_global_0_x128,
+            fee_growth_global_1: global_state.fee_growth_global_1_x128,
+        };
+
+        // For on-chain snapshots used in comparison, analytics and block position are not relevant
+        let analytics = PoolAnalytics::default();
+        let block_position = BlockPosition {
+            number: 0,
+            transaction_hash: String::new(),
+            transaction_index: 0,
+            log_index: 0,
+        };
+
+        Ok(PoolSnapshot::new(
+            pool_state,
+            positions,
+            ticks,
+            analytics,
+            block_position,
+        ))
     }
 }

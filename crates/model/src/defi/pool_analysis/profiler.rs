@@ -70,7 +70,10 @@ pub struct PoolProfiler {
     pub tick_map: TickMap,
     /// Global pool state including current price, tick, and cumulative flows with fees.
     pub state: PoolState,
+    /// Analytics counters tracking pool operations and performance metrics.
     pub analytics: PoolAnalytics,
+    /// The block position of the last processed event.
+    last_processed_event: Option<BlockPosition>,
     /// Flag indicating whether the pool has been initialized with a starting price.
     pub is_initialized: bool,
 }
@@ -89,7 +92,8 @@ impl PoolProfiler {
             positions: HashMap::new(),
             tick_map: TickMap::new(tick_spacing),
             state: PoolState::default(),
-            analytics: PoolAnalytics::new(),
+            analytics: PoolAnalytics::default(),
+            last_processed_event: None,
             is_initialized: false,
         }
     }
@@ -151,22 +155,82 @@ impl PoolProfiler {
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
         match event {
             DexPoolData::Swap(swap) => {
+                #[cfg(debug_assertions)]
+                let start = std::time::Instant::now();
+
                 self.process_swap(swap)?;
+
+                #[cfg(debug_assertions)]
+                {
+                    self.analytics.swap_processing_time += start.elapsed();
+                }
+
                 self.analytics.total_swaps += 1;
+                self.last_processed_event = Some(BlockPosition::new(
+                    swap.block,
+                    swap.transaction_hash.clone(),
+                    swap.transaction_index,
+                    swap.log_index,
+                ))
             }
             DexPoolData::LiquidityUpdate(update) => match update.kind {
                 PoolLiquidityUpdateType::Mint => {
+                    #[cfg(debug_assertions)]
+                    let start = std::time::Instant::now();
+
                     self.process_mint(update)?;
+
+                    #[cfg(debug_assertions)]
+                    {
+                        self.analytics.mint_processing_time += start.elapsed();
+                    }
+
                     self.analytics.total_mints += 1;
+                    self.last_processed_event = Some(BlockPosition::new(
+                        update.block,
+                        update.transaction_hash.clone(),
+                        update.transaction_index,
+                        update.log_index,
+                    ))
                 }
                 PoolLiquidityUpdateType::Burn => {
+                    #[cfg(debug_assertions)]
+                    let start = std::time::Instant::now();
+
                     self.process_burn(update)?;
+
+                    #[cfg(debug_assertions)]
+                    {
+                        self.analytics.burn_processing_time += start.elapsed();
+                    }
+
                     self.analytics.total_burns += 1;
+                    self.last_processed_event = Some(BlockPosition::new(
+                        update.block,
+                        update.transaction_hash.clone(),
+                        update.transaction_index,
+                        update.log_index,
+                    ))
                 }
             },
             DexPoolData::FeeCollect(collect) => {
+                #[cfg(debug_assertions)]
+                let start = std::time::Instant::now();
+
                 self.process_collect(collect)?;
+
+                #[cfg(debug_assertions)]
+                {
+                    self.analytics.collect_processing_time += start.elapsed();
+                }
+
                 self.analytics.total_fee_collects += 1;
+                self.last_processed_event = Some(BlockPosition::new(
+                    collect.block,
+                    collect.transaction_hash.clone(),
+                    collect.transaction_index,
+                    collect.log_index,
+                ))
             }
         }
         Ok(())
@@ -267,7 +331,7 @@ impl PoolProfiler {
             self.pool.dex.clone(),
             self.pool.address,
             block.number,
-            block.hash,
+            block.transaction_hash,
             block.transaction_index,
             block.log_index,
             None,
@@ -739,7 +803,7 @@ impl PoolProfiler {
             self.pool.address,
             PoolLiquidityUpdateType::Mint,
             block.number,
-            block.hash,
+            block.transaction_hash,
             block.transaction_index,
             block.log_index,
             None,
@@ -834,7 +898,7 @@ impl PoolProfiler {
             self.pool.address,
             PoolLiquidityUpdateType::Burn,
             block.number,
-            block.hash,
+            block.transaction_hash,
             block.transaction_index,
             block.log_index,
             None,
@@ -871,8 +935,8 @@ impl PoolProfiler {
             position.collect_fees(collect.amount0, collect.amount1);
         }
 
-        self.analytics.total_amount0_withdrawn += U256::from(collect.amount0);
-        self.analytics.total_amount1_withdrawn += U256::from(collect.amount1);
+        self.analytics.total_amount0_collected += U256::from(collect.amount0);
+        self.analytics.total_amount1_collected += U256::from(collect.amount1);
 
         Ok(())
     }
@@ -1116,6 +1180,10 @@ impl PoolProfiler {
     /// all liquidity positions, and the full tick distribution into a portable
     /// [`PoolSnapshot`] structure. This snapshot can be serialized, persisted
     /// to database, or used to restore pool state later.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no events have been processed yet.
     pub fn extract_snapshot(&self) -> PoolSnapshot {
         let positions: Vec<_> = self.positions.values().cloned().collect();
         let ticks: Vec<_> = self.tick_map.get_all_ticks().values().cloned().collect();
@@ -1123,7 +1191,15 @@ impl PoolProfiler {
         let mut state = self.state.clone();
         state.liquidity = self.tick_map.liquidity;
 
-        PoolSnapshot::new(state, positions, ticks)
+        PoolSnapshot::new(
+            state,
+            positions,
+            ticks,
+            self.analytics.clone(),
+            self.last_processed_event
+                .clone()
+                .expect("No events processed yet"),
+        )
     }
 
     /// Gets the count of positions that are currently active.
@@ -1293,5 +1369,112 @@ impl PoolProfiler {
     pub fn set_fee_growth_global(&mut self, fee_growth_global_0: U256, fee_growth_global_1: U256) {
         self.state.fee_growth_global_0 = fee_growth_global_0;
         self.state.fee_growth_global_1 = fee_growth_global_1;
+    }
+
+    /// Returns the total time spent processing all events.
+    #[cfg(debug_assertions)]
+    pub fn get_total_processing_time(&self) -> std::time::Duration {
+        self.analytics.swap_processing_time
+            + self.analytics.mint_processing_time
+            + self.analytics.burn_processing_time
+            + self.analytics.collect_processing_time
+    }
+
+    /// Returns the total number of events processed.
+    pub fn get_total_events(&self) -> u64 {
+        self.analytics.total_swaps
+            + self.analytics.total_mints
+            + self.analytics.total_burns
+            + self.analytics.total_fee_collects
+    }
+
+    /// Logs a formatted performance report showing event processing breakdown.
+    #[cfg(debug_assertions)]
+    pub fn log_performance_report(
+        &self,
+        total_time: std::time::Duration,
+        streaming_time: std::time::Duration,
+    ) {
+        use thousands::Separable;
+
+        let processing_time = self.get_total_processing_time();
+        let total_events = self.get_total_events();
+
+        log::info!("═══════════════════════════════════════════════════════");
+        log::info!("         Profiling Performance Report");
+        log::info!("═══════════════════════════════════════════════════════");
+        log::info!("");
+        log::info!("Total Time: {:.2}s", total_time.as_secs_f64());
+        log::info!(
+            "├─ Database Streaming: {:.2}s ({:.1}%)",
+            streaming_time.as_secs_f64(),
+            (streaming_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0
+        );
+        log::info!(
+            "└─ Event Processing: {:.2}s ({:.1}%)",
+            processing_time.as_secs_f64(),
+            (processing_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0
+        );
+        log::info!("");
+        log::info!(
+            "Event Processing Breakdown: {:.2}s",
+            processing_time.as_secs_f64()
+        );
+
+        if self.analytics.total_swaps > 0 {
+            let swap_time = self.analytics.swap_processing_time.as_secs_f64();
+            log::info!(
+                "├─ Swaps:    {:.2}s ({:.1}%) - {} events → {} events/sec",
+                swap_time,
+                (swap_time / processing_time.as_secs_f64()) * 100.0,
+                self.analytics.total_swaps.separate_with_commas(),
+                ((self.analytics.total_swaps as f64 / swap_time) as u64).separate_with_commas()
+            );
+        }
+
+        if self.analytics.total_mints > 0 {
+            let mint_time = self.analytics.mint_processing_time.as_secs_f64();
+            log::info!(
+                "├─ Mints:    {:.2}s ({:.1}%) - {} events → {} events/sec",
+                mint_time,
+                (mint_time / processing_time.as_secs_f64()) * 100.0,
+                self.analytics.total_mints.separate_with_commas(),
+                ((self.analytics.total_mints as f64 / mint_time) as u64).separate_with_commas()
+            );
+        }
+
+        if self.analytics.total_burns > 0 {
+            let burn_time = self.analytics.burn_processing_time.as_secs_f64();
+            log::info!(
+                "├─ Burns:    {:.2}s ({:.1}%) - {} events → {} events/sec",
+                burn_time,
+                (burn_time / processing_time.as_secs_f64()) * 100.0,
+                self.analytics.total_burns.separate_with_commas(),
+                ((self.analytics.total_burns as f64 / burn_time) as u64).separate_with_commas()
+            );
+        }
+
+        if self.analytics.total_fee_collects > 0 {
+            let collect_time = self.analytics.collect_processing_time.as_secs_f64();
+            log::info!(
+                "└─ Collects: {:.2}s ({:.1}%) - {} events → {} events/sec",
+                collect_time,
+                (collect_time / processing_time.as_secs_f64()) * 100.0,
+                self.analytics.total_fee_collects.separate_with_commas(),
+                ((self.analytics.total_fee_collects as f64 / collect_time) as u64)
+                    .separate_with_commas()
+            );
+        }
+
+        log::info!("");
+        log::info!(
+            "Overall Throughput: {} events/sec",
+            ((total_events as f64 / total_time.as_secs_f64()) as u64).separate_with_commas()
+        );
+        log::info!(
+            "Processing Throughput: {} events/sec",
+            ((total_events as f64 / processing_time.as_secs_f64()) as u64).separate_with_commas()
+        );
+        log::info!("═══════════════════════════════════════════════════════");
     }
 }

@@ -33,8 +33,8 @@ use crate::defi::{
 pub struct BlockPosition {
     /// The block number (height) in the blockchain where the event occurred.
     pub number: u64,
-    /// The unique hash identifier of the block containing the event.
-    pub hash: String,
+    /// The unique hash identifier of the transaction containing the event.
+    pub transaction_hash: String,
     /// The index position of the transaction within the block (0-based).
     pub transaction_index: u32,
     /// The index position of the log/event within the transaction (0-based).
@@ -43,10 +43,10 @@ pub struct BlockPosition {
 
 impl BlockPosition {
     /// Creates a new [`BlockPosition`] with the specified positioning data.
-    pub fn new(number: u64, hash: String, index: u32, log_index: u32) -> Self {
+    pub fn new(number: u64, transaction_hash: String, index: u32, log_index: u32) -> Self {
         Self {
             number,
-            hash,
+            transaction_hash,
             transaction_index: index,
             log_index,
         }

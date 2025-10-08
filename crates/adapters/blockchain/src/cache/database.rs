@@ -20,7 +20,8 @@ use futures_util::{Stream, StreamExt};
 use nautilus_model::defi::{
     Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
     data::{DexPoolData, PoolFeeCollect},
-    pool_analysis::position::PoolPosition,
+    pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
+    tick_map::tick::Tick,
     validation::validate_address,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
@@ -1206,6 +1207,58 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_fee_collect table: {e}"))
     }
 
+    pub async fn add_pool_snapshot(
+        &self,
+        chain_id: u32,
+        pool_address: &Address,
+        snapshot: &PoolSnapshot,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r"
+            INSERT INTO pool_snapshot (
+                chain_id, pool_address, block, transaction_index, log_index, transaction_hash,
+                current_tick, price_sqrt_ratio_x96, liquidity,
+                protocol_fees_token0, protocol_fees_token1, fee_protocol,
+                fee_growth_global_0, fee_growth_global_1,
+                total_amount0_deposited, total_amount1_deposited,
+                total_amount0_collected, total_amount1_collected,
+                total_swaps, total_mints, total_burns, total_fee_collects
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8::U160, $9::U128, $10::U256, $11::U256, $12,
+                $13::U256, $14::U256, $15::U256, $16::U256, $17::U256, $18::U256,
+                $19, $20, $21, $22
+            )
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_address.to_string())
+        .bind(snapshot.block_position.number as i64)
+        .bind(snapshot.block_position.transaction_index as i32)
+        .bind(snapshot.block_position.log_index as i32)
+        .bind(snapshot.block_position.transaction_hash.to_string())
+        .bind(snapshot.state.current_tick)
+        .bind(snapshot.state.price_sqrt_ratio_x96.to_string())
+        .bind(snapshot.state.liquidity.to_string())
+        .bind(snapshot.state.protocol_fees_token0.to_string())
+        .bind(snapshot.state.protocol_fees_token1.to_string())
+        .bind(snapshot.state.fee_protocol as i16)
+        .bind(snapshot.state.fee_growth_global_0.to_string())
+        .bind(snapshot.state.fee_growth_global_1.to_string())
+        .bind(snapshot.analytics.total_amount0_deposited.to_string())
+        .bind(snapshot.analytics.total_amount1_deposited.to_string())
+        .bind(snapshot.analytics.total_amount0_collected.to_string())
+        .bind(snapshot.analytics.total_amount1_collected.to_string())
+        .bind(snapshot.analytics.total_swaps as i32)
+        .bind(snapshot.analytics.total_mints as i32)
+        .bind(snapshot.analytics.total_burns as i32)
+        .bind(snapshot.analytics.total_fee_collects as i32)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into pool_snapshot table: {e}"))
+    }
+
     /// Inserts multiple pool positions in a single database operation using UNNEST for optimal performance.
     ///
     /// # Errors
@@ -1214,6 +1267,9 @@ impl BlockchainCacheDatabase {
     pub async fn add_pool_positions_batch(
         &self,
         chain_id: u32,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
         positions: &[(Address, PoolPosition)],
     ) -> anyhow::Result<()> {
         if positions.is_empty() {
@@ -1231,7 +1287,10 @@ impl BlockchainCacheDatabase {
         let mut fee_growth_inside_1_lasts: Vec<String> = Vec::with_capacity(len);
         let mut tokens_owed_0s: Vec<String> = Vec::with_capacity(len);
         let mut tokens_owed_1s: Vec<String> = Vec::with_capacity(len);
-        let mut last_updated_blocks: Vec<Option<i64>> = Vec::with_capacity(len);
+        let mut total_amount0_depositeds: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut total_amount1_depositeds: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut total_amount0_collecteds: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut total_amount1_collecteds: Vec<Option<String>> = Vec::with_capacity(len);
 
         // Fill vectors from positions
         for (pool_address, position) in positions {
@@ -1244,38 +1303,45 @@ impl BlockchainCacheDatabase {
             fee_growth_inside_1_lasts.push(position.fee_growth_inside_1_last.to_string());
             tokens_owed_0s.push(position.tokens_owed_0.to_string());
             tokens_owed_1s.push(position.tokens_owed_1.to_string());
-            last_updated_blocks.push(None); // Or derive from context
+            total_amount0_depositeds.push(Some(position.total_amount0_deposited.to_string()));
+            total_amount1_depositeds.push(Some(position.total_amount1_deposited.to_string()));
+            total_amount0_collecteds.push(Some(position.total_amount0_collected.to_string()));
+            total_amount1_collecteds.push(Some(position.total_amount1_collected.to_string()));
         }
 
         // Execute batch insert with UNNEST
         sqlx::query(
             r"
             INSERT INTO pool_position (
-                chain_id, pool_address, owner, tick_lower, tick_upper,
+                chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index,
+                owner, tick_lower, tick_upper,
                 liquidity, fee_growth_inside_0_last, fee_growth_inside_1_last,
-                tokens_owed_0, tokens_owed_1, last_updated_block
+                tokens_owed_0, tokens_owed_1,
+                total_amount0_deposited, total_amount1_deposited,
+                total_amount0_collected, total_amount1_collected
             )
             SELECT
-                $1, pool_address, owner, tick_lower, tick_upper,
+                $1, pool_address, $2, $3, $4,
+                owner, tick_lower, tick_upper,
                 liquidity::U128, fee_growth_inside_0_last::U256, fee_growth_inside_1_last::U256,
-                tokens_owed_0::U128, tokens_owed_1::U128, last_updated_block
+                tokens_owed_0::U128, tokens_owed_1::U128,
+                total_amount0_deposited::U256, total_amount1_deposited::U256,
+                total_amount0_collected::U128, total_amount1_collected::U128
             FROM UNNEST(
-                $2::TEXT[], $3::TEXT[], $4::INT[], $5::INT[], $6::TEXT[], $7::TEXT[],
-                $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::INT[]
+                $5::TEXT[], $6::TEXT[], $7::INT[], $8::INT[], $9::TEXT[], $10::TEXT[],
+                $11::TEXT[], $12::TEXT[], $13::TEXT[], $14::TEXT[], $15::TEXT[],
+                $16::TEXT[], $17::TEXT[]
             ) AS t(pool_address, owner, tick_lower, tick_upper,
                    liquidity, fee_growth_inside_0_last, fee_growth_inside_1_last,
-                   tokens_owed_0, tokens_owed_1, last_updated_block)
-            ON CONFLICT (chain_id, pool_address, owner, tick_lower, tick_upper)
-            DO UPDATE SET
-                liquidity = EXCLUDED.liquidity,
-                fee_growth_inside_0_last = EXCLUDED.fee_growth_inside_0_last,
-                fee_growth_inside_1_last = EXCLUDED.fee_growth_inside_1_last,
-                tokens_owed_0 = EXCLUDED.tokens_owed_0,
-                tokens_owed_1 = EXCLUDED.tokens_owed_1,
-                last_updated_block = EXCLUDED.last_updated_block
+                   tokens_owed_0, tokens_owed_1,
+                   total_amount0_deposited, total_amount1_deposited,
+                   total_amount0_collected, total_amount1_collected)
            ",
         )
         .bind(chain_id as i32)
+        .bind(snapshot_block as i64)
+        .bind(snapshot_transaction_index as i32)
+        .bind(snapshot_log_index as i32)
         .bind(&pool_addresses[..])
         .bind(&owners[..])
         .bind(&tick_lowers[..])
@@ -1285,11 +1351,88 @@ impl BlockchainCacheDatabase {
         .bind(&fee_growth_inside_1_lasts[..])
         .bind(&tokens_owed_0s[..])
         .bind(&tokens_owed_1s[..])
-        .bind(&last_updated_blocks[..])
+        .bind(&total_amount0_depositeds as &[Option<String>])
+        .bind(&total_amount1_depositeds as &[Option<String>])
+        .bind(&total_amount0_collecteds as &[Option<String>])
+        .bind(&total_amount1_collecteds as &[Option<String>])
         .execute(&self.pool)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_position table: {e}"))
+    }
+
+    /// Inserts multiple pool ticks in a single database operation using UNNEST for optimal performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_pool_ticks_batch(
+        &self,
+        chain_id: u32,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
+        ticks: &[(Address, &Tick)],
+    ) -> anyhow::Result<()> {
+        if ticks.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare vectors for each column
+        let len = ticks.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut tick_values: Vec<i32> = Vec::with_capacity(len);
+        let mut liquidity_grosses: Vec<String> = Vec::with_capacity(len);
+        let mut liquidity_nets: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_outside_0s: Vec<String> = Vec::with_capacity(len);
+        let mut fee_growth_outside_1s: Vec<String> = Vec::with_capacity(len);
+        let mut initializeds: Vec<bool> = Vec::with_capacity(len);
+
+        // Fill vectors from ticks
+        for (pool_address, tick) in ticks {
+            pool_addresses.push(pool_address.to_string());
+            tick_values.push(tick.value);
+            liquidity_grosses.push(tick.liquidity_gross.to_string());
+            liquidity_nets.push(tick.liquidity_net.to_string());
+            fee_growth_outside_0s.push(tick.fee_growth_outside_0.to_string());
+            fee_growth_outside_1s.push(tick.fee_growth_outside_1.to_string());
+            initializeds.push(tick.initialized);
+        }
+
+        // Execute batch insert with UNNEST
+        sqlx::query(
+            r"
+            INSERT INTO pool_tick (
+                chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index,
+                tick_value, liquidity_gross, liquidity_net,
+                fee_growth_outside_0, fee_growth_outside_1, initialized
+            )
+            SELECT
+                $1, pool_address, $2, $3, $4,
+                tick_value, liquidity_gross::U128, liquidity_net::I128,
+                fee_growth_outside_0::U256, fee_growth_outside_1::U256, initialized
+            FROM UNNEST(
+                $5::TEXT[], $6::INT[], $7::TEXT[], $8::TEXT[], $9::TEXT[],
+                $10::TEXT[], $11::BOOLEAN[]
+            ) AS t(pool_address, tick_value, liquidity_gross, liquidity_net,
+                   fee_growth_outside_0, fee_growth_outside_1, initialized)
+           ",
+        )
+        .bind(chain_id as i32)
+        .bind(snapshot_block as i64)
+        .bind(snapshot_transaction_index as i32)
+        .bind(snapshot_log_index as i32)
+        .bind(&pool_addresses[..])
+        .bind(&tick_values[..])
+        .bind(&liquidity_grosses[..])
+        .bind(&liquidity_nets[..])
+        .bind(&fee_growth_outside_0s[..])
+        .bind(&fee_growth_outside_1s[..])
+        .bind(&initializeds[..])
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_tick table: {e}"))
     }
 
     pub async fn update_pool_initial_price_tick(

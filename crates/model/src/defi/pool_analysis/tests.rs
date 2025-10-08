@@ -512,12 +512,12 @@ fn test_execute_burn_equivalence() {
         profiler2.analytics.total_amount1_deposited
     );
     assert_eq!(
-        profiler1.analytics.total_amount0_withdrawn,
-        profiler2.analytics.total_amount0_withdrawn
+        profiler1.analytics.total_amount0_collected,
+        profiler2.analytics.total_amount0_collected
     );
     assert_eq!(
-        profiler1.analytics.total_amount1_withdrawn,
-        profiler2.analytics.total_amount1_withdrawn
+        profiler1.analytics.total_amount1_collected,
+        profiler2.analytics.total_amount1_collected
     );
 
     // Verify position states
