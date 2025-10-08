@@ -213,12 +213,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting order to Hyperliquid: {order}")
 
-            # Convert order to PyO3 format and then to Hyperliquid JSON
-            from nautilus_trader.core.nautilus_pyo3.hyperliquid import order_to_json
-            from nautilus_trader.model.orders import order_to_pyo3
+            # Convert order to Hyperliquid JSON format
+            from nautilus_trader.adapters.hyperliquid.parsing import order_to_hyperliquid_json
 
-            pyo3_order = order_to_pyo3(order)
-            order_json = order_to_json(pyo3_order)
+            order_json = order_to_hyperliquid_json(order)
 
             # Submit via HTTP client
             response_json = await self._client.submit_order(order_json)
@@ -296,12 +294,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
 
-            # Convert orders to PyO3 format and then to Hyperliquid JSON array
-            from nautilus_trader.core.nautilus_pyo3.hyperliquid import orders_to_json
-            from nautilus_trader.model.orders import order_to_pyo3
+            # Convert orders to Hyperliquid JSON format
+            from nautilus_trader.adapters.hyperliquid.parsing import orders_to_hyperliquid_json
 
-            pyo3_orders = [order_to_pyo3(order) for order in orders]
-            orders_json = orders_to_json(pyo3_orders)
+            orders_json = orders_to_hyperliquid_json(orders)
 
             # Submit all orders via HTTP client
             response_json = await self._client.submit_orders(orders_json)
