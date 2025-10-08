@@ -49,6 +49,7 @@ logs/
 .ruff_cache/
 *dask-worker-space*
 venv*/
+.venv/
 __pycache__/
 
 # Build environment and temp
