@@ -5115,6 +5115,7 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "pyo3-async-runtimes",
+ "pyo3-stub-gen",
  "redis",
  "regex",
  "rmp-serde",
