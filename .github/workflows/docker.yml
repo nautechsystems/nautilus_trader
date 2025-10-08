@@ -206,7 +206,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@902fa6ce3d6aae67c840d82b9f270d1f2f0e18d8 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -233,7 +233,7 @@ jobs:
           touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f38360cd5320124e5e4bb86f260207f68c3 # v4.6.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
           path: /tmp/digests/nautilus_trader/*
@@ -248,7 +248,7 @@ jobs:
     needs: build-docker-images-nautilus-trader
     steps:
       - name: Download digests
-        uses: actions/download-artifact@d3f86a106a0f643d13c2dfef8a5c3957e9e9c857 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: /tmp/digests/nautilus_trader
           pattern: digests-nautilus_trader-*
@@ -274,7 +274,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@902fa6ce3d6aae67c840d82b9f270d1f2f0e18d8 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -381,7 +381,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@902fa6ce3d6aae67c840d82b9f270d1f2f0e18d8 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
@@ -410,7 +410,7 @@ jobs:
           touch "/tmp/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f38360cd5320124e5e4bb86f260207f68c3 # v4.6.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
           path: /tmp/digests/jupyterlab/*
@@ -425,7 +425,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       - name: Download digests
-        uses: actions/download-artifact@d3f86a106a0f643d13c2dfef8a5c3957e9e9c857 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: /tmp/digests/jupyterlab
           pattern: digests-jupyterlab-*
@@ -451,7 +451,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@902fa6ce3d6aae67c840d82b9f270d1f2f0e18d8 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
