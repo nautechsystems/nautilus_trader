@@ -56,8 +56,8 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pyfunction]
 #[pyo3(name = "order_to_json")]
 fn order_to_json(order: &nautilus_model::orders::OrderAny) -> PyResult<String> {
-    let order_request = crate::common::parse::order_to_hyperliquid_request(order)
-        .map_err(to_pyvalue_err)?;
+    let order_request =
+        crate::common::parse::order_to_hyperliquid_request(order).map_err(to_pyvalue_err)?;
     to_string(&order_request).map_err(to_pyvalue_err)
 }
 
