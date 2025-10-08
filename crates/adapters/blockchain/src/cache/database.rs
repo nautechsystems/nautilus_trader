@@ -19,12 +19,15 @@ use alloy::primitives::{Address, U256};
 use futures_util::{Stream, StreamExt};
 use nautilus_model::defi::{
     Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
-    data::{DexPoolData, PoolFeeCollect},
-    pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
+    data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
+    pool_analysis::{
+        position::PoolPosition,
+        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+    },
     tick_map::tick::Tick,
     validation::validate_address,
 };
-use sqlx::{PgPool, postgres::PgConnectOptions};
+use sqlx::{PgPool, Row, postgres::PgConnectOptions};
 
 use crate::{
     cache::{
@@ -1387,6 +1390,7 @@ impl BlockchainCacheDatabase {
         let mut fee_growth_outside_0s: Vec<String> = Vec::with_capacity(len);
         let mut fee_growth_outside_1s: Vec<String> = Vec::with_capacity(len);
         let mut initializeds: Vec<bool> = Vec::with_capacity(len);
+        let mut last_updated_blocks: Vec<i64> = Vec::with_capacity(len);
 
         // Fill vectors from ticks
         for (pool_address, tick) in ticks {
@@ -1397,6 +1401,7 @@ impl BlockchainCacheDatabase {
             fee_growth_outside_0s.push(tick.fee_growth_outside_0.to_string());
             fee_growth_outside_1s.push(tick.fee_growth_outside_1.to_string());
             initializeds.push(tick.initialized);
+            last_updated_blocks.push(tick.last_updated_block as i64);
         }
 
         // Execute batch insert with UNNEST
@@ -1405,17 +1410,17 @@ impl BlockchainCacheDatabase {
             INSERT INTO pool_tick (
                 chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index,
                 tick_value, liquidity_gross, liquidity_net,
-                fee_growth_outside_0, fee_growth_outside_1, initialized
+                fee_growth_outside_0, fee_growth_outside_1, initialized, last_updated_block
             )
             SELECT
                 $1, pool_address, $2, $3, $4,
                 tick_value, liquidity_gross::U128, liquidity_net::I128,
-                fee_growth_outside_0::U256, fee_growth_outside_1::U256, initialized
+                fee_growth_outside_0::U256, fee_growth_outside_1::U256, initialized, last_updated_block
             FROM UNNEST(
                 $5::TEXT[], $6::INT[], $7::TEXT[], $8::TEXT[], $9::TEXT[],
-                $10::TEXT[], $11::BOOLEAN[]
+                $10::TEXT[], $11::BOOLEAN[], $12::BIGINT[]
             ) AS t(pool_address, tick_value, liquidity_gross, liquidity_net,
-                   fee_growth_outside_0, fee_growth_outside_1, initialized)
+                   fee_growth_outside_0, fee_growth_outside_1, initialized, last_updated_block)
            ",
         )
         .bind(chain_id as i32)
@@ -1429,6 +1434,7 @@ impl BlockchainCacheDatabase {
         .bind(&fee_growth_outside_0s[..])
         .bind(&fee_growth_outside_1s[..])
         .bind(&initializeds[..])
+        .bind(&last_updated_blocks[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -1462,10 +1468,280 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
     }
 
+    /// Loads the latest valid pool snapshot from the database.
+    ///
+    /// Returns the most recent snapshot that has been validated against on-chain state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn load_latest_valid_pool_snapshot(
+        &self,
+        chain_id: u32,
+        pool_address: &Address,
+    ) -> anyhow::Result<Option<PoolSnapshot>> {
+        let result = sqlx::query(
+            r"
+            SELECT
+                block, transaction_index, log_index, transaction_hash,
+                current_tick, price_sqrt_ratio_x96::TEXT, liquidity::TEXT,
+                protocol_fees_token0::TEXT, protocol_fees_token1::TEXT, fee_protocol,
+                fee_growth_global_0::TEXT, fee_growth_global_1::TEXT,
+                total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
+                total_amount0_collected::TEXT, total_amount1_collected::TEXT,
+                total_swaps, total_mints, total_burns, total_fee_collects
+            FROM pool_snapshot
+            WHERE chain_id = $1 AND pool_address = $2 AND is_valid = TRUE
+            ORDER BY block DESC, transaction_index DESC, log_index DESC
+            LIMIT 1
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_address.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load latest valid pool snapshot: {}", e))?;
+
+        if let Some(row) = result {
+            // Parse snapshot state
+            let block: i64 = row.get("block");
+            let transaction_index: i32 = row.get("transaction_index");
+            let log_index: i32 = row.get("log_index");
+            let transaction_hash: String = row.get("transaction_hash");
+
+            let block_position = nautilus_model::defi::data::block::BlockPosition::new(
+                block as u64,
+                transaction_hash,
+                transaction_index as u32,
+                log_index as u32,
+            );
+
+            let state = PoolState {
+                current_tick: row.get("current_tick"),
+                price_sqrt_ratio_x96: row.get::<String, _>("price_sqrt_ratio_x96").parse()?,
+                liquidity: row.get::<String, _>("liquidity").parse()?,
+                protocol_fees_token0: row.get::<String, _>("protocol_fees_token0").parse()?,
+                protocol_fees_token1: row.get::<String, _>("protocol_fees_token1").parse()?,
+                fee_protocol: row.get::<i16, _>("fee_protocol") as u8,
+                fee_growth_global_0: row.get::<String, _>("fee_growth_global_0").parse()?,
+                fee_growth_global_1: row.get::<String, _>("fee_growth_global_1").parse()?,
+            };
+
+            let analytics = PoolAnalytics {
+                total_amount0_deposited: row.get::<String, _>("total_amount0_deposited").parse()?,
+                total_amount1_deposited: row.get::<String, _>("total_amount1_deposited").parse()?,
+                total_amount0_collected: row.get::<String, _>("total_amount0_collected").parse()?,
+                total_amount1_collected: row.get::<String, _>("total_amount1_collected").parse()?,
+                total_swaps: row.get::<i32, _>("total_swaps") as u64,
+                total_mints: row.get::<i32, _>("total_mints") as u64,
+                total_burns: row.get::<i32, _>("total_burns") as u64,
+                total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
+                #[cfg(debug_assertions)]
+                swap_processing_time: std::time::Duration::ZERO,
+                #[cfg(debug_assertions)]
+                mint_processing_time: std::time::Duration::ZERO,
+                #[cfg(debug_assertions)]
+                burn_processing_time: std::time::Duration::ZERO,
+                #[cfg(debug_assertions)]
+                collect_processing_time: std::time::Duration::ZERO,
+            };
+
+            // Load positions and ticks
+            let positions = self
+                .load_pool_positions_for_snapshot(
+                    chain_id,
+                    pool_address,
+                    block as u64,
+                    transaction_index as u32,
+                    log_index as u32,
+                )
+                .await?;
+
+            let ticks = self
+                .load_pool_ticks_for_snapshot(
+                    chain_id,
+                    pool_address,
+                    block as u64,
+                    transaction_index as u32,
+                    log_index as u32,
+                )
+                .await?;
+
+            Ok(Some(PoolSnapshot::new(
+                state,
+                positions,
+                ticks,
+                analytics,
+                block_position,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Marks a pool snapshot as valid after successful on-chain verification.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn mark_pool_snapshot_valid(
+        &self,
+        chain_id: u32,
+        pool_address: &Address,
+        block: u64,
+        transaction_index: u32,
+        log_index: u32,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r"
+            UPDATE pool_snapshot
+            SET is_valid = TRUE
+            WHERE chain_id = $1
+            AND pool_address = $2
+            AND block = $3
+            AND transaction_index = $4
+            AND log_index = $5
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_address.to_string())
+        .bind(block as i64)
+        .bind(transaction_index as i32)
+        .bind(log_index as i32)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {}", e))
+    }
+
+    /// Loads all positions for a specific snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn load_pool_positions_for_snapshot(
+        &self,
+        chain_id: u32,
+        pool_address: &Address,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
+    ) -> anyhow::Result<Vec<PoolPosition>> {
+        let rows = sqlx::query(
+            r"
+            SELECT
+                owner, tick_lower, tick_upper,
+                liquidity::TEXT, fee_growth_inside_0_last::TEXT, fee_growth_inside_1_last::TEXT,
+                tokens_owed_0::TEXT, tokens_owed_1::TEXT,
+                total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
+                total_amount0_collected::TEXT, total_amount1_collected::TEXT
+            FROM pool_position
+            WHERE chain_id = $1
+            AND pool_address = $2
+            AND snapshot_block = $3
+            AND snapshot_transaction_index = $4
+            AND snapshot_log_index = $5
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_address.to_string())
+        .bind(snapshot_block as i64)
+        .bind(snapshot_transaction_index as i32)
+        .bind(snapshot_log_index as i32)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load pool positions: {}", e))?;
+
+        rows.iter()
+            .map(|row| {
+                let owner: String = row.get("owner");
+                let position = PoolPosition {
+                    owner: validate_address(&owner)?,
+                    tick_lower: row.get("tick_lower"),
+                    tick_upper: row.get("tick_upper"),
+                    liquidity: row.get::<String, _>("liquidity").parse()?,
+                    fee_growth_inside_0_last: row
+                        .get::<String, _>("fee_growth_inside_0_last")
+                        .parse()?,
+                    fee_growth_inside_1_last: row
+                        .get::<String, _>("fee_growth_inside_1_last")
+                        .parse()?,
+                    tokens_owed_0: row.get::<String, _>("tokens_owed_0").parse()?,
+                    tokens_owed_1: row.get::<String, _>("tokens_owed_1").parse()?,
+                    total_amount0_deposited: row
+                        .get::<String, _>("total_amount0_deposited")
+                        .parse()?,
+                    total_amount1_deposited: row
+                        .get::<String, _>("total_amount1_deposited")
+                        .parse()?,
+                    total_amount0_collected: row
+                        .get::<String, _>("total_amount0_collected")
+                        .parse()?,
+                    total_amount1_collected: row
+                        .get::<String, _>("total_amount1_collected")
+                        .parse()?,
+                };
+                Ok(position)
+            })
+            .collect()
+    }
+
+    /// Loads all ticks for a specific snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn load_pool_ticks_for_snapshot(
+        &self,
+        chain_id: u32,
+        pool_address: &Address,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
+    ) -> anyhow::Result<Vec<Tick>> {
+        let rows = sqlx::query(
+            r"
+            SELECT
+                tick_value, liquidity_gross::TEXT, liquidity_net::TEXT,
+                fee_growth_outside_0::TEXT, fee_growth_outside_1::TEXT, initialized,
+                last_updated_block
+            FROM pool_tick
+            WHERE chain_id = $1
+            AND pool_address = $2
+            AND snapshot_block = $3
+            AND snapshot_transaction_index = $4
+            AND snapshot_log_index = $5
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(pool_address.to_string())
+        .bind(snapshot_block as i64)
+        .bind(snapshot_transaction_index as i32)
+        .bind(snapshot_log_index as i32)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load pool ticks: {}", e))?;
+
+        rows.iter()
+            .map(|row| {
+                let tick = Tick::new(
+                    row.get("tick_value"),
+                    row.get::<String, _>("liquidity_gross").parse()?,
+                    row.get::<String, _>("liquidity_net").parse()?,
+                    row.get::<String, _>("fee_growth_outside_0").parse()?,
+                    row.get::<String, _>("fee_growth_outside_1").parse()?,
+                    row.get("initialized"),
+                    row.get::<i64, _>("last_updated_block") as u64,
+                );
+                Ok(tick)
+            })
+            .collect()
+    }
+
     /// Streams pool events from all event tables (swap, liquidity, collect) for a specific pool.
     ///
     /// Creates a unified stream of pool events from multiple tables, ordering them chronologically
-    /// by block number, transaction index, and log index.
+    /// by block number, transaction index, and log index. Optionally resumes from a specific block position.
     ///
     /// # Returns
     ///
@@ -1479,11 +1755,10 @@ impl BlockchainCacheDatabase {
         chain: SharedChain,
         dex: SharedDex,
         pool_address: &Address,
+        from_position: Option<BlockPosition>,
     ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
-        let chain_id = chain.chain_id as i32;
-        let pool_address_str = pool_address.to_string();
-
-        let query = r"
+        // Query without position filter (streams all events)
+        const QUERY_ALL: &str = r"
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -1511,9 +1786,7 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as liquidity_event_type
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_address = $2)
-
             UNION ALL
-
             (SELECT
                 'liquidity' as event_type,
                 chain_id,
@@ -1541,9 +1814,7 @@ impl BlockchainCacheDatabase {
                 event_type as liquidity_event_type
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_address = $2)
-
             UNION ALL
-
             (SELECT
                 'collect' as event_type,
                 chain_id,
@@ -1571,19 +1842,120 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as liquidity_event_type
             FROM pool_collect_event
             WHERE chain_id = $1 AND pool_address = $2)
+            ORDER BY block, transaction_index, log_index";
 
-            ORDER BY block, transaction_index, log_index
-        ";
+        // Query with position filter (resumes from specific block position)
+        const QUERY_FROM_POSITION: &str = r"
+            (SELECT
+                'swap' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                recipient,
+                NULL::TEXT as owner,
+                side,
+                size,
+                price,
+                sqrt_price_x96::TEXT,
+                liquidity::TEXT as swap_liquidity,
+                tick as swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type
+            FROM pool_swap_event
+            WHERE chain_id = $1 AND pool_address = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
+            UNION ALL
+            (SELECT
+                'liquidity' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                NULL::TEXT as recipient,
+                owner,
+                NULL::TEXT as side,
+                NULL::TEXT as size,
+                NULL::text as price,
+                NULL::text as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT as swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                position_liquidity::TEXT,
+                amount0::TEXT,
+                amount1::TEXT,
+                tick_lower::INT,
+                tick_upper::INT,
+                event_type as liquidity_event_type
+            FROM pool_liquidity_event
+            WHERE chain_id = $1 AND pool_address = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
+            UNION ALL
+            (SELECT
+                'collect' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                NULL::TEXT as sender,
+                NULL::TEXT as recipient,
+                owner,
+                NULL::TEXT as side,
+                NULL::TEXT as size,
+                NULL::TEXT as price,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                amount0::TEXT as swap_amount0,
+                amount1::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                amount0::TEXT,
+                amount1::TEXT,
+                tick_lower::INT,
+                tick_upper::INT,
+                NULL::TEXT as liquidity_event_type
+            FROM pool_collect_event
+            WHERE chain_id = $1 AND pool_address = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
+            ORDER BY block, transaction_index, log_index";
 
-        let stream = sqlx::query(query)
-            .bind(chain_id)
-            .bind(pool_address_str)
-            .fetch(&self.pool)
-            .map(move |row_result| match row_result {
-                Ok(row) => transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone())
-                    .map_err(|e| anyhow::anyhow!("Transform error: {}", e)),
-                Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
-            });
+        // Build query with appropriate bindings
+        let query = if let Some(pos) = from_position {
+            sqlx::query(QUERY_FROM_POSITION)
+                .bind(chain.chain_id as i32)
+                .bind(pool_address.to_string())
+                .bind(pos.number as i64)
+                .bind(pos.transaction_index as i32)
+                .bind(pos.log_index as i32)
+                .fetch(&self.pool)
+        } else {
+            sqlx::query(QUERY_ALL)
+                .bind(chain.chain_id as i32)
+                .bind(pool_address.to_string())
+                .fetch(&self.pool)
+        };
+
+        // Transform rows to events
+        let stream = query.map(move |row_result| match row_result {
+            Ok(row) => transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone())
+                .map_err(|e| anyhow::anyhow!("Transform error: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
+        });
 
         Box::pin(stream)
     }

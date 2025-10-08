@@ -227,6 +227,22 @@ impl TickMap {
         self.ticks.insert(tick, tick_data);
     }
 
+    /// Restores a tick from a snapshot, updating both tick data and bitmap.
+    ///
+    /// This method is used when restoring pool state from a saved snapshot.
+    /// It sets the tick data and updates the bitmap if the tick is initialized.
+    pub fn restore_tick(&mut self, tick_data: Tick) {
+        let is_initialized = tick_data.initialized;
+        let tick_value = tick_data.value;
+
+        self.set_tick(tick_data);
+
+        // Update bitmap if the tick is initialized
+        if is_initialized {
+            self.tick_bitmap.flip_tick(tick_value);
+        }
+    }
+
     /// Clears all data in a tick by removing it from the tick map.
     pub fn clear(&mut self, tick: i32) {
         self.ticks.remove(&tick);

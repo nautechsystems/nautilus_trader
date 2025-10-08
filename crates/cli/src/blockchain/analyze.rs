@@ -123,17 +123,70 @@ pub async fn run_analyze_pool(
     // Get pool details from data client
     let pool = data_client.get_pool(&pool_address)?;
 
-    // Create profiler and reporter
     let mut profiler = PoolProfiler::new(pool.clone());
-    let initial_sqrt_price_x96 = pool
-        .initial_sqrt_price_x96
-        .expect("Pool has no initial sqrt price");
-    profiler.initialize(initial_sqrt_price_x96);
+
+    // Try to restore from latest valid snapshot
+    let from_position = if let Some(cache_database) = &data_client.cache.database {
+        match cache_database
+            .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool_address)
+            .await
+        {
+            Ok(Some(snapshot)) => {
+                log::info!(
+                    "Loaded valid snapshot from block {}",
+                    snapshot.block_position.number
+                );
+                log::info!(
+                    "Snapshot contains {} positions and {} ticks",
+                    snapshot.positions.len(),
+                    snapshot.ticks.len()
+                );
+
+                let block_position = snapshot.block_position.clone();
+                profiler.restore_from_snapshot(snapshot)?;
+                log::info!("Restored profiler from snapshot");
+                Some(block_position)
+            }
+            Ok(None) => {
+                log::info!("No valid snapshot found, processing from beginning");
+                let initial_sqrt_price_x96 = pool
+                    .initial_sqrt_price_x96
+                    .expect("Pool has no initial sqrt price");
+                profiler.initialize(initial_sqrt_price_x96);
+                None
+            }
+            Err(e) => {
+                log::warn!("Failed to load snapshot: {}, processing from beginning", e);
+                let initial_sqrt_price_x96 = pool
+                    .initial_sqrt_price_x96
+                    .expect("Pool has no initial sqrt price");
+                profiler.initialize(initial_sqrt_price_x96);
+                None
+            }
+        }
+    } else {
+        let initial_sqrt_price_x96 = pool
+            .initial_sqrt_price_x96
+            .expect("Pool has no initial sqrt price");
+        profiler.initialize(initial_sqrt_price_x96);
+        None
+    };
 
     // Stream and process events
     if let Some(cache_database) = &data_client.cache.database {
-        let mut stream =
-            cache_database.stream_pool_events(pool.chain.clone(), pool.dex.clone(), &pool_address);
+        // Log streaming start position
+        if let Some(pos) = &from_position {
+            log::info!("Streaming pool events from block {}", pos.number);
+        } else {
+            log::info!("Streaming pool events from genesis");
+        }
+
+        let mut stream = cache_database.stream_pool_events(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            &pool_address,
+            from_position.clone(),
+        );
 
         #[cfg(debug_assertions)]
         let total_start = std::time::Instant::now();
@@ -182,14 +235,34 @@ pub async fn run_analyze_pool(
             .map(|position| (position.owner, position.tick_lower, position.tick_upper))
             .collect();
 
-        // Fetch on-chain snapshot
+        // Fetch on-chain snapshot at the snapshot's block position for accurate validation
+        // This requires an archive node to query historical state
+        let snapshot_block = Some(snapshot.block_position.number);
+        log::info!(
+            "Fetching on-chain state at block {} for validation (requires archive node)",
+            snapshot.block_position.number
+        );
         let on_chain_snapshot = pool_contract
-            .fetch_snapshot(&pool_address, &tick_values, &position_keys)
+            .fetch_snapshot(&pool_address, &tick_values, &position_keys, snapshot_block)
             .await?;
         let result = compare_pool_profiler(&profiler, &on_chain_snapshot);
 
         if result {
             log::info!("✅  Pool profiler state matches on-chain smart contract state.");
+
+            // Mark the snapshot as valid since verification passed
+            if let Some(cache_database) = &data_client.cache.database {
+                cache_database
+                    .mark_pool_snapshot_valid(
+                        pool.chain.chain_id,
+                        &pool.address,
+                        snapshot.block_position.number,
+                        snapshot.block_position.transaction_index,
+                        snapshot.block_position.log_index,
+                    )
+                    .await?;
+                log::info!("Marked pool profiler snapshot as valid");
+            }
         } else {
             log::error!("❌  Pool profiler state does NOT match on-chain smart contract state");
         }

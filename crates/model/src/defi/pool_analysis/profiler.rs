@@ -1081,6 +1081,68 @@ impl PoolProfiler {
             .sum()
     }
 
+    /// Restores the profiler state from a saved snapshot.
+    ///
+    /// This method allows resuming profiling from a previously saved state,
+    /// enabling incremental processing without reprocessing all historical events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Tick insertion into the tick map fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool's tick spacing is not set.
+    pub fn restore_from_snapshot(&mut self, snapshot: PoolSnapshot) -> anyhow::Result<()> {
+        let liquidity = snapshot.state.liquidity;
+
+        // Restore state
+        self.state = snapshot.state;
+
+        // Restore analytics (skip duration fields as they're debug-only)
+        self.analytics.total_amount0_deposited = snapshot.analytics.total_amount0_deposited;
+        self.analytics.total_amount1_deposited = snapshot.analytics.total_amount1_deposited;
+        self.analytics.total_amount0_collected = snapshot.analytics.total_amount0_collected;
+        self.analytics.total_amount1_collected = snapshot.analytics.total_amount1_collected;
+        self.analytics.total_swaps = snapshot.analytics.total_swaps;
+        self.analytics.total_mints = snapshot.analytics.total_mints;
+        self.analytics.total_burns = snapshot.analytics.total_burns;
+        self.analytics.total_fee_collects = snapshot.analytics.total_fee_collects;
+
+        // Rebuild positions HashMap
+        self.positions.clear();
+        for position in snapshot.positions {
+            let key = PoolPosition::get_position_key(
+                &position.owner,
+                position.tick_lower,
+                position.tick_upper,
+            );
+            self.positions.insert(key, position);
+        }
+
+        // Rebuild tick_map
+        self.tick_map = TickMap::new(
+            self.pool
+                .tick_spacing
+                .expect("Pool tick spacing must be set"),
+        );
+        for tick in snapshot.ticks {
+            self.tick_map.restore_tick(tick);
+        }
+
+        // Restore active liquidity
+        self.tick_map.liquidity = liquidity;
+
+        // Set last processed event
+        self.last_processed_event = Some(snapshot.block_position);
+
+        // Mark as initialized
+        self.is_initialized = true;
+
+        Ok(())
+    }
+
     /// Gets a list of all initialized tick values.
     ///
     /// Returns tick values that have been initialized (have liquidity positions).

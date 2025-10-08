@@ -147,6 +147,7 @@ impl UniswapV3PoolContract {
     pub async fn get_global_state(
         &self,
         pool_address: &Address,
+        block: Option<u64>,
     ) -> Result<PoolGlobalState, UniswapV3PoolError> {
         let calls = vec![
             ContractCall {
@@ -171,7 +172,7 @@ impl UniswapV3PoolContract {
             },
         ];
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, block).await?;
 
         if results.len() != 4 {
             return Err(UniswapV3PoolError::CallFailed {
@@ -240,6 +241,7 @@ impl UniswapV3PoolContract {
         &self,
         pool_address: &Address,
         tick: i32,
+        block: Option<u64>,
     ) -> Result<Tick, UniswapV3PoolError> {
         let tick_i24 = I24::try_from(tick).map_err(|_| UniswapV3PoolError::CallFailed {
             field: "tick".to_string(),
@@ -248,7 +250,10 @@ impl UniswapV3PoolContract {
         })?;
 
         let call_data = UniswapV3Pool::ticksCall { tick: tick_i24 }.abi_encode();
-        let raw_response = self.base.execute_call(pool_address, &call_data).await?;
+        let raw_response = self
+            .base
+            .execute_call(pool_address, &call_data, block)
+            .await?;
 
         let tick_info =
             UniswapV3Pool::ticksCall::abi_decode_returns(&raw_response).map_err(|e| {
@@ -281,6 +286,7 @@ impl UniswapV3PoolContract {
         &self,
         pool_address: &Address,
         ticks: &[i32],
+        block: Option<u64>,
     ) -> Result<HashMap<i32, Tick>, UniswapV3PoolError> {
         let calls: Vec<ContractCall> = ticks
             .iter()
@@ -293,7 +299,7 @@ impl UniswapV3PoolContract {
             })
             .collect();
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, block).await?;
 
         let mut tick_infos = HashMap::with_capacity(ticks.len());
         for (i, &tick_value) in ticks.iter().enumerate() {
@@ -364,6 +370,7 @@ impl UniswapV3PoolContract {
         &self,
         pool_address: &Address,
         positions: &[(Address, i32, i32)],
+        block: Option<u64>,
     ) -> Result<Vec<PoolPosition>, UniswapV3PoolError> {
         let calls: Vec<ContractCall> = positions
             .iter()
@@ -380,7 +387,7 @@ impl UniswapV3PoolContract {
             })
             .collect();
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, block).await?;
 
         let position_infos: Vec<PoolPosition> = positions
             .iter()
@@ -431,12 +438,15 @@ impl UniswapV3PoolContract {
         pool_address: &Address,
         tick_values: &[i32],
         position_keys: &[(Address, i32, i32)],
+        block: Option<u64>,
     ) -> Result<PoolSnapshot, UniswapV3PoolError> {
         // Fetch all data
-        let global_state = self.get_global_state(pool_address).await?;
-        let ticks_map = self.batch_get_ticks(pool_address, tick_values).await?;
+        let global_state = self.get_global_state(pool_address, block).await?;
+        let ticks_map = self
+            .batch_get_ticks(pool_address, tick_values, block)
+            .await?;
         let positions = self
-            .batch_get_positions(pool_address, position_keys)
+            .batch_get_positions(pool_address, position_keys, block)
             .await?;
 
         // Convert HashMap<i32, Tick> to Vec<Tick>

@@ -436,6 +436,7 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     total_mints INTEGER NOT NULL,
     total_burns INTEGER NOT NULL,
     total_fee_collects INTEGER NOT NULL,
+    is_valid BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (chain_id, pool_address, block, transaction_index, log_index),
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address)
@@ -477,6 +478,7 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
     fee_growth_outside_0 U256 NOT NULL,
     fee_growth_outside_1 U256 NOT NULL,
     initialized BOOLEAN NOT NULL,
+    last_updated_block BIGINT NOT NULL,
     PRIMARY KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value),
     FOREIGN KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index)
         REFERENCES pool_snapshot(chain_id, pool_address, block, transaction_index, log_index) ON DELETE CASCADE
