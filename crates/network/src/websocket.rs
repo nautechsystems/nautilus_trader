@@ -95,7 +95,7 @@ pub fn channel_message_handler() -> (
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let handler = Arc::new(move |msg: Message| {
         if let Err(e) = tx.send(msg) {
-            tracing::error!("Failed to send message to channel: {e}");
+            tracing::debug!("Failed to send message to channel: {e}");
         }
     });
     (handler, rx)
