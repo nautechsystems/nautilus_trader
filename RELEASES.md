@@ -8,6 +8,8 @@ This will be the final release with support for Python 3.11.
 - Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
 - Added support for quotes from book depths (#2977), thanks @faysou
 - Added execution engine rate limiting for single-order reconciliation queries
+- Added `subscribe_order_fills(...)` and `unsubscribe_order_fills(...)` for `Actor` allowing to subscribe to all fills for an instrument ID
+- Added `on_order_filled(...)` for `Actor`
 - Added Renko bar aggregator (#2941), thanks @faysou
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK

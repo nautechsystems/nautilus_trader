@@ -256,7 +256,8 @@ def _collect_events(msgbus, filter_types: tuple[type, ...] | None = None):
         if filter_types is None or isinstance(event, filter_types):
             events.append(event)
 
-    msgbus.subscribe("events.*", handler=handler)
+    msgbus.subscribe("events.order.*", handler=handler)
+    msgbus.subscribe("events.position.*", handler=handler)
     return events
 
 

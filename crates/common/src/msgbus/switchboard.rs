@@ -144,6 +144,14 @@ pub fn get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic> {
 }
 
 #[must_use]
+pub fn get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_order_fills_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
@@ -237,6 +245,7 @@ pub struct MessagingSwitchboard {
     funding_rate_topics: AHashMap<InstrumentId, MStr<Topic>>,
     instrument_status_topics: AHashMap<InstrumentId, MStr<Topic>>,
     instrument_close_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    order_fills_topics: AHashMap<InstrumentId, MStr<Topic>>,
     event_orders_topics: AHashMap<StrategyId, MStr<Topic>>,
     event_positions_topics: AHashMap<StrategyId, MStr<Topic>>,
     order_snapshots_topics: AHashMap<ClientOrderId, MStr<Topic>>,
@@ -271,6 +280,7 @@ impl Default for MessagingSwitchboard {
             bar_topics: AHashMap::new(),
             instrument_status_topics: AHashMap::new(),
             instrument_close_topics: AHashMap::new(),
+            order_fills_topics: AHashMap::new(),
             order_snapshots_topics: AHashMap::new(),
             event_orders_topics: AHashMap::new(),
             event_positions_topics: AHashMap::new(),
@@ -493,6 +503,14 @@ impl MessagingSwitchboard {
                 )
                 .into()
             })
+    }
+
+    #[must_use]
+    pub fn get_order_fills_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        *self
+            .order_fills_topics
+            .entry(instrument_id)
+            .or_insert_with(|| format!("events.fills.{instrument_id}").into())
     }
 
     #[must_use]
