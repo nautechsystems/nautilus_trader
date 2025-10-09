@@ -615,11 +615,14 @@ pub fn parse_order_status_report(
                 OrderStatus::Canceled
             }
             _ => {
+                let order_json = serde_json::to_string(order)?;
                 anyhow::bail!(
-                    "Order missing ord_status and cannot infer (order_id={}, leaves_qty={:?}, cum_qty={:?})",
+                    "Order missing ord_status and cannot infer (order_id={}, client_order_id={:?}, leaves_qty={:?}, cum_qty={:?}, order_json={})",
                     order.order_id,
+                    order.cl_ord_id,
                     order.leaves_qty,
-                    order.cum_qty
+                    order.cum_qty,
+                    order_json
                 );
             }
         }
