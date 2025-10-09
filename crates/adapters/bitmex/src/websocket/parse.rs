@@ -235,7 +235,7 @@ pub fn parse_book_msg(
     let order_id = msg.id;
     let order = BookOrder::new(side, price, size, order_id);
     let sequence = 0; // Not available
-    let ts_event = UnixNanos::from(msg.transact_time);
+    let ts_event = UnixNanos::from(msg.timestamp);
 
     OrderBookDelta::new(
         instrument_id,
@@ -1037,7 +1037,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Add);
         assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(delta.sequence, 0);
-        assert_eq!(delta.ts_event, 1732436782275000000); // 2024-11-24T08:26:22.275Z in nanos
+        assert_eq!(delta.ts_event, 1732436782356000000); // 2024-11-24T08:26:22.356Z in nanos
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
