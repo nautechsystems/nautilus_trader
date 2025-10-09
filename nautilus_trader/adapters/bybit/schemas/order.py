@@ -157,7 +157,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
 class BybitOpenOrdersResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitOrder]
+    result: BybitListResultWithCursor[BybitOrder]
     time: int
 
 

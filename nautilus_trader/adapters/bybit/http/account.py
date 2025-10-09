@@ -213,6 +213,7 @@ class BybitAccountHttpAPI:
 
         all_positions = []
         cursor = None
+
         while True:
             response = await self._endpoint_position_info.get(
                 PositionInfoGetParams(
@@ -243,14 +244,27 @@ class BybitAccountHttpAPI:
             case _:
                 settle_coin = self.default_settle_coin if symbol is None else None
 
-        response = await self._endpoint_open_orders.get(
-            BybitOpenOrdersGetParams(
-                category=product_type,
-                symbol=symbol,
-                settleCoin=settle_coin,
-            ),
-        )
-        return response.result.list
+        all_orders = []
+        cursor = None
+
+        while True:
+            response = await self._endpoint_open_orders.get(
+                BybitOpenOrdersGetParams(
+                    category=product_type,
+                    symbol=symbol,
+                    settleCoin=settle_coin,
+                    limit=50,
+                    cursor=cursor,
+                ),
+            )
+            all_orders.extend(response.result.list)
+
+            if hasattr(response.result, "nextPageCursor") and response.result.nextPageCursor:
+                cursor = response.result.nextPageCursor
+            else:
+                break
+
+        return all_orders
 
     async def query_order_history(  # noqa: C901 (too complex)
         self,
@@ -283,6 +297,7 @@ class BybitAccountHttpAPI:
             # Query open orders with pagination (openOnly=0)
             # Note: Bybit API returns open + recent closed orders even with openOnly=0
             cursor = None
+
             while True:
                 open_response = await self._endpoint_order_history.get(
                     BybitOrderHistoryGetParams(
@@ -308,6 +323,7 @@ class BybitAccountHttpAPI:
 
             # Query closed orders with pagination (openOnly=1)
             cursor = None
+
             while True:
                 closed_response = await self._endpoint_order_history.get(
                     BybitOrderHistoryGetParams(
@@ -352,6 +368,7 @@ class BybitAccountHttpAPI:
 
         all_orders = []
         cursor = None
+
         while True:
             response = await self._endpoint_order_history.get(
                 BybitOrderHistoryGetParams(
@@ -378,14 +395,31 @@ class BybitAccountHttpAPI:
         self,
         product_type: BybitProductType,
         symbol: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
     ) -> list[BybitExecution]:
-        response = await self._endpoint_trade_history.get(
-            BybitTradeHistoryGetParams(
-                category=product_type,
-                symbol=symbol,
-            ),
-        )
-        return response.result.list
+        all_executions = []
+        cursor = None
+
+        while True:
+            response = await self._endpoint_trade_history.get(
+                BybitTradeHistoryGetParams(
+                    category=product_type,
+                    symbol=symbol,
+                    startTime=start_time,
+                    endtime=end_time,
+                    limit=100,
+                    cursor=cursor,
+                ),
+            )
+            all_executions.extend(response.result.list)
+
+            if hasattr(response.result, "nextPageCursor") and response.result.nextPageCursor:
+                cursor = response.result.nextPageCursor
+            else:
+                break
+
+        return all_executions
 
     async def query_order(
         self,
