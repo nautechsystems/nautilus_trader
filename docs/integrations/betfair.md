@@ -136,16 +136,34 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 
 ## Configuration
 
-### Configuration options
+### Data client configuration options
 
-The following execution client configuration options affect order behavior:
+| Option                    | Default   | Description |
+|---------------------------|-----------|-------------|
+| `account_currency`        | Required  | Betfair account currency for data and price feeds. |
+| `username`                | `None`    | Betfair account username; taken from environment when omitted. |
+| `password`                | `None`    | Betfair account password; taken from environment when omitted. |
+| `app_key`                 | `None`    | Betfair application key used for API authentication. |
+| `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
+| `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
+| `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
+| `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
 
-| Option                       | Default | Description                                      |
-|------------------------------|---------|--------------------------------------------------|
-| `calculate_account_state`    | `True`  | If `True`, calculates account state from events. |
-| `request_account_state_secs` | `300`   | Interval for account state checks in seconds (0 disables). |
-| `reconcile_market_ids_only`  | `False` | If `True`, only reconciles orders for configured market IDs. |
-| `ignore_external_orders`     | `False` | If `True`, silently ignores orders not found in cache. |
+### Execution client configuration options
+
+| Option                       | Default  | Description |
+|------------------------------|----------|-------------|
+| `account_currency`           | Required | Betfair account currency for order placement and balances. |
+| `username`                   | `None`   | Betfair account username; taken from environment when omitted. |
+| `password`                   | `None`   | Betfair account password; taken from environment when omitted. |
+| `app_key`                    | `None`   | Betfair application key used for API authentication. |
+| `certs_dir`                  | `None`   | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`          | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation. |
+| `calculate_account_state`    | `True`   | Calculate account state locally from events when `True`. |
+| `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
+| `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation requests only cover configured market IDs. |
+| `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
 
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 

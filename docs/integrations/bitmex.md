@@ -303,39 +303,8 @@ persistent connections and avoiding the overhead of establishing new connections
 
 BitMEX uses an `api-expires` header for request authentication to prevent replay attacks:
 
-- Each signed request includes a Unix timestamp (in seconds) indicating when it expires.
-- The timestamp is calculated as: `current_timestamp + (recv_window_ms / 1000)`.
-- BitMEX rejects requests where the `api-expires` timestamp has already passed.
-
-#### Configuring the expiration window
-
-The expiration window is controlled by the `recv_window_ms` configuration parameter (default: 10000ms = 10 seconds):
-
-```python
-from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
-
-config = BitmexExecClientConfig(
-    api_key="YOUR_API_KEY",
-    api_secret="YOUR_API_SECRET",
-    recv_window_ms=30000,  # 30 seconds for high-latency networks
-)
-```
-
-**When to adjust this value:**
-
-- **Default (10s)**: Sufficient for most deployments with accurate system clocks and low network latency.
-- **Increase (20-30s)**: If you experience "request has expired" errors due to:
-  - Clock skew between your system and BitMEX servers.
-  - High network latency or packet loss.
-  - Requests queued due to rate limiting.
-- **Decrease (5s)**: For tighter security in low-latency, time-synchronized environments.
-
-**Important considerations:**
-
-- **Milliseconds to seconds**: Specified in milliseconds for consistency with other adapters, but converted to seconds via integer division (`recv_window_ms / 1000`) since BitMEX uses seconds-granularity timestamps.
-- Larger windows increase tolerance for timing issues but widen the replay attack window.
-- Ensure your system clock is synchronized with NTP to minimize clock drift.
-- Network latency and processing time consume part of the window.
+- Signed requests include an `api-expires` Unix timestamp set `recv_window_ms / 1000` seconds ahead (10 seconds by default).
+- BitMEX rejects any request once that timestamp has passed, so keep latency within your configured window.
 
 ## Rate limiting
 
@@ -424,6 +393,8 @@ The BitMEX data client provides the following configuration options:
 | `retry_delay_max_ms`              | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`                  | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
+| `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 
 ### Execution client configuration options
 
@@ -441,6 +412,8 @@ The BitMEX execution client provides the following configuration options:
 | `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
 | `retry_delay_max_ms`     | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
+| `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 
 ### Configuration examples
 

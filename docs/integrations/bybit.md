@@ -215,23 +215,6 @@ Bybit responds with error code `10016` when the rate limit is exceeded and may t
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
 :::
 
-## Configuration
-
-The product types for each client must be specified in the configurations.
-
-### Configuration options
-
-The following execution client configuration options affect order behavior:
-
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `use_gtd`                    | `False` | GTD is not supported; orders are remapped to GTC for local management. |
-| `use_ws_trade_api`           | `False` | If `True`, uses WebSocket for order requests instead of HTTP. |
-| `use_http_batch_api`         | `False` | If `True`, uses HTTP batch API when WebSocket trading is enabled. |
-| `futures_leverages`          | `None`  | Dict to set leverage for futures symbols. |
-| `position_mode`              | `None`  | Dict to set position mode for USDT perpetual and inverse futures. |
-| `margin_mode`                | `None`  | Sets margin mode for the account. |
-
 ### Data clients
 
 If no product types are specified then all product types will be loaded and available.
@@ -322,6 +305,55 @@ For complete details on Bybit's fee structure and currency rules, refer to:
 
 - [Bybit WebSocket Private Execution](https://bybit-exchange.github.io/docs/v5/websocket/private/execution)
 - [Bybit Spot Fee Currency Instruction](https://bybit-exchange.github.io/docs/v5/enum#spot-fee-currency-instruction)
+
+## Configuration
+
+The product types for each client must be specified in the configurations.
+
+### Data client configuration options
+
+| Option                           | Default | Description |
+|----------------------------------|---------|-------------|
+| `api_key`                        | `None`  | API key; loaded from `BYBIT_API_KEY`/`BYBIT_TESTNET_API_KEY` when omitted. |
+| `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
+| `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
+| `base_url_http`                  | `None`  | Override for the REST base URL. |
+| `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
+| `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
+| `update_instruments_interval_mins` | `60` | Interval (minutes) between instrument catalogue refreshes. |
+| `recv_window_ms`                 | `5,000`| Receive window (milliseconds) for signed REST requests. |
+| `bars_timestamp_on_close`        | `True` | Timestamp bars on the close (`True`) or open (`False`) of the interval. |
+| `max_retries`                    | `None` | Maximum retry attempts for REST/WebSocket recovery. |
+| `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
+
+### Execution client configuration options
+
+| Option                           | Default | Description |
+|----------------------------------|---------|-------------|
+| `api_key`                        | `None`  | API key; loaded from `BYBIT_API_KEY`/`BYBIT_TESTNET_API_KEY` when omitted. |
+| `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
+| `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable (SPOT cannot be mixed with derivatives for execution). |
+| `base_url_http`                  | `None`  | Override for the REST base URL. |
+| `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
+| `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
+| `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
+| `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
+| `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
+| `use_ws_execution_fast`          | `False` | Subscribe to the low-latency execution stream. |
+| `use_ws_trade_api`               | `False` | Send order requests over WebSocket instead of HTTP. |
+| `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (requires WebSocket trading enabled). |
+| `use_spot_position_reports`      | `False` | Report SPOT wallet balances as positions when `True`. |
+| `ignore_uncached_instrument_executions` | `False` | Ignore execution messages for instruments not yet cached. |
+| `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
+| `recv_window_ms`                 | `5,000`| Receive window (milliseconds) for signed REST requests. |
+| `ws_trade_timeout_secs`          | `5.0`  | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
+| `ws_auth_timeout_secs`           | `5.0`  | Timeout (seconds) waiting for auth WebSocket acknowledgements. |
+| `futures_leverages`              | `None` | Mapping of `BybitSymbol` to leverage settings. |
+| `position_mode`                  | `None` | Mapping of `BybitSymbol` to position mode (one-way vs hedge). |
+| `margin_mode`                    | `None` | Margin mode setting for the account. |
 
 The most common use case is to configure a live `TradingNode` to include Bybit
 data and execution clients. To achieve this, add a `BYBIT` section to your client

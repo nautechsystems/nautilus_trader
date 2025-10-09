@@ -403,16 +403,43 @@ The following limitations and considerations are currently known:
 
 ## Configuration
 
-### Configuration options
+### Data client configuration options
 
-The following execution client configuration options are available:
+| Option                          | Default           | Description |
+|---------------------------------|-------------------|-------------|
+| `venue`                         | `POLYMARKET`      | Venue identifier registered for the data client. |
+| `private_key`                   | `None`            | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
+| `signature_type`                | `0`               | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
+| `funder`                        | `None`            | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
+| `api_key`                       | `None`            | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
+| `api_secret`                    | `None`            | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
+| `passphrase`                    | `None`            | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
+| `base_url_http`                 | `None`            | Override for the REST base URL. |
+| `base_url_ws`                   | `None`            | Override for the WebSocket base URL. |
+| `ws_connection_initial_delay_secs` | `5`           | Delay (seconds) before the first WebSocket connection to buffer subscriptions. |
+| `ws_connection_delay_secs`      | `0.1`             | Delay (seconds) between subsequent WebSocket connection attempts. |
+| `update_instruments_interval_mins` | `60`          | Interval (minutes) between instrument catalogue refreshes. |
+| `compute_effective_deltas`      | `False`           | Compute effective order book deltas for bandwidth savings. |
+| `drop_quotes_missing_side`      | `True`            | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
 
-| Option                               | Default | Description                      |
-|--------------------------------------|---------|----------------------------------|
-| `signature_type`                     | `0`     | Polymarket signature type: `0` (EOA - default), `1` (Email/Magic Wallet Proxy), or `2` (Browser Wallet Proxy). See [Signature types](#signature-types) for details. |
-| `funder`                             | `None`  | Wallet address for funding USDC transactions. |
-| `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
-| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |
+### Execution client configuration options
+
+| Option                           | Default      | Description |
+|----------------------------------|--------------|-------------|
+| `venue`                          | `POLYMARKET` | Venue identifier registered for the execution client. |
+| `private_key`                    | `None`       | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
+| `signature_type`                 | `0`          | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
+| `funder`                         | `None`       | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
+| `api_key`                        | `None`       | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
+| `api_secret`                     | `None`       | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
+| `passphrase`                     | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
+| `base_url_http`                  | `None`       | Override for the REST base URL. |
+| `base_url_ws`                    | `None`       | Override for the WebSocket base URL. |
+| `max_retries`                    | `None`       | Maximum retry attempts for submit/cancel requests. |
+| `retry_delay_initial_ms`         | `None`       | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`             | `None`       | Maximum delay (milliseconds) between retries. |
+| `generate_order_history_from_trades` | `False` | Generate synthetic order history from trade reports when `True` (experimental). |
+| `log_raw_ws_messages`            | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 
 :::info
 For additional features or to contribute to the Polymarket adapter, please see our

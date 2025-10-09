@@ -235,16 +235,30 @@ dYdX classifies orders as either **short-term** or **long-term** orders:
 
 The product types for each client must be specified in the configurations.
 
-### Configuration options
+### Data client configuration options
 
-The following execution client configuration options are available:
+| Option                           | Default | Description |
+|----------------------------------|---------|-------------|
+| `wallet_address`                 | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
+| `is_testnet`                     | `False` | Connect to the dYdX testnet when `True`. |
+| `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
+| `max_retries`                    | `None`  | Maximum retry attempts for REST/WebSocket recovery. |
+| `retry_delay_initial_ms`         | `None`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`             | `None`  | Maximum delay (milliseconds) between retries. |
 
-| Option           | Default | Description                                                      |
-|------------------|---------|------------------------------------------------------------------|
-| `subaccount`     | `0`     | Subaccount number (venue creates subaccount 0 by default).       |
-| `wallet_address` | `None`  | dYdX wallet address for the account.                             |
-| `mnemonic`       | `None`  | Mnemonic for generating private key for order signing.           |
-| `is_testnet`     | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
+### Execution client configuration options
+
+| Option                   | Default | Description |
+|--------------------------|---------|-------------|
+| `wallet_address`         | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
+| `subaccount`             | `0`     | Subaccount number (dYdX provisions subaccount `0` by default). |
+| `mnemonic`               | `None`  | Mnemonic used to derive the signing key; loaded from environment when omitted. |
+| `base_url_http`          | `None`  | Override for the REST base URL. |
+| `base_url_ws`            | `None`  | Override for the WebSocket base URL. |
+| `is_testnet`             | `False` | Connect to the dYdX testnet when `True`. |
+| `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
 
 ### Execution clients
 
