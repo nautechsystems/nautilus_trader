@@ -107,7 +107,7 @@ cdef class Actor(Component):
     cpdef void on_data(self, data)
     cpdef void on_signal(self, signal)
     cpdef void on_historical_data(self, data)
-    cpdef void on_order_filled(self, OrderFilled fill)
+    cpdef void on_order_filled(self, OrderFilled event)
     cpdef void on_event(self, Event event)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
