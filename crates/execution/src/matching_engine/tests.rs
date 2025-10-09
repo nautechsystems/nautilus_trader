@@ -2758,7 +2758,7 @@ fn test_reduce_only_order_exceeding_position_quantity(
 }
 
 #[rstest]
-fn test_process_trailing_market_orders_with_protection_rejeceted_and_valid(
+fn test_process_market_orders_with_protection_rejeceted_and_valid(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -2808,35 +2808,50 @@ fn test_process_trailing_market_orders_with_protection_rejeceted_and_valid(
     let client_order_id_market_sell = ClientOrderId::from("O-19700101-000000-001-001-2");
     let mut market_sell_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
-        .side(OrderSide::Buy)
+        .side(OrderSide::Sell)
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_market_sell)
         .submit(true)
         .build();
 
-    engine_l2.process_order(&mut market_buy_order, account_id);
     engine_l2.process_order(&mut market_sell_order, account_id);
+    engine_l2.process_order(&mut market_buy_order, account_id);
 
-    // Check that we have received OrderRejected for TrailingStopMarket order
-    // and OrderAccepted for TrailingStopLimit order
+    // Check that we receive an OrderRejected event for the protected market sell order while the buy order is processed and filled,
+    // and an OrderAccepted event for the trailing stop limit order.
     let saved_messages = get_order_event_handler_messages(order_event_handler);
-    assert_eq!(saved_messages.len(), 2);
+    // dbg!(saved_messages);
+    assert_eq!(saved_messages.len(), 4);
     let event1 = saved_messages.first().unwrap();
     let rejected = match event1 {
         OrderEventAny::Rejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
-    // assert_eq!(
-    //     rejected.client_order_id,
-    //     client_order_id_trailing_stop_market
-    // );
-    // let event2 = saved_messages.get(1).unwrap();
-    // let accepted = match event2 {
-    //     OrderEventAny::Accepted(accepted) => accepted,
-    //     _ => panic!("Expected OrderAccepted event in second message"),
-    // };
-    // assert_eq!(
-    //     accepted.client_order_id,
-    //     client_order_id_trailing_stop_limit
-    // );
+    assert_eq!(rejected.client_order_id, client_order_id_market_sell);
+
+    assert_eq!(rejected.reason, "No market for ETHUSDT-PERP.BINANCE");
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
+        _ => panic!("Expected OrderUpdated event in second message"),
+    };
+    assert_eq!(updated.client_order_id, client_order_id_market_buy);
+    //Protection price is calculated using the Best Ask Price + 6 Protection points
+    assert_eq!(updated.protection_price, Some(Price::new(1506.0, 2)));
+
+    let event3 = saved_messages.get(2).unwrap();
+    let accepted = match event3 {
+        OrderEventAny::Accepted(accepted) => accepted,
+        _ => panic!("Expected Accepted event in third message"),
+    };
+    assert_eq!(accepted.client_order_id, client_order_id_market_buy);
+
+    let event4 = saved_messages.get(3).unwrap();
+
+    //Aggressive order is filled
+    let filled = match event4 {
+        OrderEventAny::Filled(filled) => filled,
+        _ => panic!("Expected Filled event in fourth message"),
+    };
+    assert_eq!(filled.client_order_id, client_order_id_market_buy);
 }
