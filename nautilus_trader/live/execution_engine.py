@@ -129,6 +129,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._loop: asyncio.AbstractEventLoop = loop
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+
+        # Reconciliation
         self._recon_check_retries: Counter[ClientOrderId] = Counter()
         self._ts_last_query: dict[ClientOrderId, int] = {}
         self._order_local_activity_ns: dict[ClientOrderId, int] = {}
@@ -159,6 +161,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._purge_closed_orders_task: asyncio.Task | None = None
         self._purge_closed_positions_task: asyncio.Task | None = None
         self._purge_account_events_task: asyncio.Task | None = None
+        self._is_shutting_down: bool = False
         self._kill: bool = False
 
         # Configuration
@@ -221,7 +224,6 @@ class LiveExecutionEngine(ExecutionEngine):
 
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
         self._open_check_threshold_ns: int = millis_to_nanos(self.open_check_threshold_ms)
-        self._shutdown_initiated: bool = False
 
         # Register endpoints
         self._msgbus.register(
@@ -402,14 +404,14 @@ class LiveExecutionEngine(ExecutionEngine):
             e,
         )
         if self.graceful_shutdown_on_exception:
-            if not self._shutdown_initiated:
+            if not self._is_shutting_down:
                 self._log.warning(
                     "Initiating graceful shutdown due to unexpected exception",
                 )
                 self.shutdown_system(
                     f"Unexpected exception in {queue_name} queue processing: {e!r}",
                 )
-                self._shutdown_initiated = True
+                self._is_shutting_down = True
         else:
             self._log.error(
                 "System will terminate immediately to prevent operation in degraded state",
@@ -468,6 +470,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Clear reconciliation event for fresh start cycle
         self._startup_reconciliation_event.clear()
+        self._is_shutting_down = False
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
@@ -510,6 +513,8 @@ class LiveExecutionEngine(ExecutionEngine):
             )
 
     def _on_stop(self) -> None:
+        self._is_shutting_down = True
+
         if self._reconciliation_task:
             self._log.debug(f"Canceling task '{self._reconciliation_task.get_name()}'")
             self._reconciliation_task.cancel()
@@ -816,6 +821,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
 
             while True:
+                if self._is_shutting_down:
+                    self._log.debug("Reconciliation loop exiting due to stop signal")
+                    break
+
                 ts_now = self._clock.timestamp_ns()
 
                 # Higher-frequency in-flight check (if configured)
@@ -823,6 +832,9 @@ class LiveExecutionEngine(ExecutionEngine):
                     inflight_check_interval_ns > 0
                     and ts_now - ts_last_inflight_check >= inflight_check_interval_ns
                 ):
+                    # Check stop signal before starting check
+                    if self._is_shutting_down:
+                        break
                     try:
                         await self._check_inflight_orders()
                         ts_last_inflight_check = ts_now
@@ -834,6 +846,9 @@ class LiveExecutionEngine(ExecutionEngine):
                     consistency_check_interval_ns > 0
                     and ts_now - ts_last_consistency_check >= consistency_check_interval_ns
                 ):
+                    # Check stop signal before starting check
+                    if self._is_shutting_down:
+                        break
                     try:
                         await self._check_orders_consistency()
                         ts_last_consistency_check = ts_now
@@ -845,6 +860,10 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("Canceled task 'continuous_reconciliation'")
 
     async def _check_inflight_orders(self) -> None:
+        if self._is_shutting_down:
+            self._log.debug("Skipping in-flight orders check due to stop signal")
+            return
+
         self._log.debug("Checking in-flight orders status")
 
         delayed_orders: list[Order] = []
@@ -908,6 +927,10 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def _check_orders_consistency(self) -> None:
         try:
+            if self._is_shutting_down:
+                self._log.debug("Skipping order consistency check due to stop signal")
+                return
+
             self._log.debug("Checking order consistency between cached-state and venues")
 
             open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()

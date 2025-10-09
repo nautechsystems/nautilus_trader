@@ -15,6 +15,7 @@
 
 import asyncio
 from decimal import Decimal
+from unittest.mock import AsyncMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -641,7 +642,7 @@ class TestLiveExecutionEngine:
             shutdown_mock.assert_called_once()
             args = shutdown_mock.call_args[0]
             assert "Test exception for graceful shutdown in cmd queue" in args[0]
-            assert engine._shutdown_initiated is True
+            assert engine._is_shutting_down is True
 
             engine.stop()
             await eventually(lambda: engine.cmd_qsize() == 0)
@@ -750,7 +751,7 @@ class TestLiveExecutionEngine:
             shutdown_mock.assert_called_once()
             args = shutdown_mock.call_args[0]
             assert "Test exception for graceful shutdown in evt queue" in args[0]
-            assert engine._shutdown_initiated is True
+            assert engine._is_shutting_down is True
 
             engine.stop()
             await eventually(lambda: engine.evt_qsize() == 0)
@@ -914,3 +915,22 @@ class TestLiveExecutionEngine:
 
         # Cleanup
         self.exec_engine.stop()
+
+    @pytest.mark.asyncio()
+    async def test_shutdown_flag_suppresses_reconciliation(self):
+        """
+        Test that _is_shutting_down flag prevents reconciliation from issuing HTTP
+        calls.
+        """
+        # Arrange - mock the client's generate methods to track if they're called
+        mock_generate_order_status = AsyncMock()
+        self.client.generate_order_status_reports = mock_generate_order_status
+
+        # Act - set shutdown flag and manually trigger reconciliation checks
+        self.exec_engine._is_shutting_down = True
+
+        await self.exec_engine._check_inflight_orders()
+        await self.exec_engine._check_orders_consistency()
+
+        # Assert - client methods should NOT have been called due to early exit
+        mock_generate_order_status.assert_not_called()
