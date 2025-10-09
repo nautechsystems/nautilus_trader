@@ -20,6 +20,7 @@ use the provided indicators as is, or as inspiration for a trader to implement t
 proprietary indicator algorithms with the platform.
 
 """
+
 # from nautilus_trader.core.nautilus_pyo3 import AdaptiveMovingAverage
 # from nautilus_trader.core.nautilus_pyo3 import ArcherMovingAveragesTrends
 # from nautilus_trader.core.nautilus_pyo3 import AroonOscillator
@@ -44,6 +45,7 @@ proprietary indicator algorithms with the platform.
 # from nautilus_trader.core.nautilus_pyo3 import KeltnerPosition
 # from nautilus_trader.core.nautilus_pyo3 import KlingerVolumeOscillator
 # from nautilus_trader.core.nautilus_pyo3 import LinearRegression
+# from nautilus_trader.core.nautilus_pyo3 import MoneyFlowIndex
 # from nautilus_trader.core.nautilus_pyo3 import MovingAverageConvergenceDivergence
 # from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 # from nautilus_trader.core.nautilus_pyo3 import OnBalanceVolume
@@ -89,6 +91,7 @@ proprietary indicator algorithms with the platform.
 #     "KeltnerPosition",
 #     "KlingerVolumeOscillator",
 #     "LinearRegression",
+#     "MoneyFlowIndex",
 #     "MovingAverageConvergenceDivergence",
 #     "MovingAverageType",
 #     "OnBalanceVolume",

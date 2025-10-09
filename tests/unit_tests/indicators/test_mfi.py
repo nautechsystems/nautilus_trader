@@ -1,6 +1,6 @@
 import math
 
-from nautilus_pyo3.nautilus_pyo3 import MoneyFlowIndex
+from nautilus_trader.indicators import MoneyFlowIndex
 
 
 def test_mfi_update_returns_float_and_neutral_first():
