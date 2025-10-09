@@ -146,11 +146,11 @@ pub fn parse_trades_response(data: &[u8]) -> anyhow::Result<BybitTradesResponse>
 /// Returns an error if the response indicates a failure.
 fn validate_response<T>(response: &BybitResponse<T>) -> anyhow::Result<()> {
     if response.ret_code != 0 {
-        return Err(anyhow::anyhow!(
+        anyhow::bail!(
             "Bybit API error {}: {}",
             response.ret_code,
             response.ret_msg
-        ));
+        );
     }
     Ok(())
 }

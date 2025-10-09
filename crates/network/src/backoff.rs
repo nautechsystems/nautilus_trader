@@ -23,7 +23,6 @@
 
 use std::time::Duration;
 
-use anyhow;
 use nautilus_core::correctness::{check_in_range_inclusive_f64, check_predicate_true};
 use rand::Rng;
 

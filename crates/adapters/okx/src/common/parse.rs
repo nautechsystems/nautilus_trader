@@ -574,7 +574,7 @@ pub fn parse_position_status_report(
 ///
 /// # Errors
 ///
-/// This function will return an error if the OKX transaction detail cannot be parsed.
+/// Returns an error if the OKX transaction detail cannot be parsed.
 pub fn parse_fill_report(
     detail: OKXTransactionDetail,
     account_id: AccountId,

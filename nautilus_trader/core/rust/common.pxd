@@ -128,6 +128,14 @@ cdef extern from "../includes/common.h":
     # - All log messages are properly flushed when intermediate guards are dropped.
     # - The logging thread is cleanly terminated and joined when the last guard is dropped.
     #
+    # # Shutdown Behavior
+    #
+    # When the last guard is dropped, the logging thread is signaled to close, drains pending
+    # messages, and is joined to ensure all logs are written before process termination.
+    #
+    # **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
+    # occasionally prevent proper thread join, resulting in truncated logs.
+    #
     # # Limits
     #
     # The system supports a maximum of 255 concurrent `LogGuard` instances.

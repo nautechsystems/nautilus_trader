@@ -56,10 +56,10 @@ use crate::{
         consts::BITMEX_VENUE,
         enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
         parse::{
-            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
-            parse_contracts_quantity, parse_fractional_quantity, parse_instrument_id,
-            parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
-            parse_signed_contracts_quantity,
+            clean_reason, map_bitmex_currency, normalize_trade_bin_prices,
+            normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
+            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+            parse_position_side, parse_signed_contracts_quantity,
         },
     },
     websocket::messages::BitmexOrderUpdateMsg,
@@ -235,7 +235,7 @@ pub fn parse_book_msg(
     let order_id = msg.id;
     let order = BookOrder::new(side, price, size, order_id);
     let sequence = 0; // Not available
-    let ts_event = UnixNanos::from(msg.transact_time);
+    let ts_event = UnixNanos::from(msg.timestamp);
 
     OrderBookDelta::new(
         instrument_id,
@@ -598,12 +598,34 @@ pub fn parse_order_msg(
         }
     }
 
+    // Extract rejection reason for rejected orders
+    if order_status == OrderStatus::Rejected {
+        if let Some(reason_str) = msg.ord_rej_reason.or(msg.text) {
+            tracing::debug!(
+                order_id = ?venue_order_id,
+                client_order_id = ?msg.cl_ord_id,
+                reason = ?reason_str,
+                "Order rejected with reason"
+            );
+            report = report.with_cancel_reason(clean_reason(reason_str.as_ref()));
+        } else {
+            tracing::debug!(
+                order_id = ?venue_order_id,
+                client_order_id = ?msg.cl_ord_id,
+                ord_status = ?msg.ord_status,
+                ord_rej_reason = ?msg.ord_rej_reason,
+                text = ?msg.text,
+                "Order rejected without reason from BitMEX"
+            );
+        }
+    }
+
     // Check if this is a canceled post-only order (BitMEX cancels instead of rejecting)
     // We need to preserve the rejection reason for the execution client to handle
     if order_status == OrderStatus::Canceled
         && let Some(reason_str) = msg.ord_rej_reason.or(msg.text)
     {
-        report = report.with_cancel_reason(reason_str.to_string());
+        report = report.with_cancel_reason(clean_reason(reason_str.as_ref()));
     }
 
     Ok(report)
@@ -1018,7 +1040,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Add);
         assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(delta.sequence, 0);
-        assert_eq!(delta.ts_event, 1732436782275000000); // 2024-11-24T08:26:22.275Z in nanos
+        assert_eq!(delta.ts_event, 1732436782356000000); // 2024-11-24T08:26:22.356Z in nanos
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
@@ -1246,6 +1268,63 @@ mod tests {
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 
         assert_eq!(report.order_type, OrderType::Limit);
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_rejected_with_reason() {
+        let mut msg: BitmexOrderMsg =
+            serde_json::from_str(&load_test_json("ws_order.json")).unwrap();
+        msg.ord_status = BitmexOrderStatus::Rejected;
+        msg.ord_rej_reason = Some(Ustr::from("Insufficient available balance"));
+        msg.text = None;
+        msg.cum_qty = 0;
+
+        let cache = dashmap::DashMap::new();
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("Insufficient available balance".to_string())
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_rejected_with_text_fallback() {
+        let mut msg: BitmexOrderMsg =
+            serde_json::from_str(&load_test_json("ws_order.json")).unwrap();
+        msg.ord_status = BitmexOrderStatus::Rejected;
+        msg.ord_rej_reason = None;
+        msg.text = Some(Ustr::from("Order would execute immediately"));
+        msg.cum_qty = 0;
+
+        let cache = dashmap::DashMap::new();
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("Order would execute immediately".to_string())
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_rejected_without_reason() {
+        let mut msg: BitmexOrderMsg =
+            serde_json::from_str(&load_test_json("ws_order.json")).unwrap();
+        msg.ord_status = BitmexOrderStatus::Rejected;
+        msg.ord_rej_reason = None;
+        msg.text = None;
+        msg.cum_qty = 0;
+
+        let cache = dashmap::DashMap::new();
+        let instrument = create_test_perpetual_instrument();
+        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(report.cancel_reason, None);
     }
 
     #[rstest]

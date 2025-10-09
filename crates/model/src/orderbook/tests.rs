@@ -61,13 +61,15 @@ use crate::{
         BookPrice::new(Price::from("99.00"), OrderSideSpecified::Sell),
     ))
 )]
-#[case::too_many_levels_l1(
+#[case::l1_ghost_levels_handled(
     BookType::L1_MBP,
     vec![
         (OrderSide::Buy, "99.00", 100, 1001),
         (OrderSide::Buy, "98.00", 100, 1002),
     ],
-    Err(BookIntegrityError::TooManyLevels(OrderSide::Buy, 2))
+    // With L1 ghost levels fix, adding two L1 orders at different prices
+    // properly removes the old level, leaving only 1 level (valid state)
+    Ok(())
 )]
 fn test_book_integrity_cases(
     #[case] book_type: BookType,
@@ -891,6 +893,9 @@ fn test_book_pprint() {
 
     let expected_output = "bid_levels: 3\n\
 ask_levels: 3\n\
+sequence: 6\n\
+update_count: 6\n\
+ts_last: 600\n\
 ╭───────┬───────┬───────╮\n\
 │ bids  │ price │ asks  │\n\
 ├───────┼───────┼───────┤\n\
@@ -3114,6 +3119,56 @@ fn test_client_order_ids_after_operations() {
 }
 
 #[rstest]
+fn test_own_book_update_missing_order_errors() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    let missing_order = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-MISSING"),
+        None,
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("1"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Submitted,
+        UnixNanos::from(1_u64),
+        UnixNanos::default(),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
+    );
+
+    let result = book.update(missing_order);
+    assert!(result.is_err());
+}
+
+#[rstest]
+fn test_own_book_delete_missing_order_errors() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    let missing_order = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("O-MISSING"),
+        None,
+        OrderSideSpecified::Sell,
+        Price::from("101.00"),
+        Quantity::from("1"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Submitted,
+        UnixNanos::from(1_u64),
+        UnixNanos::default(),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
+    );
+
+    let result = book.delete(missing_order);
+    assert!(result.is_err());
+}
+
+#[rstest]
 fn test_own_book_display() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OwnOrderBook::new(instrument_id);
@@ -3229,6 +3284,8 @@ fn test_own_book_pprint() {
     let pprint_output = book.pprint(3, None);
     let expected_output = "bid_levels: 3\n\
 ask_levels: 3\n\
+update_count: 6\n\
+ts_last: 0\n\
 ╭───────┬───────┬───────╮\n\
 │ bids  │ price │ asks  │\n\
 ├───────┼───────┼───────┤\n\

@@ -130,7 +130,7 @@ impl Erc20Contract {
             },
         ];
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, None).await?;
 
         if results.len() != 3 {
             return Err(TokenInfoError::UnexpectedResultCount {
@@ -197,7 +197,7 @@ impl Erc20Contract {
             ]);
         }
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, None).await?;
 
         let mut token_infos = HashMap::with_capacity(token_addresses.len());
         for (i, token_address) in token_addresses.iter().enumerate() {
@@ -237,7 +237,10 @@ impl Erc20Contract {
         account: &Address,
     ) -> Result<U256, BlockchainRpcClientError> {
         let call_data = ERC20::balanceOfCall { account: *account }.abi_encode();
-        let result = self.base.execute_call(token_address, &call_data).await?;
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, None)
+            .await?;
 
         ERC20::balanceOfCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))

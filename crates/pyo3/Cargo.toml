@@ -23,6 +23,7 @@ default = []
 cython-compat = []
 defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
+  "nautilus-analysis/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
   "nautilus-bybit/extension-module",
@@ -63,6 +64,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-analysis = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true, features = ["python"] }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }

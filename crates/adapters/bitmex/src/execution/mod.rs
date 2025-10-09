@@ -17,7 +17,7 @@
 
 use std::{any::Any, cell::Ref, future::Future, sync::Mutex};
 
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
@@ -72,9 +72,9 @@ impl BitmexExecutionClient {
     /// # Errors
     ///
     /// Returns an error if either the HTTP or WebSocket client fail to construct.
-    pub fn new(core: ExecutionClientCore, config: BitmexExecClientConfig) -> Result<Self> {
+    pub fn new(core: ExecutionClientCore, config: BitmexExecClientConfig) -> anyhow::Result<Self> {
         if !config.has_api_credentials() {
-            bail!("BitMEX execution client requires API key and secret");
+            anyhow::bail!("BitMEX execution client requires API key and secret");
         }
 
         let http_client = BitmexHttpClient::new(
@@ -87,6 +87,8 @@ impl BitmexExecutionClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.recv_window_ms,
+            config.max_requests_per_second,
+            config.max_requests_per_minute,
         )
         .context("failed to construct BitMEX HTTP client")?;
 
@@ -115,7 +117,7 @@ impl BitmexExecutionClient {
 
     fn spawn_task<F>(&self, label: &'static str, fut: F)
     where
-        F: Future<Output = Result<()>> + Send + 'static,
+        F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         let handle = tokio::spawn(async move {
             if let Err(err) = fut.await {
@@ -139,7 +141,7 @@ impl BitmexExecutionClient {
         }
     }
 
-    async fn ensure_instruments_initialized_async(&mut self) -> Result<()> {
+    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
         if self.instruments_initialized {
             return Ok(());
         }
@@ -162,7 +164,7 @@ impl BitmexExecutionClient {
         Ok(())
     }
 
-    fn ensure_instruments_initialized(&mut self) -> Result<()> {
+    fn ensure_instruments_initialized(&mut self) -> anyhow::Result<()> {
         if self.instruments_initialized {
             return Ok(());
         }
@@ -171,7 +173,7 @@ impl BitmexExecutionClient {
         runtime.block_on(self.ensure_instruments_initialized_async())
     }
 
-    async fn refresh_account_state(&self) -> Result<()> {
+    async fn refresh_account_state(&self) -> anyhow::Result<()> {
         let account_state = self
             .http_client
             .request_account_state(self.core.account_id)
@@ -182,12 +184,12 @@ impl BitmexExecutionClient {
         Ok(())
     }
 
-    fn update_account_state(&self) -> Result<()> {
+    fn update_account_state(&self) -> anyhow::Result<()> {
         let runtime = get_runtime();
         runtime.block_on(self.refresh_account_state())
     }
 
-    fn start_ws_stream(&mut self) -> Result<()> {
+    fn start_ws_stream(&mut self) -> anyhow::Result<()> {
         if self.ws_stream_handle.is_some() {
             return Ok(());
         }
@@ -236,12 +238,12 @@ impl ExecutionClient for BitmexExecutionClient {
         margins: Vec<nautilus_model::types::MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         self.core
             .generate_account_state(balances, margins, reported, ts_event)
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         if self.started {
             return Ok(());
         }
@@ -252,7 +254,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         if !self.started {
             return Ok(());
         }
@@ -267,7 +269,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> Result<()> {
+    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = cmd.order.clone();
 
         if order.is_closed() {
@@ -346,7 +348,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> Result<()> {
+    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         warn!(
             "submit_order_list not yet implemented for BitMEX execution client ({} orders)",
             cmd.order_list.orders.len()
@@ -354,7 +356,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> Result<()> {
+    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
@@ -384,7 +386,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> Result<()> {
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
@@ -404,7 +406,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> Result<()> {
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let order_side = Some(cmd.order_side);
@@ -427,7 +429,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> Result<()> {
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let venue_ids: Vec<VenueOrderId> = cmd
@@ -454,11 +456,11 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> Result<()> {
+    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
         self.update_account_state()
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> Result<()> {
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
@@ -481,7 +483,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
 #[async_trait(?Send)]
 impl LiveExecutionClient for BitmexExecutionClient {
-    async fn connect(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
         }
@@ -508,7 +510,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         if !self.connected {
             return Ok(());
         }
@@ -535,7 +537,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
-    ) -> Result<Option<OrderStatusReport>> {
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
         let instrument_id = cmd
             .instrument_id
             .context("BitMEX generate_order_status_report requires an instrument identifier")?;
@@ -553,7 +555,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReport,
-    ) -> Result<Vec<OrderStatusReport>> {
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let reports = self
             .http_client
             .request_order_status_reports(cmd.instrument_id, false, None)
@@ -562,7 +564,10 @@ impl LiveExecutionClient for BitmexExecutionClient {
         Ok(reports)
     }
 
-    async fn generate_fill_reports(&self, cmd: GenerateFillReports) -> Result<Vec<FillReport>> {
+    async fn generate_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
         let mut reports = self
             .http_client
             .request_fill_reports(cmd.instrument_id, None)
@@ -579,7 +584,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionReports,
-    ) -> Result<Vec<PositionStatusReport>> {
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let mut reports = self
             .http_client
             .request_position_status_reports()
@@ -596,7 +601,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_mass_status(
         &self,
         _lookback_mins: Option<u64>,
-    ) -> Result<Option<ExecutionMassStatus>> {
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         warn!("generate_mass_status not yet implemented for BitMEX execution client");
         Ok(None)
     }

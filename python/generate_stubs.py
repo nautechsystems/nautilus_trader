@@ -316,7 +316,7 @@ def build_extension():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Nautilus Trader v2 build script")
+    parser = argparse.ArgumentParser(description="NautilusTrader v2 build script")
     parser.add_argument(
         "action",
         nargs="?",

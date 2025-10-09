@@ -152,7 +152,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 1_283
-        assert self.engine.kernel.msgbus.pub_count == 359_082
+        assert self.engine.kernel.msgbus.pub_count == 359_260
         assert strategy.fast_ema.count == 2_689
         assert self.engine.iteration == 115_044
         assert self.engine.cache.orders_total_count() == 178
@@ -219,7 +219,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 9_379
-        assert self.engine.kernel.msgbus.pub_count == 2_033_749
+        assert self.engine.kernel.msgbus.pub_count == 2_035_057
         assert strategy1.fast_ema.count == 2_689
         assert strategy2.fast_ema.count == 2_689
         assert self.engine.iteration == 115_044
@@ -306,7 +306,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         # Assert - Updated for reduced dataset (10k rows vs 30k rows)
         assert self.engine.kernel.msgbus.sent_count == 1_473  # Reduced from 4_028
-        assert self.engine.kernel.msgbus.pub_count == 120_902  # Reduced from 382_303
+        assert self.engine.kernel.msgbus.pub_count == 121_110  # Reduced from 382_303
         assert strategy.fast_ema.count >= 2_000  # Reduced from 8_353 (approximate)
         assert self.engine.iteration >= 30_000  # Reduced from 120_468 (approximate)
         assert self.engine.cache.orders_total_count() >= 100  # Reduced from 570 (approximate)
@@ -342,7 +342,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         # Assert - Updated for reduced dataset (10k rows vs 30k rows)
         assert self.engine.kernel.msgbus.sent_count == 95  # Reduced from 116
-        assert self.engine.kernel.msgbus.pub_count == 119_432  # Reduced from 378_661
+        assert self.engine.kernel.msgbus.pub_count == 119_434  # Reduced from 378_661
         assert strategy.fast_ema.count >= 2_000  # Reduced from 8_353 (approximate)
         assert self.engine.iteration >= 30_000  # Reduced from 120_468 (approximate)
         assert self.engine.cache.orders_total_count() >= 5  # Reduced from 12 (approximate)
@@ -469,7 +469,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 29_874
-        assert self.engine.kernel.msgbus.pub_count == 84_174
+        assert self.engine.kernel.msgbus.pub_count == 90_142
         assert strategy.fast_ema.count == 30_117
         assert self.engine.iteration == 60_234
         assert self.engine.cache.orders_total_count() == 2_984
@@ -545,7 +545,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 16_243
-        assert self.engine.kernel.msgbus.pub_count == 21_322
+        assert self.engine.kernel.msgbus.pub_count == 23_577
         assert strategy.fast_ema.count == 10_000
         assert self.engine.iteration == 10_000
         assert self.engine.cache.orders_total_count() == 2_255
@@ -588,7 +588,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         # Assert
         assert len(ticks) == 40_000
         assert self.engine.kernel.msgbus.sent_count == 6_323
-        assert self.engine.kernel.msgbus.pub_count == 54_552
+        assert self.engine.kernel.msgbus.pub_count == 55_454
         assert strategy.fast_ema.count == 10_000
         assert self.engine.iteration == 40_000
         assert self.engine.cache.orders_total_count() == 902
@@ -659,7 +659,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 1_215
-        assert self.engine.kernel.msgbus.pub_count == 113_359
+        assert self.engine.kernel.msgbus.pub_count == 113_531
         assert strategy.fast_ema.count == 1_771
         assert self.engine.iteration == 100_000
         assert self.engine.cache.orders_total_count() == 172
@@ -688,7 +688,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 683
-        assert self.engine.kernel.msgbus.pub_count == 112_136
+        assert self.engine.kernel.msgbus.pub_count == 112_232
         assert strategy.fast_ema.count == 1_000
         assert self.engine.iteration == 100_000
         assert self.engine.cache.orders_total_count() == 96
@@ -755,7 +755,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 307
-        assert self.engine.kernel.msgbus.pub_count == 72_091
+        assert self.engine.kernel.msgbus.pub_count == 72_151
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69_806
         account = self.engine.portfolio.account(self.venue)
@@ -883,7 +883,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         # Assert
         assert self.engine.kernel.msgbus.sent_count == 23_688
-        assert self.engine.kernel.msgbus.pub_count == 24_984
+        assert self.engine.kernel.msgbus.pub_count == 25_902
         assert self.engine.iteration == 8_198
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
@@ -1517,7 +1517,7 @@ def test_correct_account_balance_from_issue_2632() -> None:
 
     # Assert
     assert engine.kernel.msgbus.sent_count == 19
-    assert engine.kernel.msgbus.pub_count == 187
+    assert engine.kernel.msgbus.pub_count == 189
     assert engine.iteration == 120
     assert engine.cache.orders_total_count() == 2
     assert engine.cache.positions_total_count() == 1

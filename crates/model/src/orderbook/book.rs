@@ -94,8 +94,8 @@ impl OrderBook {
             sequence: 0,
             ts_last: UnixNanos::default(),
             update_count: 0,
-            bids: BookLadder::new(OrderSideSpecified::Buy),
-            asks: BookLadder::new(OrderSideSpecified::Sell),
+            bids: BookLadder::new(OrderSideSpecified::Buy, book_type),
+            asks: BookLadder::new(OrderSideSpecified::Sell, book_type),
         }
     }
 
@@ -749,6 +749,11 @@ fn group_levels<'a>(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut levels = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 

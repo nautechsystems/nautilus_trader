@@ -216,8 +216,7 @@ impl PyDataActor {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the actor is already registered
-    /// or if the registration process fails.
+    /// Returns an error if the actor is already registered or if the registration process fails.
     pub fn register(
         &mut self,
         trader_id: TraderId,
@@ -1015,6 +1014,13 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[pyo3(name = "subscribe_order_fills")]
+    #[pyo3(signature = (instrument_id))]
+    fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+        self.subscribe_order_fills(instrument_id);
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     #[pyo3(name = "subscribe_blocks")]
     #[pyo3(signature = (chain, client_id=None, params=None))]
@@ -1364,6 +1370,13 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         self.unsubscribe_instrument_close(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_order_fills")]
+    #[pyo3(signature = (instrument_id))]
+    fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+        self.unsubscribe_order_fills(instrument_id);
         Ok(())
     }
 

@@ -42,12 +42,12 @@ RESET  := $(shell tput -Txterm sgr0)
 
 .PHONY: install
 install:  #-- Install in release mode with all dependencies and extras
-	$(info $(M) Installing Nautilus Trader in release mode with all dependencies and extras...)
+	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
 	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
 install-debug:  #-- Install in debug mode for development
-	$(info $(M) Installing Nautilus Trader in debug mode for development...)
+	$(info $(M) Installing NautilusTrader in debug mode for development...)
 	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
@@ -414,7 +414,7 @@ install-cli:  #-- Install Nautilus CLI tool from source
 
 .PHONY: help
 help:  #-- Show this help message and exit
-	@printf "Nautilus Trader Makefile\n\n"
+	@printf "NautilusTrader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
 	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"

@@ -86,6 +86,11 @@ impl BybitHttpClient {
         Ok(())
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (product_type, symbol=None))]
     fn py_request_instruments<'py>(

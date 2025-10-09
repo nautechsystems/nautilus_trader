@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
-
-import numpy as np
 import pandas as pd
 
-from nautilus_trader.analysis.statistic import PortfolioStatistic
 
-
-class RiskReturnRatio(PortfolioStatistic):
+def convert_series_to_dict(series: pd.Series) -> dict[int, float]:
     """
-    Calculates the return on risk ratio.
+    Convert pandas Series to dict with unix nanoseconds (or integer keys).
     """
-
-    def calculate_from_returns(self, returns: pd.Series) -> Any | None:
-        # Preconditions
-        if not self._check_valid_returns(returns):
-            return np.nan
-
-        return returns.mean() / returns.std()
+    if series.empty:
+        return {}
+    result = {}
+    for idx, val in series.items():
+        # Check if index is datetime (has .value attribute for nanoseconds)
+        if hasattr(idx, "value"):
+            key = idx.value  # Direct nanosecond value, no float precision loss
+        else:
+            # Use integer index directly (convert to nanoseconds for consistency)
+            key = int(idx) * 1_000_000_000
+        result[key] = float(val)
+    return result

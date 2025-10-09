@@ -53,6 +53,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
@@ -512,11 +513,20 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
+
+            start_time_ms = secs_to_millis(command.start.timestamp()) if command.start else None
+            end_time_ms = secs_to_millis(command.end.timestamp()) if command.end else None
+
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
             # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
             for product_type in self._product_types:
-                bybit_fills = await self._http_account.query_trade_history(product_type, symbol)
+                bybit_fills = await self._http_account.query_trade_history(
+                    product_type,
+                    symbol,
+                    start_time=start_time_ms,
+                    end_time=end_time_ms,
+                )
                 for bybit_fill in bybit_fills:
                     # Uncomment for development
                     # self._log.info(f"Generating fill {bybit_fill}", LogColor.MAGENTA)

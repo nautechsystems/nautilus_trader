@@ -105,12 +105,16 @@ class BitmexDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._active_only = True  # Always use active instruments for live clients
-        self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
-        self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
-        self._log.info(
-            f"config.update_instruments_interval_mins={config.update_instruments_interval_mins}",
-            LogColor.BLUE,
-        )
+
+        self._log.info(f"{config.testnet=}", LogColor.BLUE)
+        self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
 
         # Periodic updates
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins

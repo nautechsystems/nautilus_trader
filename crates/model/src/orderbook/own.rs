@@ -282,11 +282,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Deletes an own order from the book.
@@ -295,11 +300,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
             OrderSideSpecified::Sell => self.asks.delete(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Clears all orders from both sides of the book.
@@ -474,6 +484,14 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
     );
 }
 
+/// Filters orders by status and accepted timestamp.
+///
+/// `accepted_buffer_ns` acts as a grace period after `ts_accepted`. Orders whose
+/// `ts_accepted` is still zero (e.g. SUBMITTED/PENDING state before an ACCEPTED
+/// event) will pass the buffer check once `ts_now` exceeds the buffer, even though
+/// they have not been venue-acknowledged yet. Callers that want to hide inflight
+/// orders must additionally filter by `OrderStatus` (for example, include only
+/// `ACCEPTED` / `PARTIALLY_FILLED`).
 fn filter_orders<'a>(
     levels: impl Iterator<Item = &'a OwnBookLevel>,
     status: Option<&HashSet<OrderStatus>>,
@@ -504,6 +522,11 @@ fn group_quantities(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut grouped = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 
@@ -608,22 +631,38 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        let price = self.cache.get(&order.client_order_id).copied();
-        if let Some(price) = price
-            && let Some(level) = self.levels.get_mut(&price)
-        {
-            if order.price == level.price.value {
-                // Update at current price level
-                level.update(order);
-                return Ok(());
-            }
+        let Some(price) = self.cache.get(&order.client_order_id).copied() else {
+            log::error!(
+                "Own book update failed - order {client_order_id} not in cache",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (cache)",
+                order.client_order_id
+            );
+        };
 
-            // Price update: delete and insert at new level
-            self.cache.remove(&order.client_order_id);
-            level.delete(&order.client_order_id)?;
-            if level.is_empty() {
-                self.levels.remove(&price);
-            }
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book update failed - order {client_order_id} cached level {price:?} missing",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (level)",
+                order.client_order_id
+            );
+        };
+
+        if order.price == level.price.value {
+            level.update(order);
+            return Ok(());
+        }
+
+        level.delete(&order.client_order_id)?;
+        self.cache.remove(&order.client_order_id);
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
 
         self.add(order);
@@ -645,14 +684,28 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
-        if let Some(price) = self.cache.remove(client_order_id)
-            && let Some(level) = self.levels.get_mut(&price)
-        {
-            level.delete(client_order_id)?;
-            if level.is_empty() {
-                self.levels.remove(&price);
-            }
+        let Some(price) = self.cache.get(client_order_id).copied() else {
+            log::error!(
+                "Own book remove failed - order {client_order_id} not in cache",
+                client_order_id = client_order_id
+            );
+            anyhow::bail!("Order {client_order_id} not found in own book (cache)");
+        };
+
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book remove failed - order {client_order_id} cached level {price:?} missing",
+                client_order_id = client_order_id
+            );
+            anyhow::bail!("Order {client_order_id} not found in own book (level)");
+        };
+
+        level.delete(client_order_id)?;
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
+        self.cache.remove(client_order_id);
 
         Ok(())
     }

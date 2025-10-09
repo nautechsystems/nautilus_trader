@@ -184,6 +184,13 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._cache_instruments()
         await self._update_account_state()
 
+        # Check OKX-Nautilus clock sync
+        server_time: int = await self._http_client.http_get_server_time()
+        self._log.info(f"OKX server time {server_time} UNIX (ms)")
+
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+
         await self._ws_client.connect(
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,

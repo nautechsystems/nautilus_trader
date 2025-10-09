@@ -15,12 +15,12 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use anyhow::Result;
 use futures_util::future::BoxFuture;
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
+use ustr::Ustr;
 
 use crate::{
     http::error::{Error, Result as HyperliquidResult},
@@ -117,7 +117,7 @@ pub struct HyperliquidWebSocketInnerClient {
 impl HyperliquidWebSocketInnerClient {
     /// Creates a new Hyperliquid WebSocket inner client with reconnection/backoff/heartbeat.
     /// Returns a client that owns the inbound message receiver.
-    pub async fn connect(url: &str) -> Result<Self> {
+    pub async fn connect(url: &str) -> anyhow::Result<Self> {
         // Create message handler for receiving raw WebSocket messages
         let (message_handler, mut raw_rx) = channel_message_handler();
 
@@ -232,7 +232,7 @@ impl HyperliquidWebSocketInnerClient {
     }
 
     /// Low-level method to send a Hyperliquid WebSocket request.
-    pub async fn ws_send(&self, request: &HyperliquidWsRequest) -> Result<()> {
+    pub async fn ws_send(&self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
         debug!("Sending WS message: {}", json);
         self.inner
@@ -242,7 +242,7 @@ impl HyperliquidWebSocketInnerClient {
     }
 
     /// Low-level method to send a request only once (dedup by JSON serialization).
-    pub async fn ws_send_once(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
+    pub async fn ws_send_once(&mut self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
         if self.sent_subscriptions.contains(&json) {
             debug!("Skipping duplicate request: {}", json);
@@ -260,9 +260,18 @@ impl HyperliquidWebSocketInnerClient {
     }
 
     /// Low-level method to subscribe to a specific channel.
-    pub async fn ws_subscribe(&mut self, subscription: SubscriptionRequest) -> Result<()> {
+    pub async fn ws_subscribe(&mut self, subscription: SubscriptionRequest) -> anyhow::Result<()> {
         let request = HyperliquidWsRequest::Subscribe { subscription };
         self.ws_send_once(&request).await
+    }
+
+    /// Low-level method to unsubscribe from a specific channel.
+    pub async fn ws_unsubscribe(
+        &mut self,
+        subscription: SubscriptionRequest,
+    ) -> anyhow::Result<()> {
+        let request = HyperliquidWsRequest::Unsubscribe { subscription };
+        self.ws_send(&request).await
     }
 
     /// Get the next event from the WebSocket stream.
@@ -292,7 +301,7 @@ impl HyperliquidWebSocketInnerClient {
     }
 
     /// Disconnect the WebSocket client.
-    pub async fn ws_disconnect(&mut self) -> Result<()> {
+    pub async fn ws_disconnect(&mut self) -> anyhow::Result<()> {
         self.inner.disconnect().await;
         Ok(())
     }
@@ -376,7 +385,7 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Creates a new Hyperliquid WebSocket client and establishes connection.
-    pub async fn connect(url: &str) -> Result<Self> {
+    pub async fn connect(url: &str) -> anyhow::Result<Self> {
         let inner = HyperliquidWebSocketInnerClient::connect(url).await?;
         Ok(Self {
             inner: Some(inner),
@@ -385,7 +394,7 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Establishes the WebSocket connection if not already connected.
-    pub async fn ensure_connected(&mut self) -> Result<()> {
+    pub async fn ensure_connected(&mut self) -> anyhow::Result<()> {
         if self.inner.is_none() {
             let inner = HyperliquidWebSocketInnerClient::connect(&self.url).await?;
             self.inner = Some(inner);
@@ -403,7 +412,7 @@ impl HyperliquidWebSocketClient {
     /// # Panics
     ///
     /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_order_updates(&mut self, user: &str) -> Result<()> {
+    pub async fn subscribe_order_updates(&mut self, user: &str) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::OrderUpdates {
             user: user.to_string(),
@@ -420,7 +429,7 @@ impl HyperliquidWebSocketClient {
     /// # Panics
     ///
     /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_user_events(&mut self, user: &str) -> Result<()> {
+    pub async fn subscribe_user_events(&mut self, user: &str) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::UserEvents {
             user: user.to_string(),
@@ -433,10 +442,138 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Subscribe to all user channels (order updates + user events) for convenience.
-    pub async fn subscribe_all_user_channels(&mut self, user: &str) -> Result<()> {
+    pub async fn subscribe_all_user_channels(&mut self, user: &str) -> anyhow::Result<()> {
         self.subscribe_order_updates(user).await?;
         self.subscribe_user_events(user).await?;
         Ok(())
+    }
+
+    /// Subscribe to trades for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_trades(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Trades { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from trades for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_trades(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Trades { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to L2 order book for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_book(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            n_sig_figs: None,
+            mantissa: None,
+        };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from L2 order book for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_book(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            n_sig_figs: None,
+            mantissa: None,
+        };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to BBO (best bid/offer) for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_bbo(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Bbo { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from BBO (best bid/offer) for a specific coin.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_bbo(&mut self, coin: Ustr) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Bbo { coin };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
+    }
+
+    /// Subscribe to candlestick data for a specific coin and interval.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn subscribe_candle(&mut self, coin: Ustr, interval: String) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Candle { coin, interval };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_subscribe(subscription)
+            .await
+    }
+
+    /// Unsubscribe from candlestick data for a specific coin and interval.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    pub async fn unsubscribe_candle(&mut self, coin: Ustr, interval: String) -> anyhow::Result<()> {
+        self.ensure_connected().await?;
+        let subscription = SubscriptionRequest::Candle { coin, interval };
+        self.inner
+            .as_mut()
+            .unwrap()
+            .ws_unsubscribe(subscription)
+            .await
     }
 
     /// Get the next event from the WebSocket stream.
@@ -474,7 +611,7 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Disconnect the WebSocket client.
-    pub async fn disconnect(&mut self) -> Result<()> {
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         if let Some(ref mut inner) = self.inner {
             inner.ws_disconnect().await
         } else {
@@ -487,7 +624,7 @@ impl HyperliquidWebSocketClient {
     /// # Panics
     ///
     /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
+    pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         self.inner.as_mut().unwrap().ws_send(request).await
     }

@@ -32,6 +32,7 @@ python = [
   "nautilus-model/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
 ]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]
@@ -68,6 +69,7 @@ ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 

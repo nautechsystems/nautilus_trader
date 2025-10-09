@@ -29,6 +29,7 @@ from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
 from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.common import Environment
+from nautilus_trader.infrastructure import PostgresConnectOptions
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import InstrumentId
@@ -59,6 +60,18 @@ def main() -> None:
     print(f"WSS RPC URL: {wss_rpc_url}")
     print(f"From block: {from_block:_}")
 
+    # PostgreSQL configuration (optional, for caching blockchain data)
+    postgres_config = None
+    if os.getenv("USE_POSTGRES_CACHE"):
+        postgres_config = PostgresConnectOptions(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USERNAME", "nautilus"),
+            password=os.getenv("POSTGRES_PASSWORD", "pass"),
+            database=os.getenv("POSTGRES_DATABASE", "nautilus"),
+        )
+        print(f"\nPostgres cache config: {postgres_config}")
+
     # Client factory and configuration
     client_factory = BlockchainDataClientFactory()
     client_config = BlockchainDataClientConfig(
@@ -70,6 +83,7 @@ def main() -> None:
         wss_rpc_url=wss_rpc_url,
         use_hypersync_for_live_data=True,
         from_block=from_block,
+        postgres_cache_database_config=postgres_config,
     )
 
     builder = LiveNode.builder(node_name, trader_id, environment)

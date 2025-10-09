@@ -227,19 +227,16 @@ async fn heartbeat(
     mut sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
 ) {
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(10));
-    let retry_interval = Duration::from_secs(1);
 
     loop {
         heartbeat_interval.tick().await;
         tracing::trace!("Sending PING");
 
-        let mut count = 3;
-        let mut retry_interval = tokio::time::interval(retry_interval);
-
-        while count > 0 {
-            retry_interval.tick().await;
-            let _ = sender.send(tungstenite::Message::Ping(vec![].into())).await;
-            count -= 1;
+        if let Err(e) = sender.send(tungstenite::Message::Ping(vec![].into())).await {
+            tracing::debug!("Heartbeat send failed (connection closed): {e}");
+            break;
         }
     }
+
+    tracing::debug!("Heartbeat task exiting");
 }

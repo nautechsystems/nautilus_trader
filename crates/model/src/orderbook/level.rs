@@ -162,11 +162,15 @@ impl BookLevel {
     /// Adds an order to this price level. Order must match the level's price.
     pub fn add(&mut self, order: BookOrder) {
         debug_assert_eq!(order.price, self.price.value);
-        debug_assert!(
-            order.size.is_positive(),
-            "Order size must be positive: {}",
-            order.size
-        );
+
+        if !order.size.is_positive() {
+            log::warn!(
+                "Attempted to add order with non-positive size: order_id={order_id}, size={size}, ignoring",
+                order_id = order.order_id,
+                size = order.size
+            );
+            return;
+        }
 
         self.orders.insert(order.order_id, order);
     }

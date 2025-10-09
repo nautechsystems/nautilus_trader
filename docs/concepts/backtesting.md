@@ -447,7 +447,7 @@ The engine locks only the stake required by the venue; leverage and margin are n
 
 ## Margin models
 
-Nautilus Trader provides flexible margin calculation models to accommodate different venue types and trading scenarios.
+NautilusTrader provides flexible margin calculation models to accommodate different venue types and trading scenarios.
 
 ### Overview
 

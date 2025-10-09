@@ -5049,12 +5049,17 @@ cdef class OrderMatchingEngine:
 
         if simulated_book is not None:
             # Use simulated OrderBook for fill determination
-            return simulated_book.simulate_fills(
+            fills = simulated_book.simulate_fills(
                 order,
                 price_prec=self.instrument.price_precision,
                 size_prec=self.instrument.size_precision,
                 is_aggressive=True,
             )
+            # If simulation produced no fills (e.g., custom model removed best levels),
+            # fall back to standard market logic to preserve expected behavior.
+            if not fills:
+                return self.determine_market_price_and_volume(order)
+            return fills
         else:
             # Fall back to standard logic
             return self.determine_market_price_and_volume(order)

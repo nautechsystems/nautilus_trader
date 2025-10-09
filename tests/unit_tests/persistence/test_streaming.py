@@ -84,7 +84,7 @@ class TestPersistenceStreaming:
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderFilled": 94,
+            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 90,
@@ -438,7 +438,7 @@ class TestPersistenceStreaming:
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderFilled": 94,
+            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 90,

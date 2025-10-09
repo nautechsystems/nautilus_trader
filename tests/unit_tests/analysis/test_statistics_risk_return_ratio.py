@@ -16,7 +16,8 @@
 import pandas as pd
 from numpy import float64
 
-from nautilus_trader.analysis.statistics.risk_return_ratio import RiskReturnRatio
+from nautilus_trader.analysis import RiskReturnRatio
+from tests.unit_tests.analysis.conftest import convert_series_to_dict
 
 
 class TestRiskReturnRatioPortfolioStatistic:
@@ -36,7 +37,7 @@ class TestRiskReturnRatioPortfolioStatistic:
         data = pd.Series([], dtype=float64)
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert pd.isna(result)
@@ -47,7 +48,7 @@ class TestRiskReturnRatioPortfolioStatistic:
         data = pd.Series([1.0, -1.0], dtype=float64)
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result == 0.0
@@ -58,7 +59,7 @@ class TestRiskReturnRatioPortfolioStatistic:
         data = pd.Series([2.0, 2.0, 1.0, -1.0, -2.0], dtype=float64)
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result == 0.2201927530252721

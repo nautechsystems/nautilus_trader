@@ -76,7 +76,14 @@ LIMIT_ORDER_TYPES = {
     OrderType.MARKET_TO_LIMIT,
 }
 
-LOCAL_ACTIVE_ORDER_STATUS =  {
+CANCELLABLE_ORDER_STATUSES = {
+    OrderStatus.ACCEPTED,
+    OrderStatus.TRIGGERED,
+    OrderStatus.PENDING_UPDATE,
+    OrderStatus.PARTIALLY_FILLED,
+}
+
+LOCAL_ACTIVE_ORDER_STATUSES =  {
     OrderStatus.INITIALIZED,
     OrderStatus.EMULATED,
     OrderStatus.RELEASED,
@@ -387,7 +394,7 @@ cdef class Order:
         return self._fsm.state == OrderStatus.EMULATED
 
     cdef bint is_active_local_c(self):
-        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUS
+        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUSES
 
     cdef bint is_primary_c(self):
         return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id

@@ -194,11 +194,15 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        assert_eq!(
-            price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    price_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {

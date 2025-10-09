@@ -97,6 +97,14 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
+      - id: check-anyhow-usage
+        name: check anyhow usage
+        description: Enforces anyhow conventions (only import Context, use anyhow::bail! not return Err(anyhow::anyhow!))
+        entry: .pre-commit-hooks/check_anyhow_usage.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.
@@ -151,7 +159,7 @@ repos:
         args: ["--fix"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+    rev: 6.1.0
     hooks:
       - id: isort
         name: isort (cython)
@@ -192,7 +200,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.22  # uv version
+    rev: 0.8.24  # uv version
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

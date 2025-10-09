@@ -54,6 +54,13 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
         but BitMEX uses seconds-granularity timestamps (converted via integer division).
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    max_requests_per_second : PositiveInt, default 10
+        The maximum number of requests per second (burst limit).
+        Defaults to 10 (per BitMEX documentation).
+    max_requests_per_minute : PositiveInt, default 120
+        The maximum number of requests per minute (rolling window).
+        Defaults to 120 so data clients can share the cached HTTP client with execution.
+        Lower to 30 if you rely on BitMEX's unauthenticated venue limits instead of local throttling.
 
     """
 
@@ -68,6 +75,8 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = 5_000
     recv_window_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
+    max_requests_per_second: PositiveInt = 10
+    max_requests_per_minute: PositiveInt = 120
 
 
 class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -104,6 +113,13 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         The expiration window (milliseconds) for signed requests.
         Note: Specified in milliseconds for consistency with other adapters,
         but BitMEX uses seconds-granularity timestamps (converted via integer division).
+    max_requests_per_second : PositiveInt, default 10
+        The maximum number of requests per second (burst limit).
+        Defaults to 10 (per BitMEX documentation).
+    max_requests_per_minute : PositiveInt, default 120
+        The maximum number of requests per minute (rolling window).
+        Defaults to 120 for authenticated clients (per BitMEX documentation).
+        Note: Execution clients are always authenticated.
 
     """
 
@@ -117,3 +133,5 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 5_000
     recv_window_ms: PositiveInt | None = 10_000
+    max_requests_per_second: PositiveInt = 10
+    max_requests_per_minute: PositiveInt = 120

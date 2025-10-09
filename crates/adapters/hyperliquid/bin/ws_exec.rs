@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Connected to Hyperliquid WebSocket");
 
     // Subscribe to execution channels
-    let user_addr = std::env::var("HYPERLIQUID_USER_ADDRESS")
+    let user_addr = env::var("HYPERLIQUID_USER_ADDRESS")
         .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string());
 
     // Subscribe to all user channels using the convenience method

@@ -418,7 +418,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Data serialization to Arrow record batches fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
@@ -524,7 +524,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - JSON serialization fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
@@ -684,7 +684,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - No adjacent file is found to extend.
     /// - File rename operations fail.
@@ -759,7 +759,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store listing operations fail.
     /// - Directory access is denied.
     /// - Network issues occur (for remote object stores).
@@ -884,7 +884,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store registration fails for remote URIs.
     /// - File discovery fails.
     /// - DataFusion query execution fails.
@@ -1013,7 +1013,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The underlying query execution fails.
     /// - Data type conversion fails.
     /// - Object store access fails.
@@ -1106,7 +1106,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Object store listing operations fail.
     /// - URI reconstruction fails.
@@ -1241,7 +1241,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Interval retrieval fails.
     /// - Gap calculation fails.
@@ -1296,7 +1296,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Interval retrieval fails.
     ///
@@ -1347,7 +1347,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Directory listing fails.
     /// - Filename parsing fails.
@@ -1394,7 +1394,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store listing operations fail.
     /// - Directory access is denied.
     ///
@@ -1471,7 +1471,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument ID contains invalid characters that cannot be made URI-safe.
     /// - Path construction fails due to system limitations.
     ///

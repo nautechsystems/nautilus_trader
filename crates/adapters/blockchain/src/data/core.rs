@@ -1060,7 +1060,7 @@ impl BlockchainDataClientCore {
             );
 
             let mut event_stream =
-                database.stream_pool_events(self.chain.clone(), dex.clone(), &pool.address);
+                database.stream_pool_events(self.chain.clone(), dex.clone(), &pool.address, None);
             let mut event_count = 0;
 
             while let Some(event_result) = event_stream.next().await {

@@ -157,6 +157,93 @@ pub type BybitTickersLinearResponse = BybitListResponse<BybitTickerLinear>;
 /// - <https://bybit-exchange.github.io/docs/v5/market/tickers>
 pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 
+/// Unified ticker data structure containing common fields across all product types.
+///
+/// This simplified ticker structure is designed to work across SPOT, LINEAR, and OPTION products,
+/// containing only the most commonly used fields.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+)]
+pub struct BybitTickerData {
+    pub symbol: Ustr,
+    pub bid1_price: String,
+    pub bid1_size: String,
+    pub ask1_price: String,
+    pub ask1_size: String,
+    pub last_price: String,
+    pub high_price24h: String,
+    pub low_price24h: String,
+    pub turnover24h: String,
+    pub volume24h: String,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitTickerData {
+    #[getter]
+    #[must_use]
+    pub fn symbol(&self) -> &str {
+        self.symbol.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn bid1_price(&self) -> &str {
+        &self.bid1_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn bid1_size(&self) -> &str {
+        &self.bid1_size
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn ask1_price(&self) -> &str {
+        &self.ask1_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn ask1_size(&self) -> &str {
+        &self.ask1_size
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn last_price(&self) -> &str {
+        &self.last_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn high_price24h(&self) -> &str {
+        &self.high_price24h
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn low_price24h(&self) -> &str {
+        &self.low_price24h
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn turnover24h(&self) -> &str {
+        &self.turnover24h
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn volume24h(&self) -> &str {
+        &self.volume24h
+    }
+}
+
 /// Kline/candlestick entry returned by `GET /v5/market/kline`.
 ///
 /// Bybit returns klines as arrays with 7 elements:

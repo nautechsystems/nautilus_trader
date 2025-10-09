@@ -168,6 +168,13 @@ class ExecTester(Strategy):
                 LogColor.CYAN,
             )
 
+            own_book = self.cache.own_order_book(book.instrument_id)
+            if own_book:
+                self.log.info(
+                    f"\n{own_book.instrument_id}\n{own_book.pprint(num_levels)}",
+                    LogColor.MAGENTA,
+                )
+
         best_bid = book.best_bid_price()
         best_ask = book.best_ask_price()
         if best_bid is None or best_ask is None:

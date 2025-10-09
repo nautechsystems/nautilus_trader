@@ -41,6 +41,7 @@ use nautilus_bybit::{
     websocket::client::BybitWebSocketClient,
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_model::identifiers::InstrumentId;
 use rstest::rstest;
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -1009,10 +1010,8 @@ async fn test_trade_subscription_flow() {
     client.connect().await.unwrap();
 
     // Subscribe to trades using the high-level method
-    client
-        .subscribe_trades("BTCUSDT".to_string())
-        .await
-        .unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    client.subscribe_trades(instrument_id).await.unwrap();
 
     // Wait for subscription
     wait_until_async(
@@ -1046,10 +1045,8 @@ async fn test_orderbook_subscription_flow() {
     client.connect().await.unwrap();
 
     // Subscribe to orderbook using the high-level method
-    client
-        .subscribe_orderbook("BTCUSDT".to_string(), 50)
-        .await
-        .unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    client.subscribe_orderbook(instrument_id, 50).await.unwrap();
 
     // Wait for subscription
     wait_until_async(
@@ -1083,10 +1080,8 @@ async fn test_ticker_subscription_flow() {
     client.connect().await.unwrap();
 
     // Subscribe to ticker using the high-level method
-    client
-        .subscribe_ticker("BTCUSDT".to_string())
-        .await
-        .unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    client.subscribe_ticker(instrument_id).await.unwrap();
 
     // Wait for subscription
     wait_until_async(
@@ -1120,8 +1115,9 @@ async fn test_klines_subscription_flow() {
     client.connect().await.unwrap();
 
     // Subscribe to klines using the high-level method
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
     client
-        .subscribe_klines("BTCUSDT".to_string(), "1".to_string())
+        .subscribe_klines(instrument_id, "1".to_string())
         .await
         .unwrap();
 

@@ -261,7 +261,60 @@ impl SocketClientInner {
         })
     }
 
+    /// Parse URL and extract socket address and request URL.
+    ///
+    /// Accepts either:
+    /// - Raw socket address: "host:port" → returns ("host:port", "scheme://host:port")
+    /// - Full URL: "scheme://host:port/path" → returns ("host:port", original URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the URL is invalid or missing required components.
+    fn parse_socket_url(url: &str, mode: Mode) -> Result<(String, String), Error> {
+        if url.contains("://") {
+            // URL with scheme (e.g., "wss://host:port/path")
+            let parsed = url.parse::<http::Uri>().map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid URL: {e}"),
+                ))
+            })?;
+
+            let host = parsed.host().ok_or_else(|| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "URL missing host",
+                ))
+            })?;
+
+            let port = parsed
+                .port_u16()
+                .unwrap_or_else(|| match parsed.scheme_str() {
+                    Some("wss") | Some("https") => 443,
+                    Some("ws") | Some("http") => 80,
+                    _ => match mode {
+                        Mode::Tls => 443,
+                        Mode::Plain => 80,
+                    },
+                });
+
+            Ok((format!("{host}:{port}"), url.to_string()))
+        } else {
+            // Raw socket address (e.g., "host:port")
+            // Construct a proper URL for the request based on mode
+            let scheme = match mode {
+                Mode::Tls => "wss",
+                Mode::Plain => "ws",
+            };
+            Ok((url.to_string(), format!("{scheme}://{url}")))
+        }
+    }
+
     /// Establish a TLS or plain TCP connection with the server.
+    ///
+    /// Accepts either a raw socket address (e.g., "host:port") or a full URL with scheme
+    /// (e.g., "wss://host:port"). For FIX/raw socket connections, use the host:port format.
+    /// For WebSocket-style connections, include the scheme.
     ///
     /// # Errors
     ///
@@ -272,18 +325,20 @@ impl SocketClientInner {
         connector: Option<Connector>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
         tracing::debug!("Connecting to {url}");
-        let tcp_result = TcpStream::connect(url).await;
+
+        let (socket_addr, request_url) = Self::parse_socket_url(url, mode)?;
+        let tcp_result = TcpStream::connect(&socket_addr).await;
 
         match tcp_result {
             Ok(stream) => {
-                tracing::debug!("TCP connection established, proceeding with TLS");
-                let request = url.into_client_request()?;
+                tracing::debug!("TCP connection established to {socket_addr}, proceeding with TLS");
+                let request = request_url.into_client_request()?;
                 tcp_tls(&request, mode, stream, connector)
                     .await
                     .map(tokio::io::split)
             }
             Err(e) => {
-                tracing::error!("TCP connection failed: {e:?}");
+                tracing::error!("TCP connection failed to {socket_addr}: {e:?}");
                 Err(Error::Io(e))
             }
         }
@@ -899,6 +954,7 @@ impl Drop for SocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 #[cfg(feature = "python")]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
@@ -1192,7 +1248,9 @@ mod tests {
 
 #[cfg(test)]
 mod rust_tests {
+    use rstest::rstest;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task,
         time::{Duration, sleep},
@@ -1200,6 +1258,7 @@ mod rust_tests {
 
     use super::*;
 
+    #[rstest]
     #[tokio::test]
     async fn test_reconnect_then_close() {
         // Bind an ephemeral port
@@ -1244,6 +1303,7 @@ mod rust_tests {
         server.abort();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn test_reconnect_state_flips_when_reader_stops() {
         // Bind an ephemeral port and accept a single connection which we immediately close.
@@ -1288,6 +1348,232 @@ mod rust_tests {
         .expect("client did not enter RECONNECT state");
 
         client.close().await;
+        server.abort();
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_raw_address() {
+        // Raw socket address with TLS mode
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("example.com:6130", Mode::Tls).unwrap();
+        assert_eq!(socket_addr, "example.com:6130");
+        assert_eq!(request_url, "wss://example.com:6130");
+
+        // Raw socket address with Plain mode
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("localhost:8080", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "localhost:8080");
+        assert_eq!(request_url, "ws://localhost:8080");
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_with_scheme() {
+        // Full URL with wss scheme
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("wss://example.com:443/path", Mode::Tls).unwrap();
+        assert_eq!(socket_addr, "example.com:443");
+        assert_eq!(request_url, "wss://example.com:443/path");
+
+        // Full URL with ws scheme
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("ws://localhost:8080", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "localhost:8080");
+        assert_eq!(request_url, "ws://localhost:8080");
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_default_ports() {
+        // wss without explicit port defaults to 443
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("wss://example.com", Mode::Tls).unwrap();
+        assert_eq!(socket_addr, "example.com:443");
+
+        // ws without explicit port defaults to 80
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("ws://example.com", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "example.com:80");
+
+        // https defaults to 443
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("https://example.com", Mode::Tls).unwrap();
+        assert_eq!(socket_addr, "example.com:443");
+
+        // http defaults to 80
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("http://example.com", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "example.com:80");
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_unknown_scheme_uses_mode() {
+        // Unknown scheme defaults to mode-based port
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("custom://example.com", Mode::Tls).unwrap();
+        assert_eq!(socket_addr, "example.com:443");
+
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("custom://example.com", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "example.com:80");
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_ipv6() {
+        // IPv6 address with port
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("[::1]:8080", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "[::1]:8080");
+        assert_eq!(request_url, "ws://[::1]:8080");
+
+        // IPv6 in URL
+        let (socket_addr, _) =
+            SocketClientInner::parse_socket_url("ws://[::1]:8080", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "[::1]:8080");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_url_parsing_raw_socket_address() {
+        // Test that raw socket addresses (host:port) work correctly
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+            sleep(Duration::from_millis(50)).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"), // Raw socket address format
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        // Should successfully connect with raw socket address
+        let client = SocketClient::connect(config, None, None, None).await;
+        assert!(
+            client.is_ok(),
+            "Client should connect with raw socket address format"
+        );
+
+        if let Ok(client) = client {
+            client.close().await;
+        }
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_url_parsing_with_scheme() {
+        // Test that URLs with schemes also work
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+            sleep(Duration::from_millis(50)).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("ws://127.0.0.1:{port}"), // URL with scheme
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        // Should successfully connect with URL format
+        let client = SocketClient::connect(config, None, None, None).await;
+        assert!(
+            client.is_ok(),
+            "Client should connect with URL scheme format"
+        );
+
+        if let Ok(client) = client {
+            client.close().await;
+        }
+        server.abort();
+    }
+
+    #[rstest]
+    fn test_parse_socket_url_ipv6_with_zone() {
+        // IPv6 with zone ID (link-local address)
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("[fe80::1%eth0]:8080", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "[fe80::1%eth0]:8080");
+        assert_eq!(request_url, "ws://[fe80::1%eth0]:8080");
+
+        // Verify zone is preserved in URL format too
+        let (socket_addr, request_url) =
+            SocketClientInner::parse_socket_url("ws://[fe80::1%lo]:9090", Mode::Plain).unwrap();
+        assert_eq!(socket_addr, "[fe80::1%lo]:9090");
+        assert_eq!(request_url, "ws://[fe80::1%lo]:9090");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ipv6_loopback_connection() {
+        // Test IPv6 loopback address connection
+        // Skip if IPv6 is not available on the system
+        if TcpListener::bind("[::1]:0").await.is_err() {
+            eprintln!("IPv6 not available, skipping test");
+            return;
+        }
+
+        let listener = TcpListener::bind("[::1]:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = vec![0u8; 1024];
+                if let Ok(n) = sock.read(&mut buf).await {
+                    // Echo back
+                    let _ = sock.write_all(&buf[..n]).await;
+                }
+            }
+            sleep(Duration::from_millis(50)).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("[::1]:{port}"), // IPv6 loopback
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None).await;
+        assert!(
+            client.is_ok(),
+            "Client should connect to IPv6 loopback address"
+        );
+
+        if let Ok(client) = client {
+            client.close().await;
+        }
         server.abort();
     }
 }

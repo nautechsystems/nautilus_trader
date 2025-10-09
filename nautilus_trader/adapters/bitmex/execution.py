@@ -115,8 +115,15 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # Configuration
         self._config = config
-        self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
-        self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
+
+        self._log.info(f"{config.testnet=}", LogColor.BLUE)
+        self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
 
         # Set initial account ID (will be updated with actual account number on connect)
         self._account_id_prefix = name or BITMEX_VENUE.value
@@ -177,6 +184,14 @@ class BitmexExecutionClient(LiveExecutionClient):
         instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         await self._update_account_state()
+
+        # Check BitMEX-Nautilus clock sync
+        server_time: int = await self._http_client.http_get_server_time()
+        self._log.info(f"BitMEX server time {server_time} UNIX (ms)")
+
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+
         self._ws_client.set_account_id(self.pyo3_account_id)
 
         await self._ws_client.connect(

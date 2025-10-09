@@ -1103,6 +1103,11 @@ class NautilusKernel:
         idempotent). Once called, it cannot be reversed, and no other methods should be
         called on this instance.
 
+        Notes
+        -----
+        The log guard is intentionally not disposed to support running multiple engines
+        sequentially without re-initializing logging.
+
         """
         self._stop_engines()
 

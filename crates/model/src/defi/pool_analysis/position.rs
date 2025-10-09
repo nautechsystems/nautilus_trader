@@ -43,8 +43,9 @@ pub struct PoolPosition {
     pub total_amount0_deposited: U256,
     /// Total amount of token1 deposited into this position
     pub total_amount1_deposited: U256,
-    /// Total amount of token0 withdrawn from this position
+    /// Total amount of token0 collected from this position
     pub total_amount0_collected: u128,
+    /// Total amount of token1 collected from this position
     pub total_amount1_collected: u128,
 }
 

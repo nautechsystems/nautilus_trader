@@ -29,8 +29,24 @@ import warnings
 from collections import defaultdict
 from decimal import Decimal
 
-from nautilus_trader.analysis import statistics
-from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis import AvgLoser
+from nautilus_trader.analysis import AvgWinner
+from nautilus_trader.analysis import Expectancy
+from nautilus_trader.analysis import LongRatio
+from nautilus_trader.analysis import MaxLoser
+from nautilus_trader.analysis import MaxWinner
+from nautilus_trader.analysis import MinLoser
+from nautilus_trader.analysis import MinWinner
+from nautilus_trader.analysis import PortfolioAnalyzer
+from nautilus_trader.analysis import ProfitFactor
+from nautilus_trader.analysis import ReturnsAverage
+from nautilus_trader.analysis import ReturnsAverageLoss
+from nautilus_trader.analysis import ReturnsAverageWin
+from nautilus_trader.analysis import ReturnsVolatility
+from nautilus_trader.analysis import RiskReturnRatio
+from nautilus_trader.analysis import SharpeRatio
+from nautilus_trader.analysis import SortinoRatio
+from nautilus_trader.analysis import WinRate
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.portfolio.config import PortfolioConfig
 
@@ -160,23 +176,23 @@ cdef class Portfolio(PortfolioFacade):
         self.analyzer = PortfolioAnalyzer()
 
         # Register default statistics
-        self.analyzer.register_statistic(statistics.winner_max.MaxWinner())
-        self.analyzer.register_statistic(statistics.winner_avg.AvgWinner())
-        self.analyzer.register_statistic(statistics.winner_min.MinWinner())
-        self.analyzer.register_statistic(statistics.loser_min.MinLoser())
-        self.analyzer.register_statistic(statistics.loser_avg.AvgLoser())
-        self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
-        self.analyzer.register_statistic(statistics.expectancy.Expectancy())
-        self.analyzer.register_statistic(statistics.win_rate.WinRate())
-        self.analyzer.register_statistic(statistics.returns_volatility.ReturnsVolatility())
-        self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
-        self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
-        self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())
-        self.analyzer.register_statistic(statistics.sharpe_ratio.SharpeRatio())
-        self.analyzer.register_statistic(statistics.sortino_ratio.SortinoRatio())
-        self.analyzer.register_statistic(statistics.profit_factor.ProfitFactor())
-        self.analyzer.register_statistic(statistics.risk_return_ratio.RiskReturnRatio())
-        self.analyzer.register_statistic(statistics.long_ratio.LongRatio())
+        self.analyzer.register_statistic(MaxWinner())
+        self.analyzer.register_statistic(AvgWinner())
+        self.analyzer.register_statistic(MinWinner())
+        self.analyzer.register_statistic(MinLoser())
+        self.analyzer.register_statistic(AvgLoser())
+        self.analyzer.register_statistic(MaxLoser())
+        self.analyzer.register_statistic(Expectancy())
+        self.analyzer.register_statistic(WinRate())
+        self.analyzer.register_statistic(ReturnsVolatility())
+        self.analyzer.register_statistic(ReturnsAverage())
+        self.analyzer.register_statistic(ReturnsAverageLoss())
+        self.analyzer.register_statistic(ReturnsAverageWin())
+        self.analyzer.register_statistic(SharpeRatio())
+        self.analyzer.register_statistic(SortinoRatio())
+        self.analyzer.register_statistic(ProfitFactor())
+        self.analyzer.register_statistic(RiskReturnRatio())
+        self.analyzer.register_statistic(LongRatio())
 
         # Register endpoints
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)

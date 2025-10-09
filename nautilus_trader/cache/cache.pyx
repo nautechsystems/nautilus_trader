@@ -2380,8 +2380,11 @@ cdef class Cache(CacheFacade):
             self._index_orders_emulated.add(order.client_order_id)
 
         # Update own book
-        if self._own_order_books and should_handle_own_book_order(order):
-            self.update_own_order_book(order)
+        if self._own_order_books:
+            own_book = self._own_order_books.get(order.instrument_id)
+            # Only bypass should_handle check for closed orders (to ensure cleanup)
+            if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
+                self.update_own_order_book(order)
 
         if self._database is None:
             return
@@ -2407,6 +2410,9 @@ cdef class Cache(CacheFacade):
         """
         Update the own order book for the given order.
 
+        Orders without prices (MARKET, etc.) are skipped as they cannot be
+        represented in own books.
+
         Parameters
         ----------
         order : Order
@@ -2415,9 +2421,15 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
+        if not order.has_price_c():
+            return
+
         own_book = self._own_order_books.get(order.instrument_id)
 
         if own_book is None:
+            if order.is_closed_c():
+                # Don't create own book for closed orders
+                return
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._own_order_books[order.instrument_id] = own_book
@@ -2426,11 +2438,18 @@ cdef class Cache(CacheFacade):
         own_book_order = order.to_own_book_order()
 
         if order.is_closed_c():
-            own_book.delete(own_book_order)
-            self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.delete(own_book_order)
+                self._log.debug(f"Deleted order {order.client_order_id} from own book")
+            except RuntimeError as e:
+                self._log.debug(f"Failed to delete order {order.client_order_id} from own book: {e}")
         else:
-            own_book.update(own_book_order)
-            self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.update(own_book_order)
+            except RuntimeError as e:
+                self._log.debug(f"Failed to update order {order.client_order_id} in own book: {e}; inserting instead")
+                own_book.add(own_book_order)
+            self._log.debug(f"Updated order {order.client_order_id} in own book")
 
     cpdef void update_position(self, Position position):
         """
@@ -2828,7 +2847,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
@@ -2881,7 +2899,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
@@ -5274,12 +5291,60 @@ cdef class Cache(CacheFacade):
 
         self._database.heartbeat(timestamp)
 
+    cpdef void force_remove_from_own_order_book(self, ClientOrderId client_order_id):
+        """
+        Force removal of an order from own order books and clean up all indexes.
+
+        This method is used when order.apply() fails and we need to ensure terminal
+        orders are properly cleaned up from own books and all relevant indexes.
+        Replicates the index cleanup that update_order performs for closed orders.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to remove.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef Order order = self._orders.get(client_order_id)
+        if order is None:
+            return
+
+        # Remove from all open/active indexes (mirrors update_order for closed orders)
+        self._index_orders_open.discard(client_order_id)
+        self._index_orders_pending_cancel.discard(client_order_id)
+        self._index_orders_inflight.discard(client_order_id)
+        self._index_orders_emulated.discard(client_order_id)
+
+        if self._own_order_books:
+            self._index_orders_open_pyo3.discard(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
+            own_book = self._own_order_books.get(order.instrument_id)
+            if own_book is not None:
+                try:
+                    own_book_order = order.to_own_book_order()
+                    own_book.delete(own_book_order)
+                    self._log.debug(
+                        f"Force deleted {client_order_id!r} from own book",
+                        LogColor.MAGENTA,
+                    )
+                except Exception as e:
+                    self._log.debug(
+                        f"Could not force delete {client_order_id!r} from own book: {e}",
+                        LogColor.MAGENTA,
+                    )
+
+        self._index_orders_closed.add(client_order_id)
+
     cpdef void audit_own_order_books(self):
         """
-        Audit all own order books against public order books.
+        Audit all own order books against open and inflight order indexes.
 
-        Ensures:
-         - Closed orders are removed from own order books.
+        Ensures closed orders are removed from own order books. This includes both
+        orders tracked in _index_orders_open (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
+        and _index_orders_inflight (INITIALIZED, SUBMITTED) to prevent false positives
+        during venue latency windows.
 
         Logs all failures as errors.
 
@@ -5287,8 +5352,19 @@ cdef class Cache(CacheFacade):
         self._log.debug("Starting own books audit", LogColor.MAGENTA)
         cdef double start_us = time.time() * 1_000_000
 
+        # Build union of open and inflight orders for audit,
+        # this prevents false positives for SUBMITTED orders during venue latency.
+        cdef set valid_order_ids = set()
+        for client_order_id in self._index_orders_open:
+            if self._own_order_books:
+                valid_order_ids.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
+        for client_order_id in self._index_orders_inflight:
+            if self._own_order_books:
+                valid_order_ids.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
         for own_book in self._own_order_books.values():
-            own_book.audit_open_orders(self._index_orders_open_pyo3)
+            own_book.audit_open_orders(valid_order_ids)
 
         cdef double audit_us = (time.time() * 1_000_000) - start_us
         self._log.debug(f"Completed own books audit in {int(audit_us)}us", LogColor.MAGENTA)

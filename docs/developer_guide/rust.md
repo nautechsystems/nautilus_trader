@@ -391,14 +391,14 @@ For multi-line errors and panics documentation, use sentence case with bullets a
 ///
 /// # Errors
 ///
-/// This function will return an error if:
+/// Returns an error if:
 /// - The market price for the instrument cannot be found.
 /// - The conversion rate calculation fails.
 /// - Invalid position state is encountered.
 ///
 /// # Panics
 ///
-/// This function will panic if:
+/// This function panics if:
 /// - The instrument ID is invalid or uninitialized.
 /// - Required market data is missing from the cache.
 /// - Internal state consistency checks fail.

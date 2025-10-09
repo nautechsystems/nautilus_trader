@@ -17,13 +17,13 @@
 
 use std::{convert::TryFrom, str::FromStr};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, CurrencyType, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        AccountType, AggressorSide, AssetClass, BarAggregation, CurrencyType, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{BybitContractType, BybitOptionType},
+        enums::{BybitContractType, BybitOptionType, BybitProductType},
         symbol::BybitSymbol,
     },
     http::models::{
@@ -49,6 +49,99 @@ use crate::{
         BybitWalletBalance,
     },
 };
+
+const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
+const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
+
+/// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(extract_raw_symbol("ETHUSDT-LINEAR"), "ETHUSDT");
+/// assert_eq!(extract_raw_symbol("BTCUSDT-SPOT"), "BTCUSDT");
+/// assert_eq!(extract_raw_symbol("ETHUSDT"), "ETHUSDT"); // No suffix
+/// ```
+#[must_use]
+pub fn extract_raw_symbol(symbol: &str) -> &str {
+    symbol
+        .rsplit_once('-')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(symbol)
+}
+
+/// Constructs a full Bybit symbol from a raw symbol and product type.
+///
+/// Returns a `Ustr` for efficient string interning and comparisons.
+///
+/// # Examples
+/// ```ignore
+/// let symbol = make_bybit_symbol("ETHUSDT", BybitProductType::Linear);
+/// assert_eq!(symbol.as_str(), "ETHUSDT-LINEAR");
+/// ```
+#[must_use]
+pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Ustr {
+    let suffix = match product_type {
+        BybitProductType::Spot => "-SPOT",
+        BybitProductType::Linear => "-LINEAR",
+        BybitProductType::Inverse => "-INVERSE",
+        BybitProductType::Option => "-OPTION",
+    };
+    Ustr::from(&format!("{raw_symbol}{suffix}"))
+}
+
+/// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
+///
+/// Bybit supported intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes), D, W, M
+///
+/// # Errors
+///
+/// Returns an error if the aggregation type or step is not supported by Bybit.
+pub fn bar_spec_to_bybit_interval(
+    aggregation: BarAggregation,
+    step: u64,
+) -> anyhow::Result<String> {
+    match aggregation {
+        BarAggregation::Minute => {
+            if !BYBIT_MINUTE_INTERVALS.contains(&step) {
+                anyhow::bail!(
+                    "Bybit only supports the following minute intervals: {:?}",
+                    BYBIT_MINUTE_INTERVALS
+                );
+            }
+            Ok(step.to_string())
+        }
+        BarAggregation::Hour => {
+            if !BYBIT_HOUR_INTERVALS.contains(&step) {
+                anyhow::bail!(
+                    "Bybit only supports the following hour intervals: {:?}",
+                    BYBIT_HOUR_INTERVALS
+                );
+            }
+            Ok((step * 60).to_string())
+        }
+        BarAggregation::Day => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 DAY interval bars");
+            }
+            Ok("D".to_string())
+        }
+        BarAggregation::Week => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 WEEK interval bars");
+            }
+            Ok("W".to_string())
+        }
+        BarAggregation::Month => {
+            if step != 1 {
+                anyhow::bail!("Bybit only supports 1 MONTH interval bars");
+            }
+            Ok("M".to_string())
+        }
+        _ => {
+            anyhow::bail!("Bybit does not support {:?} bars", aggregation);
+        }
+    }
+}
 
 fn default_margin() -> Decimal {
     Decimal::new(1, 1)
@@ -60,7 +153,7 @@ pub fn parse_spot_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
 
@@ -120,7 +213,7 @@ pub fn parse_linear_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -222,7 +315,9 @@ pub fn parse_linear_instrument(
             );
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
-        other => Err(anyhow!("unsupported linear contract variant: {other:?}")),
+        other => Err(anyhow::anyhow!(
+            "unsupported linear contract variant: {other:?}"
+        )),
     }
 }
 
@@ -232,7 +327,7 @@ pub fn parse_inverse_instrument(
     fee_rate: &BybitFeeRate,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -334,7 +429,9 @@ pub fn parse_inverse_instrument(
             );
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
-        other => Err(anyhow!("unsupported inverse contract variant: {other:?}")),
+        other => Err(anyhow::anyhow!(
+            "unsupported inverse contract variant: {other:?}"
+        )),
     }
 }
 
@@ -343,7 +440,7 @@ pub fn parse_option_instrument(
     definition: &BybitInstrumentOption,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let quote_currency = get_currency(definition.quote_coin.as_str());
 
     let symbol = BybitSymbol::new(format!("{}-OPTION", definition.symbol))?;
@@ -416,7 +513,7 @@ pub fn parse_trade_tick(
     trade: &BybitTrade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<TradeTick> {
+) -> anyhow::Result<TradeTick> {
     let price =
         parse_price_with_precision(&trade.price, instrument.price_precision(), "trade.price")?;
     let size =
@@ -445,7 +542,7 @@ pub fn parse_kline_bar(
     bar_type: BarType,
     timestamp_on_close: bool,
     ts_init: UnixNanos,
-) -> Result<Bar> {
+) -> anyhow::Result<Bar> {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -489,7 +586,7 @@ pub fn parse_fill_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<FillReport> {
+) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
@@ -563,7 +660,7 @@ pub fn parse_position_status_report(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<PositionStatusReport> {
+) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
     // Parse position size
@@ -711,7 +808,11 @@ pub fn parse_account_state(
     ))
 }
 
-pub(crate) fn parse_price_with_precision(value: &str, precision: u8, field: &str) -> Result<Price> {
+pub(crate) fn parse_price_with_precision(
+    value: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Price> {
     let parsed = value
         .parse::<f64>()
         .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
@@ -724,7 +825,7 @@ pub(crate) fn parse_quantity_with_precision(
     value: &str,
     precision: u8,
     field: &str,
-) -> Result<Quantity> {
+) -> anyhow::Result<Quantity> {
     let parsed = value
         .parse::<f64>()
         .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
@@ -733,20 +834,22 @@ pub(crate) fn parse_quantity_with_precision(
     })
 }
 
-pub(crate) fn parse_price(value: &str, field: &str) -> Result<Price> {
-    Price::from_str(value).map_err(|err| anyhow!("Failed to parse {field}='{value}': {err}"))
+pub(crate) fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
+    Price::from_str(value)
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
 }
 
-pub(crate) fn parse_quantity(value: &str, field: &str) -> Result<Quantity> {
-    Quantity::from_str(value).map_err(|err| anyhow!("Failed to parse {field}='{value}': {err}"))
+pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
+    Quantity::from_str(value)
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
 }
 
-pub(crate) fn parse_decimal(value: &str, field: &str) -> Result<Decimal> {
+pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(value)
-        .map_err(|err| anyhow!("Failed to parse {field}='{value}' as Decimal: {err}"))
+        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {err}"))
 }
 
-pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> Result<UnixNanos> {
+pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
     let millis: u64 = value
         .parse()
         .with_context(|| format!("Failed to parse {field}='{value}' as u64 millis"))?;
@@ -760,13 +863,15 @@ fn resolve_settlement_currency(
     settle_coin: &str,
     base_currency: Currency,
     quote_currency: Currency,
-) -> Result<Currency> {
+) -> anyhow::Result<Currency> {
     if settle_coin.eq_ignore_ascii_case(base_currency.code.as_str()) {
         Ok(base_currency)
     } else if settle_coin.eq_ignore_ascii_case(quote_currency.code.as_str()) {
         Ok(quote_currency)
     } else {
-        Err(anyhow!("unrecognised settlement currency '{settle_coin}'"))
+        Err(anyhow::anyhow!(
+            "unrecognised settlement currency '{settle_coin}'"
+        ))
     }
 }
 
@@ -775,11 +880,11 @@ fn get_currency(code: &str) -> Currency {
         .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
-fn extract_strike_from_symbol(symbol: &str) -> Result<Price> {
+fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
     let parts: Vec<&str> = symbol.split('-').collect();
     let strike = parts
         .get(2)
-        .ok_or_else(|| anyhow!("invalid option symbol '{symbol}'"))?;
+        .ok_or_else(|| anyhow::anyhow!("invalid option symbol '{symbol}'"))?;
     parse_price(strike, "option strike")
 }
 
@@ -789,7 +894,7 @@ pub fn parse_order_status_report(
     instrument: &InstrumentAny,
     account_id: nautilus_model::identifiers::AccountId,
     ts_init: UnixNanos,
-) -> Result<nautilus_model::reports::OrderStatusReport> {
+) -> anyhow::Result<nautilus_model::reports::OrderStatusReport> {
     use crate::common::enums::{BybitOrderStatus, BybitOrderType, BybitTimeInForce};
 
     let instrument_id = instrument.id();

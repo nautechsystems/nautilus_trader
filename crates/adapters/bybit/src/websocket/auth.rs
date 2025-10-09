@@ -25,7 +25,7 @@ use super::error::BybitWsError;
 pub(crate) type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub(crate) type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
 
-pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 5;
+pub(crate) const AUTHENTICATION_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AuthTracker {
@@ -45,7 +45,10 @@ impl AuthTracker {
 
         if let Ok(mut guard) = self.tx.lock() {
             if let Some(old) = guard.take() {
+                tracing::warn!("New authentication request superseding previous pending request");
                 let _ = old.send(Err("Authentication attempt superseded".to_string()));
+            } else {
+                tracing::debug!("Starting new authentication request");
             }
             *guard = Some(sender);
         }

@@ -15,12 +15,8 @@
 
 //! Pool profiler state comparison utilities.
 
-use std::collections::HashMap;
-
-use alloy_primitives::U160;
-
 use super::{position::PoolPosition, profiler::PoolProfiler};
-use crate::defi::tick_map::tick::Tick;
+use crate::defi::pool_analysis::snapshot::PoolSnapshot;
 
 /// Compares a pool profiler's internal state with on-chain state to verify consistency.
 ///
@@ -40,91 +36,89 @@ use crate::defi::tick_map::tick::Tick;
 ///
 /// # Panics
 ///
-/// Panics if the profiler has not been initialized (current_tick or price_sqrt_ratio_x96 is None).
+/// Panics if the profiler has not been initialized
 ///
 /// # Returns
 ///
 /// Returns `true` if all compared values match, `false` if any mismatches are detected.
-pub fn compare_pool_profiler(
-    profiler: &PoolProfiler,
-    current_tick: i32,
-    price_sqrt_ratio_x96: U160,
-    fee_protocol: u8,
-    liquidity: u128,
-    ticks: HashMap<i32, Tick>,
-    positions: Vec<PoolPosition>,
-) -> bool {
-    let mut all_match = true;
+pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -> bool {
+    if !profiler.is_initialized {
+        panic!("Profiler is not initialized");
+    }
 
-    if current_tick != profiler.current_tick.unwrap() {
+    let mut all_match = true;
+    let total_ticks = snapshot.ticks.len();
+    let total_positions = snapshot.positions.len();
+
+    if snapshot.state.current_tick != profiler.state.current_tick {
         tracing::error!(
             "Tick mismatch: profiler={}, compared={}",
-            profiler.current_tick.unwrap(),
-            current_tick
+            profiler.state.current_tick,
+            snapshot.state.current_tick
         );
         all_match = false;
     } else {
-        tracing::info!("✓ current_tick matches: {}", current_tick);
+        tracing::info!("✓ current_tick matches: {}", snapshot.state.current_tick);
     }
 
-    if price_sqrt_ratio_x96 != profiler.price_sqrt_ratio_x96.unwrap() {
+    if snapshot.state.price_sqrt_ratio_x96 != profiler.state.price_sqrt_ratio_x96 {
         tracing::error!(
             "Sqrt ratio mismatch: profiler={}, compared={}",
-            profiler.price_sqrt_ratio_x96.unwrap(),
-            price_sqrt_ratio_x96
+            profiler.state.price_sqrt_ratio_x96,
+            snapshot.state.price_sqrt_ratio_x96
         );
         all_match = false;
     } else {
         tracing::info!(
             "✓ sqrt_price_x96 matches: {}",
-            profiler.price_sqrt_ratio_x96.unwrap()
+            profiler.state.price_sqrt_ratio_x96,
         );
     }
 
-    if fee_protocol != profiler.fee_protocol {
+    if snapshot.state.fee_protocol != profiler.state.fee_protocol {
         tracing::error!(
             "Fee protocol mismatch: profiler={}, compared={}",
-            profiler.fee_protocol,
-            fee_protocol
+            profiler.state.fee_protocol,
+            snapshot.state.fee_protocol
         );
         all_match = false;
     } else {
-        tracing::info!("✓ fee_protocol matches: {}", fee_protocol);
+        tracing::info!("✓ fee_protocol matches: {}", snapshot.state.fee_protocol);
     }
 
-    if liquidity != profiler.tick_map.liquidity {
+    if snapshot.state.liquidity != profiler.tick_map.liquidity {
         tracing::error!(
             "Liquidity mismatch: profiler={}, compared={}",
             profiler.tick_map.liquidity,
-            liquidity
+            snapshot.state.liquidity
         );
         all_match = false;
     } else {
-        tracing::info!("✓ liquidity matches: {}", liquidity);
+        tracing::info!("✓ liquidity matches: {}", snapshot.state.liquidity);
     }
 
     // TODO add growth fee checking
 
     // Check ticks
     let mut tick_mismatches = 0;
-    for (tick, tick_data) in ticks {
-        if let Some(profiler_tick) = profiler.get_tick(tick) {
+    for tick in &snapshot.ticks {
+        if let Some(profiler_tick) = profiler.get_tick(tick.value) {
             let mut all_tick_fields_matching = true;
-            if profiler_tick.liquidity_net != tick_data.liquidity_net {
+            if profiler_tick.liquidity_net != tick.liquidity_net {
                 tracing::error!(
                     "Tick {} mismatch on net liquidity: profiler={}, compared={}",
-                    tick,
+                    tick.value,
                     profiler_tick.liquidity_net,
-                    tick_data.liquidity_net
+                    tick.liquidity_net
                 );
                 all_tick_fields_matching = false;
             }
-            if profiler_tick.liquidity_gross != tick_data.liquidity_gross {
+            if profiler_tick.liquidity_gross != tick.liquidity_gross {
                 tracing::error!(
                     "Tick {} mismatch on gross liquidity: profiler={}, compared={}",
-                    tick,
+                    tick.value,
                     profiler_tick.liquidity_gross,
-                    tick_data.liquidity_gross
+                    tick.liquidity_gross
                 );
                 all_tick_fields_matching = false;
             }
@@ -137,19 +131,22 @@ pub fn compare_pool_profiler(
         } else {
             tracing::error!(
                 "Tick {} not found in the profiler but provided in the compare mapping",
-                tick
+                tick.value
             );
             all_match = false;
         }
     }
 
     if tick_mismatches == 0 {
-        tracing::info!("✓ Provided ticks with liquidity net and gross are matching");
+        tracing::info!(
+            "✓ Provided {} ticks with liquidity net and gross are matching",
+            total_ticks
+        );
     }
 
     // Check positions
     let mut position_mismatches = 0;
-    for position in positions {
+    for position in &snapshot.positions {
         if let Some(profiler_position) =
             profiler.get_position(&position.owner, position.tick_lower, position.tick_upper)
         {
@@ -178,7 +175,10 @@ pub fn compare_pool_profiler(
     }
 
     if position_mismatches == 0 {
-        tracing::info!("✓ Provided positions with liquidity are matching");
+        tracing::info!(
+            "✓ Provided {} active positions with liquidity are matching",
+            total_positions
+        );
     } else {
         all_match = false;
     }

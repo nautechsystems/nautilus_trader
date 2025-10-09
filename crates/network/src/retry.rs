@@ -77,7 +77,7 @@ where
     ///
     /// # Errors
     ///
-    /// This function will return an error if the configuration is invalid.
+    /// Returns an error if the configuration is invalid.
     pub const fn new(config: RetryConfig) -> anyhow::Result<Self> {
         Ok(Self {
             config,
@@ -89,7 +89,7 @@ where
     ///
     /// # Errors
     ///
-    /// This function will return an error if the operation fails after exhausting all retries,
+    /// Returns an error if the operation fails after exhausting all retries,
     /// if the operation times out, if creating the backoff state fails, or if canceled.
     pub async fn execute_with_retry_inner<F, Fut, T>(
         &self,
@@ -340,7 +340,7 @@ where
     ///
     /// # Errors
     ///
-    /// This function will return an error if the operation fails after exhausting all retries,
+    /// Returns an error if the operation fails after exhausting all retries,
     /// if the operation times out, or if creating the backoff state fails.
     pub async fn execute_with_retry<F, Fut, T>(
         &self,
@@ -361,7 +361,7 @@ where
     ///
     /// # Errors
     ///
-    /// This function will return an error if the operation fails after exhausting all retries,
+    /// Returns an error if the operation fails after exhausting all retries,
     /// if the operation times out, if creating the backoff state fails, or if canceled.
     pub async fn execute_with_retry_with_cancel<F, Fut, T>(
         &self,
@@ -390,7 +390,7 @@ where
 ///
 /// # Errors
 ///
-/// This function will return an error if the default configuration is invalid.
+/// Returns an error if the default configuration is invalid.
 pub fn create_default_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
 where
     E: std::error::Error,
@@ -402,7 +402,7 @@ where
 ///
 /// # Errors
 ///
-/// This function will return an error if the HTTP configuration is invalid.
+/// Returns an error if the HTTP configuration is invalid.
 pub const fn create_http_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
 where
     E: std::error::Error,
@@ -424,7 +424,7 @@ where
 ///
 /// # Errors
 ///
-/// This function will return an error if the WebSocket configuration is invalid.
+/// Returns an error if the WebSocket configuration is invalid.
 pub const fn create_websocket_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
 where
     E: std::error::Error,

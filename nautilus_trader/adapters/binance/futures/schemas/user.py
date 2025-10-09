@@ -34,7 +34,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import AccountId
@@ -252,7 +251,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             order_side=order_side,
             order_type=enum_parser.parse_binance_order_type(self.o),
             time_in_force=enum_parser.parse_binance_time_in_force(self.f),
-            order_status=OrderStatus.ACCEPTED,
+            order_status=enum_parser.parse_binance_order_status(self.X),
             expire_time=expire_time,
             price=price,
             trigger_price=trigger_price,

@@ -2,8 +2,13 @@
 
 Founded in 2017, Binance is one of the largest cryptocurrency exchanges in terms
 of daily trading volume, and open interest of crypto assets and crypto
-derivative products. This integration supports live market data ingest and order
-execution with Binance.
+derivative products.
+
+This integration supports live market data ingest and order execution for:
+
+- **Binance Spot** (including Binance US)
+- **Binance USDT-Margined Futures** (perpetuals and delivery contracts)
+- **Binance Coin-Margined Futures**
 
 ## Examples
 

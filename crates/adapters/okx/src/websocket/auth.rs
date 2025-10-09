@@ -47,7 +47,10 @@ impl AuthTracker {
 
         if let Ok(mut guard) = self.tx.lock() {
             if let Some(old) = guard.take() {
+                tracing::warn!("New authentication request superseding previous pending request");
                 let _ = old.send(Err("Authentication attempt superseded".to_string()));
+            } else {
+                tracing::debug!("Starting new authentication request");
             }
             *guard = Some(sender);
         }
@@ -92,5 +95,38 @@ impl AuthTracker {
                 ))
             }
         }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn begin_supersedes_previous_sender() {
+        let tracker = AuthTracker::new();
+
+        let first = tracker.begin();
+        let second = tracker.begin();
+
+        // Completing the first receiver should yield an error indicating it was superseded
+        let result = first.await.expect("oneshot closed unexpectedly");
+        assert_eq!(result, Err("Authentication attempt superseded".to_string()));
+
+        // Fulfil the second attempt to keep the mutex state clean
+        tracker.succeed();
+        tracker
+            .wait_for_result(Duration::from_secs(1), second)
+            .await
+            .expect("expected successful authentication");
     }
 }

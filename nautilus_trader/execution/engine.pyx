@@ -74,9 +74,12 @@ from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -941,6 +944,7 @@ cdef class ExecutionEngine(Component):
         own_book = self._get_or_init_own_order_book(order.instrument_id)
         own_book_order = order.to_own_book_order()
         own_book.add(own_book_order)
+
         if self.debug:
             self._log.debug(f"Added: {own_book_order!r}", LogColor.MAGENTA)
 
@@ -949,6 +953,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _execute_command(self, Command command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
+
         self.command_count += 1
 
         if command.client_id in self._external_clients:
@@ -956,6 +961,7 @@ cdef class ExecutionEngine(Component):
                 topic=f"commands.trading.{command.client_id}",
                 msg=command,
             )
+
             if self.debug:
                 self._log.debug(
                     f"Skipping execution command for external client {command.client_id}: {command}",
@@ -1193,7 +1199,6 @@ cdef class ExecutionEngine(Component):
         cdef list[PositionEvent] to_publish = self._pending_position_events
         self._pending_position_events = []
 
-        # Publish events
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",
             msg=event,
@@ -1265,7 +1270,6 @@ cdef class ExecutionEngine(Component):
         # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
-        # Publish the fill event for portfolio updates
         self._msgbus.publish_c(
             topic=f"events.order.{fill.strategy_id}",
             msg=fill,
@@ -1288,12 +1292,14 @@ cdef class ExecutionEngine(Component):
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
+
         if self.debug:
             self._log.debug(
                 f"Determining position ID for {fill.client_order_id!r}, "
                 f"position_id={position_id!r}",
                 LogColor.MAGENTA,
             )
+
         if position_id is not None:
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.warning(
@@ -1303,8 +1309,10 @@ cdef class ExecutionEngine(Component):
                 )
             # Assign position ID to fill
             fill.position_id = position_id
+
             if self.debug:
                 self._log.debug(f"Assigned {position_id!r} to {fill}", LogColor.MAGENTA)
+
             return
 
         if oms_type == OmsType.HEDGING:
@@ -1369,8 +1377,10 @@ cdef class ExecutionEngine(Component):
 
         # Assign new position ID
         position_id = self._pos_id_generator.generate(fill.strategy_id)
+
         if self.debug:
             self._log.debug(f"Generated {position_id!r} for {fill}", LogColor.MAGENTA)
+
         return position_id
 
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
@@ -1391,11 +1401,23 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
-            if should_handle_own_book_order(order):
-                self._cache.update_own_order_book(order)
+
+            if isinstance(event, (OrderRejected, OrderCanceled, OrderExpired, OrderDenied)):
+                self._log.warning(
+                    f"Terminal event {event!r} failed to apply to {order.client_order_id!r}, "
+                    f"forcing cleanup from own book",
+                    LogColor.YELLOW,
+                )
+                self._cache.force_remove_from_own_order_book(order.client_order_id)
+            else:
+                own_book = self._cache.own_order_book(order.instrument_id)
+                # Only bypass should_handle check for closed orders (to ensure cleanup)
+                if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
+                    self._cache.update_own_order_book(order)
             return
 
         self._cache.update_order(order)
+
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
@@ -1449,6 +1471,11 @@ cdef class ExecutionEngine(Component):
                         )
             # For spread instruments, contingent orders can still be triggered
             # but without position linkage (since no position is created for spreads)
+
+        self._msgbus.publish_c(
+            topic=f"events.fills.{fill.instrument_id}",
+            msg=fill,
+        )
 
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
         cdef Position position = self._cache.position(fill.position_id)

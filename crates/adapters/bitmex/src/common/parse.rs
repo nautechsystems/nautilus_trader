@@ -40,6 +40,14 @@ use crate::{
     websocket::messages::BitmexMarginMsg,
 };
 
+/// Strip NautilusTrader identifier from BitMEX rejection/cancellation reasons.
+///
+/// BitMEX appends our `text` field as `\nNautilusTrader` to their messages.
+#[must_use]
+pub fn clean_reason(reason: &str) -> String {
+    reason.replace("\nNautilusTrader", "").trim().to_string()
+}
+
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
@@ -451,6 +459,24 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn test_clean_reason_strips_nautilus_trader() {
+        assert_eq!(
+            clean_reason(
+                "Canceled: Order had execInst of ParticipateDoNotInitiate\nNautilusTrader"
+            ),
+            "Canceled: Order had execInst of ParticipateDoNotInitiate"
+        );
+
+        assert_eq!(clean_reason("Some error\nNautilusTrader"), "Some error");
+        assert_eq!(
+            clean_reason("Multiple lines\nSome content\nNautilusTrader"),
+            "Multiple lines\nSome content"
+        );
+        assert_eq!(clean_reason("No identifier here"), "No identifier here");
+        assert_eq!(clean_reason("  \nNautilusTrader  "), "");
+    }
 
     fn make_test_spot_instrument(size_increment: f64, size_precision: u8) -> InstrumentAny {
         let instrument_id = InstrumentId::from("SOLUSDT.BITMEX");

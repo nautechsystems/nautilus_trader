@@ -332,6 +332,9 @@ def test_orderbook_updates(data_client, parser):
     expected = (
         "bid_levels: 18\n"
         "ask_levels: 41\n"
+        "sequence: 0\n"
+        "update_count: 60\n"
+        "ts_last: 1617253902640999936\n"
         "╭───────────┬───────┬──────────╮\n"
         "│ bids      │ price │ asks     │\n"
         "├───────────┼───────┼──────────┤\n"

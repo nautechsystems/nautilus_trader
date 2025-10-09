@@ -502,6 +502,8 @@ class BinanceEnumParser:
         self.ext_to_int_status = {
             BinanceOrderStatus.NEW: OrderStatus.ACCEPTED,
             BinanceOrderStatus.CANCELED: OrderStatus.CANCELED,
+            BinanceOrderStatus.PENDING_CANCEL: OrderStatus.PENDING_CANCEL,
+            BinanceOrderStatus.REJECTED: OrderStatus.REJECTED,
             BinanceOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
             BinanceOrderStatus.FILLED: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_ADL: OrderStatus.FILLED,

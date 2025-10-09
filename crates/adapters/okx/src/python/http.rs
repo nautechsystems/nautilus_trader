@@ -25,6 +25,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{
+    conversion::IntoPyObjectExt,
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -508,6 +509,20 @@ impl OKXHttpClient {
                 }
                 Ok(dict.into_py_any_unwrap(py))
             })
+        })
+    }
+
+    #[pyo3(name = "http_get_server_time")]
+    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let timestamp = client
+                .http_get_server_time()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| timestamp.into_py_any(py))
         })
     }
 }

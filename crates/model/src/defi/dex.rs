@@ -161,7 +161,7 @@ impl Dex {
             "0x{encoded_hash}",
             encoded_hash = hex::encode(pool_created_event_hash)
         );
-        let swap_event_hash = keccak256(swap_event.as_bytes());
+        let swap_event_hash: alloy_primitives::FixedBytes<32> = keccak256(swap_event.as_bytes());
         let encoded_swap_event = format!(
             "0x{encoded_hash}",
             encoded_hash = hex::encode(swap_event_hash)

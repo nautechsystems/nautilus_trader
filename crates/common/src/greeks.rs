@@ -17,7 +17,6 @@
 
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
-use anyhow;
 use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{

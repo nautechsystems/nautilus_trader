@@ -17,7 +17,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::{Result, ensure};
 use nautilus_model::identifiers::{InstrumentId, Symbol};
 use ustr::Ustr;
 
@@ -42,10 +41,10 @@ impl BybitSymbol {
     /// # Errors
     ///
     /// Returns an error if the value does not contain one of the recognised Bybit suffixes.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self> {
+    pub fn new<S: Into<String>>(value: S) -> anyhow::Result<Self> {
         let value = value.into();
         let normalised = value.to_ascii_uppercase();
-        ensure!(
+        anyhow::ensure!(
             has_valid_suffix(&normalised),
             "invalid Bybit symbol '{value}': expected suffix in {VALID_SUFFIXES:?}"
         );
@@ -99,7 +98,7 @@ impl Display for BybitSymbol {
 impl TryFrom<&str> for BybitSymbol {
     type Error = anyhow::Error;
 
-    fn try_from(value: &str) -> Result<Self> {
+    fn try_from(value: &str) -> anyhow::Result<Self> {
         Self::new(value)
     }
 }
@@ -107,7 +106,7 @@ impl TryFrom<&str> for BybitSymbol {
 impl TryFrom<String> for BybitSymbol {
     type Error = anyhow::Error;
 
-    fn try_from(value: String) -> Result<Self> {
+    fn try_from(value: String) -> anyhow::Result<Self> {
         Self::new(value)
     }
 }

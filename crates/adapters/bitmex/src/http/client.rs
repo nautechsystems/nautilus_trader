@@ -25,7 +25,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, Mutex},
 };
 
 use ahash::AHashMap;
@@ -62,8 +62,8 @@ use ustr::Ustr;
 use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
     models::{
-        BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder, BitmexPosition, BitmexTrade,
-        BitmexTradeBin, BitmexWallet,
+        BitmexApiInfo, BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder,
+        BitmexPosition, BitmexTrade, BitmexTradeBin, BitmexWallet,
     },
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
@@ -89,16 +89,14 @@ use crate::{
     websocket::messages::BitmexMarginMsg,
 };
 
-/// Default BitMEX REST API rate limit.
+/// Default BitMEX REST API rate limits.
 ///
 /// BitMEX implements a dual-layer rate limiting system:
 /// - Primary limit: 120 requests per minute for authenticated users (30 for unauthenticated).
 /// - Secondary limit: 10 requests per second burst limit for specific endpoints.
-///
-/// We use 10 requests per second which respects the burst limit while the token bucket
-/// mechanism naturally handles the average rate limit.
-pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).expect("10 is a valid non-zero u32")));
+const BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND: u32 = 10;
+const BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED: u32 = 120;
+const BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED: u32 = 30;
 
 const BITMEX_GLOBAL_RATE_KEY: &str = "bitmex:global";
 const BITMEX_MINUTE_RATE_KEY: &str = "bitmex:minute";
@@ -141,7 +139,7 @@ pub struct BitmexHttpInnerClient {
 
 impl Default for BitmexHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, None)
+        Self::new(None, Some(60), None, None, None, None, None, None)
             .expect("Failed to create default BitmexHttpInnerClient")
     }
 }
@@ -173,6 +171,8 @@ impl BitmexHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -189,13 +189,18 @@ impl BitmexHttpInnerClient {
             BitmexHttpError::NetworkError(format!("Failed to create retry manager: {e}"))
         })?;
 
+        let max_req_per_sec =
+            max_requests_per_second.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND);
+        let max_req_per_min =
+            max_requests_per_minute.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED);
+
         Ok(Self {
             base_url: base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(),
-                Some(*BITMEX_REST_QUOTA),
+                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
+                Some(Self::default_quota(max_req_per_sec)),
                 timeout_secs,
             ),
             credential: None,
@@ -221,6 +226,8 @@ impl BitmexHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -237,13 +244,18 @@ impl BitmexHttpInnerClient {
             BitmexHttpError::NetworkError(format!("Failed to create retry manager: {e}"))
         })?;
 
+        let max_req_per_sec =
+            max_requests_per_second.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND);
+        let max_req_per_min =
+            max_requests_per_minute.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED);
+
         Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(),
-                Some(*BITMEX_REST_QUOTA),
+                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
+                Some(Self::default_quota(max_req_per_sec)),
                 timeout_secs,
             ),
             credential: Some(Credential::new(api_key, api_secret)),
@@ -257,42 +269,36 @@ impl BitmexHttpInnerClient {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
-    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
+    fn default_quota(max_requests_per_second: u32) -> Quota {
+        Quota::per_second(
+            NonZeroU32::new(max_requests_per_second)
+                .unwrap_or_else(|| NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()),
+        )
+    }
+
+    fn rate_limiter_quotas(
+        max_requests_per_second: u32,
+        max_requests_per_minute: u32,
+    ) -> Vec<(String, Quota)> {
+        let per_sec_quota = Quota::per_second(
+            NonZeroU32::new(max_requests_per_second)
+                .unwrap_or_else(|| NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()),
+        );
+        let per_min_quota =
+            Quota::per_minute(NonZeroU32::new(max_requests_per_minute).unwrap_or_else(|| {
+                NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED).unwrap()
+            }));
+
         vec![
-            (BITMEX_GLOBAL_RATE_KEY.to_string(), *BITMEX_REST_QUOTA),
-            (
-                BITMEX_MINUTE_RATE_KEY.to_string(),
-                Quota::per_minute(NonZeroU32::new(120).unwrap()),
-            ),
-            (
-                "bitmex:/api/v1/order".to_string(),
-                Quota::per_second(NonZeroU32::new(10).unwrap()),
-            ),
-            (
-                "bitmex:/api/v1/order:minute".to_string(),
-                Quota::per_minute(NonZeroU32::new(60).unwrap()),
-            ),
-            (
-                "bitmex:/api/v1/order/bulk".to_string(),
-                Quota::per_second(NonZeroU32::new(5).unwrap()),
-            ),
-            (
-                "bitmex:/api/v1/order/cancelAll".to_string(),
-                Quota::per_second(NonZeroU32::new(2).unwrap()),
-            ),
+            (BITMEX_GLOBAL_RATE_KEY.to_string(), per_sec_quota),
+            (BITMEX_MINUTE_RATE_KEY.to_string(), per_min_quota),
         ]
     }
 
-    fn rate_limit_keys(endpoint: &str) -> Vec<Ustr> {
-        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
-        let route = format!("bitmex:{normalized}");
-        let route_minute = format!("{route}:minute");
-
+    fn rate_limit_keys() -> Vec<Ustr> {
         vec![
             Ustr::from(BITMEX_GLOBAL_RATE_KEY),
             Ustr::from(BITMEX_MINUTE_RATE_KEY),
-            Ustr::from(route.as_str()),
-            Ustr::from(route_minute.as_str()),
         ]
     }
 
@@ -361,7 +367,7 @@ impl BitmexHttpInnerClient {
                     None
                 };
 
-                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
+                let rate_keys = Self::rate_limit_keys();
                 let resp = self
                     .client
                     .request_with_ustr_keys(method, url, headers, body, None, Some(rate_keys))
@@ -451,6 +457,20 @@ impl BitmexHttpInnerClient {
             "/instrument"
         };
         self.send_request(Method::GET, path, None, false).await
+    }
+
+    /// Requests the current server time from BitMEX.
+    ///
+    /// Retrieves the BitMEX API info including the system time in Unix timestamp (milliseconds).
+    /// This is useful for synchronizing local clocks with the exchange server and logging time drift.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response body
+    /// cannot be parsed into [`BitmexApiInfo`].
+    pub async fn http_get_server_time(&self) -> Result<u64, BitmexHttpError> {
+        let response: BitmexApiInfo = self.send_request(Method::GET, "", None, false).await?;
+        Ok(response.timestamp)
     }
 
     /// Get the instrument definition for the specified symbol.
@@ -723,8 +743,20 @@ pub struct BitmexHttpClient {
 
 impl Default for BitmexHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, false, Some(60), None, None, None, None)
-            .expect("Failed to create default BitmexHttpClient")
+        Self::new(
+            None,
+            None,
+            None,
+            false,
+            Some(60),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create default BitmexHttpClient")
     }
 }
 
@@ -745,6 +777,8 @@ impl BitmexHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
         let url = base_url.unwrap_or_else(|| {
@@ -765,6 +799,8 @@ impl BitmexHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                max_requests_per_second,
+                max_requests_per_minute,
             )?,
             _ => BitmexHttpInnerClient::new(
                 Some(url),
@@ -773,6 +809,8 @@ impl BitmexHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                max_requests_per_second,
+                max_requests_per_minute,
             )?,
         };
 
@@ -789,7 +827,7 @@ impl BitmexHttpClient {
     ///
     /// Returns an error if required environment variables are not set or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None, None, None, None)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
 
@@ -812,6 +850,8 @@ impl BitmexHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> anyhow::Result<Self> {
         let api_key = api_key.or_else(|| get_env_var("BITMEX_API_KEY").ok());
         let api_secret = api_secret.or_else(|| get_env_var("BITMEX_API_SECRET").ok());
@@ -837,6 +877,8 @@ impl BitmexHttpClient {
             retry_delay_ms,
             retry_delay_max_ms,
             recv_window_ms,
+            max_requests_per_second,
+            max_requests_per_minute,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
@@ -851,6 +893,17 @@ impl BitmexHttpClient {
     #[must_use]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+    }
+
+    /// Requests the current server time from BitMEX.
+    ///
+    /// Returns the BitMEX system time as a Unix timestamp in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
+    pub async fn http_get_server_time(&self) -> Result<u64, BitmexHttpError> {
+        self.inner.http_get_server_time().await
     }
 
     /// Generates a timestamp for initialization.
@@ -1422,7 +1475,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1464,7 +1517,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1522,7 +1575,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1567,7 +1620,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The order doesn't exist.
@@ -1631,7 +1684,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1680,7 +1733,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -1723,7 +1776,7 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -2148,6 +2201,8 @@ mod tests {
             None, // retry_delay_ms
             None, // retry_delay_max_ms
             None, // recv_window_ms
+            None, // max_requests_per_second
+            None, // max_requests_per_minute
         )
         .expect("Failed to create test client");
 
@@ -2172,6 +2227,8 @@ mod tests {
             None, // retry_delay_ms
             None, // retry_delay_max_ms
             None, // recv_window_ms
+            None, // max_requests_per_second
+            None, // max_requests_per_minute
         )
         .expect("Failed to create test client");
 
@@ -2203,6 +2260,8 @@ mod tests {
             None,
             None,
             None, // Use default recv_window_ms (10000ms = 10s)
+            None, // max_requests_per_second
+            None, // max_requests_per_minute
         )
         .expect("Failed to create test client");
 
@@ -2215,6 +2274,8 @@ mod tests {
             None,
             None,
             Some(30_000), // 30 seconds
+            None,         // max_requests_per_second
+            None,         // max_requests_per_minute
         )
         .expect("Failed to create test client");
 

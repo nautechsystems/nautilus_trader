@@ -37,6 +37,7 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
+    events::order::filled::OrderFilled,
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -83,7 +84,8 @@ use crate::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            get_instruments_topic, get_mark_price_topic, get_order_fills_topic, get_quotes_topic,
+            get_trades_topic,
         },
     },
     signal::Signal,
@@ -374,6 +376,16 @@ pub trait DataActor:
     /// Returns an error if handling the instrument close update fails.
     #[allow(unused_variables)]
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving an order filled event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the order filled event fails.
+    #[allow(unused_variables)]
+    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -682,6 +694,27 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_instrument_close(close) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received order filled event.
+    fn handle_order_filled(&mut self, event: &OrderFilled) {
+        log_received(&event);
+
+        // Check for double-handling: if the event's strategy_id matches this actor's id,
+        // it means a Strategy is receiving its own fill event through both automatic
+        // subscription and manual subscribe_order_fills, so skip the manual handler.
+        if event.strategy_id.inner() == self.actor_id().inner() {
+            return;
+        }
+
+        if self.not_running() {
+            log_not_running(&event);
+            return;
+        }
+
+        if let Err(e) = self.on_order_filled(event) {
             log_error(&e);
         }
     }
@@ -1178,6 +1211,23 @@ pub trait DataActor:
         );
     }
 
+    /// Subscribe to [`OrderFilled`] events for the `instrument_id`.
+    fn subscribe_order_fills(&mut self, instrument_id: InstrumentId)
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_order_fills_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |event: &OrderFilled| {
+                get_actor_unchecked::<Self>(&actor_id).handle_order_filled(event);
+            },
+        )));
+
+        DataActorCore::subscribe_order_fills(self, topic, handler);
+    }
+
     #[cfg(feature = "defi")]
     /// Subscribe to streaming [`Block`] data for the `chain`.
     fn subscribe_blocks(
@@ -1461,6 +1511,14 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
+    fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId)
+    where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_order_fills(self, instrument_id);
     }
 
     #[cfg(feature = "defi")]
@@ -2490,6 +2548,12 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Helper method for registering order fills subscriptions from the trait.
+    pub fn subscribe_order_fills(&mut self, topic: MStr<Topic>, handler: ShareableMessageHandler) {
+        self.check_registered();
+        self.add_subscription(topic, handler);
+    }
+
     #[cfg(feature = "defi")]
     /// Helper method for registering block subscriptions from the trait.
     pub fn subscribe_blocks(
@@ -2939,6 +3003,14 @@ impl DataActorCore {
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Helper method for unsubscribing from order fills.
+    pub fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
+        self.check_registered();
+
+        let topic = get_order_fills_topic(instrument_id);
+        self.remove_subscription(topic);
     }
 
     #[cfg(feature = "defi")]

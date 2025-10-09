@@ -174,7 +174,8 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
         let best_bid = top_bid_level.price;
         let best_ask = top_ask_level.price;
 
-        if best_bid.value >= best_ask.value {
+        // Only strictly crossed books (bid > ask) are invalid; locked markets (bid == ask) are valid
+        if best_bid.value > best_ask.value {
             return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
         }
     }

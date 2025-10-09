@@ -31,7 +31,7 @@ use crate::http::client::BitmexHttpClient;
 #[pymethods]
 impl BitmexHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, max_requests_per_second=None, max_requests_per_minute=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<&str>,
@@ -43,6 +43,8 @@ impl BitmexHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> PyResult<Self> {
         let timeout = timeout_secs.or(Some(60));
 
@@ -72,6 +74,8 @@ impl BitmexHttpClient {
             retry_delay_ms,
             retry_delay_max_ms,
             recv_window_ms,
+            max_requests_per_second,
+            max_requests_per_minute,
         )
         .map_err(to_pyvalue_err)
     }
@@ -511,6 +515,11 @@ impl BitmexHttpClient {
         Ok(())
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     #[pyo3(name = "http_get_margin")]
     fn py_http_get_margin<'py>(
         &self,
@@ -617,6 +626,20 @@ impl BitmexHttpClient {
                 // }
                 Ok(py_list.into())
             })
+        })
+    }
+
+    #[pyo3(name = "http_get_server_time")]
+    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let timestamp = client
+                .http_get_server_time()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| timestamp.into_py_any(py))
         })
     }
 }

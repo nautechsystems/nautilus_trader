@@ -775,6 +775,18 @@ pub struct BitmexUserPreferences {
 #[allow(dead_code)]
 pub struct BitmexOrderBookBinning(serde_json::Value);
 
+/// Represents the response from `GET /api/v1` (root endpoint).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BitmexApiInfo {
+    /// API name.
+    pub name: String,
+    /// API version.
+    pub version: String,
+    /// Server timestamp in milliseconds.
+    pub timestamp: u64,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

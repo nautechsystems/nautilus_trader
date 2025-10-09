@@ -334,6 +334,9 @@ class TestOrderBook:
             "update_count: 2\n"
             "bid_levels: 1\n"
             "ask_levels: 1\n"
+            "sequence: 0\n"
+            "update_count: 2\n"
+            "ts_last: 0\n"
             "╭──────┬───────┬──────╮\n"
             "│ bids │ price │ asks │\n"
             "├──────┼───────┼──────┤\n"
@@ -354,7 +357,11 @@ class TestOrderBook:
 
         # Assert
         assert (
-            result == "bid_levels: 0\nask_levels: 0\n"
+            result == "bid_levels: 0\n"
+            "ask_levels: 0\n"
+            "sequence: 0\n"
+            "update_count: 0\n"
+            "ts_last: 0\n"
             "╭──────┬───────┬──────╮\n"
             "│ bids │ price │ asks │\n"
             "├──────┼───────┼──────┤"

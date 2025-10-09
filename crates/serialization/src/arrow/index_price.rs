@@ -124,11 +124,15 @@ impl DecodeFromRecordBatch for IndexPriceUpdate {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 1, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 2, DataType::UInt64)?;
 
-        assert_eq!(
-            value_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if value_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "value",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    value_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {

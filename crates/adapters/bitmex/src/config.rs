@@ -64,6 +64,10 @@ pub struct BitmexDataClientConfig {
     pub update_instruments_interval_mins: Option<u64>,
     /// When `true`, use BitMEX testnet endpoints by default.
     pub use_testnet: bool,
+    /// Maximum number of requests per second (burst limit).
+    pub max_requests_per_second: Option<u32>,
+    /// Maximum number of requests per minute (rolling window).
+    pub max_requests_per_minute: Option<u32>,
 }
 
 impl Default for BitmexDataClientConfig {
@@ -82,6 +86,8 @@ impl Default for BitmexDataClientConfig {
             active_only: true,
             update_instruments_interval_mins: None,
             use_testnet: false,
+            max_requests_per_second: Some(10),
+            max_requests_per_minute: Some(120),
         }
     }
 }
@@ -167,6 +173,10 @@ pub struct BitmexExecClientConfig {
     pub use_testnet: bool,
     /// Optional account identifier to associate with the execution client.
     pub account_id: Option<AccountId>,
+    /// Maximum number of requests per second (burst limit).
+    pub max_requests_per_second: Option<u32>,
+    /// Maximum number of requests per minute (rolling window).
+    pub max_requests_per_minute: Option<u32>,
 }
 
 impl Default for BitmexExecClientConfig {
@@ -185,6 +195,8 @@ impl Default for BitmexExecClientConfig {
             active_only: true,
             use_testnet: false,
             account_id: None,
+            max_requests_per_second: Some(10),
+            max_requests_per_minute: Some(120),
         }
     }
 }
