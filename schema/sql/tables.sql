@@ -412,6 +412,26 @@ CREATE TABLE IF NOT EXISTS "pool_collect_event" (
 CREATE INDEX IF NOT EXISTS idx_pool_collect_event_lookup
     ON pool_collect_event(chain_id, pool_address, block, transaction_index, log_index);
 
+CREATE TABLE IF NOT EXISTS "pool_flash_event" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    transaction_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    sender TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    amount0 U256 NOT NULL,
+    amount1 U256 NOT NULL,
+    paid0 U256 NOT NULL,
+    paid1 U256 NOT NULL,
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
+    UNIQUE(chain_id, transaction_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_pool_flash_event_lookup
+    ON pool_flash_event(chain_id, pool_address, block, transaction_index, log_index);
 
 CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
@@ -432,9 +452,10 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     total_amount1_deposited U256 NOT NULL,
     total_amount0_collected U256 NOT NULL,
     total_amount1_collected U256 NOT NULL,
-    total_swaps INTEGER NOT NULL,
-    total_mints INTEGER NOT NULL,
-    total_burns INTEGER NOT NULL,
+    total_swaps INTEGER NOT NULL DEFAULT 0,
+    total_mints INTEGER NOT NULL DEFAULT 0,
+    total_burns INTEGER NOT NULL DEFAULT 0,
+    total_flashes INTEGER NOT NULL DEFAULT 0,
     total_fee_collects INTEGER NOT NULL,
     is_valid BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

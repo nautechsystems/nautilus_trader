@@ -19,7 +19,7 @@ use alloy::primitives::{Address, I256, U160, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
-    data::{DexPoolData, PoolFeeCollect},
+    data::{DexPoolData, PoolFeeCollect, PoolFlash},
     validation::validate_address,
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
@@ -343,6 +343,67 @@ pub fn transform_row_to_dex_pool_data(
             );
 
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
+        }
+        "flash" => {
+            let sender_str = row
+                .try_get::<Option<String>, _>("sender")?
+                .ok_or_else(|| sqlx::Error::Decode("Missing sender for flash event".into()))?;
+            let sender = validate_address(&sender_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            let recipient_str = row
+                .try_get::<Option<String>, _>("recipient")?
+                .ok_or_else(|| sqlx::Error::Decode("Missing recipient for flash event".into()))?;
+            let recipient = validate_address(&recipient_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            // For flash events, we have flash_amount0, flash_amount1, flash_paid0, flash_paid1
+            let flash_amount0_str = row.try_get::<String, _>("flash_amount0")?;
+            let amount0 = U256::from_str_radix(&flash_amount0_str, 10).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid flash_amount0 '{}': {}", flash_amount0_str, e).into(),
+                )
+            })?;
+
+            let flash_amount1_str = row.try_get::<String, _>("flash_amount1")?;
+            let amount1 = U256::from_str_radix(&flash_amount1_str, 10).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid flash_amount1 '{}': {}", flash_amount1_str, e).into(),
+                )
+            })?;
+
+            let flash_paid0_str = row.try_get::<String, _>("flash_paid0")?;
+            let paid0 = U256::from_str_radix(&flash_paid0_str, 10).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid flash_paid0 '{}': {}", flash_paid0_str, e).into(),
+                )
+            })?;
+
+            let flash_paid1_str = row.try_get::<String, _>("flash_paid1")?;
+            let paid1 = U256::from_str_radix(&flash_paid1_str, 10).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid flash_paid1 '{}': {}", flash_paid1_str, e).into(),
+                )
+            })?;
+
+            let pool_flash = PoolFlash::new(
+                chain,
+                dex,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                None, // timestamp
+                sender,
+                recipient,
+                amount0,
+                amount1,
+                paid0,
+                paid1,
+            );
+
+            Ok(DexPoolData::Flash(pool_flash))
         }
         _ => Err(sqlx::Error::Decode(
             format!("Unknown event type: {}", event_type).into(),

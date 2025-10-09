@@ -795,6 +795,10 @@ impl DataEngine {
                 let topic = switchboard::get_defi_collect_topic(collect.instrument_id());
                 msgbus::publish(topic, &collect as &dyn Any);
             }
+            DefiData::PoolFlash(flash) => {
+                let topic = switchboard::get_defi_flash_topic(flash.instrument_id());
+                msgbus::publish(topic, &flash as &dyn Any);
+            }
         }
     }
 

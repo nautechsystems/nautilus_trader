@@ -22,7 +22,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
     SharedPool, Token,
-    data::{DefiData, DexPoolData, PoolFeeCollect},
+    data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash},
 };
 
 use crate::{
@@ -31,8 +31,8 @@ use crate::{
     contracts::erc20::{Erc20Contract, TokenInfoError},
     data::subscription::DefiDataSubscriptionManager,
     events::{
-        burn::BurnEvent, collect::CollectEvent, mint::MintEvent, pool_created::PoolCreatedEvent,
-        swap::SwapEvent,
+        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent,
+        pool_created::PoolCreatedEvent, swap::SwapEvent,
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
@@ -407,6 +407,7 @@ impl BlockchainDataClientCore {
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
         let collect_event_signature = dex_extended.collect_created_event.as_ref();
+        let flash_event_signature = dex_extended.flash_created_event.as_ref();
         let initialize_event_signature: Option<&str> =
             dex_extended.initialize_event.as_ref().map(|s| s.as_ref());
 
@@ -431,6 +432,8 @@ impl BlockchainDataClientCore {
                 .strip_prefix("0x")
                 .unwrap_or(collect_event_signature),
         )?;
+        let flash_sig_bytes = flash_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
         let initialize_sig_bytes = initialize_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
@@ -441,6 +444,9 @@ impl BlockchainDataClientCore {
             collect_event_signature,
         ];
         if let Some(event) = dex_extended.initialize_event.as_ref() {
+            event_signatures.push(event);
+        }
+        if let Some(event) = dex_extended.flash_created_event.as_ref() {
             event_signatures.push(event);
         }
         let pool_events_stream = self
@@ -462,6 +468,7 @@ impl BlockchainDataClientCore {
         let mut swap_batch: Vec<PoolSwap> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut flash_batch: Vec<PoolFlash> = Vec::with_capacity(EVENT_BATCH_SIZE);
 
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
@@ -496,6 +503,20 @@ impl BlockchainDataClientCore {
                     Ok(fee_collect) => collect_batch.push(fee_collect),
                     Err(e) => tracing::error!("Failed to process collect event: {e}"),
                 }
+            } else if let Some(flash_sig_bytes_inner) = &flash_sig_bytes {
+                if event_sig_bytes == flash_sig_bytes_inner.as_slice() {
+                    if let Some(parse_fn) = dex_extended.parse_flash_event_fn {
+                        match parse_fn(dex_extended.dex.clone(), log) {
+                            Ok(flash_event) => {
+                                match self.process_pool_flash_event(&flash_event, &pool) {
+                                    Ok(flash) => flash_batch.push(flash),
+                                    Err(e) => tracing::error!("Failed to process flash event: {e}"),
+                                }
+                            }
+                            Err(e) => tracing::error!("Failed to parse flash event: {e}"),
+                        }
+                    }
+                }
             } else if let Some(init_sig_bytes) = &initialize_sig_bytes {
                 if event_sig_bytes == init_sig_bytes.as_slice() {
                     let initialize_event = dex_extended.parse_initialize_event(log)?;
@@ -528,6 +549,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut flash_batch,
                     false,
                     true,
                 )
@@ -542,6 +564,7 @@ impl BlockchainDataClientCore {
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut flash_batch,
                     false, // TODO temporary dont use copy command
                     false,
                 )
@@ -565,6 +588,7 @@ impl BlockchainDataClientCore {
             &mut swap_batch,
             &mut liquidity_batch,
             &mut collect_batch,
+            &mut flash_batch,
             false,
             true,
         )
@@ -590,6 +614,7 @@ impl BlockchainDataClientCore {
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
         collect_batch: &mut Vec<PoolFeeCollect>,
+        flash_batch: &mut Vec<PoolFlash>,
         use_copy_command: bool,
         force_flush_all: bool,
     ) -> anyhow::Result<()> {
@@ -615,6 +640,12 @@ impl BlockchainDataClientCore {
                     .add_pool_fee_collects_batch(collect_batch, use_copy_command)
                     .await?;
                 collect_batch.clear();
+            }
+        }
+        if force_flush_all || flash_batch.len() >= event_batch_size {
+            if !flash_batch.is_empty() {
+                self.cache.add_pool_flash_batch(flash_batch).await?;
+                flash_batch.clear();
             }
         }
         Ok(())
@@ -733,6 +764,26 @@ impl BlockchainDataClientCore {
         );
 
         Ok(fee_collect)
+    }
+
+    /// Processes a pool flash event and converts it to a flash loan.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the flash event processing fails or if the flash loan creation fails.
+    pub fn process_pool_flash_event(
+        &self,
+        flash_event: &FlashEvent,
+        pool: &SharedPool,
+    ) -> anyhow::Result<PoolFlash> {
+        let timestamp = self
+            .cache
+            .get_block_timestamp(flash_event.block_number)
+            .copied();
+
+        let flash = flash_event.to_pool_flash(self.chain.clone(), pool.address, timestamp);
+
+        Ok(flash)
     }
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
@@ -1073,6 +1124,9 @@ impl BlockchainDataClientCore {
                             }
                             DexPoolData::FeeCollect(collect) => {
                                 DataEvent::DeFi(DefiData::PoolFeeCollect(collect))
+                            }
+                            DexPoolData::Flash(flash) => {
+                                DataEvent::DeFi(DefiData::PoolFlash(flash))
                             }
                         };
                         self.send_data(data_event);

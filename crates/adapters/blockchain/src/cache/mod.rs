@@ -28,7 +28,7 @@ use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, SharedPool, Token,
-    data::PoolFeeCollect,
+    data::{PoolFeeCollect, PoolFlash},
     pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
     tick_map::tick::Tick,
 };
@@ -551,6 +551,21 @@ impl BlockchainCache {
                     .add_pool_collects_batch(self.chain.chain_id, collects)
                     .await?;
             }
+        }
+
+        Ok(())
+    }
+
+    /// Adds a batch of pool flash events to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the flash events to the database fails.
+    pub async fn add_pool_flash_batch(&self, flash_events: &[PoolFlash]) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_flash_batch(self.chain.chain_id, flash_events)
+                .await?;
         }
 
         Ok(())
