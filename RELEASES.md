@@ -47,6 +47,7 @@ This will be the final release with support for Python 3.11.
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
+- Implemented `PoolFlash` event in blockchain adapter (#3055), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -122,6 +123,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
 - Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
 - Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
+- Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
