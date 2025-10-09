@@ -330,7 +330,7 @@ mod tests {
                     sz_decimals: 3,
                     max_leverage: Some(10),
                     only_isolated: Some(true),
-                    is_delisted: Some(true), // Should be filtered out
+                    is_delisted: Some(true), // Should be included but marked as inactive
                 },
             ],
             margin_tables: vec![],
@@ -338,8 +338,8 @@ mod tests {
 
         let defs = parse_perp_instruments(&meta).unwrap();
 
-        // Should only have BTC (DELIST filtered out)
-        assert_eq!(defs.len(), 1);
+        // Should have both BTC and DELIST (delisted instruments are included for historical data)
+        assert_eq!(defs.len(), 2);
 
         let btc = &defs[0];
         assert_eq!(btc.symbol, "BTC-USD-PERP");
@@ -353,6 +353,11 @@ mod tests {
         assert_eq!(btc.max_leverage, Some(50));
         assert!(!btc.only_isolated);
         assert!(btc.active);
+
+        let delist = &defs[1];
+        assert_eq!(delist.symbol, "DELIST-USD-PERP");
+        assert_eq!(delist.base, "DELIST");
+        assert!(!delist.active); // Delisted instruments are marked as inactive
     }
 
     #[rstest]
@@ -393,7 +398,7 @@ mod tests {
                 name: "ALIAS".to_string(),
                 tokens: [1, 0],
                 index: 1,
-                is_canonical: false, // Should be filtered out
+                is_canonical: false, // Should be included but marked as inactive
             },
         ];
 
@@ -404,8 +409,8 @@ mod tests {
 
         let defs = parse_spot_instruments(&meta).unwrap();
 
-        // Should only have PURR/USDC (ALIAS filtered out)
-        assert_eq!(defs.len(), 1);
+        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
+        assert_eq!(defs.len(), 2);
 
         let purr_usdc = &defs[0];
         assert_eq!(purr_usdc.symbol, "PURR-USDC-SPOT");
@@ -422,6 +427,11 @@ mod tests {
         assert_eq!(purr_usdc.max_leverage, None);
         assert!(!purr_usdc.only_isolated);
         assert!(purr_usdc.active);
+
+        let alias = &defs[1];
+        assert_eq!(alias.symbol, "PURR-USDC-SPOT");
+        assert_eq!(alias.base, "PURR");
+        assert!(!alias.active); // Non-canonical pairs are marked as inactive
     }
 
     #[rstest]
