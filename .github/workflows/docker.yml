@@ -13,7 +13,7 @@ jobs:
   test-docker-build:
     name: test-build-${{ matrix.platform }}
     if: github.ref == 'refs/heads/test-docker'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
     strategy:
@@ -21,9 +21,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            os: ubuntu-22.04
+            runner: ubuntu-22.04
           - platform: linux/arm64
-            os: ubuntu-22.04-arm
+            runner: ubuntu-22.04-arm
     env:
       BUILD_MODE: release
     steps:
@@ -265,13 +265,17 @@ jobs:
   build-docker-images-nautilus-trader:
     name: build-docker-images (nautilus_trader-${{ matrix.platform }})
     if: github.ref != 'refs/heads/test-docker'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-22.04
+          - platform: linux/arm64
+            runner: ubuntu-22.04-arm
     env:
       BUILD_MODE: release
     steps:
@@ -319,10 +323,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up QEMU
-        # https://github.com/docker/setup-qemu-action
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
-
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -339,6 +339,11 @@ jobs:
         id: branch-name
         run: |
           echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Generate platform slug
+        id: platform-slug
+        run: |
+          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
 
       - name: Prepare Docker metadata
         id: meta
@@ -359,8 +364,8 @@ jobs:
           file: .docker/nautilus_trader.dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=nautilus_trader-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=nautilus_trader-${{ matrix.platform }}
+          cache-from: type=gha,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -430,14 +435,19 @@ jobs:
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
-    runs-on: ubuntu-latest
+    if: github.ref != 'refs/heads/test-docker'
+    runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
     needs: merge-nautilus-trader
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-22.04
+          - platform: linux/arm64
+            runner: ubuntu-22.04-arm
     env:
       BUILD_MODE: release
     steps:
@@ -485,10 +495,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up QEMU
-        # https://github.com/docker/setup-qemu-action
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
-
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -505,6 +511,11 @@ jobs:
         id: branch-name
         run: |
           echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Generate platform slug
+        id: platform-slug
+        run: |
+          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
 
       - name: Determine image tag
         id: image-tag
@@ -534,8 +545,8 @@ jobs:
           file: .docker/jupyterlab.dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=jupyterlab-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=jupyterlab-${{ matrix.platform }}
+          cache-from: type=gha,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             GIT_TAG=${{ steps.image-tag.outputs.tag }}
