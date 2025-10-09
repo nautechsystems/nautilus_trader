@@ -1791,6 +1791,36 @@ fn test_overflow_boundary_token0_and_token1(mut empty_low_fee_pool_profiler: Poo
     assert_eq!(position.tokens_owed_1, 500000000000000);
 }
 
+#[rstest]
+fn test_flash_increases_fee_growth_by_expected_amount(mut medium_fee_pool_profiler: PoolProfiler) {
+    // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L1463
+    let _flash_event = medium_fee_pool_profiler
+        .execute_flash(
+            user_address(),
+            other_address(),
+            create_block_position(),
+            U256::from(1001u32),
+            U256::from(2002u32),
+        )
+        .unwrap();
+
+    // BigNumber.from(4).mul(BigNumber.from(2).pow(128)).div(expandTo18Decimals(2))
+    let expected_fee_growth_0 = (U256::from(4) * U256::from(2).pow(U256::from(128)))
+        .div(U256::from(expand_to_18_decimals(2)));
+    let expected_fee_growth_1 = (U256::from(7) * U256::from(2).pow(U256::from(128)))
+        .div(U256::from(expand_to_18_decimals(2)));
+
+    assert_eq!(
+        medium_fee_pool_profiler.state.fee_growth_global_0, expected_fee_growth_0,
+        "Fee growth global 0 mismatch"
+    );
+    assert_eq!(
+        medium_fee_pool_profiler.state.fee_growth_global_1, expected_fee_growth_1,
+        "Fee growth global 1 mismatch"
+    );
+    assert_eq!(medium_fee_pool_profiler.analytics.total_flashes, 1);
+}
+
 // ---------- ACTIVE LIQUIDITY AND TICK CROSSING TESTS WHEN SWAPING ----------
 
 #[rstest]

@@ -135,6 +135,8 @@ pub struct PoolAnalytics {
     pub total_burns: u64,
     /// Total number of fee collection events processed.
     pub total_fee_collects: u64,
+    /// Total number of flash events processed.
+    pub total_flashes: u64,
     /// Time spent processing swap events (debug builds only).
     #[cfg(debug_assertions)]
     pub swap_processing_time: std::time::Duration,
@@ -160,6 +162,7 @@ impl Default for PoolAnalytics {
             total_mints: 0,
             total_burns: 0,
             total_fee_collects: 0,
+            total_flashes: 0,
             #[cfg(debug_assertions)]
             swap_processing_time: std::time::Duration::ZERO,
             #[cfg(debug_assertions)]

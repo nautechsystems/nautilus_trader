@@ -19,7 +19,7 @@ use alloy::primitives::{Address, U256};
 use futures_util::{Stream, StreamExt};
 use nautilus_model::defi::{
     Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
-    data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
+    data::{DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
     pool_analysis::{
         position::PoolPosition,
         snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
@@ -1210,6 +1210,87 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_fee_collect table: {e}"))
     }
 
+    /// Inserts multiple pool flash events in a single database operation using UNNEST for optimal performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_pool_flash_batch(
+        &self,
+        chain_id: u32,
+        flash_events: &[PoolFlash],
+    ) -> anyhow::Result<()> {
+        if flash_events.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare vectors for each column
+        let len = flash_events.len();
+        let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
+        let mut blocks: Vec<i64> = Vec::with_capacity(len);
+        let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
+        let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut log_indices: Vec<i32> = Vec::with_capacity(len);
+        let mut senders: Vec<String> = Vec::with_capacity(len);
+        let mut recipients: Vec<String> = Vec::with_capacity(len);
+        let mut amount0s: Vec<String> = Vec::with_capacity(len);
+        let mut amount1s: Vec<String> = Vec::with_capacity(len);
+        let mut paid0s: Vec<String> = Vec::with_capacity(len);
+        let mut paid1s: Vec<String> = Vec::with_capacity(len);
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
+
+        // Fill vectors from flash events
+        for flash in flash_events {
+            chain_ids.push(chain_id as i32);
+            pool_addresses.push(flash.pool_address.to_string());
+            blocks.push(flash.block as i64);
+            transaction_hashes.push(flash.transaction_hash.clone());
+            transaction_indices.push(flash.transaction_index as i32);
+            log_indices.push(flash.log_index as i32);
+            senders.push(flash.sender.to_string());
+            recipients.push(flash.recipient.to_string());
+            amount0s.push(flash.amount0.to_string());
+            amount1s.push(flash.amount1.to_string());
+            paid0s.push(flash.paid0.to_string());
+            paid1s.push(flash.paid1.to_string());
+        }
+
+        // Execute batch insert with UNNEST
+        sqlx::query(
+            r"
+            INSERT INTO pool_flash_event (
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, amount0, amount1, paid0, paid1
+            )
+            SELECT
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, amount0::U256, amount1::U256, paid0::U256, paid1::U256
+            FROM UNNEST(
+                $1::INT[], $2::TEXT[], $3::INT[], $4::TEXT[], $5::INT[],
+                $6::INT[], $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::TEXT[], $12::TEXT[]
+            ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
+                   log_index, sender, recipient, amount0, amount1, paid0, paid1)
+            ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
+           ",
+        )
+        .bind(&chain_ids[..])
+        .bind(&pool_addresses[..])
+        .bind(&blocks[..])
+        .bind(&transaction_hashes[..])
+        .bind(&transaction_indices[..])
+        .bind(&log_indices[..])
+        .bind(&senders[..])
+        .bind(&recipients[..])
+        .bind(&amount0s[..])
+        .bind(&amount1s[..])
+        .bind(&paid0s[..])
+        .bind(&paid1s[..])
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_flash_event table: {e}"))
+    }
+
     pub async fn add_pool_snapshot(
         &self,
         chain_id: u32,
@@ -1225,13 +1306,15 @@ impl BlockchainCacheDatabase {
                 fee_growth_global_0, fee_growth_global_1,
                 total_amount0_deposited, total_amount1_deposited,
                 total_amount0_collected, total_amount1_collected,
-                total_swaps, total_mints, total_burns, total_fee_collects
+                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8::U160, $9::U128, $10::U256, $11::U256, $12,
                 $13::U256, $14::U256, $15::U256, $16::U256, $17::U256, $18::U256,
-                $19, $20, $21, $22
+                $19, $20, $21, $22, $23
             )
+            ON CONFLICT (chain_id, pool_address, block, transaction_index, log_index)
+            DO NOTHING
             ",
         )
         .bind(chain_id as i32)
@@ -1256,6 +1339,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.analytics.total_mints as i32)
         .bind(snapshot.analytics.total_burns as i32)
         .bind(snapshot.analytics.total_fee_collects as i32)
+        .bind(snapshot.analytics.total_flashes as i32)
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -1339,6 +1423,8 @@ impl BlockchainCacheDatabase {
                    tokens_owed_0, tokens_owed_1,
                    total_amount0_deposited, total_amount1_deposited,
                    total_amount0_collected, total_amount1_collected)
+            ON CONFLICT (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper)
+            DO NOTHING
            ",
         )
         .bind(chain_id as i32)
@@ -1421,6 +1507,8 @@ impl BlockchainCacheDatabase {
                 $10::TEXT[], $11::BOOLEAN[], $12::BIGINT[]
             ) AS t(pool_address, tick_value, liquidity_gross, liquidity_net,
                    fee_growth_outside_0, fee_growth_outside_1, initialized, last_updated_block)
+            ON CONFLICT (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value)
+            DO NOTHING
            ",
         )
         .bind(chain_id as i32)
@@ -1489,7 +1577,7 @@ impl BlockchainCacheDatabase {
                 fee_growth_global_0::TEXT, fee_growth_global_1::TEXT,
                 total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
                 total_amount0_collected::TEXT, total_amount1_collected::TEXT,
-                total_swaps, total_mints, total_burns, total_fee_collects
+                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes
             FROM pool_snapshot
             WHERE chain_id = $1 AND pool_address = $2 AND is_valid = TRUE
             ORDER BY block DESC, transaction_index DESC, log_index DESC
@@ -1536,6 +1624,7 @@ impl BlockchainCacheDatabase {
                 total_mints: row.get::<i32, _>("total_mints") as u64,
                 total_burns: row.get::<i32, _>("total_burns") as u64,
                 total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
+                total_flashes: row.get::<i32, _>("total_flashes") as u64,
                 #[cfg(debug_assertions)]
                 swap_processing_time: std::time::Duration::ZERO,
                 #[cfg(debug_assertions)]
@@ -1783,7 +1872,11 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as amount1,
                 NULL::INT as tick_lower,
                 NULL::INT as tick_upper,
-                NULL::TEXT as liquidity_event_type
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_address = $2)
             UNION ALL
@@ -1811,7 +1904,11 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT,
                 tick_lower::INT,
                 tick_upper::INT,
-                event_type as liquidity_event_type
+                event_type as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_address = $2)
             UNION ALL
@@ -1839,8 +1936,44 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT,
                 tick_lower::INT,
                 tick_upper::INT,
-                NULL::TEXT as liquidity_event_type
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_collect_event
+            WHERE chain_id = $1 AND pool_address = $2)
+            UNION ALL
+            (SELECT
+                'flash' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as side,
+                NULL::TEXT as size,
+                NULL::TEXT as price,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                amount0::TEXT as flash_amount0,
+                amount1::TEXT as flash_amount1,
+                paid0::TEXT as flash_paid0,
+                paid1::TEXT as flash_paid1
+            FROM pool_flash_event
             WHERE chain_id = $1 AND pool_address = $2)
             ORDER BY block, transaction_index, log_index";
 
@@ -1870,7 +2003,11 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as amount1,
                 NULL::INT as tick_lower,
                 NULL::INT as tick_upper,
-                NULL::TEXT as liquidity_event_type
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_address = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
@@ -1899,7 +2036,11 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT,
                 tick_lower::INT,
                 tick_upper::INT,
-                event_type as liquidity_event_type
+                event_type as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_address = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
@@ -1928,8 +2069,45 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT,
                 tick_lower::INT,
                 tick_upper::INT,
-                NULL::TEXT as liquidity_event_type
+                NULL::TEXT as liquidity_event_type,
+                NULL::TEXT as flash_amount0,
+                NULL::TEXT as flash_amount1,
+                NULL::TEXT as flash_paid0,
+                NULL::TEXT as flash_paid1
             FROM pool_collect_event
+            WHERE chain_id = $1 AND pool_address = $2
+            AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
+            UNION ALL
+            (SELECT
+                'flash' as event_type,
+                chain_id,
+                pool_address,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                recipient,
+                NULL::TEXT as owner,
+                NULL::TEXT as side,
+                NULL::TEXT as size,
+                NULL::TEXT as price,
+                NULL::TEXT as sqrt_price_x96,
+                NULL::TEXT as swap_liquidity,
+                NULL::INT AS swap_tick,
+                NULL::TEXT as swap_amount0,
+                NULL::TEXT as swap_amount1,
+                NULL::TEXT as position_liquidity,
+                NULL::TEXT as amount0,
+                NULL::TEXT as amount1,
+                NULL::INT as tick_lower,
+                NULL::INT as tick_upper,
+                NULL::TEXT as liquidity_event_type,
+                amount0::TEXT as flash_amount0,
+                amount1::TEXT as flash_amount1,
+                paid0::TEXT as flash_paid0,
+                paid1::TEXT as flash_paid1
+            FROM pool_flash_event
             WHERE chain_id = $1 AND pool_address = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5)))
             ORDER BY block, transaction_index, log_index";
@@ -1953,8 +2131,8 @@ impl BlockchainCacheDatabase {
         // Transform rows to events
         let stream = query.map(move |row_result| match row_result {
             Ok(row) => transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone())
-                .map_err(|e| anyhow::anyhow!("Transform error: {}", e)),
-            Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
+                .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {}", e)),
         });
 
         Box::pin(stream)

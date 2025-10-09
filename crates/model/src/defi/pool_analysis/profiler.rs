@@ -21,7 +21,10 @@ use alloy_primitives::{Address, I256, U160, U256};
 
 use crate::defi::{
     PoolLiquidityUpdate, PoolSwap, SharedPool,
-    data::{DexPoolData, PoolFeeCollect, PoolLiquidityUpdateType, block::BlockPosition},
+    data::{
+        DexPoolData, PoolFeeCollect, PoolLiquidityUpdateType, block::BlockPosition,
+        flash::PoolFlash,
+    },
     pool_analysis::{
         position::PoolPosition,
         snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
@@ -230,6 +233,16 @@ impl PoolProfiler {
                     collect.transaction_hash.clone(),
                     collect.transaction_index,
                     collect.log_index,
+                ))
+            }
+            DexPoolData::Flash(flash) => {
+                self.process_flash(flash)?;
+                self.analytics.total_flashes += 1;
+                self.last_processed_event = Some(BlockPosition::new(
+                    flash.block,
+                    flash.transaction_hash.clone(),
+                    flash.transaction_index,
+                    flash.log_index,
                 ))
             }
         }
@@ -941,6 +954,136 @@ impl PoolProfiler {
         Ok(())
     }
 
+    /// Processes a flash loan event from historical data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Pool has no active liquidity.
+    /// - Fee growth arithmetic overflows.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool has not been initialized.
+    pub fn process_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
+        self.check_if_initialized();
+        self.update_flash_state(flash.paid0, flash.paid1)
+    }
+
+    /// Executes a simulated flash loan operation and returns the resulting event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Mathematical operations overflow when calculating fees.
+    /// - Pool has no active liquidity.
+    /// - Fee growth arithmetic overflows.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - Pool is not initialized
+    /// - Pool fee is not set
+    pub fn execute_flash(
+        &mut self,
+        sender: Address,
+        recipient: Address,
+        block: BlockPosition,
+        amount0: U256,
+        amount1: U256,
+    ) -> anyhow::Result<PoolFlash> {
+        self.check_if_initialized();
+        let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
+
+        // Calculate fees or paid0/paid1
+        let paid0 = if amount0 > U256::ZERO {
+            FullMath::mul_div_rounding_up(amount0, U256::from(fee_tier), U256::from(1_000_000))?
+        } else {
+            U256::ZERO
+        };
+
+        let paid1 = if amount1 > U256::ZERO {
+            FullMath::mul_div_rounding_up(amount1, U256::from(fee_tier), U256::from(1_000_000))?
+        } else {
+            U256::ZERO
+        };
+
+        self.update_flash_state(paid0, paid1)?;
+        self.analytics.total_flashes += 1;
+
+        let flash_event = PoolFlash::new(
+            self.pool.chain.clone(),
+            self.pool.dex.clone(),
+            self.pool.address,
+            block.number,
+            block.transaction_hash,
+            block.transaction_index,
+            block.log_index,
+            None,
+            sender,
+            recipient,
+            amount0,
+            amount1,
+            paid0,
+            paid1,
+        );
+
+        Ok(flash_event)
+    }
+
+    /// Core flash loan state update logic.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No active liquidity in pool
+    /// - Fee growth arithmetic overflows
+    fn update_flash_state(&mut self, paid0: U256, paid1: U256) -> anyhow::Result<()> {
+        let liquidity = self.tick_map.liquidity;
+        if liquidity == 0 {
+            anyhow::bail!("No liquidity")
+        }
+
+        let fee_protocol_0 = self.state.fee_protocol % 16;
+        let fee_protocol_1 = self.state.fee_protocol >> 4;
+
+        // Process token0 fees
+        if paid0 > U256::ZERO {
+            let protocol_fee_0 = if fee_protocol_0 > 0 {
+                paid0 / U256::from(fee_protocol_0)
+            } else {
+                U256::ZERO
+            };
+
+            if protocol_fee_0 > U256::ZERO {
+                self.state.protocol_fees_token0 += protocol_fee_0;
+            }
+
+            let lp_fee_0 = paid0 - protocol_fee_0;
+            let delta = FullMath::mul_div(lp_fee_0, Q128, U256::from(liquidity))?;
+            self.state.fee_growth_global_0 += delta;
+        }
+
+        // Process token1 fees
+        if paid1 > U256::ZERO {
+            let protocol_fee_1 = if fee_protocol_1 > 0 {
+                paid1 / U256::from(fee_protocol_1)
+            } else {
+                U256::ZERO
+            };
+
+            if protocol_fee_1 > U256::ZERO {
+                self.state.protocol_fees_token1 += protocol_fee_1;
+            }
+
+            let lp_fee_1 = paid1 - protocol_fee_1;
+            let delta = FullMath::mul_div(lp_fee_1, Q128, U256::from(liquidity))?;
+            self.state.fee_growth_global_1 += delta;
+        }
+
+        Ok(())
+    }
+
     /// Updates position state and tick maps when liquidity changes.
     ///
     /// Core internal method that handles position updates for both mints and burns.
@@ -1109,6 +1252,7 @@ impl PoolProfiler {
         self.analytics.total_mints = snapshot.analytics.total_mints;
         self.analytics.total_burns = snapshot.analytics.total_burns;
         self.analytics.total_fee_collects = snapshot.analytics.total_fee_collects;
+        self.analytics.total_flashes = snapshot.analytics.total_flashes;
 
         // Rebuild positions HashMap
         self.positions.clear();
@@ -1448,6 +1592,7 @@ impl PoolProfiler {
             + self.analytics.total_mints
             + self.analytics.total_burns
             + self.analytics.total_fee_collects
+            + self.analytics.total_flashes
     }
 
     /// Logs a formatted performance report showing event processing breakdown.
