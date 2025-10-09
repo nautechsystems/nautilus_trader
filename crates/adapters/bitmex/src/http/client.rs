@@ -292,18 +292,13 @@ impl BitmexHttpInnerClient {
         vec![
             (BITMEX_GLOBAL_RATE_KEY.to_string(), per_sec_quota),
             (BITMEX_MINUTE_RATE_KEY.to_string(), per_min_quota),
-            ("bitmex:/api/v1/order".to_string(), per_sec_quota),
         ]
     }
 
-    fn rate_limit_keys(endpoint: &str) -> Vec<Ustr> {
-        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
-        let route = format!("bitmex:{normalized}");
-
+    fn rate_limit_keys() -> Vec<Ustr> {
         vec![
             Ustr::from(BITMEX_GLOBAL_RATE_KEY),
             Ustr::from(BITMEX_MINUTE_RATE_KEY),
-            Ustr::from(route.as_str()),
         ]
     }
 
@@ -372,7 +367,7 @@ impl BitmexHttpInnerClient {
                     None
                 };
 
-                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
+                let rate_keys = Self::rate_limit_keys();
                 let resp = self
                     .client
                     .request_with_ustr_keys(method, url, headers, body, None, Some(rate_keys))
