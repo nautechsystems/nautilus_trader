@@ -165,6 +165,7 @@ impl From<OrderAny> for LimitOrderAny {
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
             OrderAny::StopLimit(order) => LimitOrderAny::StopLimit(order),
             OrderAny::TrailingStopLimit(order) => LimitOrderAny::TrailingStopLimit(order),
+            OrderAny::Market(order) => LimitOrderAny::MarketOrderWithProtection(order),
             _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
         }
     }
@@ -177,6 +178,7 @@ impl From<LimitOrderAny> for OrderAny {
             LimitOrderAny::MarketToLimit(order) => OrderAny::MarketToLimit(order),
             LimitOrderAny::StopLimit(order) => OrderAny::StopLimit(order),
             LimitOrderAny::TrailingStopLimit(order) => OrderAny::TrailingStopLimit(order),
+            LimitOrderAny::MarketOrderWithProtection(order) => OrderAny::Market(order),
         }
     }
 }
@@ -215,6 +217,7 @@ pub enum LimitOrderAny {
     MarketToLimit(MarketToLimitOrder),
     StopLimit(StopLimitOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
+    MarketOrderWithProtection(MarketOrder),
 }
 
 impl LimitOrderAny {
@@ -228,6 +231,9 @@ impl LimitOrderAny {
             Self::MarketToLimit(order) => order.price.expect("No price for order"), // TBD
             Self::StopLimit(order) => order.price,
             Self::TrailingStopLimit(order) => order.price,
+            Self::MarketOrderWithProtection(order) => {
+                order.protection_price.expect("No price for order")
+            }
         }
     }
 }
@@ -239,6 +245,9 @@ impl PartialEq for LimitOrderAny {
             Self::MarketToLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::StopLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::MarketOrderWithProtection(order) => {
+                order.client_order_id == rhs.client_order_id()
+            }
         }
     }
 }

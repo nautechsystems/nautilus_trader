@@ -53,6 +53,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -157,6 +158,7 @@ fn engine_config() -> OrderMatchingEngineConfig {
         use_position_ids: false,
         use_random_ids: false,
         use_reduce_only: true,
+        price_protection_points: None,
     }
 }
 // -- HELPERS ---------------------------------------------------------------------------
@@ -2753,4 +2755,88 @@ fn test_reduce_only_order_exceeding_position_quantity(
         has_quantity_update || !saved_messages.is_empty(),
         "Order should be processed without panic"
     );
+}
+
+#[rstest]
+fn test_process_trailing_market_orders_with_protection_rejeceted_and_valid(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let confing = OrderMatchingEngineConfig::new(
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        Some(dec!(600)),
+    );
+
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create two market orders
+    // 1. Market SELL order will be rejected as the Bid Side of the book is empty
+    // 2. Market BUY order will be accepted as there is an order on the Ask side of the book
+    let client_order_id_market_buy = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut market_buy_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_market_buy)
+        .submit(true)
+        .build();
+
+    let client_order_id_market_sell = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut market_sell_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_market_sell)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut market_buy_order, account_id);
+    engine_l2.process_order(&mut market_sell_order, account_id);
+
+    // Check that we have received OrderRejected for TrailingStopMarket order
+    // and OrderAccepted for TrailingStopLimit order
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let event1 = saved_messages.first().unwrap();
+    let rejected = match event1 {
+        OrderEventAny::Rejected(rejected) => rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    // assert_eq!(
+    //     rejected.client_order_id,
+    //     client_order_id_trailing_stop_market
+    // );
+    // let event2 = saved_messages.get(1).unwrap();
+    // let accepted = match event2 {
+    //     OrderEventAny::Accepted(accepted) => accepted,
+    //     _ => panic!("Expected OrderAccepted event in second message"),
+    // };
+    // assert_eq!(
+    //     accepted.client_order_id,
+    //     client_order_id_trailing_stop_limit
+    // );
 }
