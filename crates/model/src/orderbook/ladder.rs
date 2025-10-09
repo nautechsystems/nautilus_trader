@@ -223,7 +223,6 @@ impl BookLadder {
             && let Some(level) = self.levels.get_mut(&price)
         {
             if order.price == level.price.value {
-                // Update at current price level
                 let level_len_before = level.len();
                 level.update(order);
 
@@ -243,7 +242,6 @@ impl BookLadder {
                     );
                 }
 
-                // Remove empty price level
                 if level.is_empty() {
                     self.levels.remove(&price);
                     debug_assert!(
@@ -252,7 +250,6 @@ impl BookLadder {
                     );
                 }
 
-                // Validate cache consistency after same-price update
                 debug_assert_eq!(
                     self.cache.len(),
                     self.levels.values().map(|level| level.len()).sum::<usize>(),
@@ -264,6 +261,7 @@ impl BookLadder {
             // Price update: delete and insert at new level
             self.cache.remove(&order.order_id);
             level.delete(&order);
+
             if level.is_empty() {
                 self.levels.remove(&price);
                 debug_assert!(

@@ -3430,12 +3430,13 @@ impl Cache {
             }
         } else {
             // Add or update the order in the own book
-            own_book.update(own_book_order).unwrap_or_else(|e| {
+            if let Err(e) = own_book.update(own_book_order) {
                 log::debug!(
-                    "Failed to update order {} in own book: {e}",
+                    "Failed to update order {} in own book: {e}; inserting instead",
                     order.client_order_id(),
                 );
-            });
+                own_book.add(own_book_order);
+            }
             log::debug!("Updated order {} in own book", order.client_order_id());
         }
     }

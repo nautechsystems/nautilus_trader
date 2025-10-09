@@ -119,9 +119,12 @@ pub(crate) fn pprint_book(
     let table = Table::new(data).with(Style::rounded()).to_string();
 
     let header = format!(
-        "bid_levels: {}\nask_levels: {}",
+        "bid_levels: {}\nask_levels: {}\nsequence: {}\nupdate_count: {}\nts_last: {}",
         order_book.bids.levels.len(),
-        order_book.asks.levels.len()
+        order_book.asks.levels.len(),
+        order_book.sequence,
+        order_book.update_count,
+        order_book.ts_last,
     );
 
     format!("{header}\n{table}")
@@ -217,9 +220,11 @@ pub(crate) fn pprint_own_book(
     let table = Table::new(data).with(Style::rounded()).to_string();
 
     let header = format!(
-        "bid_levels: {}\nask_levels: {}",
+        "bid_levels: {}\nask_levels: {}\nupdate_count: {}\nts_last: {}",
         own_order_book.bids.levels.len(),
-        own_order_book.asks.levels.len()
+        own_order_book.asks.levels.len(),
+        own_order_book.update_count,
+        own_order_book.ts_last,
     );
 
     format!("{header}\n{table}")

@@ -2438,11 +2438,18 @@ cdef class Cache(CacheFacade):
         own_book_order = order.to_own_book_order()
 
         if order.is_closed_c():
-            own_book.delete(own_book_order)
-            self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.delete(own_book_order)
+                self._log.debug(f"Deleted order {order.client_order_id} from own book")
+            except RuntimeError as e:
+                self._log.debug(f"Failed to delete order {order.client_order_id} from own book: {e}")
         else:
-            own_book.update(own_book_order)
-            self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.update(own_book_order)
+            except RuntimeError as e:
+                self._log.debug(f"Failed to update order {order.client_order_id} in own book: {e}; inserting instead")
+                own_book.add(own_book_order)
+            self._log.debug(f"Updated order {order.client_order_id} in own book")
 
     cpdef void update_position(self, Position position):
         """

@@ -361,6 +361,8 @@ Including `PENDING_CANCEL` in status filters can cause:
 
 :::
 
+The optional `accepted_buffer_ns` many methods expose is a time-based guard that only returns orders whose `ts_accepted` is at least that many nanoseconds in the past. Orders that have not yet been accepted by the venue still have `ts_accepted = 0`, so they are included once the buffer window elapses. To exclude those inflight orders you must pair the buffer with an explicit status filter (for example, restrict to `ACCEPTED` / `PARTIALLY_FILLED`).
+
 ### Auditing
 
 During live trading, own order books can be periodically audited against the cache's order indexes to ensure consistency.

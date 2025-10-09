@@ -1710,3 +1710,151 @@ fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
     assert_eq!(own_book.bids().count(), 0);
 }
+
+#[rstest]
+fn test_own_order_book_lifecycle_sequence(mut cache: Cache) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let mut live_order = limit_order;
+
+    let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
+    live_order.apply(submitted).unwrap();
+    cache.update_order(&live_order).unwrap();
+
+    let venue_order_id = VenueOrderId::new("V-LCYCLE");
+    let accepted =
+        TestOrderEventStubs::accepted(&live_order, AccountId::new("SIM-001"), venue_order_id);
+    live_order.apply(accepted).unwrap();
+    cache.update_order(&live_order).unwrap();
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    let partial_fill = TestOrderEventStubs::filled(
+        &live_order,
+        &instrument,
+        None,
+        None,
+        None,
+        Some(Quantity::from(50_000)),
+        None,
+        None,
+        None,
+        None,
+    );
+    live_order.apply(partial_fill).unwrap();
+    cache.update_order(&live_order).unwrap();
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    let canceled = TestOrderEventStubs::canceled(
+        &live_order,
+        AccountId::new("SIM-001"),
+        Some(VenueOrderId::new("V-LCYCLE")),
+    );
+    live_order.apply(canceled).unwrap();
+    cache.update_order(&live_order).unwrap();
+    cache.update_own_order_book(&live_order);
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+fn test_own_order_book_pending_cancel_persists_until_final(mut cache: Cache) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let mut live_order = limit_order;
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-PENDING"),
+    );
+    live_order.apply(accepted).unwrap();
+    cache.update_order(&live_order).unwrap();
+
+    cache.update_order_pending_cancel_local(&live_order);
+    cache.audit_own_order_books();
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    let canceled = TestOrderEventStubs::canceled(
+        &live_order,
+        AccountId::new("SIM-001"),
+        Some(VenueOrderId::new("V-PENDING")),
+    );
+    live_order.apply(canceled).unwrap();
+    cache.update_order(&live_order).unwrap();
+    cache.update_own_order_book(&live_order);
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let mut live_order = limit_order;
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-REINSERT"),
+    );
+    live_order.apply(accepted).unwrap();
+    cache.update_order(&live_order).unwrap();
+
+    {
+        let own_book = cache
+            .own_books
+            .get_mut(&instrument.id())
+            .expect("own book missing");
+        own_book.clear();
+    }
+
+    cache.update_own_order_book(&live_order);
+
+    let own_book = cache.own_order_book(&instrument.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+}
