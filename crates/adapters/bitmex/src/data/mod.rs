@@ -106,6 +106,8 @@ impl BitmexDataClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.recv_window_ms,
+            config.max_requests_per_second,
+            config.max_requests_per_minute,
         )
         .context("failed to construct BitMEX HTTP client")?;
 

@@ -358,14 +358,14 @@ The adapter enforces these quotas automatically and surfaces the rate-limit head
 Exceeding BitMEX rate limits returns HTTP 429 and may trigger temporary IP bans; persistent 4xx/5xx errors can extend the lockout period.
 :::
 
-| Key / Endpoint                    | Limit (req/sec) | Additional quota              | Notes                                    |
-|-----------------------------------|-----------------|-------------------------------|------------------------------------------|
-| `bitmex:global`                   | 10              | `bitmex:minute` = 120 req/min | Burst limit for authenticated users.     |
-| `/api/v1/order`                   | 10              | `/api/v1/order:minute` = 60   | Mirrors BitMEX per-user allowances.      |
-| `/api/v1/order/bulk`              | 5               | –                             | Batch operations throttled tighter.      |
-| `/api/v1/order/cancelAll`         | 2               | –                             | Cancel all orders.                       |
+### Configurable rate limits
 
-All requests automatically consume both the global burst bucket and the rolling minute bucket. Endpoints that have their own minute quota (e.g. `/api/v1/order`) also queue against that per-route key, so repeated calls with different parameters still share a single rate bucket.
+The rate limits can be configured if your account has different limits than the defaults:
+
+| Parameter                  | Default (authenticated) | Default (unauthenticated) | Description                                         |
+|----------------------------|-------------------------|---------------------------|-----------------------------------------------------|
+| `max_requests_per_second`  | 10                      | 10                        | Maximum requests per second (burst limit).          |
+| `max_requests_per_minute`  | 120                     | 30                        | Maximum requests per minute (rolling window).       |
 
 :::info
 For more details on rate limiting, see the [BitMEX API documentation on rate limits](https://www.bitmex.com/app/restAPI#Limits).

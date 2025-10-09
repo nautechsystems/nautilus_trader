@@ -6562,6 +6562,8 @@ class BitmexHttpClient:
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BitmexHttpClient: ...
