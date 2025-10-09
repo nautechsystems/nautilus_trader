@@ -53,7 +53,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -2793,7 +2792,7 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
         .build();
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
 
-    // Create two market orders
+    // Create two market orders with Protection
     // 1. Market SELL order will be rejected as the Bid Side of the book is empty
     // 2. Market BUY order will be accepted as there is an order on the Ask side of the book
     let client_order_id_market_buy = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -2817,10 +2816,8 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
     engine_l2.process_order(&mut market_sell_order, account_id);
     engine_l2.process_order(&mut market_buy_order, account_id);
 
-    // Check that we receive an OrderRejected event for the protected market sell order while the buy order is processed and filled,
-    // and an OrderAccepted event for the trailing stop limit order.
+    // Check that we receive an OrderRejected event for the protected market sell order while the buy order is processed and partially filled
     let saved_messages = get_order_event_handler_messages(order_event_handler);
-    // dbg!(saved_messages);
     assert_eq!(saved_messages.len(), 4);
     let event1 = saved_messages.first().unwrap();
     let rejected = match event1 {
@@ -2848,10 +2845,100 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
 
     let event4 = saved_messages.get(3).unwrap();
 
-    //Aggressive order is filled
+    //Aggressive order is parially filled
     let filled = match event4 {
         OrderEventAny::Filled(filled) => filled,
         _ => panic!("Expected Filled event in fourth message"),
     };
     assert_eq!(filled.client_order_id, client_order_id_market_buy);
+}
+
+#[rstest]
+fn test_process_stop_orders_with_protection_rejeceted_and_valid(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let confing = OrderMatchingEngineConfig::new(
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        Some(dec!(600)),
+    );
+
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create two Stop Market orders with Protection
+    // 1. Stop Market SELL order will be rejected as the Bid Side of the book is empty
+    // 2. Stop Market BUY order will be accepted as there is an order on the Ask side of the book
+    let client_order_id_market_buy = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut market_buy_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::new(1501.0, 2))
+        .client_order_id(client_order_id_market_buy)
+        .submit(true)
+        .build();
+
+    let client_order_id_market_sell = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut market_sell_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::new(1499.0, 2))
+        .client_order_id(client_order_id_market_sell)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut market_sell_order, account_id);
+    engine_l2.process_order(&mut market_buy_order, account_id);
+
+    // Check that we receive an OrderRejected event for the protected stop market sell order while the buy order is accepted
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 3);
+    let event1 = saved_messages.first().unwrap();
+    let rejected = match event1 {
+        OrderEventAny::Rejected(rejected) => rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(rejected.client_order_id, client_order_id_market_sell);
+
+    assert_eq!(rejected.reason, "No market for ETHUSDT-PERP.BINANCE");
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
+        _ => panic!("Expected OrderUpdated event in second message"),
+    };
+    assert_eq!(updated.client_order_id, client_order_id_market_buy);
+    //Protection price is calculated using the Best Ask Price + 6 Protection points
+    assert_eq!(updated.protection_price, Some(Price::new(1506.0, 2)));
+
+    let event3 = saved_messages.get(2).unwrap();
+    let accepted = match event3 {
+        OrderEventAny::Accepted(accepted) => accepted,
+        _ => panic!("Expected Accepted event in third message"),
+    };
+    assert_eq!(accepted.client_order_id, client_order_id_market_buy);
 }
