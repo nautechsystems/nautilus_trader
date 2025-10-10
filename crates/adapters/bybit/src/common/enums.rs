@@ -209,6 +209,17 @@ impl BybitProductType {
         }
     }
 
+    /// Returns the uppercase suffix used in instrument identifiers (e.g. `-LINEAR`).
+    #[must_use]
+    pub const fn suffix(self) -> &'static str {
+        match self {
+            Self::Spot => "-SPOT",
+            Self::Linear => "-LINEAR",
+            Self::Inverse => "-INVERSE",
+            Self::Option => "-OPTION",
+        }
+    }
+
     /// Returns `true` if the product is a spot instrument.
     #[must_use]
     pub fn is_spot(self) -> bool {

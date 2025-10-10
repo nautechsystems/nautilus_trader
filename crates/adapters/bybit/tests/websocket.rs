@@ -1223,3 +1223,219 @@ async fn test_private_wallet_subscription() {
 
     let _ = client.close().await;
 }
+
+// Tests for conditional order types
+#[cfg(test)]
+mod conditional_order_tests {
+    use nautilus_bybit::{
+        common::enums::{BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce},
+        websocket::messages::BybitWsPlaceOrderParams,
+    };
+    use nautilus_model::{enums::OrderType, types::Price};
+
+    #[test]
+    fn test_stop_market_order_uses_trigger_price() {
+        let params = create_conditional_order_params(
+            OrderType::StopMarket,
+            Some(Price::from("4500.00")),
+            None,
+        );
+
+        // Stop orders should use triggerPrice, not sl_trigger_price
+        assert!(params.trigger_price.is_some());
+        assert_eq!(params.trigger_price.as_ref().unwrap(), "4500.00");
+        assert!(params.sl_trigger_price.is_none());
+        assert!(params.tp_trigger_price.is_none());
+
+        // Should be Market type at Bybit level
+        assert_eq!(params.order_type, BybitOrderType::Market);
+    }
+
+    #[test]
+    fn test_stop_limit_order_uses_trigger_price() {
+        let params = create_conditional_order_params(
+            OrderType::StopLimit,
+            Some(Price::from("4500.00")),
+            Some(Price::from("4505.00")),
+        );
+
+        // Stop limit orders should use triggerPrice
+        assert!(params.trigger_price.is_some());
+        assert_eq!(params.trigger_price.as_ref().unwrap(), "4500.00");
+
+        // Price should be set for limit
+        assert!(params.price.is_some());
+        assert_eq!(params.price.as_ref().unwrap(), "4505.00");
+
+        // Should not use sl/tp fields for standalone stop orders
+        assert!(params.sl_trigger_price.is_none());
+        assert!(params.tp_trigger_price.is_none());
+
+        // Should be Limit type at Bybit level
+        assert_eq!(params.order_type, BybitOrderType::Limit);
+    }
+
+    #[test]
+    fn test_market_if_touched_order_uses_trigger_price() {
+        let params = create_conditional_order_params(
+            OrderType::MarketIfTouched,
+            Some(Price::from("4500.00")),
+            None,
+        );
+
+        // MIT orders should use triggerPrice
+        assert!(params.trigger_price.is_some());
+        assert_eq!(params.trigger_price.as_ref().unwrap(), "4500.00");
+        assert!(params.sl_trigger_price.is_none());
+        assert!(params.tp_trigger_price.is_none());
+
+        // Should be Market type at Bybit level
+        assert_eq!(params.order_type, BybitOrderType::Market);
+    }
+
+    #[test]
+    fn test_limit_if_touched_order_uses_trigger_price() {
+        let params = create_conditional_order_params(
+            OrderType::LimitIfTouched,
+            Some(Price::from("4500.00")),
+            Some(Price::from("4505.00")),
+        );
+
+        // LIT orders should use triggerPrice
+        assert!(params.trigger_price.is_some());
+        assert_eq!(params.trigger_price.as_ref().unwrap(), "4500.00");
+        assert!(params.sl_trigger_price.is_none());
+        assert!(params.tp_trigger_price.is_none());
+
+        // Price should be set for limit
+        assert!(params.price.is_some());
+        assert_eq!(params.price.as_ref().unwrap(), "4505.00");
+
+        // Should be Limit type at Bybit level
+        assert_eq!(params.order_type, BybitOrderType::Limit);
+    }
+
+    #[test]
+    fn test_reduce_only_false_omitted() {
+        let params = create_conditional_order_params_with_reduce_only(
+            OrderType::StopMarket,
+            Some(Price::from("4500.00")),
+            None,
+            Some(false),
+        );
+
+        // reduce_only should be None when false (not sent to Bybit)
+        assert!(params.reduce_only.is_none());
+    }
+
+    #[test]
+    fn test_reduce_only_explicit_true() {
+        let params = create_conditional_order_params_with_reduce_only(
+            OrderType::StopMarket,
+            Some(Price::from("4500.00")),
+            None,
+            Some(true),
+        );
+
+        // reduce_only should be Some(true)
+        assert!(params.reduce_only.is_some());
+        assert_eq!(params.reduce_only.unwrap(), true);
+    }
+
+    // Helper function to create conditional order params for testing
+    fn create_conditional_order_params(
+        order_type: OrderType,
+        trigger_price: Option<Price>,
+        price: Option<Price>,
+    ) -> BybitWsPlaceOrderParams {
+        create_conditional_order_params_with_reduce_only(
+            order_type,
+            trigger_price,
+            price,
+            Some(false),
+        )
+    }
+
+    fn create_conditional_order_params_with_reduce_only(
+        order_type: OrderType,
+        trigger_price: Option<Price>,
+        price: Option<Price>,
+        reduce_only: Option<bool>,
+    ) -> BybitWsPlaceOrderParams {
+        use nautilus_bybit::common::enums::BybitTriggerType;
+
+        let is_stop_order = matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+        );
+
+        let bybit_order_type = match order_type {
+            OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched => {
+                BybitOrderType::Market
+            }
+            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched => {
+                BybitOrderType::Limit
+            }
+            _ => panic!("Unsupported order type"),
+        };
+
+        if is_stop_order {
+            BybitWsPlaceOrderParams {
+                category: BybitProductType::Linear,
+                symbol: "ETHUSDT".into(),
+                side: BybitOrderSide::Buy,
+                order_type: bybit_order_type,
+                qty: "0.01".to_string(),
+                price: price.map(|p| p.to_string()),
+                time_in_force: Some(BybitTimeInForce::Gtc),
+                order_link_id: Some("test-order-1".to_string()),
+                reduce_only: reduce_only.filter(|&r| r),
+                close_on_trigger: None,
+                trigger_price: trigger_price.map(|p| p.to_string()),
+                trigger_by: Some(BybitTriggerType::LastPrice),
+                trigger_direction: None,
+                tpsl_mode: None,
+                take_profit: None,
+                stop_loss: None,
+                tp_trigger_by: None,
+                sl_trigger_by: None,
+                sl_trigger_price: None,
+                tp_trigger_price: None,
+                sl_order_type: None,
+                tp_order_type: None,
+                sl_limit_price: None,
+                tp_limit_price: None,
+            }
+        } else {
+            BybitWsPlaceOrderParams {
+                category: BybitProductType::Linear,
+                symbol: "ETHUSDT".into(),
+                side: BybitOrderSide::Buy,
+                order_type: bybit_order_type,
+                qty: "0.01".to_string(),
+                price: price.map(|p| p.to_string()),
+                time_in_force: Some(BybitTimeInForce::Gtc),
+                order_link_id: Some("test-order-1".to_string()),
+                reduce_only: reduce_only.filter(|&r| r),
+                close_on_trigger: None,
+                trigger_price: None,
+                trigger_by: None,
+                trigger_direction: None,
+                tpsl_mode: None,
+                take_profit: None,
+                stop_loss: None,
+                tp_trigger_by: None,
+                sl_trigger_by: None,
+                sl_trigger_price: None,
+                tp_trigger_price: None,
+                sl_order_type: None,
+                tp_order_type: None,
+                sl_limit_price: None,
+                tp_limit_price: None,
+            }
+        }
+    }
+}

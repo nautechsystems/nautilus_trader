@@ -31,7 +31,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{BarAggregation, OrderSide, OrderType, TimeInForce},
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
@@ -79,6 +79,7 @@ use crate::{
             parse_linear_instrument, parse_option_instrument, parse_order_status_report,
             parse_position_status_report, parse_spot_instrument, parse_trade_tick,
         },
+        symbol::BybitSymbol,
         urls::bybit_http_base_url,
     },
     http::query::BybitFeeRateParamsBuilder,
@@ -90,8 +91,9 @@ const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
 ///
 /// Bybit implements rate limiting per endpoint with varying limits.
 /// We use a conservative 10 requests per second as a general default.
-pub static BYBIT_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).expect("10 is a valid non-zero u32")));
+pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
+});
 
 const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";
 
@@ -690,10 +692,9 @@ impl BybitHttpInnerClient {
     /// # Panics
     ///
     /// Panics if the instruments cache mutex is poisoned.
-    pub fn instrument_from_cache(&self, symbol: &str) -> anyhow::Result<InstrumentAny> {
-        let symbol_ustr = Ustr::from(symbol);
+    pub fn instrument_from_cache(&self, symbol: &Symbol) -> anyhow::Result<InstrumentAny> {
         let cache = self.instruments_cache.lock().unwrap();
-        cache.get(&symbol_ustr).cloned().ok_or_else(|| {
+        cache.get(&symbol.inner()).cloned().ok_or_else(|| {
             anyhow::anyhow!(
                 "Instrument {symbol} not found in cache, ensure instruments loaded first"
             )
@@ -733,7 +734,8 @@ impl BybitHttpInnerClient {
         price: Option<Price>,
         reduce_only: bool,
     ) -> anyhow::Result<OrderStatusReport> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
@@ -755,7 +757,7 @@ impl BybitHttpInnerClient {
         };
 
         let mut order_entry = BybitBatchPlaceOrderEntryBuilder::default();
-        order_entry.symbol(instrument_id.symbol.as_str().to_string());
+        order_entry.symbol(bybit_symbol.raw_symbol().to_string());
         order_entry.side(bybit_side);
         order_entry.order_type(bybit_order_type);
         order_entry.qty(quantity.to_string());
@@ -829,10 +831,11 @@ impl BybitHttpInnerClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<OrderStatusReport> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut cancel_entry = BybitBatchCancelOrderEntryBuilder::default();
-        cancel_entry.symbol(instrument_id.symbol.as_str().to_string());
+        cancel_entry.symbol(bybit_symbol.raw_symbol().to_string());
 
         if let Some(venue_order_id) = venue_order_id {
             cancel_entry.order_id(Some(venue_order_id.to_string()));
@@ -896,11 +899,12 @@ impl BybitHttpInnerClient {
         product_type: BybitProductType,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params = BybitCancelAllOrdersParamsBuilder::default();
         params.category(product_type);
-        params.symbol(Some(instrument_id.symbol.as_str().to_string()));
+        params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
         let body = serde_json::to_vec(&params)?;
@@ -912,7 +916,7 @@ impl BybitHttpInnerClient {
         // Query the order history to get all canceled orders
         let mut query_params = BybitOrderHistoryParamsBuilder::default();
         query_params.category(product_type);
-        query_params.symbol(Some(instrument_id.symbol.as_str().to_string()));
+        query_params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
         query_params.limit(Some(50));
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -953,10 +957,11 @@ impl BybitHttpInnerClient {
         quantity: Option<Quantity>,
         price: Option<Price>,
     ) -> anyhow::Result<OrderStatusReport> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut amend_entry = BybitBatchAmendOrderEntryBuilder::default();
-        amend_entry.symbol(instrument_id.symbol.as_str().to_string());
+        amend_entry.symbol(bybit_symbol.raw_symbol().to_string());
 
         if let Some(venue_order_id) = venue_order_id {
             amend_entry.order_id(Some(venue_order_id.to_string()));
@@ -1027,13 +1032,17 @@ impl BybitHttpInnerClient {
         &self,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
+        account_id: AccountId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params = BybitOpenOrdersParamsBuilder::default();
         params.category(product_type);
+        // Use the raw Bybit symbol (e.g., "ETHUSDT") not the full instrument symbol
+        params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
 
         if let Some(venue_order_id) = venue_order_id {
             params.order_id(Some(venue_order_id.to_string()));
@@ -1054,7 +1063,6 @@ impl BybitHttpInnerClient {
         }
 
         let order = &response.result.list[0];
-        let account_id = AccountId::new("BYBIT");
         let ts_init = self.generate_ts_init();
 
         let report = parse_order_status_report(order, &instrument, account_id, ts_init)?;
@@ -1080,7 +1088,8 @@ impl BybitHttpInnerClient {
             let mut p = BybitOpenOrdersParamsBuilder::default();
             p.category(product_type);
             if let Some(instrument_id) = &instrument_id {
-                p.symbol(Some(instrument_id.symbol.as_str().to_string()));
+                let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+                p.symbol(Some(bybit_symbol.raw_symbol().to_string()));
             }
             let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
             let path = Self::build_path("/v5/order/realtime", &params)?;
@@ -1091,7 +1100,8 @@ impl BybitHttpInnerClient {
             let mut p = BybitOrderHistoryParamsBuilder::default();
             p.category(product_type);
             if let Some(instrument_id) = &instrument_id {
-                p.symbol(Some(instrument_id.symbol.as_str().to_string()));
+                let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+                p.symbol(Some(bybit_symbol.raw_symbol().to_string()));
             }
             if let Some(limit) = limit {
                 p.limit(Some(limit));
@@ -1109,7 +1119,7 @@ impl BybitHttpInnerClient {
         let mut reports = Vec::new();
         for order in params {
             if let Some(ref instrument_id) = instrument_id {
-                let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+                let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
                 if let Ok(report) =
                     parse_order_status_report(&order, &instrument, account_id, ts_init)
                 {
@@ -1117,7 +1127,13 @@ impl BybitHttpInnerClient {
                 }
             } else {
                 // Try to get instrument from symbol
-                if let Ok(instrument) = self.instrument_from_cache(order.symbol.as_str())
+                // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
+                let symbol_with_product = Symbol::new(format!(
+                    "{}{}",
+                    order.symbol.as_str(),
+                    product_type.suffix()
+                ));
+                if let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
                     && let Ok(report) =
                         parse_order_status_report(&order, &instrument, account_id, ts_init)
                 {
@@ -1317,11 +1333,12 @@ impl BybitHttpInnerClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let instrument = self.instrument_from_cache(instrument_id.symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params_builder = BybitTradesParamsBuilder::default();
         params_builder.category(product_type);
-        params_builder.symbol(instrument_id.symbol.as_str().to_string());
+        params_builder.symbol(bybit_symbol.raw_symbol().to_string());
         if let Some(limit_val) = limit {
             params_builder.limit(limit_val);
         }
@@ -1361,7 +1378,8 @@ impl BybitHttpInnerClient {
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
-        let instrument = self.instrument_from_cache(bar_type.instrument_id().symbol.as_str())?;
+        let instrument = self.instrument_from_cache(&bar_type.instrument_id().symbol)?;
+        let bybit_symbol = BybitSymbol::new(bar_type.instrument_id().symbol.as_str())?;
 
         // Convert Nautilus BarAggregation to BybitKlineInterval
         let interval = match bar_type.spec().aggregation {
@@ -1376,7 +1394,7 @@ impl BybitHttpInnerClient {
 
         let mut params_builder = BybitKlinesParamsBuilder::default();
         params_builder.category(product_type);
-        params_builder.symbol(bar_type.instrument_id().symbol.as_str().to_string());
+        params_builder.symbol(bybit_symbol.raw_symbol().to_string());
         params_builder.interval(interval);
 
         if let Some(start_ts) = start {
@@ -1420,15 +1438,19 @@ impl BybitHttpInnerClient {
     pub async fn request_fill_reports(
         &self,
         product_type: BybitProductType,
+        account_id: AccountId,
         instrument_id: Option<InstrumentId>,
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let account_id = AccountId::new("BYBIT");
-
         // Build query parameters
-        let symbol = instrument_id.map(|id| id.symbol.as_str().to_string());
+        let symbol = if let Some(id) = instrument_id {
+            let bybit_symbol = BybitSymbol::new(id.symbol.as_str())?;
+            Some(bybit_symbol.raw_symbol().to_string())
+        } else {
+            None
+        };
         let params = BybitTradeHistoryParams {
             category: product_type,
             symbol,
@@ -1448,8 +1470,14 @@ impl BybitHttpInnerClient {
 
         for execution in response.result.list {
             // Get instrument for this execution
-            let symbol_str = execution.symbol.as_str();
-            let instrument = self.instrument_from_cache(symbol_str)?;
+            // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
+            // TODO: Extract this to a helper
+            let symbol_with_product = Symbol::new(format!(
+                "{}{}",
+                execution.symbol.as_str(),
+                product_type.suffix()
+            ));
+            let instrument = self.instrument_from_cache(&symbol_with_product)?;
 
             if let Ok(report) = parse_fill_report(&execution, account_id, &instrument, ts_init) {
                 reports.push(report);
@@ -1475,12 +1503,16 @@ impl BybitHttpInnerClient {
     pub async fn request_position_status_reports(
         &self,
         product_type: BybitProductType,
+        account_id: AccountId,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let account_id = AccountId::new("BYBIT");
-
         // Build query parameters
-        let symbol = instrument_id.map(|id| id.symbol.as_str().to_string());
+        let symbol = if let Some(id) = instrument_id {
+            let bybit_symbol = BybitSymbol::new(id.symbol.as_str())?;
+            Some(bybit_symbol.raw_symbol().to_string())
+        } else {
+            None
+        };
         let params = BybitPositionListParams {
             category: product_type,
             symbol,
@@ -1496,8 +1528,13 @@ impl BybitHttpInnerClient {
 
         for position in response.result.list {
             // Get instrument for this position
-            let symbol_str = position.symbol.as_str();
-            let instrument = self.instrument_from_cache(symbol_str)?;
+            // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
+            let symbol_with_product = Symbol::new(format!(
+                "{}{}",
+                position.symbol.as_str(),
+                product_type.suffix()
+            ));
+            let instrument = self.instrument_from_cache(&symbol_with_product)?;
 
             if let Ok(report) =
                 parse_position_status_report(&position, account_id, &instrument, ts_init)
@@ -1523,9 +1560,8 @@ impl BybitHttpInnerClient {
     pub async fn request_account_state(
         &self,
         account_type: crate::common::enums::BybitAccountType,
+        account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let account_id = AccountId::new("BYBIT");
-
         let params = BybitWalletBalanceParams {
             account_type,
             coin: None,
@@ -1993,11 +2029,18 @@ impl BybitHttpClient {
         &self,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
+        account_id: AccountId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         self.inner
-            .query_order(product_type, instrument_id, client_order_id, venue_order_id)
+            .query_order(
+                product_type,
+                instrument_id,
+                account_id,
+                client_order_id,
+                venue_order_id,
+            )
             .await
     }
 
@@ -2100,13 +2143,14 @@ impl BybitHttpClient {
     pub async fn request_fill_reports(
         &self,
         product_type: BybitProductType,
+        account_id: AccountId,
         instrument_id: Option<InstrumentId>,
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         self.inner
-            .request_fill_reports(product_type, instrument_id, start, end, limit)
+            .request_fill_reports(product_type, account_id, instrument_id, start, end, limit)
             .await
     }
 
@@ -2126,10 +2170,11 @@ impl BybitHttpClient {
     pub async fn request_position_status_reports(
         &self,
         product_type: BybitProductType,
+        account_id: AccountId,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         self.inner
-            .request_position_status_reports(product_type, instrument_id)
+            .request_position_status_reports(product_type, account_id, instrument_id)
             .await
     }
 
@@ -2147,8 +2192,11 @@ impl BybitHttpClient {
     pub async fn request_account_state(
         &self,
         account_type: crate::common::enums::BybitAccountType,
+        account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        self.inner.request_account_state(account_type).await
+        self.inner
+            .request_account_state(account_type, account_id)
+            .await
     }
 
     /// Requests trading fee rates for the specified product type and optional filters.

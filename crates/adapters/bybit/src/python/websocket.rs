@@ -103,6 +103,10 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        tracing::debug!(
+            "Creating private WebSocket client with API key: {}",
+            &api_key[..api_key.len().min(10)]
+        );
         let credential = crate::common::credential::Credential::new(api_key, api_secret);
         Self::new_private(environment, credential, url, heartbeat)
     }
@@ -888,6 +892,7 @@ impl BybitWebSocketClient {
         quantity,
         time_in_force=None,
         price=None,
+        trigger_price=None,
         post_only=None,
         reduce_only=None,
     ))]
@@ -903,6 +908,7 @@ impl BybitWebSocketClient {
         quantity: nautilus_model::types::Quantity,
         time_in_force: Option<nautilus_model::enums::TimeInForce>,
         price: Option<nautilus_model::types::Price>,
+        trigger_price: Option<nautilus_model::types::Price>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -919,6 +925,7 @@ impl BybitWebSocketClient {
                     quantity,
                     time_in_force,
                     price,
+                    trigger_price,
                     post_only,
                     reduce_only,
                 )

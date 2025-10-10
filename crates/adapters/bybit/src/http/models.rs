@@ -508,12 +508,15 @@ pub struct BybitCoinBalance {
     pub bonus: String,
     pub accrued_interest: String,
     pub available_to_withdraw: String,
-    pub total_order_im: String,
+    #[serde(default, rename = "totalOrderIM")]
+    pub total_order_im: Option<String>,
     pub equity: String,
     pub usd_value: String,
     pub borrow_amount: String,
-    pub total_position_mm: String,
-    pub total_position_im: String,
+    #[serde(default, rename = "totalPositionMM")]
+    pub total_position_mm: Option<String>,
+    #[serde(default, rename = "totalPositionIM")]
+    pub total_position_im: Option<String>,
     pub wallet_balance: String,
     pub unrealised_pnl: String,
     pub cum_realised_pnl: String,
@@ -531,14 +534,18 @@ pub struct BybitCoinBalance {
 #[serde(rename_all = "camelCase")]
 pub struct BybitWalletBalance {
     pub total_equity: String,
+    #[serde(rename = "accountIMRate")]
     pub account_im_rate: String,
     pub total_margin_balance: String,
     pub total_initial_margin: String,
     pub account_type: BybitAccountType,
     pub total_available_balance: String,
+    #[serde(rename = "accountMMRate")]
     pub account_mm_rate: String,
+    #[serde(rename = "totalPerpUPL")]
     pub total_perp_upl: String,
     pub total_wallet_balance: String,
+    #[serde(rename = "accountLTV")]
     pub account_ltv: String,
     pub total_maintenance_margin: String,
     pub coin: Vec<BybitCoinBalance>,
@@ -779,5 +786,86 @@ mod tests {
         assert_eq!(order.sl_trigger_by, BybitTriggerType::LastPrice);
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.order_type, BybitOrderType::Limit);
+    }
+
+    #[rstest]
+    fn deserialize_wallet_balance_without_optional_fields() {
+        let json = r#"{
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "list": [{
+                    "totalEquity": "1000.00",
+                    "accountIMRate": "0",
+                    "totalMarginBalance": "1000.00",
+                    "totalInitialMargin": "0",
+                    "accountType": "UNIFIED",
+                    "totalAvailableBalance": "1000.00",
+                    "accountMMRate": "0",
+                    "totalPerpUPL": "0",
+                    "totalWalletBalance": "1000.00",
+                    "accountLTV": "0",
+                    "totalMaintenanceMargin": "0",
+                    "coin": [{
+                        "availableToBorrow": "0",
+                        "bonus": "0",
+                        "accruedInterest": "0",
+                        "availableToWithdraw": "1000.00",
+                        "equity": "1000.00",
+                        "usdValue": "1000.00",
+                        "borrowAmount": "0",
+                        "totalPositionIM": "0",
+                        "walletBalance": "1000.00",
+                        "unrealisedPnl": "0",
+                        "cumRealisedPnl": "0",
+                        "locked": "0",
+                        "collateralSwitch": true,
+                        "marginCollateral": true,
+                        "coin": "USDT"
+                    }]
+                }]
+            }
+        }"#;
+
+        let response: BybitWalletBalanceResponse = serde_json::from_str(json)
+            .expect("Failed to parse wallet balance without optional fields");
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.result.list[0].coin[0].total_order_im, None);
+        assert_eq!(response.result.list[0].coin[0].total_position_mm, None);
+    }
+
+    #[rstest]
+    fn deserialize_wallet_balance_from_docs() {
+        let json = include_str!("../../test_data/http_get_wallet_balance.json");
+
+        let response: BybitWalletBalanceResponse = serde_json::from_str(json)
+            .expect("Failed to parse wallet balance from Bybit docs example");
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.ret_msg, "OK");
+
+        let wallet = &response.result.list[0];
+        assert_eq!(wallet.total_equity, "3.31216591");
+        assert_eq!(wallet.account_im_rate, "0");
+        assert_eq!(wallet.account_mm_rate, "0");
+        assert_eq!(wallet.total_perp_upl, "0");
+        assert_eq!(wallet.account_ltv, "0");
+
+        // Check BTC coin
+        let btc = &wallet.coin[0];
+        assert_eq!(btc.coin.as_str(), "BTC");
+        assert_eq!(btc.available_to_borrow, "3");
+        assert_eq!(btc.total_order_im, Some("0".to_string()));
+        assert_eq!(btc.total_position_mm, Some("0".to_string()));
+        assert_eq!(btc.total_position_im, Some("0".to_string()));
+
+        // Check USDT coin (without optional IM/MM fields)
+        let usdt = &wallet.coin[1];
+        assert_eq!(usdt.coin.as_str(), "USDT");
+        assert_eq!(usdt.wallet_balance, "1000.50");
+        assert_eq!(usdt.total_order_im, None);
+        assert_eq!(usdt.total_position_mm, None);
+        assert_eq!(usdt.total_position_im, None);
     }
 }

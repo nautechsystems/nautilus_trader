@@ -31,44 +31,46 @@ pub(crate) fn split_topic(topic: &str) -> (&str, Option<&str>) {
 }
 
 pub(crate) fn track_topic(
-    map: &DashMap<String, AHashSet<Ustr>>,
+    map: &DashMap<Ustr, AHashSet<Ustr>>,
     channel: &str,
     symbol: Option<&str>,
 ) {
+    let channel_ustr = Ustr::from(channel);
     if let Some(symbol) = symbol {
-        let mut entry = map.entry(channel.to_string()).or_default();
+        let mut entry = map.entry(channel_ustr).or_default();
         entry.insert(Ustr::from(symbol));
     } else {
-        map.entry(channel.to_string()).or_default();
+        map.entry(channel_ustr).or_default();
     }
 }
 
 pub(crate) fn untrack_topic(
-    map: &DashMap<String, AHashSet<Ustr>>,
+    map: &DashMap<Ustr, AHashSet<Ustr>>,
     channel: &str,
     symbol: Option<&str>,
 ) {
+    let channel_ustr = Ustr::from(channel);
     if let Some(symbol) = symbol {
         let symbol_ustr = Ustr::from(symbol);
         let mut remove_channel = false;
-        if let Some(mut entry) = map.get_mut(channel) {
+        if let Some(mut entry) = map.get_mut(&channel_ustr) {
             entry.remove(&symbol_ustr);
             remove_channel = entry.is_empty();
         }
         if remove_channel {
-            map.remove(channel);
+            map.remove(&channel_ustr);
         }
     } else {
-        map.remove(channel);
+        map.remove(&channel_ustr);
     }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct SubscriptionState {
-    confirmed: Arc<DashMap<String, AHashSet<Ustr>>>,
-    pending_subscribe: Arc<DashMap<String, AHashSet<Ustr>>>,
-    pending_unsubscribe: Arc<DashMap<String, AHashSet<Ustr>>>,
-    reference_counts: Arc<DashMap<String, NonZeroUsize>>,
+    confirmed: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
+    pending_subscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
+    pending_unsubscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
+    reference_counts: Arc<DashMap<Ustr, NonZeroUsize>>,
 }
 
 impl SubscriptionState {
@@ -82,12 +84,12 @@ impl SubscriptionState {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn confirmed(&self) -> Arc<DashMap<String, AHashSet<Ustr>>> {
+    pub(crate) fn confirmed(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
         Arc::clone(&self.confirmed)
     }
 
     #[allow(dead_code)]
-    pub(crate) fn pending(&self) -> Arc<DashMap<String, AHashSet<Ustr>>> {
+    pub(crate) fn pending(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
         // For backward compatibility, return pending_subscribe
         Arc::clone(&self.pending_subscribe)
     }
@@ -146,10 +148,10 @@ impl SubscriptionState {
             let channel = entry.key();
             let symbols = entry.value();
             if symbols.is_empty() {
-                topics.push(channel.clone());
+                topics.push(channel.to_string());
             } else {
                 for symbol in symbols.iter() {
-                    topics.push(format!("{}.{}", channel, symbol.as_str()));
+                    topics.push(format!("{}.{}", channel.as_str(), symbol.as_str()));
                 }
             }
         }
@@ -162,10 +164,10 @@ impl SubscriptionState {
             let channel = entry.key();
             let symbols = entry.value();
             if symbols.is_empty() {
-                topics.push(channel.clone());
+                topics.push(channel.to_string());
             } else {
                 for symbol in symbols.iter() {
-                    topics.push(format!("{}.{}", channel, symbol.as_str()));
+                    topics.push(format!("{}.{}", channel.as_str(), symbol.as_str()));
                 }
             }
         }
@@ -180,10 +182,10 @@ impl SubscriptionState {
             let channel = entry.key();
             let symbols = entry.value();
             if symbols.is_empty() {
-                topics.push(channel.clone());
+                topics.push(channel.to_string());
             } else {
                 for symbol in symbols.iter() {
-                    topics.push(format!("{}.{}", channel, symbol.as_str()));
+                    topics.push(format!("{}.{}", channel.as_str(), symbol.as_str()));
                 }
             }
         }
@@ -193,10 +195,10 @@ impl SubscriptionState {
             let channel = entry.key();
             let symbols = entry.value();
             if symbols.is_empty() {
-                topics.push(channel.clone());
+                topics.push(channel.to_string());
             } else {
                 for symbol in symbols.iter() {
-                    topics.push(format!("{}.{}", channel, symbol.as_str()));
+                    topics.push(format!("{}.{}", channel.as_str(), symbol.as_str()));
                 }
             }
         }
@@ -211,9 +213,10 @@ impl SubscriptionState {
     /// Returns `true` if this is the first subscription (should send subscribe message to Bybit).
     pub(crate) fn add_reference(&self, topic: &str) -> bool {
         let mut should_subscribe = false;
+        let topic_ustr = Ustr::from(topic);
 
         self.reference_counts
-            .entry(topic.to_string())
+            .entry(topic_ustr)
             .and_modify(|count| {
                 // Increment existing count
                 *count = NonZeroUsize::new(count.get() + 1).expect("reference count overflow");
@@ -231,13 +234,14 @@ impl SubscriptionState {
     ///
     /// Returns `true` if this was the last subscription (should send unsubscribe message to Bybit).
     pub(crate) fn remove_reference(&self, topic: &str) -> bool {
-        if let Some(mut entry) = self.reference_counts.get_mut(topic) {
+        let topic_ustr = Ustr::from(topic);
+        if let Some(mut entry) = self.reference_counts.get_mut(&topic_ustr) {
             let current = entry.get();
 
             if current == 1 {
                 // Last reference - remove and signal to unsubscribe
                 drop(entry); // Drop the mutable reference before removing
-                self.reference_counts.remove(topic);
+                self.reference_counts.remove(&topic_ustr);
                 return true;
             }
 
@@ -252,8 +256,9 @@ impl SubscriptionState {
     /// Returns the current reference count for a topic.
     #[allow(dead_code)]
     pub(crate) fn get_reference_count(&self, topic: &str) -> usize {
+        let topic_ustr = Ustr::from(topic);
         self.reference_counts
-            .get(topic)
+            .get(&topic_ustr)
             .map(|count| count.get())
             .unwrap_or(0)
     }

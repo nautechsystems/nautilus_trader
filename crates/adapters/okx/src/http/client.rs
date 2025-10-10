@@ -1955,7 +1955,6 @@ impl OKXHttpClient {
         open_only: bool,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        // Build params for order history
         let mut history_params = GetOrderHistoryParamsBuilder::default();
 
         let instrument_type = if let Some(instrument_type) = instrument_type {
@@ -1982,7 +1981,6 @@ impl OKXHttpClient {
 
         let history_params = history_params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        // Build params for pending orders
         let mut pending_params = GetOrderListParamsBuilder::default();
         pending_params.inst_type(instrument_type);
 
