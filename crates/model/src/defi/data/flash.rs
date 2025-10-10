@@ -113,7 +113,7 @@ impl Display for PoolFlash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PoolFlash(instrument={}, recipient={}, amount0={}, amount1={}, paid1={}, paid2={})",
+            "PoolFlash(instrument={}, recipient={}, amount0={}, amount1={}, paid0={}, paid1={})",
             self.instrument_id(),
             self.recipient,
             self.amount0,
