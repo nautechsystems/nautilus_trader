@@ -22,7 +22,7 @@ for id in $ids; do
   echo "Deleting artifact ID $id"
   attempts=0
   while true; do
-    attempts=$((attempts+1))
+    attempts=$((attempts + 1))
     status=$(curl -sS --connect-timeout 5 --max-time 60 -o /dev/null -w "%{http_code}" -X DELETE \
       -H "Authorization: Bearer ${GITHUB_TOKEN}" \
       -H "Accept: application/vnd.github+json" \
@@ -42,7 +42,7 @@ for id in $ids; do
     # Retry on 5xx up to 5 attempts; fail on persistent 4xx
     if [ "$status" -ge 500 ] && [ $attempts -lt 5 ]; then
       echo "Delete failed for $id (HTTP $status), retrying ($attempts/5)..."
-      sleep $((2**attempts))
+      sleep $((2 ** attempts))
       continue
     fi
 

@@ -14,7 +14,7 @@ mkdir -p dist/all
 find dist/ -type f -name "*.whl" -exec cp -L {} dist/all/ \;
 
 # First check for any wheels
-if ! find dist/all/ -type f -name "*.whl" >/dev/null 2>&1; then
+if ! find dist/all/ -type f -name "*.whl" > /dev/null 2>&1; then
   echo "No wheels found in dist/all/, exiting"
   exit 1
 fi
@@ -51,7 +51,7 @@ for file in dist/all/*.whl; do
       break
     else
       echo "Upload failed for $file (exit=$status), retrying ($i/5)..."
-      sleep $((2**i))
+      sleep $((2 ** i))
     fi
   done
   set -e

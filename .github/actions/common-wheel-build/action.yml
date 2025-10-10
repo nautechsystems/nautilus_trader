@@ -72,7 +72,10 @@ runs:
       shell: bash
       run: |
         export PATH="$pythonLocation/bin:$PATH"
-        export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        export PYO3_PYTHON=$(
+          which python${{ inputs.python-version }} ||
+          echo "$pythonLocation/bin/python${{ inputs.python-version }}"
+        )
         export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
 
         PYTHON_LIB_DIR=$(dirname $(dirname $PYO3_PYTHON))/lib

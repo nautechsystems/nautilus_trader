@@ -117,7 +117,9 @@ jobs:
       #     platforms: ${{ matrix.platform }}
       #     cache-from: type=gha,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
       #     cache-to: type=gha,mode=max,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
-      #     outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,name-canonical=true,push=true
+      #     outputs:
+      #       type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,
+      #       name-canonical=true,push=true
       #
       # - name: Export digest
       #   run: |
@@ -165,7 +167,9 @@ jobs:
       #     platforms: ${{ matrix.platform }}
       #     cache-from: type=gha,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
       #     cache-to: type=gha,mode=max,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
-      #     outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,name-canonical=true,push=true
+      #     outputs:
+      #       type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,
+      #       name-canonical=true,push=true
       #     build-args: |
       #       GIT_TAG=test-${{ steps.platform-slug.outputs.slug }}
       #
@@ -366,7 +370,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,name-canonical=true,push=true
+          outputs:
+            type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,
+            name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -426,12 +432,15 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests/nautilus_trader
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/nautilus_trader:$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          docker buildx imagetools inspect \
+            ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -547,7 +556,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,name-canonical=true,push=true
+          outputs:
+            type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,
+            name-canonical=true,push=true
           build-args: |
             GIT_TAG=${{ steps.image-tag.outputs.tag }}
 
@@ -609,9 +620,12 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests/jupyterlab
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/jupyterlab:$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          docker buildx imagetools inspect \
+            ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS

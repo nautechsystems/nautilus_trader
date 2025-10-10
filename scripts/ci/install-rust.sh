@@ -20,7 +20,7 @@ for i in {1..3}; do
     break
   else
     echo "rustup update failed (exit=$status), retry ($i/3)"
-    sleep $((2**i))
+    sleep $((2 ** i))
   fi
 done
 set -e

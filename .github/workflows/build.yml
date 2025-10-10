@@ -508,7 +508,13 @@ jobs:
           for i in {1..5}; do
             gh release upload "$TAG_NAME" dist/*.whl --clobber --repo "$GITHUB_REPOSITORY"
             status=$?
-            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
           done
           set -e
           if [ "$success" = false ]; then echo "Failed to upload wheels to release after retries"; exit 1; fi
@@ -525,10 +531,19 @@ jobs:
           for i in {1..5}; do
             uv publish --check-url https://pypi.org/simple/
             status=$?
-            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "uv publish failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
           done
           set -e
-          if [ "$success" = false ]; then echo "Failed to publish wheels to PyPI after retries"; exit 1; fi
+          if [ "$success" = false ]; then
+            echo "Failed to publish wheels to PyPI after retries"
+            exit 1
+          fi
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -667,7 +682,13 @@ jobs:
           for i in {1..5}; do
             gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber --repo "$GITHUB_REPOSITORY"
             status=$?
-            if [ $status -eq 0 ]; then success=true; break; else echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
           done
           set -e
           if [ "$success" = false ]; then echo "Failed to upload sdist to release after retries"; exit 1; fi
@@ -684,7 +705,16 @@ jobs:
           for i in {1..5}; do
             uv publish --check-url https://pypi.org/simple/
             status=$?
-            if [ $status -eq 0 ]; then success=true; break; else echo "uv publish failed (exit=$status), retry ($i/5)"; sleep $((2**i)); fi
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "uv publish failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
           done
           set -e
-          if [ "$success" = false ]; then echo "Failed to publish sdist to PyPI after retries"; exit 1; fi
+          if [ "$success" = false ]; then
+            echo "Failed to publish sdist to PyPI after retries"
+            exit 1
+          fi

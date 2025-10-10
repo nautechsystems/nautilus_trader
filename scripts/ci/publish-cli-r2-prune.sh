@@ -28,9 +28,9 @@ if [[ "$BRANCH_NAME" == "nightly" ]]; then
 fi
 
 to_delete=()
-if (( ${#sorted[@]} > keep )); then
+if ((${#sorted[@]} > keep)); then
   count=$((${#sorted[@]} - keep))
-  for ((i=0; i<count; i++)); do
+  for ((i = 0; i < count; i++)); do
     to_delete+=("${sorted[$i]}")
   done
 fi
@@ -49,9 +49,11 @@ for d in "${to_delete[@]}"; do
   success=false
   for i in {1..5}; do
     if aws s3 rm "s3://${BUCKET}/${PREFIX}/${d}/" --recursive --endpoint-url="$R2_URL" --cli-connect-timeout 10 --cli-read-timeout 60; then
-      success=true; break
+      success=true
+      break
     else
-      echo "Delete failed for ${d}, retrying ($i/5)..."; sleep $((2**i))
+      echo "Delete failed for ${d}, retrying ($i/5)..."
+      sleep $((2 ** i))
     fi
   done
   if [ "$success" = false ]; then

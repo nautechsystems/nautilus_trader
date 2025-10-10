@@ -33,6 +33,18 @@ repos:
     hooks:
       - id: shellcheck
 
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.10.0-1
+    hooks:
+      - id: shfmt
+        args: ["-i", "2", "-ci", "-sr", "-w"]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.0
+    hooks:
+      - id: yamllint
+        args: [--strict]
+
   - repo: https://github.com/ComPWA/taplo-pre-commit
     rev: v0.9.3
     hooks:
@@ -99,7 +111,9 @@ repos:
     hooks:
       - id: check-anyhow-usage
         name: check anyhow usage
-        description: Enforces anyhow conventions (only import Context, use anyhow::bail! not return Err(anyhow::anyhow!))
+        description:
+          Enforces anyhow conventions (only import Context, use anyhow::bail! not return
+          Err(anyhow::anyhow!))
         entry: .pre-commit-hooks/check_anyhow_usage.sh
         language: script
         files: '\.rs$'
@@ -120,7 +134,16 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--benches", "--no-default-features", "--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
+        args:
+          [
+            "--benches",
+            "--no-default-features",
+            "--features",
+            "high-precision,ffi,python,extension-module",
+            "--",
+            "-D",
+            "warnings",
+          ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
@@ -128,7 +151,9 @@ repos:
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors or warnings.
-        entry: bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
+        entry:
+          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features
+          "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
         language: system
         files: '\.(rs|toml)$'
         types: [file]

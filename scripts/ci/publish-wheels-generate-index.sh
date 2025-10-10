@@ -11,14 +11,14 @@ TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 # Download existing index.html if it exists
-if aws s3 ls "${bucket_path}${index_file}" --endpoint-url="${CLOUDFLARE_R2_URL}" >/dev/null 2>&1; then
+if aws s3 ls "${bucket_path}${index_file}" --endpoint-url="${CLOUDFLARE_R2_URL}" > /dev/null 2>&1; then
   echo "Existing index.html found, downloading..."
   aws s3 cp "${bucket_path}${index_file}" . --endpoint-url="${CLOUDFLARE_R2_URL}"
 else
   echo "No existing index.html found, creating a new one..."
-  echo '<!DOCTYPE html>' >"$index_file"
-  echo '<html><head><title>NautilusTrader Packages</title></head>' >>"$index_file"
-  echo '<body><h1>Packages for nautilus_trader</h1></body></html>' >>"$index_file"
+  echo '<!DOCTYPE html>' > "$index_file"
+  echo '<html><head><title>NautilusTrader Packages</title></head>' >> "$index_file"
+  echo '<body><h1>Packages for nautilus_trader</h1></body></html>' >> "$index_file"
 fi
 
 # Extract existing hashes from index.html
@@ -32,13 +32,13 @@ if [[ -f "$index_file" ]]; then
       existing_hashes["$file"]="$hash"
       echo "Found existing hash for $file"
     fi
-  done <"$index_file"
+  done < "$index_file"
 fi
 
 # Create new index.html
-echo '<!DOCTYPE html>' >"${index_file}.new"
-echo '<html><head><title>NautilusTrader Packages</title></head>' >>"${index_file}.new"
-echo '<body><h1>Packages for nautilus_trader</h1>' >>"${index_file}.new"
+echo '<!DOCTYPE html>' > "${index_file}.new"
+echo '<html><head><title>NautilusTrader Packages</title></head>' >> "${index_file}.new"
+echo '<body><h1>Packages for nautilus_trader</h1>' >> "${index_file}.new"
 
 # Map to store final hashes we'll use
 declare -A final_hashes=()
@@ -86,9 +86,9 @@ readarray -t sorted_files < <(printf '%s\n' "${!final_hashes[@]}" | sort)
 for file in "${sorted_files[@]}"; do
   hash="${final_hashes[$file]}"
   escaped_file=$(echo "$file" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g')
-  echo "<a href=\"$escaped_file#sha256=$hash\">$escaped_file</a><br>" >>"${index_file}.new"
+  echo "<a href=\"$escaped_file#sha256=$hash\">$escaped_file</a><br>" >> "${index_file}.new"
 done
 
-echo '</body></html>' >>"${index_file}.new"
+echo '</body></html>' >> "${index_file}.new"
 mv "${index_file}.new" "$index_file"
 echo "Index generation complete"
