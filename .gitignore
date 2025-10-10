@@ -21,6 +21,7 @@ logs/
 *.key
 *.key_secret
 *.env
+.venv/
 
 # Compressed files
 *.tar.gz*

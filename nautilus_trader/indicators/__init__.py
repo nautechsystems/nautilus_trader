@@ -62,7 +62,7 @@ proprietary indicator algorithms with the platform.
 # from nautilus_trader.core.nautilus_pyo3 import VolumeWeightedAveragePrice
 # from nautilus_trader.core.nautilus_pyo3 import WeightedMovingAverage
 # from nautilus_trader.core.nautilus_pyo3 import WilderMovingAverage
-
+# from nautilus_trader.core.nautilus_pyo3 import MoneyFlowIndex
 
 # __all__ = [
 #     "AdaptiveMovingAverage",
@@ -107,4 +107,5 @@ proprietary indicator algorithms with the platform.
 #     "VolumeWeightedAveragePrice",
 #     "WeightedMovingAverage",
 #     "WilderMovingAverage",
+#     "MoneyFlowIndex",
 # ]

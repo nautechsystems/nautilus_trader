@@ -36,6 +36,7 @@ pub mod sma;
 pub mod vidya;
 pub mod vwap;
 pub mod wma;
+pub mod mfi;
 
 #[repr(C)]
 #[derive(
