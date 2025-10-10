@@ -703,6 +703,7 @@ impl Drop for WebSocketClientInner {
     }
 }
 
+/// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
 impl CleanDrop for WebSocketClientInner {
     fn clean_drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take()
@@ -960,6 +961,10 @@ impl WebSocketClient {
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
+                if !self.controller_task.is_finished() {
+                    self.controller_task.abort();
+                    log_task_aborted("controller");
+                }
             }
         }
     }

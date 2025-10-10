@@ -655,6 +655,7 @@ impl Drop for SocketClientInner {
     }
 }
 
+/// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
 impl CleanDrop for SocketClientInner {
     fn clean_drop(&mut self) {
         if !self.read_task.is_finished() {
@@ -807,6 +808,10 @@ impl SocketClient {
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
+                if !self.controller_task.is_finished() {
+                    self.controller_task.abort();
+                    log_task_aborted("controller");
+                }
             }
         }
     }

@@ -353,12 +353,14 @@ impl InnerHttpClient {
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
                 .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
-            let _ = header_map.insert(
-                key,
+            if let Some(old_value) = header_map.insert(
+                key.clone(),
                 header_value
                     .parse()
                     .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
-            );
+            ) {
+                tracing::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+            }
         }
 
         let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
