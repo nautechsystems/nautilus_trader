@@ -47,7 +47,7 @@ install:  #-- Install in release mode with all dependencies and extras
 	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
-install: BUILD_MODE=debug
+install-debug: BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode for development...)
 	$Q uv sync --active --all-groups --all-extras --verbose
@@ -89,7 +89,7 @@ endif
 .PHONY: build-wheel
 build-wheel: BUILD_MODE=release
 build-wheel:  #-- Build wheel distribution in release mode
-	BUILD_MODE=release uv build --wheel
+	uv build --wheel
 
 .PHONY: build-wheel-debug
 build-wheel-debug: BUILD_MODE=debug
