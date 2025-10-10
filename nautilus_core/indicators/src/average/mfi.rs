@@ -56,7 +56,7 @@ impl Indicator for MoneyFlowIndex {
     }
 
     fn reset(&mut self) {
-        self.value = 0.0;
+        self.value = 0.5;  // Reset to neutral
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
@@ -82,7 +82,7 @@ impl MoneyFlowIndex {
 
         Self {
             period,
-            value: 0.0,
+            value: 0.5,  // Start neutral
             count: 0,
             initialized: false,
             has_inputs: false,
@@ -93,7 +93,7 @@ impl MoneyFlowIndex {
     }
 
     /// Update with a bar's typical price and volume.
-    pub fn update_raw(&mut self, typical_price: f64, volume: f64) {
+    pub fn update_raw(&mut self, typical_price: f64, volume: f64) -> f64 {
         // Seed on first input
         if !self.has_inputs {
             self.has_inputs = true;
@@ -101,11 +101,20 @@ impl MoneyFlowIndex {
             // First sample has no prior change; MFI conventionally starts from neutral (0.5)
             self.push_flows(0.0, 0.0);
             self.recompute();
-            return;
+            return self.value;
         }
 
         // Money flow = typical_price * volume; sign determined by price change
         let raw_flow = typical_price * volume;
+        
+        // Handle non-finite values
+        if !raw_flow.is_finite() {
+            self.push_flows(0.0, 0.0);
+            self.last_typical = typical_price;
+            self.recompute();
+            return self.value;
+        }
+        
         if typical_price > self.last_typical {
             self.push_flows(raw_flow, 0.0);
         } else if typical_price < self.last_typical {
@@ -117,6 +126,7 @@ impl MoneyFlowIndex {
 
         self.last_typical = typical_price;
         self.recompute();
+        self.value
     }
 
     fn push_flows(&mut self, pos: f64, neg: f64) {
@@ -137,6 +147,12 @@ impl MoneyFlowIndex {
     }
 
     fn recompute(&mut self) {
+        // Keep neutral until fully warmed up
+        if self.pos_flow.len() < self.period {
+            self.value = 0.5;
+            return;
+        }
+        
         let pos_sum: f64 = self.pos_flow.iter().sum();
         let neg_sum: f64 = self.neg_flow.iter().sum();
 
@@ -216,7 +232,7 @@ mod tests {
     fn test_reset(mut mfi_10: MoneyFlowIndex) {
         mfi_10.update_raw(100.0, 10.0);
         mfi_10.reset();
-        assert_eq!(mfi_10.value, 0.0);
+        assert_eq!(mfi_10.value, 0.5);  // Should reset to neutral
         assert_eq!(mfi_10.count, 0);
         assert!(!mfi_10.has_inputs());
         assert!(!mfi_10.initialized());

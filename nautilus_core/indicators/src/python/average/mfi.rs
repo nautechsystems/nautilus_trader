@@ -53,15 +53,13 @@ impl MoneyFlowIndex {
 
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, typical_price: f64, volume: f64) -> f64 {
-        self.update_raw(typical_price, volume);
-        self.value
+        self.update_raw(typical_price, volume)
     }
 
     #[pyo3(name = "update")]
     fn py_update(&mut self, close: f64, high: f64, low: f64, volume: f64) -> f64 {
         let typical = (high + low + close) / 3.0;
-        self.update_raw(typical, volume);
-        self.value
+        self.update_raw(typical, volume)
     }
 
     #[pyo3(name = "handle_bar")]
