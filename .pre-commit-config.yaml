@@ -138,7 +138,7 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.2.0
+    rev: v4.0.0
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
@@ -200,7 +200,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.24  # uv version
+    rev: 0.8.24  # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

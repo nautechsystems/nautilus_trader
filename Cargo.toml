@@ -178,7 +178,7 @@ parquet = { version = "56.2.0", default-features = false, features = [
   "arrow",
   "async",
 ] }
-pem = "3.0.5"
+pem = "3.0.6"
 pyo3 = { version = "0.26.0", default-features = false, features = [
   "chrono",
   "hashbrown",
@@ -278,7 +278,7 @@ tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
-toml = { version = "0.9.7", default-features = false, features = [
+toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
 ] }

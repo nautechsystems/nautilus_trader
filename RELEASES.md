@@ -48,7 +48,7 @@ This will be the final release with support for Python 3.11.
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
-- Implemented `PoolFlash` event in blockchain adapter (#3055), thanks @filipmacek
+- Implemented `PoolFlash` event in blockchain adapter (#3055, #3058), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -78,6 +78,7 @@ This will be the final release with support for Python 3.11.
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
+- Refined setting of flags in Makefile (#3060), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
 - Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
