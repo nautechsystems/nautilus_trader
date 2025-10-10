@@ -41,14 +41,16 @@ RESET  := $(shell tput -Txterm sgr0)
 #== Installation
 
 .PHONY: install
+install: BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
-	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
+install: BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode for development...)
-	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:  #-- Install dependencies only without building the package
@@ -58,40 +60,46 @@ install-just-deps:  #-- Install dependencies only without building the package
 #== Build
 
 .PHONY: build
+build: BUILD_MODE=release
 build:  #-- Build the package in release mode
-	BUILD_MODE=release uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 .PHONY: build-debug
+build-debug: BUILD_MODE=debug
 build-debug:  #-- Build the package in debug mode (recommended for development)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with verbose output...)
-	BUILD_MODE=debug uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode (errors will still be shown)...)
-	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-debug-pyo3
+build-debug-pyo3: BUILD_MODE=debug-pyo3
 build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with PyO3 debug symbols...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-wheel
+build-wheel: BUILD_MODE=release
 build-wheel:  #-- Build wheel distribution in release mode
 	BUILD_MODE=release uv build --wheel
 
 .PHONY: build-wheel-debug
+build-wheel-debug: BUILD_MODE=debug
 build-wheel-debug:  #-- Build wheel distribution in debug mode
-	BUILD_MODE=debug uv build --wheel
+	uv build --wheel
 
 .PHONY: build-dry-run
+build-dry-run: DRY_RUN=true
 build-dry-run:  #-- Show build commands without executing them
-	DRY_RUN=true uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 #== Clean
 
@@ -174,16 +182,19 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
+docs-python: BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
+docs-rust: RUSTDOCFLAGS="--enable-index-page -Zunstable-options"
 docs-rust:  #-- Build Rust documentation with cargo doc
-	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
+	cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
+docsrs-check: RUSTDOCFLAGS="--cfg docsrs -D warnings"
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
+	cargo hack --workspace doc --no-deps --all-features
 
 #== Rust Development
 
