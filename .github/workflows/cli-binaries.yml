@@ -192,9 +192,9 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Build CLI (no hypersync)
+      - name: Build CLI (all features)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --no-default-features
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
 
       - name: Package artifact
         shell: pwsh

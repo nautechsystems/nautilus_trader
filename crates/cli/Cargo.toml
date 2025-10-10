@@ -19,16 +19,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
-hypersync = ["nautilus-blockchain"]
+defi = [
+  "dep:alloy-primitives",
+  "dep:nautilus-blockchain",
+  "nautilus-model/defi",
+]
 
 [dependencies]
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
-nautilus-model = { workspace = true, features = ["defi"] }
+nautilus-model = { workspace = true }
 nautilus-blockchain = { workspace = true, features = [
   "hypersync",
 ], optional = true }
 
-alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
@@ -36,6 +39,8 @@ futures-util = { workspace = true }
 log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
 
 [[bin]]
 name = "nautilus"

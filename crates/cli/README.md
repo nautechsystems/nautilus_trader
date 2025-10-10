@@ -32,7 +32,7 @@ highest level, with the aim of supporting mission-critical, trading system backt
 This crate provides feature flags to control source code inclusion during compilation,
 depending on the intended use case:
 
-- `hypersync`: Enables Hypersync blockchain functionality for high-performance blockchain data access.
+- `defi`: Enables blockchain/DeFi commands including block sync, DEX pool sync, and pool analysis.
 
 ## Documentation
 

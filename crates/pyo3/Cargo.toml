@@ -33,6 +33,7 @@ extension-module = [
   "nautilus-cryptography/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-execution/extension-module",
+  "nautilus-hyperliquid/extension-module",
   "nautilus-indicators/extension-module",
   "nautilus-infrastructure/extension-module",
   "nautilus-live/extension-module",
