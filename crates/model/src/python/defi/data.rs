@@ -31,8 +31,8 @@ use crate::{
         Chain, Dex,
         chain::Blockchain,
         data::{
-            Block, PoolFeeCollect, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
-            Transaction,
+            Block, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolLiquidityUpdateType,
+            PoolSwap, Transaction,
         },
     },
     enums::OrderSide,
@@ -635,6 +635,165 @@ impl PoolFeeCollect {
     #[pyo3(name = "ts_init")]
     fn py_ts_init(&self) -> Option<u64> {
         self.ts_init.map(|x| x.as_u64())
+    }
+}
+
+#[pymethods]
+impl PoolFlash {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        chain: Chain,
+        dex: Dex,
+        pool_address: String,
+        block: u64,
+        transaction_hash: String,
+        transaction_index: u32,
+        log_index: u32,
+        sender: String,
+        recipient: String,
+        amount0: String,
+        amount1: String,
+        paid0: String,
+        paid1: String,
+        timestamp: u64,
+    ) -> PyResult<Self> {
+        let sender = sender.parse().map_err(to_pyvalue_err)?;
+        let recipient = recipient.parse().map_err(to_pyvalue_err)?;
+        let amount0 = amount0.parse().map_err(to_pyvalue_err)?;
+        let amount1 = amount1.parse().map_err(to_pyvalue_err)?;
+        let paid0 = paid0.parse().map_err(to_pyvalue_err)?;
+        let paid1 = paid1.parse().map_err(to_pyvalue_err)?;
+        Ok(Self::new(
+            Arc::new(chain),
+            Arc::new(dex),
+            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
+            block,
+            transaction_hash,
+            transaction_index,
+            log_index,
+            Some(timestamp.into()),
+            sender,
+            recipient,
+            amount0,
+            amount1,
+            paid0,
+            paid1,
+        ))
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __hash__(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.chain.chain_id.hash(&mut hasher);
+        self.transaction_hash.hash(&mut hasher);
+        self.log_index.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+        match op {
+            CompareOp::Eq => self == other,
+            CompareOp::Ne => self != other,
+            _ => panic!("Unsupported comparison for PoolFlash"),
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "chain")]
+    fn py_chain(&self) -> PyResult<Chain> {
+        Ok(self.chain.as_ref().clone())
+    }
+
+    #[getter]
+    #[pyo3(name = "dex")]
+    fn py_dex(&self) -> PyResult<Dex> {
+        Ok(self.dex.as_ref().clone())
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id()
+    }
+
+    #[getter]
+    #[pyo3(name = "pool_address")]
+    fn py_pool_address(&self) -> String {
+        self.pool_address.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "block")]
+    fn py_block(&self) -> u64 {
+        self.block
+    }
+
+    #[getter]
+    #[pyo3(name = "transaction_hash")]
+    fn py_transaction_hash(&self) -> &str {
+        &self.transaction_hash
+    }
+
+    #[getter]
+    #[pyo3(name = "transaction_index")]
+    fn py_transaction_index(&self) -> u32 {
+        self.transaction_index
+    }
+
+    #[getter]
+    #[pyo3(name = "log_index")]
+    fn py_log_index(&self) -> u32 {
+        self.log_index
+    }
+
+    #[getter]
+    #[pyo3(name = "sender")]
+    fn py_sender(&self) -> String {
+        self.sender.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "recipient")]
+    fn py_recipient(&self) -> String {
+        self.recipient.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount0")]
+    fn py_amount0(&self) -> String {
+        self.amount0.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "amount1")]
+    fn py_amount1(&self) -> String {
+        self.amount1.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "paid0")]
+    fn py_paid0(&self) -> String {
+        self.paid0.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "paid1")]
+    fn py_paid1(&self) -> String {
+        self.paid1.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "timestamp")]
+    fn py_timestamp(&self) -> Option<u64> {
+        self.ts_event.map(|x| x.as_u64())
     }
 }
 

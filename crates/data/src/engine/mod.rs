@@ -510,6 +510,13 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_pool_fee_collects)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which flash loan subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_flash(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_flash)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -595,6 +602,9 @@ impl DataEngine {
                 self.setup_pool_updater(&cmd.instrument_id);
             }
             DefiSubscribeCommand::PoolFeeCollects(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id);
+            }
+            DefiSubscribeCommand::PoolFlashEvents(cmd) => {
                 self.setup_pool_updater(&cmd.instrument_id);
             }
             _ => {}
@@ -1391,7 +1401,16 @@ impl DataEngine {
 
         let collect_topic = switchboard::get_defi_collect_topic(*instrument_id);
         if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(collect_topic.into(), handler, Some(self.msgbus_priority));
+            msgbus::subscribe(
+                collect_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let flash_topic = switchboard::get_defi_flash_topic(*instrument_id);
+        if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
         }
 
         self.pool_updaters.insert(*instrument_id, updater);

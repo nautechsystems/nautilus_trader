@@ -18,8 +18,9 @@ use nautilus_common::{
         DataEvent,
         defi::{
             DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
-            SubscribePool, SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates,
-            SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+            SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+            SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+            UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
@@ -456,6 +457,12 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
+            DefiSubscribeCommand::PoolFlashEvents(_cmd) => {
+                tracing::info!("Processing subscribe pool flash events command");
+                // Flash events subscription not yet implemented in blockchain adapter
+                tracing::warn!("Pool flash events subscription not yet implemented");
+                Ok(())
+            }
         }
     }
 
@@ -555,6 +562,12 @@ impl BlockchainDataClient {
                     )
                 }
 
+                Ok(())
+            }
+            DefiUnsubscribeCommand::PoolFlashEvents(_cmd) => {
+                tracing::info!("Processing unsubscribe pool flash events command");
+                // Flash events unsubscription not yet implemented in blockchain adapter
+                tracing::warn!("Pool flash events unsubscription not yet implemented");
                 Ok(())
             }
         }
@@ -692,6 +705,16 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
+    fn subscribe_pool_flash_events(
+        &mut self,
+        cmd: &SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFlashEvents(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
         let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::Blocks(cmd.clone()));
         self.command_tx.send(command)?;
@@ -726,6 +749,16 @@ impl DataClient for BlockchainDataClient {
     ) -> anyhow::Result<()> {
         let command =
             DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())
     }

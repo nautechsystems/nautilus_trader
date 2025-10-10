@@ -40,9 +40,9 @@ use nautilus_common::messages::data::{
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
     DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
-    SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
-    UnsubscribePool, UnsubscribePoolFeeCollects, UnsubscribePoolLiquidityUpdates,
-    UnsubscribePoolSwaps,
+    SubscribePoolFeeCollects, SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates,
+    SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+    UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
@@ -312,6 +312,20 @@ pub trait DataClient: Any + Sync + Send {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Subscribes to pool flash loan events for a specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_pool_flash_events(
+        &mut self,
+        cmd: &SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Unsubscribes from custom data types according to the command.
     ///
     /// # Errors
@@ -519,6 +533,20 @@ pub trait DataClient: Any + Sync + Send {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from pool flash loan events for a specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Sends a custom data request to the provider.
     ///
     /// # Errors
@@ -631,6 +659,8 @@ pub struct DataClientAdapter {
     pub subscriptions_pool_liquidity_updates: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
     pub subscriptions_pool_fee_collects: AHashSet<InstrumentId>,
+    #[cfg(feature = "defi")]
+    pub subscriptions_pool_flash: AHashSet<InstrumentId>,
 }
 
 impl Deref for DataClientAdapter {
@@ -712,6 +742,8 @@ impl DataClientAdapter {
             subscriptions_pool_liquidity_updates: AHashSet::new(),
             #[cfg(feature = "defi")]
             subscriptions_pool_fee_collects: AHashSet::new(),
+            #[cfg(feature = "defi")]
+            subscriptions_pool_flash: AHashSet::new(),
         }
     }
 
@@ -754,6 +786,7 @@ impl DataClientAdapter {
                 self.subscribe_pool_liquidity_updates(cmd)
             }
             DefiSubscribeCommand::PoolFeeCollects(cmd) => self.subscribe_pool_fee_collects(cmd),
+            DefiSubscribeCommand::PoolFlashEvents(cmd) => self.subscribe_pool_flash_events(cmd),
         } {
             log_command_error(&cmd, &e);
         }
@@ -792,6 +825,7 @@ impl DataClientAdapter {
                 self.unsubscribe_pool_liquidity_updates(cmd)
             }
             DefiUnsubscribeCommand::PoolFeeCollects(cmd) => self.unsubscribe_pool_fee_collects(cmd),
+            DefiUnsubscribeCommand::PoolFlashEvents(cmd) => self.unsubscribe_pool_flash_events(cmd),
         } {
             log_command_error(&cmd, &e);
         }
@@ -1309,6 +1343,23 @@ impl DataClientAdapter {
     }
 
     #[cfg(feature = "defi")]
+    /// Subscribes to pool flash loan events for the specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_pool_flash_events(
+        &mut self,
+        cmd: &SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        if !self.subscriptions_pool_flash.contains(&cmd.instrument_id) {
+            self.subscriptions_pool_flash.insert(cmd.instrument_id);
+            self.client.subscribe_pool_flash_events(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
     /// Unsubscribes from pool definition updates for the specified AMM pool.
     ///
     /// # Errors
@@ -1374,6 +1425,23 @@ impl DataClientAdapter {
             self.subscriptions_pool_fee_collects
                 .remove(&cmd.instrument_id);
             self.client.unsubscribe_pool_fee_collects(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from pool flash loan events for the specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        if self.subscriptions_pool_flash.contains(&cmd.instrument_id) {
+            self.subscriptions_pool_flash.remove(&cmd.instrument_id);
+            self.client.unsubscribe_pool_flash_events(cmd)?;
         }
         Ok(())
     }

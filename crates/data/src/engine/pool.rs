@@ -25,7 +25,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::handler::MessageHandler};
 use nautilus_model::{
-    defi::{PoolFeeCollect, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap},
+    defi::{PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap},
     identifiers::InstrumentId,
 };
 use ustr::Ustr;
@@ -85,6 +85,17 @@ impl PoolUpdater {
             log::error!("Failed to process pool fee collect: {e}");
         }
     }
+
+    fn handle_pool_flash(&self, event: &PoolFlash) {
+        if let Some(pool_profiler) = self
+            .cache
+            .borrow_mut()
+            .pool_profiler_mut(&self.instrument_id)
+            && let Err(e) = pool_profiler.process_flash(event)
+        {
+            log::error!("Failed to process pool flash: {e}");
+        }
+    }
 }
 
 impl MessageHandler for PoolUpdater {
@@ -100,10 +111,16 @@ impl MessageHandler for PoolUpdater {
 
         if let Some(update) = message.downcast_ref::<PoolLiquidityUpdate>() {
             self.handle_pool_liquidity_update(update);
+            return;
         }
 
         if let Some(update) = message.downcast_ref::<PoolFeeCollect>() {
             self.handle_pool_fee_collect(update);
+            return;
+        }
+
+        if let Some(flash) = message.downcast_ref::<PoolFlash>() {
+            self.handle_pool_flash(flash);
         }
     }
 
