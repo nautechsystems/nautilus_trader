@@ -1087,6 +1087,7 @@ impl BlockchainDataClientCore {
                 dex_extended.mint_created_event.as_ref(),
                 dex_extended.burn_created_event.as_ref(),
                 dex_extended.collect_created_event.as_ref(),
+                dex_extended.flash_created_event.as_deref(),
             );
             Ok(())
         } else {
