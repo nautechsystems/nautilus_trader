@@ -35,7 +35,7 @@ use base64::prelude::*;
 use nautilus_common::logging::{log_task_started, log_task_stopped};
 #[cfg(feature = "python")]
 use nautilus_core::python::IntoPyObjectNautilusExt;
-use nautilus_core::{env::get_env_var, time::get_atomic_clock_realtime};
+use nautilus_core::{env::get_or_env_var, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 #[cfg(feature = "python")]
@@ -92,10 +92,10 @@ impl CoinbaseIntxFixClient {
         portfolio_id: Option<String>,
     ) -> anyhow::Result<Self> {
         let endpoint = endpoint.unwrap_or("fix.international.coinbase.com:6130".to_string());
-        let api_key = api_key.unwrap_or(get_env_var("COINBASE_INTX_API_KEY")?);
-        let api_secret = api_secret.unwrap_or(get_env_var("COINBASE_INTX_API_SECRET")?);
-        let api_passphrase = api_passphrase.unwrap_or(get_env_var("COINBASE_INTX_API_PASSPHRASE")?);
-        let portfolio_id = portfolio_id.unwrap_or(get_env_var("COINBASE_INTX_PORTFOLIO_ID")?);
+        let api_key = get_or_env_var(api_key, "COINBASE_INTX_API_KEY")?;
+        let api_secret = get_or_env_var(api_secret, "COINBASE_INTX_API_SECRET")?;
+        let api_passphrase = get_or_env_var(api_passphrase, "COINBASE_INTX_API_PASSPHRASE")?;
+        let portfolio_id = get_or_env_var(portfolio_id, "COINBASE_INTX_PORTFOLIO_ID")?;
         let sender_comp_id = api_key.to_string();
         let target_comp_id = "CBINTLDC".to_string(); // Drop Copy endpoint
 

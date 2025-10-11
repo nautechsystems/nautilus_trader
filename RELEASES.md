@@ -119,6 +119,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Bybit account endpoint pagination handling
+- Fixed Coinbase Intx API credentials handling to allow passing explicitly
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
