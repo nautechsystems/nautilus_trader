@@ -157,6 +157,11 @@ cdef class ExecutionEngine(Component):
 
         self._pending_position_events: list[PositionEvent] = []
 
+        self._topic_cache_order_events: dict[StrategyId, str] = {}
+        self._topic_cache_position_events: dict[StrategyId, str] = {}
+        self._topic_cache_fill_events: dict[InstrumentId, str] = {}
+        self._topic_cache_commands: dict[ClientId, str] = {}
+
         # Configuration
         self.debug: bool = config.debug
         self.convert_quote_qty_to_base = config.convert_quote_qty_to_base
@@ -840,6 +845,38 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
+    cdef str _get_order_events_topic(self, StrategyId strategy_id):
+        cdef str topic = self._topic_cache_order_events.get(strategy_id)
+        if topic is None:
+            topic = f"events.order.{strategy_id}"
+            self._topic_cache_order_events[strategy_id] = topic
+
+        return topic
+
+    cdef str _get_position_events_topic(self, StrategyId strategy_id):
+        cdef str topic = self._topic_cache_position_events.get(strategy_id)
+        if topic is None:
+            topic = f"events.position.{strategy_id}"
+            self._topic_cache_position_events[strategy_id] = topic
+
+        return topic
+
+    cdef str _get_fill_events_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_fill_events.get(instrument_id)
+        if topic is None:
+            topic = f"events.fills.{instrument_id}"
+            self._topic_cache_fill_events[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_commands_topic(self, ClientId client_id):
+        cdef str topic = self._topic_cache_commands.get(client_id)
+        if topic is None:
+            topic = f"commands.trading.{client_id}"
+            self._topic_cache_commands[client_id] = topic
+
+        return topic
+
     cpdef void _set_position_id_counts(self):
         # For the internal position ID generator
         cdef list positions = self._cache.positions()
@@ -925,7 +962,7 @@ cdef class ExecutionEngine(Component):
         self._cache.update_order(order)
 
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id}",
+            topic=self._get_order_events_topic(order.strategy_id),
             msg=denied,
         )
         if self.snapshot_orders:
@@ -958,7 +995,7 @@ cdef class ExecutionEngine(Component):
 
         if command.client_id in self._external_clients:
             self._msgbus.publish_c(
-                topic=f"commands.trading.{command.client_id}",
+                topic=self._get_commands_topic(command.client_id),
                 msg=command,
             )
 
@@ -1189,7 +1226,7 @@ cdef class ExecutionEngine(Component):
         cdef OmsType oms_type
         if isinstance(event, OrderFilled):
             oms_type = self._determine_oms_type(event)
-            self._determine_position_id(event, oms_type)
+            self._determine_position_id(event, oms_type, order)
             self._apply_event_to_order(order, event)
             self._handle_order_fill(order, event, oms_type)
         else:
@@ -1200,7 +1237,7 @@ cdef class ExecutionEngine(Component):
         self._pending_position_events = []
 
         self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id}",
+            topic=self._get_order_events_topic(event.strategy_id),
             msg=event,
         )
 
@@ -1209,7 +1246,7 @@ cdef class ExecutionEngine(Component):
             Position position
         for pos_event in to_publish:
             self._msgbus.publish_c(
-                topic=f"events.position.{pos_event.strategy_id}",
+                topic=self._get_position_events_topic(pos_event.strategy_id),
                 msg=pos_event,
             )
 
@@ -1271,7 +1308,7 @@ cdef class ExecutionEngine(Component):
         self._handle_position_update(instrument, fill, oms_type)
 
         self._msgbus.publish_c(
-            topic=f"events.order.{fill.strategy_id}",
+            topic=self._get_order_events_topic(fill.strategy_id),
             msg=fill,
         )
 
@@ -1289,7 +1326,7 @@ cdef class ExecutionEngine(Component):
 
         return oms_type
 
-    cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
+    cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=None):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
 
@@ -1316,7 +1353,7 @@ cdef class ExecutionEngine(Component):
             return
 
         if oms_type == OmsType.HEDGING:
-            position_id = self._determine_hedging_position_id(fill)
+            position_id = self._determine_hedging_position_id(fill, order)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             position_id = self._determine_netting_position_id(fill)
@@ -1327,12 +1364,12 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
-        # TODO: Optimize away the need to fetch order from cache
-        cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
-            raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID",
-            )
+            order = self._cache.order(fill.client_order_id)
+            if order is None:
+                raise RuntimeError(
+                    f"Order for {fill.client_order_id!r} not found to determine position ID",
+                )
 
         # Check execution algorithm position ID
         if order.exec_algorithm_id is None or order.exec_spawn_id is None:
@@ -1350,18 +1387,19 @@ cdef class ExecutionEngine(Component):
             )
             self._log.debug(f"Assigned primary order {position_id!r}", LogColor.MAGENTA)
 
-    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
+    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=None):
         if fill.position_id is not None:
             if self.debug:
                 self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
             # Already assigned
             return fill.position_id
 
-        cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
-            raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID",
-            )
+            order = self._cache.order(fill.client_order_id)
+            if order is None:
+                raise RuntimeError(
+                    f"Order for {fill.client_order_id!r} not found to determine position ID",
+                )
 
         cdef:
             list exec_spawn_orders
@@ -1473,7 +1511,7 @@ cdef class ExecutionEngine(Component):
             # but without position linkage (since no position is created for spreads)
 
         self._msgbus.publish_c(
-            topic=f"events.fills.{fill.instrument_id}",
+            topic=self._get_fill_events_topic(fill.instrument_id),
             msg=fill,
         )
 
