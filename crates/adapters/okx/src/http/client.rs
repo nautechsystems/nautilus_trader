@@ -42,7 +42,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -141,11 +141,12 @@ pub struct OKXHttpInnerClient {
     credential: Option<Credential>,
     retry_manager: RetryManager<OKXHttpError>,
     cancellation_token: CancellationToken,
+    is_demo: bool,
 }
 
 impl Default for OKXHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None)
+        Self::new(None, Some(60), None, None, None, false)
             .expect("Failed to create default OKXHttpInnerClient")
     }
 }
@@ -243,6 +244,7 @@ impl OKXHttpInnerClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -262,7 +264,7 @@ impl OKXHttpInnerClient {
         Ok(Self {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::new(
-                Self::default_headers(),
+                Self::default_headers(is_demo),
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
@@ -271,6 +273,7 @@ impl OKXHttpInnerClient {
             credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
+            is_demo,
         })
     }
 
@@ -290,6 +293,7 @@ impl OKXHttpInnerClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -309,7 +313,7 @@ impl OKXHttpInnerClient {
         Ok(Self {
             base_url,
             client: HttpClient::new(
-                Self::default_headers(),
+                Self::default_headers(is_demo),
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
@@ -318,12 +322,20 @@ impl OKXHttpInnerClient {
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
             retry_manager,
             cancellation_token: CancellationToken::new(),
+            is_demo,
         })
     }
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
-    fn default_headers() -> HashMap<String, String> {
-        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+    fn default_headers(is_demo: bool) -> HashMap<String, String> {
+        let mut headers =
+            HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]);
+
+        if is_demo {
+            headers.insert("x-simulated-trading".to_string(), "1".to_string());
+        }
+
+        headers
     }
 
     /// Combine a base path with a `serde_urlencoded` query string if one exists.
@@ -863,7 +875,8 @@ pub struct OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None).expect("Failed to create default OKXHttpClient")
+        Self::new(None, Some(60), None, None, None, false)
+            .expect("Failed to create default OKXHttpClient")
     }
 }
 
@@ -883,6 +896,7 @@ impl OKXHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Arc::new(OKXHttpInnerClient::new(
@@ -891,6 +905,7 @@ impl OKXHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                is_demo,
             )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
@@ -904,7 +919,7 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None, None, false)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
@@ -923,10 +938,11 @@ impl OKXHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> anyhow::Result<Self> {
-        let api_key = api_key.unwrap_or(get_env_var("OKX_API_KEY")?);
-        let api_secret = api_secret.unwrap_or(get_env_var("OKX_API_SECRET")?);
-        let api_passphrase = api_passphrase.unwrap_or(get_env_var("OKX_API_PASSPHRASE")?);
+        let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
+        let api_secret = get_or_env_var(api_secret, "OKX_API_SECRET")?;
+        let api_passphrase = get_or_env_var(api_passphrase, "OKX_API_PASSPHRASE")?;
         let base_url = base_url.unwrap_or(OKX_HTTP_URL.to_string());
 
         Ok(Self {
@@ -939,6 +955,7 @@ impl OKXHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                is_demo,
             )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
@@ -1003,6 +1020,12 @@ impl OKXHttpClient {
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+    }
+
+    /// Returns whether the client is configured for demo trading.
+    #[must_use]
+    pub fn is_demo(&self) -> bool {
+        self.inner.is_demo
     }
 
     /// Requests the current server time from OKX.

@@ -103,6 +103,7 @@ impl OKXDataClient {
                 None,
                 None,
                 None,
+                config.is_demo,
             )?
         } else {
             OKXHttpClient::new(
@@ -111,6 +112,7 @@ impl OKXDataClient {
                 None,
                 None,
                 None,
+                config.is_demo,
             )?
         };
 

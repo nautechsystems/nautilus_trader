@@ -325,6 +325,37 @@ export OKX_API_PASSPHRASE="your_passphrase"
 
 Or pass them directly in the configuration (not recommended for production).
 
+## Demo trading
+
+OKX provides a demo trading environment for testing strategies without real funds. To use demo mode, set `is_demo=True` in your client configuration:
+
+```python
+config = TradingNodeConfig(
+    data_clients={
+        OKX: OKXDataClientConfig(
+            is_demo=True,  # Enable demo mode
+            # ... other config
+        ),
+    },
+    exec_clients={
+        OKX: OKXExecClientConfig(
+            is_demo=True,  # Enable demo mode
+            # ... other config
+        ),
+    },
+)
+```
+
+When demo mode is enabled:
+
+- REST API requests include the `x-simulated-trading: 1` header.
+- WebSocket connections use demo endpoints (`wspap.okx.com`).
+- The same API credentials are used as production.
+
+:::note
+You must use API keys created specifically for demo trading. Production API keys will not work in demo mode.
+:::
+
 ## Rate limiting
 
 The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults for both REST and WebSocket calls.

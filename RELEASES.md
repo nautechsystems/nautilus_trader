@@ -32,6 +32,7 @@ This will be the final release with support for Python 3.11.
 - Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
 - Added OKX conditional trigger orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
+- Added OKX demo account support
 - Added Polymarket native market orders support
 
 ### Breaking Changes
@@ -127,6 +128,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
 - Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
 - Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
+- Fixed OKX API credentials handling to allow passing explicitly
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq

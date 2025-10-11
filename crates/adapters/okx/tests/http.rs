@@ -253,7 +253,7 @@ async fn test_http_get_instruments_returns_data() {
         .inst_type(OKXInstrumentType::Spot)
         .build()
         .expect("failed to build instrument params");
-    let client = OKXHttpInnerClient::new(Some(base_url.clone()), Some(60), None, None, None)
+    let client = OKXHttpInnerClient::new(Some(base_url.clone()), Some(60), None, None, None, false)
         .expect("failed to create http client");
 
     let instruments = client
@@ -271,7 +271,7 @@ async fn test_http_get_balance_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None)
+    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None, false)
         .expect("failed to create http client");
 
     let result = client.http_get_balance().await;
@@ -297,6 +297,7 @@ async fn test_http_get_balance_with_credentials_succeeds() {
         None,
         None,
         None,
+        false,
     )
     .expect("failed to create authenticated client");
 
@@ -319,8 +320,9 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
         .inst_type(OKXInstrumentType::Spot)
         .build()
         .expect("failed to build instrument params");
-    let client = OKXHttpInnerClient::new(Some(base_url.clone()), Some(60), Some(0), None, None)
-        .expect("failed to create http client");
+    let client =
+        OKXHttpInnerClient::new(Some(base_url.clone()), Some(60), Some(0), None, None, false)
+            .expect("failed to create http client");
 
     let mut last_error = None;
     for _ in 0..5 {
@@ -345,7 +347,7 @@ async fn test_http_get_pending_orders_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None)
+    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None, false)
         .expect("failed to create anonymous client");
 
     let params = GetPendingOrdersParams {
@@ -376,6 +378,7 @@ async fn test_http_get_pending_orders_returns_live_orders() {
         None,
         None,
         None,
+        false,
     )
     .expect("failed to create authenticated client");
 
@@ -420,6 +423,7 @@ async fn test_http_get_order_history_applies_filters() {
         None,
         None,
         None,
+        false,
     )
     .expect("failed to create authenticated client");
 
@@ -469,6 +473,7 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
         None,
         None,
         None,
+        false,
     )
     .expect("failed to create authenticated client");
 
@@ -504,9 +509,15 @@ async fn test_request_trades_uses_after_before() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
-    let mut client =
-        nautilus_okx::http::client::OKXHttpClient::new(Some(base_url), Some(60), None, None, None)
-            .expect("failed to create http client");
+    let mut client = nautilus_okx::http::client::OKXHttpClient::new(
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+    )
+    .expect("failed to create http client");
 
     for instrument in load_instruments_any() {
         client.add_instrument(instrument);

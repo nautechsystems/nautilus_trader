@@ -6255,6 +6255,7 @@ class OKXHttpClient:
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        is_demo: bool = False,
     ) -> None: ...
     @staticmethod
     def from_env() -> OKXHttpClient: ...
