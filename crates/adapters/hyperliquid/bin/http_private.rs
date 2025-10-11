@@ -75,8 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get user fills
     match client.info_user_fills(user_address).await {
         Ok(fills) => {
-            tracing::info!("Fetched {} fills", fills.fills.len());
-            for (i, fill) in fills.fills.iter().take(3).enumerate() {
+            tracing::info!("Fetched {} fills", fills.len());
+            for (i, fill) in fills.iter().take(3).enumerate() {
                 tracing::info!("Fill {}: {} {} @ {}", i, fill.side, fill.sz, fill.px);
             }
         }

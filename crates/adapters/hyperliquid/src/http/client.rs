@@ -23,21 +23,26 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, RwLock},
     time::Duration,
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::instruments::InstrumentAny;
+use nautilus_model::{
+    identifiers::AccountId,
+    instruments::{Instrument, InstrumentAny},
+};
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, header::USER_AGENT};
 use serde_json::Value;
 use tokio::time::sleep;
+use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{exchange_url, info_url},
+        consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
     },
     http::{
@@ -88,6 +93,8 @@ pub struct HyperliquidHttpClient {
     rate_limit_backoff_base: Duration,
     rate_limit_backoff_cap: Duration,
     rate_limit_max_attempts_info: u32,
+    instruments: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
+    account_id: Option<AccountId>,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -122,6 +129,8 @@ impl HyperliquidHttpClient {
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
             rate_limit_max_attempts_info: 3,
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
         }
     }
 
@@ -150,6 +159,8 @@ impl HyperliquidHttpClient {
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
             rate_limit_max_attempts_info: 3,
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
         }
     }
 
@@ -192,6 +203,138 @@ impl HyperliquidHttpClient {
             .address()
     }
 
+    /// Add an instrument to the internal cache for report generation.
+    ///
+    /// This is required for parsing orders, fills, and positions into reports.
+    /// Instruments are stored under two keys:
+    /// 1. The Nautilus symbol (e.g., "BTC-USD-PERP")
+    /// 2. The Hyperliquid coin identifier (base currency, e.g., "BTC" or "vntls:vCURSOR")
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument lock cannot be acquired.
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
+        let mut instruments = self
+            .instruments
+            .write()
+            .expect("Failed to acquire write lock");
+
+        // Store by Nautilus symbol
+        let nautilus_symbol = instrument.id().symbol.inner();
+        instruments.insert(nautilus_symbol, instrument.clone());
+
+        // Store by Hyperliquid coin identifier (base currency)
+        // This allows lookup by the "coin" field returned in API responses
+        if let Some(base_currency) = instrument.base_currency() {
+            let coin_key = Ustr::from(base_currency.code.as_str());
+            instruments.insert(coin_key, instrument);
+        }
+    }
+
+    /// Get an instrument from cache, or create a synthetic one for vault tokens.
+    ///
+    /// Vault tokens (starting with "vntls:") are not available in the standard spotMeta API.
+    /// This method creates synthetic CurrencyPair instruments for vault tokens on-the-fly
+    /// to allow order/fill/position parsing to continue.
+    ///
+    /// For non-vault tokens that are not in cache, returns None and logs a warning.
+    /// This can happen if instruments weren't loaded properly or if there are new instruments
+    /// that weren't present during initialization.
+    ///
+    /// The synthetic instruments use reasonable defaults:
+    /// - Quote currency: USDC (most common quote for vault tokens)
+    /// - Price/size decimals: 8 (standard precision)
+    /// - Price increment: 0.00000001
+    /// - Size increment: 0.00000001
+    fn get_or_create_instrument(&self, coin: &Ustr) -> Option<InstrumentAny> {
+        // Try to get from cache first
+        {
+            let instruments = self
+                .instruments
+                .read()
+                .expect("Failed to acquire read lock");
+            if let Some(instrument) = instruments.get(coin) {
+                return Some(instrument.clone());
+            }
+        }
+
+        // If not found and it's a vault token, create a synthetic instrument
+        if coin.as_str().starts_with("vntls:") {
+            tracing::info!("Creating synthetic instrument for vault token: {}", coin);
+
+            let clock = nautilus_core::time::get_atomic_clock_realtime();
+            let ts_event = clock.get_time_ns();
+
+            // Create synthetic vault token instrument
+            let symbol_str = format!("{}-USDC-SPOT", coin);
+            let symbol = nautilus_model::identifiers::Symbol::new(&symbol_str);
+            let venue = *HYPERLIQUID_VENUE;
+            let instrument_id = nautilus_model::identifiers::InstrumentId::new(symbol, venue);
+
+            // Create currencies
+            let base_currency = nautilus_model::types::Currency::new(
+                coin.as_str(),
+                8, // precision
+                0, // ISO code (not applicable)
+                coin.as_str(),
+                nautilus_model::enums::CurrencyType::Crypto,
+            );
+
+            let quote_currency = nautilus_model::types::Currency::new(
+                "USDC",
+                6, // USDC standard precision
+                0,
+                "USDC",
+                nautilus_model::enums::CurrencyType::Crypto,
+            );
+
+            let price_increment = nautilus_model::types::Price::from("0.00000001");
+            let size_increment = nautilus_model::types::Quantity::from("0.00000001");
+
+            let instrument =
+                InstrumentAny::CurrencyPair(nautilus_model::instruments::CurrencyPair::new(
+                    instrument_id,
+                    symbol,
+                    base_currency,
+                    quote_currency,
+                    8, // price_precision
+                    8, // size_precision
+                    price_increment,
+                    size_increment,
+                    None, // price_increment
+                    None, // size_increment
+                    None, // maker_fee
+                    None, // taker_fee
+                    None, // margin_init
+                    None, // margin_maint
+                    None, // lot_size
+                    None, // max_quantity
+                    None, // min_quantity
+                    None, // max_notional
+                    None, // min_notional
+                    None, // max_price
+                    ts_event,
+                    ts_event,
+                ));
+
+            // Add to cache for future lookups
+            self.add_instrument(instrument.clone());
+
+            Some(instrument)
+        } else {
+            // For non-vault tokens, log warning and return None
+            tracing::warn!("Instrument not found in cache: {}", coin);
+            None
+        }
+    }
+
+    /// Set the account ID for this client.
+    ///
+    /// This is required for generating reports with the correct account ID.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+    }
+
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
@@ -199,7 +342,6 @@ impl HyperliquidHttpClient {
             ("Content-Type".to_string(), "application/json".to_string()),
         ])
     }
-
     // ---------------- INFO ENDPOINTS --------------------------------------------
 
     /// Get metadata about available markets.
@@ -525,6 +667,189 @@ impl HyperliquidHttpClient {
             .map_err(Error::from_http_client)
     }
 
+    /// Request order status reports for a user.
+    ///
+    /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
+    /// This method requires instruments to be added to the client cache via `add_instrument()`.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
+    /// will be created automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or parsing fails.
+    pub async fn request_order_status_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<nautilus_model::identifiers::InstrumentId>,
+    ) -> Result<Vec<nautilus_model::reports::OrderStatusReport>> {
+        let response = self.info_frontend_open_orders(user).await?;
+
+        // Parse the JSON response into a vector of orders
+        let orders: Vec<serde_json::Value> = serde_json::from_value(response)
+            .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
+
+        let mut reports = Vec::new();
+        let ts_init = nautilus_core::UnixNanos::default();
+
+        for order_value in orders {
+            // Parse the order data
+            let order: crate::websocket::messages::WsBasicOrderData =
+                match serde_json::from_value(order_value.clone()) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        tracing::warn!("Failed to parse order: {}", e);
+                        continue;
+                    }
+                };
+
+            // Get instrument from cache or create synthetic for vault tokens
+            let instrument = match self.get_or_create_instrument(&order.coin) {
+                Some(inst) => inst,
+                None => continue, // Skip if instrument not found
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Determine status from order data - orders from frontend_open_orders are open
+            let status = "open";
+
+            // Parse to OrderStatusReport
+            match crate::http::parse::parse_order_status_report_from_basic(
+                &order,
+                status,
+                &instrument,
+                self.account_id.unwrap_or_default(),
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Request fill reports for a user.
+    ///
+    /// Fetches user fills via `info_user_fills` and parses them into FillReports.
+    /// This method requires instruments to be added to the client cache via `add_instrument()`.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
+    /// will be created automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or parsing fails.
+    pub async fn request_fill_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<nautilus_model::identifiers::InstrumentId>,
+    ) -> Result<Vec<nautilus_model::reports::FillReport>> {
+        let fills_response = self.info_user_fills(user).await?;
+
+        let mut reports = Vec::new();
+        let ts_init = nautilus_core::UnixNanos::default();
+
+        for fill in fills_response {
+            // Get instrument from cache or create synthetic for vault tokens
+            let instrument = match self.get_or_create_instrument(&fill.coin) {
+                Some(inst) => inst,
+                None => continue, // Skip if instrument not found
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Parse to FillReport
+            match crate::http::parse::parse_fill_report(
+                &fill,
+                &instrument,
+                self.account_id.unwrap_or_default(),
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => tracing::error!("Failed to parse fill report: {e}"),
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Request position status reports for a user.
+    ///
+    /// Fetches clearinghouse state via `info_clearinghouse_state` and parses positions into PositionStatusReports.
+    /// This method requires instruments to be added to the client cache via `add_instrument()`.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
+    /// will be created automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or parsing fails.
+    pub async fn request_position_status_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<nautilus_model::identifiers::InstrumentId>,
+    ) -> Result<Vec<nautilus_model::reports::PositionStatusReport>> {
+        let state_response = self.info_clearinghouse_state(user).await?;
+
+        // Extract asset positions from the clearinghouse state
+        let asset_positions: Vec<serde_json::Value> = state_response
+            .get("assetPositions")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| Error::bad_request("assetPositions not found in clearinghouse state"))?
+            .clone();
+
+        let mut reports = Vec::new();
+        let ts_init = nautilus_core::UnixNanos::default();
+
+        for position_value in asset_positions {
+            // Extract coin from position data
+            let coin = position_value
+                .get("position")
+                .and_then(|p| p.get("coin"))
+                .and_then(|c| c.as_str())
+                .ok_or_else(|| Error::bad_request("coin not found in position"))?;
+
+            // Get instrument from cache - convert &str to Ustr for lookup
+            let coin_ustr = Ustr::from(coin);
+            let instrument = match self.get_or_create_instrument(&coin_ustr) {
+                Some(inst) => inst,
+                None => continue, // Skip if instrument not found
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Parse to PositionStatusReport
+            match crate::http::parse::parse_position_status_report(
+                &position_value,
+                &instrument,
+                self.account_id.unwrap_or_default(),
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => tracing::error!("Failed to parse position status report: {e}"),
+            }
+        }
+
+        Ok(reports)
+    }
+
     /// Best-effort gauge for diagnostics/metrics
     pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
         self.rest_limiter.snapshot().await
@@ -539,8 +864,11 @@ impl HyperliquidHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::{Instrument, InstrumentAny};
     use rstest::rstest;
+    use ustr::Ustr;
 
+    use super::HyperliquidHttpClient;
     use crate::http::query::InfoRequest;
 
     #[rstest]
@@ -561,5 +889,90 @@ mod tests {
         let pretty = serde_json::to_string_pretty(&val).unwrap();
         assert!(pretty.contains("\"type\": \"l2Book\""));
         assert!(pretty.contains("\"coin\": \"BTC\""));
+    }
+
+    #[rstest]
+    fn test_add_instrument_dual_key_storage() {
+        use nautilus_core::time::get_atomic_clock_realtime;
+        use nautilus_model::{
+            currencies::CURRENCY_MAP,
+            enums::CurrencyType,
+            identifiers::{InstrumentId, Symbol},
+            instruments::CurrencyPair,
+            types::{Currency, Price, Quantity},
+        };
+
+        let client = HyperliquidHttpClient::new(true, None);
+
+        // Create a test instrument with base currency "vntls:vCURSOR"
+        let base_code = "vntls:vCURSOR";
+        let quote_code = "USDC";
+
+        // Register the custom currency
+        {
+            let mut currency_map = CURRENCY_MAP.lock().unwrap();
+            if !currency_map.contains_key(base_code) {
+                currency_map.insert(
+                    base_code.to_string(),
+                    Currency::new(base_code, 8, 0, base_code, CurrencyType::Crypto),
+                );
+            }
+        }
+
+        let base_currency = Currency::new(base_code, 8, 0, base_code, CurrencyType::Crypto);
+        let quote_currency = Currency::new(quote_code, 6, 0, quote_code, CurrencyType::Crypto);
+
+        let symbol = Symbol::new("vntls:vCURSOR-USDC-SPOT");
+        let venue = *crate::common::consts::HYPERLIQUID_VENUE;
+        let instrument_id = InstrumentId::new(symbol, venue);
+
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns();
+
+        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            symbol,
+            base_currency,
+            quote_currency,
+            8,
+            8,
+            Price::from("0.00000001"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts,
+            ts,
+        ));
+
+        // Add the instrument
+        client.add_instrument(instrument.clone());
+
+        // Verify it can be looked up by Nautilus symbol
+        let instruments = client.instruments.read().unwrap();
+        let by_symbol = instruments.get(&Ustr::from("vntls:vCURSOR-USDC-SPOT"));
+        assert!(
+            by_symbol.is_some(),
+            "Instrument should be accessible by Nautilus symbol"
+        );
+
+        // Verify it can be looked up by Hyperliquid coin identifier (base currency)
+        let by_coin = instruments.get(&Ustr::from("vntls:vCURSOR"));
+        assert!(
+            by_coin.is_some(),
+            "Instrument should be accessible by Hyperliquid coin identifier"
+        );
+
+        // Verify both lookups return the same instrument
+        assert_eq!(by_symbol.unwrap().id(), by_coin.unwrap().id());
     }
 }

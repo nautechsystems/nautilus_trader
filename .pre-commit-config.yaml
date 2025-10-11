@@ -56,7 +56,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "ACN,Alo,crate,ot,socio-economic,zar"]
+        args: ["-L", "ACN,crate,ot,socio-economic,zar"]
 
   ##############################################################################
   #  Custom hooks

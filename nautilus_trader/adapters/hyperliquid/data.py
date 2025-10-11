@@ -134,9 +134,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
         ws_url = self._determine_ws_url(config)
         self._log.info(f"WebSocket URL: {ws_url}", LogColor.BLUE)
 
-        # TODO: Initialize HyperliquidWebSocketClient when available in nautilus_pyo3
-        # For now, use placeholder to prevent import errors
-        self._ws_client = None  # Will be replaced with nautilus_pyo3.HyperliquidWebSocketClient
+        # Initialize HyperliquidWebSocketClient from nautilus_pyo3.hyperliquid
+        self._ws_client = nautilus_pyo3.hyperliquid.HyperliquidWebSocketClient(url=ws_url)
         self._ws_client_futures: set[asyncio.Future] = set()
 
     def _determine_ws_url(self, config: HyperliquidDataClientConfig) -> str:
@@ -159,18 +158,23 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        # Connect WebSocket following OKX/BitMEX pattern
-        # TODO: Implement WebSocket connection when HyperliquidWebSocketClient is available
+        # Connect WebSocket following BitMEX pattern with positional arguments
         if self._ws_client is not None:
             instruments = self.instrument_provider.instruments_pyo3()
             await self._ws_client.connect(
-                instruments=instruments,
-                callback=self._handle_msg,
+                instruments,
+                self._handle_msg,
             )
-            await self._ws_client.wait_until_active(timeout_secs=10.0)
+            # NOTE: wait_until_active is not yet implemented in the Hyperliquid WebSocket client
+            # The connection still works without it, but we lose the synchronization guarantee
+            # that the WebSocket is fully active before subscribing
+            # TODO: Implement wait_until_active in HyperliquidWebSocketClient (Rust side)
+            # await self._ws_client.wait_until_active(timeout_secs=10.0)
             self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
         else:
-            self._log.warning("WebSocket client not implemented yet - using HTTP only mode")
+            self._log.error(
+                "WebSocket client is None - this should not happen after initialization",
+            )
 
         # Log authentication status if applicable
         if hasattr(self._config, "api_key") and self._config.api_key:
@@ -262,7 +266,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Subscribe to trade ticks following standard pattern.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            self._log.error("WebSocket client is None - cannot subscribe to trade ticks")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -273,7 +277,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Subscribe to quote ticks following standard pattern.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            self._log.error("WebSocket client is None - cannot subscribe to quote ticks")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -284,7 +288,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Subscribe to order book deltas following standard pattern.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            self._log.error("WebSocket client is None - cannot subscribe to order book deltas")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -299,7 +303,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Subscribe to order book snapshots following standard pattern.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            self._log.error("WebSocket client is None - cannot subscribe to order book snapshots")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -314,7 +318,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Subscribe to bars following standard pattern.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - subscription ignored")
+            self._log.error("WebSocket client is None - cannot subscribe to bars")
             return
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -339,7 +343,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Unsubscribe from trade ticks.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            self._log.error("WebSocket client is None - cannot unsubscribe from trade ticks")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -350,7 +354,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Unsubscribe from quote ticks.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            self._log.error("WebSocket client is None - cannot unsubscribe from quote ticks")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -361,7 +365,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Unsubscribe from order book updates.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            self._log.error("WebSocket client is None - cannot unsubscribe from order book")
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -372,7 +376,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         Unsubscribe from bars.
         """
         if self._ws_client is None:
-            self._log.warning("WebSocket client not implemented yet - unsubscription ignored")
+            self._log.error("WebSocket client is None - cannot unsubscribe from bars")
             return
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))

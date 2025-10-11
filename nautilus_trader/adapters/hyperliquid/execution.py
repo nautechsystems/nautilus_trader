@@ -150,6 +150,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.info("Loading instruments...", LogColor.BLUE)
         await self._instrument_provider.initialize()
         self._cache_instruments()
+
+        # Set account ID on HTTP client for report generation
+        if hasattr(self._client, "set_account_id"):
+            self._client.set_account_id(str(self.account_id))
+
         self._log.info(
             f"Loaded {len(self._instrument_provider.list_all())} instruments",
             LogColor.GREEN,
@@ -434,8 +439,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[OrderStatusReport]
 
         """
-        self._log.warning("Order status reports generation not yet implemented")
-        return []
+        if not hasattr(self._client, "request_order_status_reports"):
+            self._log.warning("Order status reports generation not yet implemented")
+            return []
+
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
+
+            self._log.info(f"Generated {len(reports)} order status report(s)", LogColor.GREEN)
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate order status reports: {e}")
+            return []
 
     async def generate_fill_reports(
         self,
@@ -454,8 +470,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[FillReport]
 
         """
-        self._log.warning("Fill reports generation not yet implemented")
-        return []
+        if not hasattr(self._client, "request_fill_reports"):
+            self._log.warning("Fill reports generation not yet implemented")
+            return []
+
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            reports = await self._client.request_fill_reports(instrument_id=instrument_id)
+
+            self._log.info(f"Generated {len(reports)} fill report(s)", LogColor.GREEN)
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+            return []
 
     async def generate_position_status_reports(
         self,
@@ -474,8 +501,21 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[PositionStatusReport]
 
         """
-        self._log.warning("Position status reports generation not yet implemented")
-        return []
+        if not hasattr(self._client, "request_position_status_reports"):
+            self._log.warning("Position status reports generation not yet implemented")
+            return []
+
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            reports = await self._client.request_position_status_reports(
+                instrument_id=instrument_id,
+            )
+
+            self._log.info(f"Generated {len(reports)} position status report(s)", LogColor.GREEN)
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate position status reports: {e}")
+            return []
 
     # -- QUERIES ------------------------------------------------------------------------------------
 

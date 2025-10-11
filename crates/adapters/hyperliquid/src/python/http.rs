@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
-    python::instruments::instrument_any_to_pyobject,
+    python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
 use pyo3::{prelude::*, types::PyList};
 use serde_json::to_string;
@@ -29,6 +29,19 @@ impl HyperliquidHttpClient {
     #[pyo3(signature = (is_testnet=false, timeout_secs=None))]
     fn py_new(is_testnet: bool, timeout_secs: Option<u64>) -> Self {
         Self::new(is_testnet, timeout_secs)
+    }
+
+    /// Create an authenticated HTTP client from environment variables.
+    ///
+    /// Reads credentials from:
+    /// - `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` (private key)
+    /// - `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` (optional vault address)
+    ///
+    /// Returns an authenticated HyperliquidHttpClient or raises an error if credentials are missing.
+    #[staticmethod]
+    #[pyo3(name = "from_env")]
+    fn py_from_env() -> PyResult<Self> {
+        Self::from_env().map_err(to_pyvalue_err)
     }
 
     /// Get perpetuals metadata as a JSON string.
@@ -178,6 +191,106 @@ impl HyperliquidHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
             to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Add an instrument to the internal cache.
+    ///
+    /// This is required before calling report generation methods.
+    #[pyo3(name = "add_instrument")]
+    fn py_add_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
+    }
+
+    /// Set the account ID for report generation.
+    ///
+    /// This is required before calling report generation methods.
+    #[pyo3(name = "set_account_id")]
+    fn py_set_account_id(&mut self, account_id: &str) -> PyResult<()> {
+        let account_id = nautilus_model::identifiers::AccountId::from(account_id);
+        self.set_account_id(account_id);
+        Ok(())
+    }
+
+    /// Request order status reports for the authenticated user.
+    ///
+    /// Returns a list of OrderStatusReport objects.
+    #[pyo3(name = "request_order_status_reports")]
+    fn py_request_order_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: Option<&str>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_id = instrument_id.map(nautilus_model::identifiers::InstrumentId::from);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let reports = client
+                .request_order_status_reports(&user_address, instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Request fill reports for the authenticated user.
+    ///
+    /// Returns a list of FillReport objects.
+    #[pyo3(name = "request_fill_reports")]
+    fn py_request_fill_reports<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: Option<&str>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_id = instrument_id.map(nautilus_model::identifiers::InstrumentId::from);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let reports = client
+                .request_fill_reports(&user_address, instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Request position status reports for the authenticated user.
+    ///
+    /// Returns a list of PositionStatusReport objects.
+    #[pyo3(name = "request_position_status_reports")]
+    fn py_request_position_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: Option<&str>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_id = instrument_id.map(nautilus_model::identifiers::InstrumentId::from);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let reports = client
+                .request_position_status_reports(&user_address, instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
         })
     }
 }

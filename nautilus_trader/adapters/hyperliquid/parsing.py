@@ -84,7 +84,7 @@ def order_to_hyperliquid_json(order: Order) -> str:
         elif order.time_in_force == TimeInForce.IOC:
             tif = "Ioc"
         elif order.time_in_force == TimeInForce.FOK:
-            tif = "Alo"  # Alo = All-or-none (Hyperliquid TIF)
+            tif = "Ioc"  # FOK maps to IOC in Hyperliquid (no native FOK support)
         else:
             tif = "Gtc"  # Default to GTC
 
@@ -162,7 +162,7 @@ def orders_to_hyperliquid_json(orders: list[Order]) -> str:
             elif order.time_in_force == TimeInForce.IOC:
                 tif = "Ioc"
             elif order.time_in_force == TimeInForce.FOK:
-                tif = "Alo"  # Alo = All-or-none (Hyperliquid TIF)
+                tif = "Ioc"  # FOK maps to IOC in Hyperliquid (no native FOK support)
             else:
                 tif = "Gtc"
 

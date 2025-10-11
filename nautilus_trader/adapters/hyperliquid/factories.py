@@ -76,12 +76,17 @@ def get_cached_hyperliquid_http_client(
         The Hyperliquid HTTP client instance.
 
     """
-    # The PyO3 HyperliquidHttpClient only takes is_testnet and timeout_secs
-    # Credentials are handled via environment variables internally
-    return HyperliquidHttpClient(
-        is_testnet=testnet,
-        timeout_secs=timeout_secs,
-    )
+    # If credentials are needed (for execution client), try to create authenticated client
+    # The from_env() method will read HYPERLIQUID_PK/HYPERLIQUID_TESTNET_PK from environment
+    try:
+        # Try to create an authenticated client from environment variables
+        return HyperliquidHttpClient.from_env()
+    except Exception:
+        # If no credentials in environment, create unauthenticated client (for data only)
+        return HyperliquidHttpClient(
+            is_testnet=testnet,
+            timeout_secs=timeout_secs,
+        )
 
 
 @lru_cache(1)

@@ -25,13 +25,21 @@ use pyo3::prelude::*;
 /// Loaded as `nautilus_pyo3.hyperliquid`.
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Register HTTP client
     m.add_class::<crate::http::HyperliquidHttpClient>()?;
+
+    // Register WebSocket client
+    m.add_class::<websocket::PyHyperliquidWebSocketClient>()?;
 
     // Register conditional order enums
     m.add_class::<crate::common::enums::HyperliquidTpSl>()?;
     m.add_class::<crate::common::enums::HyperliquidTriggerPriceType>()?;
     m.add_class::<crate::common::enums::HyperliquidConditionalOrderType>()?;
     m.add_class::<crate::common::enums::HyperliquidTrailingOffsetType>()?;
+
+    // Register URL helper functions
+    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_http_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_ws_url, m)?)?;
 
     Ok(())
 }
