@@ -28,7 +28,7 @@ use std::{
 
 use nautilus_core::{
     UUID4, UnixNanos,
-    correctness::{FAILED, check_valid_string},
+    correctness::{FAILED, check_valid_string_ascii},
     datetime::floor_to_nearest_microsecond,
     time::get_atomic_clock_realtime,
 };
@@ -309,7 +309,7 @@ impl TestTimer {
         stop_time_ns: Option<UnixNanos>,
         fire_immediately: bool,
     ) -> Self {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
+        check_valid_string_ascii(name, stringify!(name)).expect(FAILED);
 
         let next_time_ns = if fire_immediately {
             start_time_ns
@@ -455,7 +455,7 @@ impl LiveTimer {
         fire_immediately: bool,
         sender: Option<Arc<dyn TimeEventSender>>,
     ) -> Self {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
+        check_valid_string_ascii(name, stringify!(name)).expect(FAILED);
 
         let next_time_ns = if fire_immediately {
             start_time_ns.as_u64()

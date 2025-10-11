@@ -29,7 +29,7 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
     AtomicTime, UnixNanos,
-    correctness::{check_positive_u64, check_predicate_true, check_valid_string},
+    correctness::{check_positive_u64, check_predicate_true, check_valid_string_ascii},
     time::get_atomic_clock_realtime,
 };
 use thousands::Separable;
@@ -481,7 +481,7 @@ impl Clock for TestClock {
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string_ascii(name, stringify!(name))?;
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
@@ -548,7 +548,7 @@ impl Clock for TestClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string_ascii(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
@@ -772,7 +772,7 @@ impl Clock for LiveClock {
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string_ascii(name, stringify!(name))?;
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
@@ -853,7 +853,7 @@ impl Clock for LiveClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string_ascii(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),

@@ -67,6 +67,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
+- Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved order books error handling, state integrity, and pprint/display

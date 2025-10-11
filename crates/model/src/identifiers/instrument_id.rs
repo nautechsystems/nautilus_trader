@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::check_valid_string_ascii;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
@@ -82,8 +82,8 @@ impl FromStr for InstrumentId {
     fn from_str(s: &str) -> anyhow::Result<Self> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => {
-                check_valid_string(symbol_part, stringify!(value))?;
-                check_valid_string(venue_part, stringify!(value))?;
+                check_valid_string_ascii(symbol_part, stringify!(value))?;
+                check_valid_string_ascii(venue_part, stringify!(value))?;
 
                 let venue = Venue::new_checked(venue_part)?;
 
