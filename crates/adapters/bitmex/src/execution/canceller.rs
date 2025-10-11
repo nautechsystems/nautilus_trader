@@ -14,6 +14,21 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Cancel request broadcaster for redundant order cancellation.
+//!
+//! This module provides the [`CancelBroadcaster`] which fans out cancel requests
+//! to multiple HTTP clients in parallel for redundancy. Key design patterns:
+//!
+//! - **Dependency injection via traits**: Uses `CancelExecutor` trait to abstract
+//!   the HTTP client, enabling testing without `#[cfg(test)]` conditional compilation.
+//! - **Trait objects over generics**: Uses `Arc<dyn CancelExecutor>` to avoid
+//!   generic type parameters on the public API (simpler Python FFI).
+//! - **Short-circuit on first success**: Aborts remaining requests once any client
+//!   succeeds, minimizing latency.
+//! - **Idempotent success handling**: Recognizes "already cancelled" responses as
+//!   successful outcomes.
+
+// TODO: Replace boxed futures in `CancelExecutor` once stable async trait object support
+// lands so we can drop the per-call heap allocation
 
 use std::{
     sync::{
@@ -25,12 +40,131 @@ use std::{
 
 use futures_util::future;
 use nautilus_model::{
+    enums::OrderSide,
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::InstrumentAny,
     reports::OrderStatusReport,
 };
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
 use crate::{common::consts::BITMEX_HTTP_TESTNET_URL, http::client::BitmexHttpClient};
+
+/// Trait for order cancellation operations.
+///
+/// This trait abstracts the execution layer to enable dependency injection and testing
+/// without conditional compilation. The broadcaster holds executors as `Arc<dyn CancelExecutor>`
+/// to avoid generic type parameters that would complicate the Python FFI boundary.
+///
+/// # Thread Safety
+///
+/// All methods must be safe to call concurrently from multiple threads. Implementations
+/// should use interior mutability (e.g., `Arc<Mutex<T>>`) if mutable state is required.
+///
+/// # Error Handling
+///
+/// Methods return `anyhow::Result` for flexibility. Implementers should provide
+/// meaningful error messages that can be logged and tracked by the broadcaster.
+///
+/// # Implementation Note
+///
+/// This trait does not require `Clone` because executors are wrapped in `Arc` at the
+/// `TransportClient` level. This allows `BitmexHttpClient` (which doesn't implement
+/// `Clone`) to be used without modification.
+trait CancelExecutor: Send + Sync {
+    /// Adds an instrument for caching.
+    fn add_instrument(&self, instrument: InstrumentAny);
+
+    /// Performs a health check on the executor.
+    fn health_check(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>;
+
+    /// Cancels a single order.
+    fn cancel_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
+    >;
+
+    /// Cancels multiple orders.
+    fn cancel_orders(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_ids: Option<Vec<ClientOrderId>>,
+        venue_order_ids: Option<Vec<VenueOrderId>>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
+    >;
+
+    /// Cancels all orders for an instrument.
+    fn cancel_all_orders(
+        &self,
+        instrument_id: InstrumentId,
+        order_side: Option<OrderSide>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
+    >;
+}
+
+impl CancelExecutor for BitmexHttpClient {
+    fn add_instrument(&self, instrument: InstrumentAny) {
+        BitmexHttpClient::add_instrument(self, instrument);
+    }
+
+    fn health_check(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+        Box::pin(async move {
+            BitmexHttpClient::http_get_server_time(self)
+                .await
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("{e}"))
+        })
+    }
+
+    fn cancel_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
+    > {
+        Box::pin(async move {
+            BitmexHttpClient::cancel_order(self, instrument_id, client_order_id, venue_order_id)
+                .await
+        })
+    }
+
+    fn cancel_orders(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_ids: Option<Vec<ClientOrderId>>,
+        venue_order_ids: Option<Vec<VenueOrderId>>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
+    > {
+        Box::pin(async move {
+            BitmexHttpClient::cancel_orders(self, instrument_id, client_order_ids, venue_order_ids)
+                .await
+        })
+    }
+
+    fn cancel_all_orders(
+        &self,
+        instrument_id: InstrumentId,
+        order_side: Option<nautilus_model::enums::OrderSide>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
+    > {
+        Box::pin(async move {
+            BitmexHttpClient::cancel_all_orders(self, instrument_id, order_side).await
+        })
+    }
+}
 
 /// Configuration for the cancel broadcaster.
 #[derive(Debug, Clone)]
@@ -101,25 +235,15 @@ impl Default for CancelBroadcasterConfig {
 /// Transport client wrapper with health monitoring.
 #[derive(Clone)]
 struct TransportClient {
-    client: BitmexHttpClient,
+    /// Executor wrapped in Arc to enable cloning without requiring Clone on CancelExecutor.
+    ///
+    /// BitmexHttpClient doesn't implement Clone, so we use reference counting to share
+    /// the executor across multiple TransportClient clones.
+    executor: Arc<dyn CancelExecutor>,
     client_id: String,
     healthy: Arc<AtomicBool>,
     cancel_count: Arc<AtomicU64>,
     error_count: Arc<AtomicU64>,
-    #[cfg(test)]
-    #[allow(clippy::type_complexity)]
-    test_handler: Option<
-        Arc<
-            dyn Fn(
-                    InstrumentId,
-                    Option<ClientOrderId>,
-                    Option<VenueOrderId>,
-                ) -> std::pin::Pin<
-                    Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send>,
-                > + Send
-                + Sync,
-        >,
-    >,
 }
 
 impl std::fmt::Debug for TransportClient {
@@ -134,15 +258,13 @@ impl std::fmt::Debug for TransportClient {
 }
 
 impl TransportClient {
-    fn new(client: BitmexHttpClient, client_id: String) -> Self {
+    fn new<E: CancelExecutor + 'static>(executor: E, client_id: String) -> Self {
         Self {
-            client,
+            executor: Arc::new(executor),
             client_id,
             healthy: Arc::new(AtomicBool::new(true)),
             cancel_count: Arc::new(AtomicU64::new(0)),
             error_count: Arc::new(AtomicU64::new(0)),
-            #[cfg(test)]
-            test_handler: None,
         }
     }
 
@@ -161,7 +283,7 @@ impl TransportClient {
     async fn health_check(&self, timeout_secs: u64) -> bool {
         match tokio::time::timeout(
             Duration::from_secs(timeout_secs),
-            self.client.http_get_server_time(),
+            self.executor.health_check(),
         )
         .await
         {
@@ -190,22 +312,8 @@ impl TransportClient {
     ) -> anyhow::Result<OrderStatusReport> {
         self.cancel_count.fetch_add(1, Ordering::Relaxed);
 
-        #[cfg(test)]
-        if let Some(handler) = &self.test_handler {
-            return match handler(instrument_id, client_order_id, venue_order_id).await {
-                Ok(report) => {
-                    self.mark_healthy();
-                    Ok(report)
-                }
-                Err(e) => {
-                    self.error_count.fetch_add(1, Ordering::Relaxed);
-                    Err(e)
-                }
-            };
-        }
-
         match self
-            .client
+            .executor
             .cancel_order(instrument_id, client_order_id, venue_order_id)
             .await
         {
@@ -406,11 +514,111 @@ impl CancelBroadcaster {
             .any(|pattern| error_message.contains(pattern))
     }
 
+    /// Processes cancel request results, handling success, idempotent success, and failures.
+    ///
+    /// This helper consolidates the common error handling loop used across all broadcast methods.
+    async fn process_cancel_results<T>(
+        &self,
+        mut handles: Vec<JoinHandle<(String, anyhow::Result<T>)>>,
+        idempotent_result: impl FnOnce() -> anyhow::Result<T>,
+        operation: &str,
+        params: String,
+        idempotent_reason: &str,
+    ) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+    {
+        let mut errors = Vec::new();
+
+        while !handles.is_empty() {
+            let current_handles = std::mem::take(&mut handles);
+            let (result, _idx, remaining) = future::select_all(current_handles).await;
+            handles = remaining.into_iter().collect();
+
+            match result {
+                Ok((client_id, Ok(result))) => {
+                    // First success - abort remaining handles
+                    for handle in &handles {
+                        handle.abort();
+                    }
+                    self.successful_cancels.fetch_add(1, Ordering::Relaxed);
+                    tracing::debug!(
+                        "{} broadcast succeeded [{}] {}",
+                        operation,
+                        client_id,
+                        params
+                    );
+                    return Ok(result);
+                }
+                Ok((client_id, Err(e))) => {
+                    let error_msg = e.to_string();
+
+                    if self.is_idempotent_success(&error_msg) {
+                        // First idempotent success - abort remaining handles and return success
+                        for handle in &handles {
+                            handle.abort();
+                        }
+                        self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
+                        tracing::debug!(
+                            "Idempotent success [{}] - {}: {} {}",
+                            client_id,
+                            idempotent_reason,
+                            error_msg,
+                            params
+                        );
+                        return idempotent_result();
+                    }
+
+                    if self.is_expected_reject(&error_msg) {
+                        self.expected_rejects.fetch_add(1, Ordering::Relaxed);
+                        tracing::debug!(
+                            "Expected {} rejection [{}]: {} {}",
+                            operation.to_lowercase(),
+                            client_id,
+                            error_msg,
+                            params
+                        );
+                        errors.push(error_msg);
+                    } else {
+                        tracing::warn!(
+                            "{} request failed [{}]: {} {}",
+                            operation,
+                            client_id,
+                            error_msg,
+                            params
+                        );
+                        errors.push(error_msg);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("{} task join error: {e:?}", operation);
+                    errors.push(format!("Task panicked: {e:?}"));
+                }
+            }
+        }
+
+        // All tasks failed
+        self.failed_cancels.fetch_add(1, Ordering::Relaxed);
+        tracing::error!(
+            "All {} requests failed: {:?} {}",
+            operation.to_lowercase(),
+            errors,
+            params
+        );
+        Err(anyhow::anyhow!(
+            "All {} requests failed: {:?}",
+            operation.to_lowercase(),
+            errors
+        ))
+    }
+
     /// Broadcasts a single cancel request to all healthy clients in parallel.
     ///
-    /// Returns `Ok(Some(report))` if successfully cancelled with a report,
-    /// `Ok(None)` if the order was already cancelled (idempotent success),
-    /// or `Err` if all requests failed.
+    /// # Returns
+    ///
+    /// - `Ok(Some(report))` if successfully cancelled with a report.
+    /// - `Ok(None)` if the order was already cancelled (idempotent success).
+    /// - `Err` if all requests failed.
     ///
     /// # Errors
     ///
@@ -444,90 +652,24 @@ impl CancelBroadcaster {
                 let client_id = transport.client_id.clone();
                 let result = transport
                     .cancel_order(instrument_id, client_order_id, venue_order_id)
-                    .await;
+                    .await
+                    .map(Some); // Wrap success in Some for Option<OrderStatusReport>
                 (client_id, result)
             });
             handles.push(handle);
         }
 
-        // Wait for first success or all failures
-        let mut errors = Vec::new();
-
-        while !handles.is_empty() {
-            let current_handles = std::mem::take(&mut handles);
-            let (result, _idx, remaining) = future::select_all(current_handles).await;
-            handles = remaining.into_iter().collect();
-
-            match result {
-                Ok((client_id, Ok(report))) => {
-                    // First success - abort remaining handles
-                    for handle in &handles {
-                        handle.abort();
-                    }
-                    self.successful_cancels.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!(
-                        "Cancel broadcast succeeded [{}] (client_order_id={:?}, venue_order_id={:?})",
-                        client_id,
-                        client_order_id,
-                        venue_order_id
-                    );
-                    return Ok(Some(report));
-                }
-                Ok((client_id, Err(e))) => {
-                    let error_msg = e.to_string();
-
-                    // Check if this is an idempotent success (order already cancelled/not found)
-                    if self.is_idempotent_success(&error_msg) {
-                        // First idempotent success - abort remaining handles and return success
-                        for handle in &handles {
-                            handle.abort();
-                        }
-                        self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Idempotent success [{}] - order already cancelled/not found: {} (client_order_id={:?}, venue_order_id={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_id,
-                            venue_order_id
-                        );
-                        return Ok(None);
-                    } else if self.is_expected_reject(&error_msg) {
-                        self.expected_rejects.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Expected cancel rejection [{}]: {} (client_order_id={:?}, venue_order_id={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_id,
-                            venue_order_id
-                        );
-                        errors.push(error_msg);
-                    } else {
-                        tracing::warn!(
-                            "Cancel request failed [{}]: {} (client_order_id={:?}, venue_order_id={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_id,
-                            venue_order_id
-                        );
-                        errors.push(error_msg);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Cancel task join error: {e:?}");
-                    errors.push(format!("Task panicked: {e:?}"));
-                }
-            }
-        }
-
-        // All tasks failed
-        self.failed_cancels.fetch_add(1, Ordering::Relaxed);
-        tracing::error!(
-            "All cancel requests failed: {:?} (client_order_id={:?}, venue_order_id={:?})",
-            errors,
-            client_order_id,
-            venue_order_id
-        );
-        Err(anyhow::anyhow!("All cancel requests failed: {:?}", errors))
+        self.process_cancel_results(
+            handles,
+            || Ok(None),
+            "Cancel",
+            format!(
+                "(client_order_id={:?}, venue_order_id={:?})",
+                client_order_id, venue_order_id
+            ),
+            "order already cancelled/not found",
+        )
+        .await
     }
 
     /// Broadcasts a batch cancel request to all healthy clients in parallel.
@@ -566,7 +708,7 @@ impl CancelBroadcaster {
             let handle = tokio::spawn(async move {
                 let client_id = transport.client_id.clone();
                 let result = transport
-                    .client
+                    .executor
                     .cancel_orders(instrument_id, client_order_ids_clone, venue_order_ids_clone)
                     .await;
                 (client_id, result)
@@ -574,87 +716,17 @@ impl CancelBroadcaster {
             handles.push(handle);
         }
 
-        // Wait for first success or all failures
-        let mut errors = Vec::new();
-
-        while !handles.is_empty() {
-            let current_handles = std::mem::take(&mut handles);
-            let (result, _idx, remaining) = future::select_all(current_handles).await;
-            handles = remaining.into_iter().collect();
-
-            match result {
-                Ok((client_id, Ok(reports))) => {
-                    // First success - abort remaining handles
-                    for handle in &handles {
-                        handle.abort();
-                    }
-                    self.successful_cancels.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!(
-                        "Batch cancel broadcast succeeded [{}] (client_order_ids={:?}, venue_order_ids={:?})",
-                        client_id,
-                        client_order_ids,
-                        venue_order_ids
-                    );
-                    return Ok(reports);
-                }
-                Ok((client_id, Err(e))) => {
-                    let error_msg = e.to_string();
-
-                    // Check if this is an idempotent success (order already cancelled/not found)
-                    if self.is_idempotent_success(&error_msg) {
-                        // First idempotent success - abort remaining handles and return success
-                        for handle in &handles {
-                            handle.abort();
-                        }
-                        self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Idempotent success [{}] - orders already cancelled/not found: {} (client_order_ids={:?}, venue_order_ids={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_ids,
-                            venue_order_ids
-                        );
-                        return Ok(Vec::new());
-                    } else if self.is_expected_reject(&error_msg) {
-                        self.expected_rejects.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Expected batch cancel rejection [{}]: {} (client_order_ids={:?}, venue_order_ids={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_ids,
-                            venue_order_ids
-                        );
-                        errors.push(error_msg);
-                    } else {
-                        tracing::warn!(
-                            "Batch cancel request failed [{}]: {} (client_order_ids={:?}, venue_order_ids={:?})",
-                            client_id,
-                            error_msg,
-                            client_order_ids,
-                            venue_order_ids
-                        );
-                        errors.push(error_msg);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Batch cancel task join error: {e:?}");
-                    errors.push(format!("Task panicked: {e:?}"));
-                }
-            }
-        }
-
-        // All tasks failed
-        self.failed_cancels.fetch_add(1, Ordering::Relaxed);
-        tracing::error!(
-            "All batch cancel requests failed: {:?} (client_order_ids={:?}, venue_order_ids={:?})",
-            errors,
-            client_order_ids,
-            venue_order_ids
-        );
-        Err(anyhow::anyhow!(
-            "All batch cancel requests failed: {:?}",
-            errors
-        ))
+        self.process_cancel_results(
+            handles,
+            || Ok(Vec::new()),
+            "Batch cancel",
+            format!(
+                "(client_order_ids={:?}, venue_order_ids={:?})",
+                client_order_ids, venue_order_ids
+            ),
+            "orders already cancelled/not found",
+        )
+        .await
     }
 
     /// Broadcasts a cancel all request to all healthy clients in parallel.
@@ -689,7 +761,7 @@ impl CancelBroadcaster {
             let handle = tokio::spawn(async move {
                 let client_id = transport.client_id.clone();
                 let result = transport
-                    .client
+                    .executor
                     .cancel_all_orders(instrument_id, order_side)
                     .await;
                 (client_id, result)
@@ -697,83 +769,17 @@ impl CancelBroadcaster {
             handles.push(handle);
         }
 
-        // Wait for first success or all failures
-        let mut errors = Vec::new();
-
-        while !handles.is_empty() {
-            let current_handles = std::mem::take(&mut handles);
-            let (result, _idx, remaining) = future::select_all(current_handles).await;
-            handles = remaining.into_iter().collect();
-
-            match result {
-                Ok((client_id, Ok(reports))) => {
-                    // First success - abort remaining handles
-                    for handle in &handles {
-                        handle.abort();
-                    }
-                    self.successful_cancels.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!(
-                        "Cancel all broadcast succeeded [{}] (instrument_id={}, order_side={:?})",
-                        client_id,
-                        instrument_id,
-                        order_side
-                    );
-                    return Ok(reports);
-                }
-                Ok((client_id, Err(e))) => {
-                    let error_msg = e.to_string();
-
-                    // Check if this is an idempotent success (order already cancelled/not found)
-                    if self.is_idempotent_success(&error_msg) {
-                        // First idempotent success - abort remaining handles and return success
-                        for handle in &handles {
-                            handle.abort();
-                        }
-                        self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Idempotent success [{}] - no orders to cancel (instrument_id={}, order_side={:?})",
-                            client_id,
-                            instrument_id,
-                            order_side
-                        );
-                        return Ok(Vec::new());
-                    } else if self.is_expected_reject(&error_msg) {
-                        self.expected_rejects.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
-                            "Expected cancel all rejection [{}]: {} (instrument_id={}, order_side={:?})",
-                            client_id,
-                            error_msg,
-                            instrument_id,
-                            order_side
-                        );
-                        errors.push(error_msg);
-                    } else {
-                        tracing::warn!(
-                            "Cancel all request failed [{}]: {} (instrument_id={}, order_side={:?})",
-                            client_id,
-                            error_msg,
-                            instrument_id,
-                            order_side
-                        );
-                        errors.push(error_msg);
-                    }
-                }
-                Err(e) => {
-                    // Join error (task panicked)
-                    tracing::warn!("Cancel all task join error: {e:?}");
-                    errors.push(format!("Task panicked: {e:?}"));
-                }
-            }
-        }
-
-        // All tasks failed
-        self.failed_cancels.fetch_add(1, Ordering::Relaxed);
-        tracing::error!(
-            "All cancel all requests failed: {errors:?} (instrument_id={instrument_id}, order_side={order_side:?})",
-        );
-        Err(anyhow::anyhow!(
-            "All cancel all requests failed: {errors:?}",
-        ))
+        self.process_cancel_results(
+            handles,
+            || Ok(Vec::new()),
+            "Cancel all",
+            format!(
+                "(instrument_id={}, order_side={:?})",
+                instrument_id, order_side
+            ),
+            "no orders to cancel",
+        )
+        .await
     }
 
     /// Gets broadcaster metrics.
@@ -842,9 +848,9 @@ impl CancelBroadcaster {
 
     /// Adds an instrument to all HTTP clients in the pool for caching.
     pub fn add_instrument(&self, instrument: nautilus_model::instruments::any::InstrumentAny) {
-        let mut transports = self.transports.blocking_write();
-        for transport in transports.iter_mut() {
-            transport.client.add_instrument(instrument.clone());
+        let transports = self.transports.blocking_read();
+        for transport in transports.iter() {
+            transport.executor.add_instrument(instrument.clone());
         }
     }
 
@@ -922,6 +928,99 @@ mod tests {
 
     use super::*;
 
+    /// Mock executor for testing.
+    #[derive(Clone)]
+    #[allow(clippy::type_complexity)]
+    struct MockExecutor {
+        handler: Arc<
+            dyn Fn(
+                    InstrumentId,
+                    Option<ClientOrderId>,
+                    Option<VenueOrderId>,
+                ) -> std::pin::Pin<
+                    Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send>,
+                > + Send
+                + Sync,
+        >,
+    }
+
+    impl MockExecutor {
+        fn new<F, Fut>(handler: F) -> Self
+        where
+            F: Fn(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>) -> Fut
+                + Send
+                + Sync
+                + 'static,
+            Fut: std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
+        {
+            Self {
+                handler: Arc::new(move |id, cid, vid| Box::pin(handler(id, cid, vid))),
+            }
+        }
+    }
+
+    impl CancelExecutor for MockExecutor {
+        fn health_check(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>
+        {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn cancel_order(
+            &self,
+            instrument_id: InstrumentId,
+            client_order_id: Option<ClientOrderId>,
+            venue_order_id: Option<VenueOrderId>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
+        > {
+            (self.handler)(instrument_id, client_order_id, venue_order_id)
+        }
+
+        fn cancel_orders(
+            &self,
+            _instrument_id: InstrumentId,
+            _client_order_ids: Option<Vec<ClientOrderId>>,
+            _venue_order_ids: Option<Vec<VenueOrderId>>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn cancel_all_orders(
+            &self,
+            instrument_id: InstrumentId,
+            _order_side: Option<nautilus_model::enums::OrderSide>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            // Try to get result from the single-order handler to propagate errors
+            let handler = Arc::clone(&self.handler);
+            Box::pin(async move {
+                // Call the handler to check if it would fail
+                let result = handler(instrument_id, None, None).await;
+                match result {
+                    Ok(_) => Ok(Vec::new()),
+                    Err(e) => Err(e),
+                }
+            })
+        }
+
+        fn add_instrument(&self, _instrument: nautilus_model::instruments::any::InstrumentAny) {
+            // No-op for mock
+        }
+    }
+
     fn create_test_report(venue_order_id: &str) -> OrderStatusReport {
         OrderStatusReport {
             account_id: AccountId::from("BITMEX-001"),
@@ -967,30 +1066,8 @@ mod tests {
             + 'static,
         Fut: std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
     {
-        let client = BitmexHttpClient::with_credentials(
-            Some("test".to_string()),
-            Some("test".to_string()),
-            Some("https://test.example.com".to_string()),
-            Some(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-        TransportClient {
-            client,
-            client_id: client_id.to_string(),
-            healthy: Arc::new(AtomicBool::new(true)),
-            cancel_count: Arc::new(AtomicU64::new(0)),
-            error_count: Arc::new(AtomicU64::new(0)),
-            test_handler: Some(Arc::new(move |id, cid, vid| {
-                Box::pin(handler(id, cid, vid))
-            })),
-        }
+        let executor = MockExecutor::new(handler);
+        TransportClient::new(executor, client_id.to_string())
     }
 
     #[tokio::test]

@@ -204,7 +204,7 @@ impl CancelBroadcaster {
         let list = pyo3::types::PyList::empty(py);
         for stat in stats {
             let dict = PyDict::new(py);
-            dict.set_item("client_id", stat.client_id)?;
+            dict.set_item("client_id", stat.client_id.to_string())?;
             dict.set_item("healthy", stat.healthy)?;
             dict.set_item("cancel_count", stat.cancel_count)?;
             dict.set_item("error_count", stat.error_count)?;

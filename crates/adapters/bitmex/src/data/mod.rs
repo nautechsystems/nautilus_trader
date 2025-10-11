@@ -288,7 +288,7 @@ impl BitmexDataClient {
         let http_client = self.http_client.clone();
 
         let handle = tokio::spawn(async move {
-            let mut http_client = http_client;
+            let http_client = http_client;
             loop {
                 let sleep = tokio::time::sleep(interval);
                 tokio::pin!(sleep);
@@ -805,7 +805,7 @@ impl DataClient for BitmexDataClient {
         let active_only = self.config.active_only;
 
         tokio::spawn(async move {
-            let mut http_client = http;
+            let http_client = http;
             match http_client
                 .request_instruments(active_only)
                 .await
@@ -868,7 +868,7 @@ impl DataClient for BitmexDataClient {
             return Ok(());
         }
 
-        let mut http_client = self.http_client.clone();
+        let http_client = self.http_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;

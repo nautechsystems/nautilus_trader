@@ -1115,7 +1115,7 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the instruments cache mutex is poisoned.
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
         self.instruments_cache
             .lock()
             .unwrap()
