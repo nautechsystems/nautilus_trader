@@ -66,7 +66,8 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid basic market and limit orders (#3022), thanks @nicolad
 - Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
-- Standardized Binance order validations with proper order denied events to avoid "hanging" orders
+- Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
+- Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
@@ -79,6 +80,8 @@ This will be the final release with support for Python 3.11.
 - Improved BitMEX REST rate limits configuration
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
+- Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
+- Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined setting of flags in Makefile (#3060), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
@@ -130,6 +133,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
 - Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
 - Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
+- Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
 - Fixed OKX API credentials handling to allow passing explicitly
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus

@@ -207,7 +207,7 @@ redis = { version = "0.32.7", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ] }
-regex = { version = "1.11.3", default-features = false, features = [
+regex = { version = "1.12.1", default-features = false, features = [
   "std",
   "perf",
   "unicode-perl",
