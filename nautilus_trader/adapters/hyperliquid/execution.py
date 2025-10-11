@@ -209,8 +209,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting order to Hyperliquid: {order}")
 
-            # Submit via HTTP client with domain types (Rust handles serialization)
-            response_json = await self._client.submit_order(
+            # Submit via HTTP client with domain types (Rust handles all serialization and parsing)
+            # Following BitMEX/Bybit pattern - pass domain types, receive OrderStatusReport
+            report = await self._client.submit_order(
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 order_side=order.side,
@@ -223,29 +224,20 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 reduce_only=order.is_reduce_only,
             )
 
-            # Parse the response
-            import json
+            self._log.debug(f"Received order status report: {report}")
 
-            response = json.loads(response_json)
+            # Generate order accepted event based on the report
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
 
-            self._log.debug(f"Hyperliquid order response: {response}")
-
-            # Check if submission was successful
-            if response.get("status") == "ok":
-                self._log.info(f"Order {order.client_order_id} submitted successfully")
-                # The order acceptance will be confirmed via WebSocket or status polling
-            else:
-                # Extract error message
-                error_msg = response.get("response", str(response))
-                self._log.error(f"Order {order.client_order_id} rejected: {error_msg}")
-
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=str(error_msg),
-                    ts_event=self._clock.timestamp_ns(),
-                )
+            self._log.info(
+                f"Order {order.client_order_id} accepted, venue_order_id={report.venue_order_id}",
+            )
 
         except Exception as e:
             self._log.error(f"Error submitting order {order.client_order_id}: {e}")
@@ -296,50 +288,29 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
 
-            # Convert orders to list of tuples with domain types (Rust handles serialization)
-            orders_list = [
-                (
-                    order.instrument_id,
-                    order.client_order_id,
-                    order.side,
-                    order.order_type,
-                    order.quantity,
-                    order.time_in_force,
-                    order.price,
-                    order.trigger_price,
-                    order.is_post_only,
-                    order.is_reduce_only,
+            # Pass Order objects directly to Rust layer
+            # This pushes the complexity to the Rust layer for pure Rust execution
+            reports = await self._client.submit_orders(orders)
+
+            self._log.debug(f"Received {len(reports)} order status reports")
+
+            # Generate acceptance events for all successfully submitted orders
+            for report in reports:
+                # Find the corresponding order
+                order = next(
+                    (o for o in orders if o.client_order_id == report.client_order_id),
+                    None,
                 )
-                for order in orders
-            ]
-
-            # Submit all orders via HTTP client
-            response_json = await self._client.submit_orders(orders_list)
-
-            # Parse the response
-            import json
-
-            response = json.loads(response_json)
-
-            self._log.debug(f"Hyperliquid batch order response: {response}")
-
-            # Check if submission was successful
-            if response.get("status") == "ok":
-                self._log.info(f"Batch of {len(orders)} orders submitted successfully")
-                # The order acceptances will be confirmed via WebSocket or status polling
-            else:
-                # Extract error message
-                error_msg = response.get("response", str(response))
-                self._log.error(f"Batch order submission rejected: {error_msg}")
-
-                # Generate rejection events for all orders
-                for order in orders:
-                    self.generate_order_rejected(
+                if order:
+                    self.generate_order_accepted(
                         strategy_id=order.strategy_id,
                         instrument_id=order.instrument_id,
                         client_order_id=order.client_order_id,
-                        reason=str(error_msg),
+                        venue_order_id=report.venue_order_id,
                         ts_event=self._clock.timestamp_ns(),
+                    )
+                    self._log.info(
+                        f"Order {order.client_order_id} accepted, venue_order_id={report.venue_order_id}",
                     )
 
         except Exception as e:
