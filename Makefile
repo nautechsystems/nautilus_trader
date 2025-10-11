@@ -8,7 +8,7 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
-M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
+M = $(shell printf "\033[0;34m>\033[0m") # Message prefix for commands
 
 # Verbose options for specific targets (defaults to true, can be overridden)
 VERBOSE ?= true
@@ -27,14 +27,15 @@ FAIL_FAST_FLAG := --no-fail-fast
 endif
 
 # > Colors
-RED    := $(shell tput -Txterm setaf 1)
-GREEN  := $(shell tput -Txterm setaf 2)
-YELLOW := $(shell tput -Txterm setaf 3)
-BLUE   := $(shell tput -Txterm setaf 4)
-PURPLE := $(shell tput -Txterm setaf 5)
-CYAN   := $(shell tput -Txterm setaf 6)
-GRAY   := $(shell tput -Txterm setaf 7)
-RESET  := $(shell tput -Txterm sgr0)
+# Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
+RED    := \033[0;31m
+GREEN  := \033[0;32m
+YELLOW := \033[0;33m
+BLUE   := \033[0;34m
+PURPLE := \033[0;35m
+CYAN   := \033[0;36m
+GRAY   := \033[0;37m
+RESET  := \033[0m
 
 .DEFAULT_GOAL := help
 
@@ -120,10 +121,10 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 	find target -name "*.rmeta" -delete 2>/dev/null || true
 	rm -rf target/*/build target/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
-	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 -r rm -rf
-	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -print0 | xargs -0 -r rm -f
-	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
-	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
+	find . -type d -name "__pycache__" -not -path "./.venv*" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
 	rm -rf build/ cython_debug/ 2>/dev/null || true
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
@@ -135,9 +136,13 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 	-cargo clean
 
 .PHONY: distclean
-distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
-	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
-	@echo "WARNING: nuking working tree (git clean -fxd)..."
+distclean: clean  #-- Nuclear clean - remove all uncommitted changes and untracked files (requires FORCE=1)
+	@if [ "$$FORCE" != "1" ]; then \
+		echo "Pass FORCE=1 to really nuke"; \
+		exit 1; \
+	fi
+	@echo "WARNING: resetting all uncommitted changes and removing untracked files..."
+	git reset --hard
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality
@@ -370,7 +375,7 @@ docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 init-services:  #-- Initialize development services eg. for integration tests (start containers and setup database)
 	$(info $(M) Initializing development services...)
 	@$(MAKE) start-services
-	@echo "${PURPLE}Waiting for PostgreSQL to be ready...${RESET}"
+	@printf "$(PURPLE)Waiting for PostgreSQL to be ready...$(RESET)\n"
 	@sleep 10
 	@$(MAKE) init-db
 
@@ -392,7 +397,9 @@ purge-services:  #-- Purge all development services (stop containers and remove 
 .PHONY: init-db
 init-db:  #-- Initialize PostgreSQL database schema
 	$(info $(M) Initializing PostgreSQL database schema...)
-	cat schema/sql/*.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
+	@for sql_file in schema/sql/*.sql; do \
+		cat "$$sql_file" | docker exec -i nautilus-database psql -U nautilus -d nautilus; \
+	done
 
 #== Python Testing
 
@@ -435,7 +442,13 @@ help:  #-- Show this help message and exit
 	@printf "⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀\n"
 
 	@awk '\
-	BEGIN { FS = ":.*#--"; target_maxlen = 0 } \
+	BEGIN { \
+		FS = ":.*#--"; \
+		target_maxlen = 0; \
+		GREEN = "\033[0;32m"; \
+		CYAN = "\033[0;36m"; \
+		RESET = "\033[0m"; \
+	} \
 	/^[$$()% a-zA-Z_-]+:.*?#--/ { \
 		if (length($$1) > target_maxlen) target_maxlen = length($$1); \
 		targets[NR] = $$1; descriptions[NR] = $$2; \
@@ -446,9 +459,9 @@ help:  #-- Show this help message and exit
 	END { \
 		for (i = 1; i <= NR; i++) { \
 			if (groups[i]) { \
-				printf "\n$(GREEN)%s:$(RESET)\n", groups[i]; \
+				printf "\n" GREEN "%s:" RESET "\n", groups[i]; \
 			} else if (targets[i]) { \
-				printf "  $(CYAN)%-*s$(RESET) %s\n", target_maxlen, targets[i], descriptions[i]; \
+				printf "  " CYAN "%-*s" RESET " %s\n", target_maxlen, targets[i], descriptions[i]; \
 			} \
 		} \
 	}' $(MAKEFILE_LIST)
