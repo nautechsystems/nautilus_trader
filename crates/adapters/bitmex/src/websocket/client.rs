@@ -1630,6 +1630,8 @@ impl BitmexWsMessageHandler {
                                             tracing::warn!(
                                                 cl_ord_id = %cl_ord_id,
                                                 exec_id = ?exec_msg.exec_id,
+                                                ord_rej_reason = ?exec_msg.ord_rej_reason,
+                                                text = ?exec_msg.text,
                                                 "Execution message missing symbol and not found in cache"
                                             );
                                         } else {
@@ -1637,15 +1639,32 @@ impl BitmexWsMessageHandler {
                                                 cl_ord_id = %cl_ord_id,
                                                 exec_id = ?exec_msg.exec_id,
                                                 exec_type = ?exec_msg.exec_type,
+                                                ord_rej_reason = ?exec_msg.ord_rej_reason,
+                                                text = ?exec_msg.text,
                                                 "Execution message missing symbol and not found in cache"
                                             );
                                         }
                                     } else {
-                                        tracing::warn!(
-                                            exec_id = ?exec_msg.exec_id,
-                                            exec_type = ?exec_msg.exec_type,
-                                            "Execution message missing both symbol and clOrdID, cannot process"
-                                        );
+                                        // CancelReject messages without symbol/clOrdID are expected when using
+                                        // redundant cancel broadcasting - one cancel succeeds, others arrive late
+                                        // and BitMEX responds with CancelReject but doesn't populate the fields
+                                        if exec_msg.exec_type == Some(BitmexExecType::CancelReject)
+                                        {
+                                            tracing::debug!(
+                                                exec_id = ?exec_msg.exec_id,
+                                                order_id = ?exec_msg.order_id,
+                                                "CancelReject message missing symbol/clOrdID (expected with redundant cancels)"
+                                            );
+                                        } else {
+                                            tracing::warn!(
+                                                exec_id = ?exec_msg.exec_id,
+                                                order_id = ?exec_msg.order_id,
+                                                exec_type = ?exec_msg.exec_type,
+                                                ord_rej_reason = ?exec_msg.ord_rej_reason,
+                                                text = ?exec_msg.text,
+                                                "Execution message missing both symbol and clOrdID, cannot process"
+                                            );
+                                        }
                                     }
                                     continue;
                                 };
