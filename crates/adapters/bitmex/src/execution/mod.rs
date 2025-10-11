@@ -15,6 +15,8 @@
 
 //! Live execution client implementation for the BitMEX adapter.
 
+pub mod canceller;
+
 use std::{any::Any, cell::Ref, future::Future, sync::Mutex};
 
 use anyhow::Context;

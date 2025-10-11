@@ -417,20 +417,17 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
             })
         }
         HyperliquidWsMessage::Candle { data } => {
-            let candles = data
-                .iter()
-                .map(|c| WsCandle {
-                    instrument: c.s,
-                    interval: c.i.clone(),
-                    open_ts: c.t as i64,
-                    o: Decimal::try_from(c.o).unwrap_or_default(),
-                    h: Decimal::try_from(c.h).unwrap_or_default(),
-                    l: Decimal::try_from(c.l).unwrap_or_default(),
-                    c: Decimal::try_from(c.c).unwrap_or_default(),
-                    v: Decimal::try_from(c.v).unwrap_or_default(),
-                })
-                .collect();
-            WsInbound::Candle(candles)
+            let candle = WsCandle {
+                instrument: data.s,
+                interval: data.i.clone(),
+                open_ts: data.t as i64,
+                o: Decimal::from_str(&data.o).unwrap_or_default(),
+                h: Decimal::from_str(&data.h).unwrap_or_default(),
+                l: Decimal::from_str(&data.l).unwrap_or_default(),
+                c: Decimal::from_str(&data.c).unwrap_or_default(),
+                v: Decimal::from_str(&data.v).unwrap_or_default(),
+            };
+            WsInbound::Candle(vec![candle])
         }
         HyperliquidWsMessage::Notification { data } => WsInbound::Notification(Notice {
             code: None,

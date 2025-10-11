@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = ws_url(testnet);
 
     info!(component = "ws_post", %ws_url, ?testnet, "connecting");
-    let mut client = HyperliquidWebSocketClient::connect(ws_url).await?;
+    let client = HyperliquidWebSocketClient::connect(ws_url).await?;
     info!(component = "ws_post", "websocket connected");
 
     let book = client.info_l2_book("BTC", Duration::from_secs(2)).await?;

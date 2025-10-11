@@ -589,8 +589,10 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FMXXS")]
     Unknown2, // TODO: Determine name (option)
 
+    /// Prediction Markets (non-standardized financial future on index, cash settled).
+    /// CFI code FFICSX - traders predict outcomes of events.
     #[serde(rename = "FFICSX")]
-    Unknown3, // TODO: Determine name (option)
+    PredictionMarket,
 
     /// Perpetual Contracts.
     #[serde(rename = "FFWCSX")]
@@ -872,6 +874,10 @@ mod tests {
             serde_json::to_string(&BitmexInstrumentType::VolatilityIndex).unwrap(),
             r#""MRIXXX""#
         );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::PredictionMarket).unwrap(),
+            r#""FFICSX""#
+        );
     }
 
     #[rstest]
@@ -911,6 +917,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""MRIXXX""#).unwrap(),
             BitmexInstrumentType::VolatilityIndex
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFICSX""#).unwrap(),
+            BitmexInstrumentType::PredictionMarket
         );
 
         // Error case

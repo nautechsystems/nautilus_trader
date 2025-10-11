@@ -69,6 +69,9 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
+    max_retries: PositiveInt | None = 3
+    retry_delay_initial_ms: PositiveInt | None = 1_000
+    retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
     vip_level: OKXVipLevel | None = None
 
@@ -100,10 +103,16 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to OKX's websocket API.
         If ``None`` then will source the url from `get_ws_base_url()`.
-    margin_mode : OKXMarginMode, optional
-        The intended OKX account margin mode (referred to as mgnMode by OKX's docs).
     is_demo : bool, default False
         If the client is connecting to the OKX demo API.
+    margin_mode : OKXMarginMode, optional
+        The intended OKX account margin mode (referred to as mgnMode by OKX's docs).
+    max_retries : PositiveInt, default 3
+        The maximum retry attempts for requests.
+    retry_delay_initial_ms : PositiveInt, default 1_000
+        The initial delay (milliseconds) for retries.
+    retry_delay_max_ms : PositiveInt, default 10_000
+        The maximum delay (milliseconds) for exponential backoff.
     use_fills_channel : bool, default False
         If True, subscribes to the fills channel for separate fill reports (requires VIP5+).
         If False, generates fill reports from order status reports (works for all users).
@@ -111,12 +120,6 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         If True, uses OKX's mass-cancel endpoint for cancel_all_orders operations.
         This endpoint is typically restricted to market makers and high-volume traders.
         If False, cancels orders individually (works for all users).
-    max_retries : PositiveInt, default 3
-        The maximum retry attempts for requests.
-    retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
-    retry_delay_max_ms : PositiveInt, default 10_000
-        The maximum delay (milliseconds) for exponential backoff.
 
     """
 
@@ -127,11 +130,11 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     contract_types: tuple[OKXContractType, ...] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    margin_mode: OKXMarginMode | None = None
     is_demo: bool = False
+    margin_mode: OKXMarginMode | None = None
     http_timeout_secs: PositiveInt | None = 60
-    use_fills_channel: bool = False
-    use_mm_mass_cancel: bool = False
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
+    use_fills_channel: bool = False
+    use_mm_mass_cancel: bool = False

@@ -455,7 +455,6 @@ class BitmexDataClient(LiveMarketDataClient):
         self._handle_bars(
             bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

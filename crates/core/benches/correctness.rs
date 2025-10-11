@@ -21,7 +21,7 @@ use nautilus_core::correctness::{
     check_equal, check_in_range_inclusive_u8, check_in_range_inclusive_u64, check_key_in_map,
     check_key_not_in_map, check_map_empty, check_map_not_empty, check_member_in_set,
     check_member_not_in_set, check_predicate_false, check_predicate_true, check_string_contains,
-    check_valid_string, check_valid_string_optional,
+    check_valid_string_ascii, check_valid_string_ascii_optional,
 };
 
 fn bench_check_predicate_true() {
@@ -32,12 +32,12 @@ fn bench_check_predicate_false() {
     black_box(check_predicate_false(false, "predicate must be false")).unwrap();
 }
 
-fn bench_check_valid_string() {
-    black_box(check_valid_string("Hello", "param")).unwrap();
+fn bench_check_valid_string_ascii() {
+    black_box(check_valid_string_ascii("Hello", "param")).unwrap();
 }
 
-fn bench_check_valid_string_optional() {
-    black_box(check_valid_string_optional(Some("Hello"), "param")).unwrap();
+fn bench_check_valid_string_ascii_optional() {
+    black_box(check_valid_string_ascii_optional(Some("Hello"), "param")).unwrap();
 }
 
 fn bench_check_string_contains() {
@@ -99,8 +99,8 @@ fn bench_check_member_not_in_set() {
 main!(
     bench_check_predicate_true,
     bench_check_predicate_false,
-    bench_check_valid_string,
-    bench_check_valid_string_optional,
+    bench_check_valid_string_ascii,
+    bench_check_valid_string_ascii_optional,
     bench_check_string_contains,
     bench_check_equal,
     bench_check_in_range_inclusive_u8,

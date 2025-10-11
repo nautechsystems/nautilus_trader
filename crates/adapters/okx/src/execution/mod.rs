@@ -82,6 +82,7 @@ impl OKXExecutionClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
+                config.is_demo,
             )?
         } else {
             OKXHttpClient::new(
@@ -90,6 +91,7 @@ impl OKXExecutionClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
+                config.is_demo,
             )?
         };
 

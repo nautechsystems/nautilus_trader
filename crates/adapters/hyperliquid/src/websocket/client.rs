@@ -16,8 +16,16 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use futures_util::future::BoxFuture;
+#[cfg(feature = "python")]
+use nautilus_core::python::to_pyruntime_err;
+#[cfg(feature = "python")]
+use nautilus_model::{
+    data::BarType, identifiers::InstrumentId, python::instruments::pyobject_to_instrument_any,
+};
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
-use tokio::sync::mpsc;
+#[cfg(feature = "python")]
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use tokio::sync::{RwLock, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 use ustr::Ustr;
@@ -369,80 +377,92 @@ impl HyperliquidWebSocketInnerClient {
 
 /// High-level Hyperliquid WebSocket client that provides standardized domain methods.
 ///
-/// This is the outer client that wraps the inner client and provides Nautilus-specific
-/// functionality for WebSocket operations using standard domain methods.
-#[derive(Debug)]
+/// This client uses Arc<RwLock<>> for internal state to support Clone and safe sharing
+/// across async tasks, following the same pattern as other exchange adapters (OKX, Bitmex, Bybit).
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct HyperliquidWebSocketClient {
-    inner: Option<HyperliquidWebSocketInnerClient>,
+    inner: Arc<RwLock<Option<HyperliquidWebSocketInnerClient>>>,
     url: String,
 }
 
 impl HyperliquidWebSocketClient {
     /// Creates a new Hyperliquid WebSocket client without connecting.
-    /// The connection will be established when start() is called.
+    /// The connection will be established when `ensure_connected()` is called.
     pub fn new(url: String) -> Self {
-        Self { inner: None, url }
+        Self {
+            inner: Arc::new(RwLock::new(None)),
+            url,
+        }
     }
 
     /// Creates a new Hyperliquid WebSocket client and establishes connection.
     pub async fn connect(url: &str) -> anyhow::Result<Self> {
-        let inner = HyperliquidWebSocketInnerClient::connect(url).await?;
+        let inner_client = HyperliquidWebSocketInnerClient::connect(url).await?;
         Ok(Self {
-            inner: Some(inner),
+            inner: Arc::new(RwLock::new(Some(inner_client))),
             url: url.to_string(),
         })
     }
 
     /// Establishes the WebSocket connection if not already connected.
-    pub async fn ensure_connected(&mut self) -> anyhow::Result<()> {
-        if self.inner.is_none() {
-            let inner = HyperliquidWebSocketInnerClient::connect(&self.url).await?;
-            self.inner = Some(inner);
+    pub async fn ensure_connected(&self) -> anyhow::Result<()> {
+        let mut inner = self.inner.write().await;
+        if inner.is_none() {
+            let inner_client = HyperliquidWebSocketInnerClient::connect(&self.url).await?;
+            *inner = Some(inner_client);
         }
         Ok(())
     }
 
     /// Returns true if the WebSocket is connected.
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_some()
+    pub async fn is_connected(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner.is_some()
+    }
+
+    /// Returns the URL of this WebSocket client.
+    pub fn url(&self) -> &str {
+        &self.url
     }
 
     /// Subscribe to order updates for a specific user address.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_order_updates(&mut self, user: &str) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_order_updates(&self, user: &str) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::OrderUpdates {
             user: user.to_string(),
         };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Subscribe to user events (fills, funding, liquidations) for a specific user address.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_user_events(&mut self, user: &str) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_user_events(&self, user: &str) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::UserEvents {
             user: user.to_string(),
         };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Subscribe to all user channels (order updates + user events) for convenience.
-    pub async fn subscribe_all_user_channels(&mut self, user: &str) -> anyhow::Result<()> {
+    pub async fn subscribe_all_user_channels(&self, user: &str) -> anyhow::Result<()> {
         self.subscribe_order_updates(user).await?;
         self.subscribe_user_events(user).await?;
         Ok(())
@@ -450,170 +470,168 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to trades for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_trades(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_trades(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Trades { coin };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Unsubscribe from trades for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn unsubscribe_trades(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before unsubscribing.
+    pub async fn unsubscribe_trades(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Trades { coin };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_unsubscribe(subscription)
             .await
     }
 
     /// Subscribe to L2 order book for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_book(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_book(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::L2Book {
             coin,
             n_sig_figs: None,
             mantissa: None,
         };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Unsubscribe from L2 order book for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn unsubscribe_book(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before unsubscribing.
+    pub async fn unsubscribe_book(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::L2Book {
             coin,
             n_sig_figs: None,
             mantissa: None,
         };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_unsubscribe(subscription)
             .await
     }
 
     /// Subscribe to BBO (best bid/offer) for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_bbo(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_bbo(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Bbo { coin };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Unsubscribe from BBO (best bid/offer) for a specific coin.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn unsubscribe_bbo(&mut self, coin: Ustr) -> anyhow::Result<()> {
+    /// Ensures connection is established before unsubscribing.
+    pub async fn unsubscribe_bbo(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Bbo { coin };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_unsubscribe(subscription)
             .await
     }
 
     /// Subscribe to candlestick data for a specific coin and interval.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn subscribe_candle(&mut self, coin: Ustr, interval: String) -> anyhow::Result<()> {
+    /// Ensures connection is established before subscribing.
+    pub async fn subscribe_candle(&self, coin: Ustr, interval: String) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_subscribe(subscription)
             .await
     }
 
     /// Unsubscribe from candlestick data for a specific coin and interval.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn unsubscribe_candle(&mut self, coin: Ustr, interval: String) -> anyhow::Result<()> {
+    /// Ensures connection is established before unsubscribing.
+    pub async fn unsubscribe_candle(&self, coin: Ustr, interval: String) -> anyhow::Result<()> {
         self.ensure_connected().await?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
             .ws_unsubscribe(subscription)
             .await
     }
 
     /// Get the next event from the WebSocket stream.
     /// Returns None when the connection is closed or the receiver is exhausted.
-    pub async fn next_event(&mut self) -> Option<HyperliquidWsMessage> {
-        if let Some(ref mut inner) = self.inner {
-            inner.ws_next_event().await
+    pub async fn next_event(&self) -> Option<HyperliquidWsMessage> {
+        let mut inner = self.inner.write().await;
+        if let Some(ref mut client) = *inner {
+            client.ws_next_event().await
         } else {
             None
         }
     }
 
     /// Returns true if the WebSocket connection is active.
-    pub fn is_active(&self) -> bool {
-        self.inner.as_ref().is_some_and(|inner| inner.is_active())
+    pub async fn is_active(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner.as_ref().is_some_and(|client| client.is_active())
     }
 
     /// Returns true if the WebSocket is reconnecting.
-    pub fn is_reconnecting(&self) -> bool {
-        self.inner
+    pub async fn is_reconnecting(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner
             .as_ref()
-            .is_some_and(|inner| inner.is_reconnecting())
+            .is_some_and(|client| client.is_reconnecting())
     }
 
     /// Returns true if the WebSocket is disconnecting.
-    pub fn is_disconnecting(&self) -> bool {
-        self.inner
+    pub async fn is_disconnecting(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner
             .as_ref()
-            .is_some_and(|inner| inner.is_disconnecting())
+            .is_some_and(|client| client.is_disconnecting())
     }
 
     /// Returns true if the WebSocket is closed.
-    pub fn is_closed(&self) -> bool {
-        self.inner.as_ref().is_none_or(|inner| inner.is_closed())
+    pub async fn is_closed(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner.as_ref().is_none_or(|client| client.is_closed())
     }
 
     /// Disconnect the WebSocket client.
-    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if let Some(ref mut inner) = self.inner {
-            inner.ws_disconnect().await
+    pub async fn disconnect(&self) -> anyhow::Result<()> {
+        let mut inner = self.inner.write().await;
+        if let Some(ref mut client) = *inner {
+            client.ws_disconnect().await
         } else {
             Ok(())
         }
@@ -621,21 +639,22 @@ impl HyperliquidWebSocketClient {
 
     /// Escape hatch: send raw requests for tests/power users.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
-    pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
+    /// Ensures connection is established before sending.
+    pub async fn send_raw(&self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         self.ensure_connected().await?;
-        self.inner.as_mut().unwrap().ws_send(request).await
+        let mut inner = self.inner.write().await;
+        inner
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Client not connected"))?
+            .ws_send(request)
+            .await
     }
 
     /// High-level: call info l2Book (WS post)
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    /// Ensures connection is established before making the request.
     pub async fn info_l2_book(
-        &mut self,
+        &self,
         coin: &str,
         timeout: Duration,
     ) -> HyperliquidResult<crate::http::models::HyperliquidL2Book> {
@@ -643,20 +662,22 @@ impl HyperliquidWebSocketClient {
             status: 500,
             message: e.to_string(),
         })?;
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| Error::Http {
+                status: 500,
+                message: "Client not connected".to_string(),
+            })?
             .info_l2_book(coin, timeout)
             .await
     }
 
     /// High-level: fire arbitrary info (WS post) returning raw payload.
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    /// Ensures connection is established before making the request.
     pub async fn post_info_raw(
-        &mut self,
+        &self,
         payload: serde_json::Value,
         timeout: Duration,
     ) -> HyperliquidResult<PostResponsePayload> {
@@ -664,20 +685,22 @@ impl HyperliquidWebSocketClient {
             status: 500,
             message: e.to_string(),
         })?;
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| Error::Http {
+                status: 500,
+                message: "Client not connected".to_string(),
+            })?
             .post_info_raw(payload, timeout)
             .await
     }
 
     /// High-level: fire action (already signed ActionPayload)
     ///
-    /// # Panics
-    ///
-    /// Panics if the WebSocket client is not connected. Call `ensure_connected()` first.
+    /// Ensures connection is established before making the request.
     pub async fn post_action_raw(
-        &mut self,
+        &self,
         action: ActionPayload,
         timeout: Duration,
     ) -> HyperliquidResult<PostResponsePayload> {
@@ -685,10 +708,324 @@ impl HyperliquidWebSocketClient {
             status: 500,
             message: e.to_string(),
         })?;
-        self.inner
+        let mut inner = self.inner.write().await;
+        inner
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| Error::Http {
+                status: 500,
+                message: "Client not connected".to_string(),
+            })?
             .post_action_raw(action, timeout)
             .await
+    }
+}
+
+// Python bindings
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl HyperliquidWebSocketClient {
+    #[new]
+    #[pyo3(signature = (url))]
+    fn py_new(url: String) -> PyResult<Self> {
+        Ok(Self::new(url))
+    }
+
+    #[getter]
+    #[pyo3(name = "url")]
+    #[must_use]
+    pub fn py_url(&self) -> String {
+        self.url().to_string()
+    }
+
+    #[pyo3(name = "is_active")]
+    fn py_is_active<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move { Ok(client.is_active().await) })
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move { Ok(client.is_closed().await) })
+    }
+
+    #[pyo3(name = "connect")]
+    fn py_connect<'py>(
+        &self,
+        py: Python<'py>,
+        instruments: Vec<Py<PyAny>>,
+        _callback: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        // Parse instruments from Python objects
+        let mut instruments_any = Vec::new();
+        for inst in instruments {
+            let inst_any = pyobject_to_instrument_any(py, inst)?;
+            instruments_any.push(inst_any);
+        }
+
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.ensure_connected().await.map_err(to_pyruntime_err)?;
+
+            // Spawn background task to handle incoming messages
+            tokio::spawn(async move {
+                loop {
+                    let event = client.next_event().await;
+
+                    match event {
+                        Some(msg) => {
+                            tracing::debug!("Received WebSocket message: {:?}", msg);
+                            // TODO: Convert HyperliquidWsMessage to Nautilus data types
+                            // and call the callback with the data
+                        }
+                        None => {
+                            tracing::info!("WebSocket connection closed");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let start = std::time::Instant::now();
+            loop {
+                if client.is_active().await {
+                    return Ok(());
+                }
+
+                if start.elapsed().as_secs_f64() >= timeout_secs {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "WebSocket connection did not become active within {} seconds",
+                        timeout_secs
+                    )));
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        })
+    }
+
+    #[pyo3(name = "close")]
+    fn py_close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.disconnect().await {
+                tracing::error!("Error on close: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_trades")]
+    fn py_subscribe_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_trades(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_trades")]
+    fn py_unsubscribe_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_trades(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_order_book_deltas")]
+    fn py_subscribe_order_book_deltas<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        _book_type: u8,
+        _depth: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_book(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_order_book_deltas")]
+    fn py_unsubscribe_order_book_deltas<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_order_book_snapshots")]
+    fn py_subscribe_order_book_snapshots<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        _book_type: u8,
+        _depth: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_book(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_quotes")]
+    fn py_subscribe_quotes<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.subscribe_bbo(coin).await.map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_quotes")]
+    fn py_unsubscribe_quotes<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(instrument_id.symbol.as_str());
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_bbo(coin)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_bars")]
+    fn py_subscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(bar_type.instrument_id().symbol.as_str());
+        let interval = "1m".to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_candle(coin, interval)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_bars")]
+    fn py_unsubscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = Ustr::from(bar_type.instrument_id().symbol.as_str());
+        let interval = "1m".to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_candle(coin, interval)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_order_updates")]
+    fn py_subscribe_order_updates<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_order_updates(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_user_events")]
+    fn py_subscribe_user_events<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_user_events(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
     }
 }

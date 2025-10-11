@@ -33,18 +33,24 @@ detect_target() {
     Linux)
       case "$arch" in
         x86_64) echo "x86_64-unknown-linux-gnu" ;;
-        aarch64|arm64) echo "aarch64-unknown-linux-gnu" ;;
-        *) echo "Unsupported Linux arch: $arch" >&2; exit 1 ;;
+        aarch64 | arm64) echo "aarch64-unknown-linux-gnu" ;;
+        *)
+          echo "Unsupported Linux arch: $arch" >&2
+          exit 1
+          ;;
       esac
       ;;
     Darwin)
       case "$arch" in
         x86_64) echo "x86_64-apple-darwin" ;;
         arm64) echo "aarch64-apple-darwin" ;;
-        *) echo "Unsupported macOS arch: $arch" >&2; exit 1 ;;
+        *)
+          echo "Unsupported macOS arch: $arch" >&2
+          exit 1
+          ;;
       esac
       ;;
-    MINGW*|MSYS*|CYGWIN*)
+    MINGW* | MSYS* | CYGWIN*)
       echo "Windows shell detected. Please use PowerShell installer." >&2
       exit 1
       ;;
@@ -56,9 +62,9 @@ detect_target() {
 }
 
 sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
+  if command -v sha256sum > /dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
+  elif command -v shasum > /dev/null 2>&1; then
     shasum -a 256 "$1" | awk '{print $1}'
   else
     echo "No sha256 tool found (sha256sum/shasum)." >&2
@@ -117,8 +123,11 @@ install_from_archive() {
   tar -xzf "$tmp/$art" -C "$extract"
 
   local bin_src
-  bin_src="$(command ls "$extract"/nautilus 2>/dev/null || true)"
-  [ -z "$bin_src" ] && { echo "Binary 'nautilus' not found in archive." >&2; return 4; }
+  bin_src="$(command ls "$extract"/nautilus 2> /dev/null || true)"
+  [ -z "$bin_src" ] && {
+    echo "Binary 'nautilus' not found in archive." >&2
+    return 4
+  }
   chmod +x "$bin_src"
 
   if [ -z "$DEST_DIR" ]; then
@@ -127,7 +136,7 @@ install_from_archive() {
   mkdir -p "$DEST_DIR"
 
   local install_cmd="install -m 0755"
-  if ! command -v install >/dev/null 2>&1; then install_cmd="cp"; fi
+  if ! command -v install > /dev/null 2>&1; then install_cmd="cp"; fi
 
   if [ -w "$DEST_DIR" ]; then
     $install_cmd "$bin_src" "$DEST_DIR/nautilus"
@@ -149,7 +158,7 @@ fallback_build_from_source() {
   if [ -f "crates/cli/Cargo.toml" ]; then
     echo "Falling back to building from source (cargo install)"
     local build_success=0
-    if command -v make >/dev/null 2>&1; then
+    if command -v make > /dev/null 2>&1; then
       make install-cli || cargo install --path crates/cli --bin nautilus --locked --force || build_success=1
     else
       cargo install --path crates/cli --bin nautilus --locked --force || build_success=1
@@ -219,10 +228,10 @@ main() {
       local delay
       delay=$(echo "$BACKOFFS" | awk -v n=$attempt '{print $n}')
       delay=${delay:-2}
-      echo "Retrying in ${delay}s (attempt $((attempt+1))/$RETRIES)..."
+      echo "Retrying in ${delay}s (attempt $((attempt + 1))/$RETRIES)..."
       sleep "$delay"
     fi
-    attempt=$((attempt+1))
+    attempt=$((attempt + 1))
   done
 
   echo "Failed to install prebuilt CLI after $RETRIES attempts."

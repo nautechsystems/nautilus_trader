@@ -28,11 +28,11 @@ pub mod unsubscribe;
 
 // Re-exports
 pub use subscribe::{
-    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates,
-    SubscribePoolSwaps,
+    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps,
 };
 pub use unsubscribe::{
-    UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+    UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
     UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
 };
 
@@ -90,6 +90,7 @@ pub enum DefiSubscribeCommand {
     PoolSwaps(SubscribePoolSwaps),
     PoolLiquidityUpdates(SubscribePoolLiquidityUpdates),
     PoolFeeCollects(SubscribePoolFeeCollects),
+    PoolFlashEvents(SubscribePoolFlashEvents),
 }
 
 impl PartialEq for DefiSubscribeCommand {
@@ -109,7 +110,7 @@ impl DefiSubscribeCommand {
     /// # Panics
     ///
     /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
-    /// for Pool, PoolSwaps, PoolLiquidityUpdates, or PoolFeeCollects commands.
+    /// for Pool, PoolSwaps, PoolLiquidityUpdates, PoolFeeCollects, or PoolFlashEvents commands.
     pub fn blockchain(&self) -> Blockchain {
         match self {
             Self::Blocks(cmd) => cmd.chain,
@@ -119,6 +120,7 @@ impl DefiSubscribeCommand {
                 cmd.instrument_id.blockchain().expect("Invalid venue")
             }
             Self::PoolFeeCollects(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolFlashEvents(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
         }
     }
 
@@ -129,6 +131,7 @@ impl DefiSubscribeCommand {
             Self::PoolSwaps(cmd) => cmd.command_id,
             Self::PoolLiquidityUpdates(cmd) => cmd.command_id,
             Self::PoolFeeCollects(cmd) => cmd.command_id,
+            Self::PoolFlashEvents(cmd) => cmd.command_id,
         }
     }
 
@@ -139,6 +142,7 @@ impl DefiSubscribeCommand {
             Self::PoolSwaps(cmd) => cmd.client_id.as_ref(),
             Self::PoolLiquidityUpdates(cmd) => cmd.client_id.as_ref(),
             Self::PoolFeeCollects(cmd) => cmd.client_id.as_ref(),
+            Self::PoolFlashEvents(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -150,6 +154,7 @@ impl DefiSubscribeCommand {
             Self::PoolSwaps(_) => None,
             Self::PoolLiquidityUpdates(_) => None,
             Self::PoolFeeCollects(_) => None,
+            Self::PoolFlashEvents(_) => None,
         }
     }
 
@@ -160,6 +165,7 @@ impl DefiSubscribeCommand {
             Self::PoolLiquidityUpdates(cmd) => cmd.ts_init,
             Self::Pool(cmd) => cmd.ts_init,
             Self::PoolFeeCollects(cmd) => cmd.ts_init,
+            Self::PoolFlashEvents(cmd) => cmd.ts_init,
         }
     }
 }
@@ -171,6 +177,7 @@ pub enum DefiUnsubscribeCommand {
     PoolSwaps(UnsubscribePoolSwaps),
     PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates),
     PoolFeeCollects(UnsubscribePoolFeeCollects),
+    PoolFlashEvents(UnsubscribePoolFlashEvents),
 }
 
 impl PartialEq for DefiUnsubscribeCommand {
@@ -190,7 +197,7 @@ impl DefiUnsubscribeCommand {
     /// # Panics
     ///
     /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
-    /// for Pool, PoolSwaps, PoolLiquidityUpdates, or PoolFeeCollects commands.
+    /// for Pool, PoolSwaps, PoolLiquidityUpdates, PoolFeeCollects, or PoolFlashEvents commands.
     pub fn blockchain(&self) -> Blockchain {
         match self {
             Self::Blocks(cmd) => cmd.chain,
@@ -200,6 +207,7 @@ impl DefiUnsubscribeCommand {
                 cmd.instrument_id.blockchain().expect("Invalid venue")
             }
             Self::PoolFeeCollects(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolFlashEvents(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
         }
     }
 
@@ -210,6 +218,7 @@ impl DefiUnsubscribeCommand {
             Self::PoolSwaps(cmd) => cmd.command_id,
             Self::PoolLiquidityUpdates(cmd) => cmd.command_id,
             Self::PoolFeeCollects(cmd) => cmd.command_id,
+            Self::PoolFlashEvents(cmd) => cmd.command_id,
         }
     }
 
@@ -220,6 +229,7 @@ impl DefiUnsubscribeCommand {
             Self::PoolSwaps(cmd) => cmd.client_id.as_ref(),
             Self::PoolLiquidityUpdates(cmd) => cmd.client_id.as_ref(),
             Self::PoolFeeCollects(cmd) => cmd.client_id.as_ref(),
+            Self::PoolFlashEvents(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -231,6 +241,7 @@ impl DefiUnsubscribeCommand {
             Self::PoolSwaps(_) => None,
             Self::PoolLiquidityUpdates(_) => None,
             Self::PoolFeeCollects(_) => None,
+            Self::PoolFlashEvents(_) => None,
         }
     }
 
@@ -241,6 +252,7 @@ impl DefiUnsubscribeCommand {
             Self::PoolSwaps(cmd) => cmd.ts_init,
             Self::PoolLiquidityUpdates(cmd) => cmd.ts_init,
             Self::PoolFeeCollects(cmd) => cmd.ts_init,
+            Self::PoolFlashEvents(cmd) => cmd.ts_init,
         }
     }
 }

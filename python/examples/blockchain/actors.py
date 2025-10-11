@@ -28,6 +28,7 @@ from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import PoolFeeCollect  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolFlash  # type: ignore[attr-defined]
 from nautilus_trader.model import PoolLiquidityUpdate  # type: ignore[attr-defined]
 from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
 
@@ -81,6 +82,8 @@ class BlockchainActor(DataActor):
             self.subscribe_pool(instrument_id, self.client_id)
             self.subscribe_pool_swaps(instrument_id, self.client_id)
             self.subscribe_pool_liquidity_updates(instrument_id, self.client_id)
+            self.subscribe_pool_fee_collects(instrument_id, self.client_id)
+            self.subscribe_pool_flash_events(instrument_id, self.client_id)
 
         self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
         self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
@@ -95,6 +98,8 @@ class BlockchainActor(DataActor):
             self.unsubscribe_pool(instrument_id, self.client_id)
             self.unsubscribe_pool_swaps(instrument_id, self.client_id)
             self.unsubscribe_pool_liquidity_updates(instrument_id, self.client_id)
+            self.unsubscribe_pool_fee_collects(instrument_id, self.client_id)
+            self.unsubscribe_pool_flash_events(instrument_id, self.client_id)
 
     def on_time_event(self, event) -> None:
         """
@@ -129,3 +134,9 @@ class BlockchainActor(DataActor):
         Actions to be performed on receiving a pool fee collect event.
         """
         self.log.info(repr(update), LogColor.CYAN)
+
+    def on_pool_flash(self, event: PoolFlash) -> None:
+        """
+        Actions to be performed on receiving a pool flash event.
+        """
+        self.log.info(repr(event), LogColor.CYAN)

@@ -124,6 +124,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
+        self._log.info(f"{config.canceller_pool_size=}", LogColor.BLUE)
 
         # Set initial account ID (will be updated with actual account number on connect)
         self._account_id_prefix = name or BITMEX_VENUE.value
@@ -137,11 +138,29 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._http_client = client
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
+        # Determine HTTP base URL for canceller
+        http_url = config.base_url_http or nautilus_pyo3.get_bitmex_http_base_url(config.testnet)
+
+        self._canceller = nautilus_pyo3.CancelBroadcaster(
+            pool_size=config.canceller_pool_size,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=http_url,
+            testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
+            recv_window_ms=config.recv_window_ms,
+            max_requests_per_second=config.max_requests_per_second,
+            max_requests_per_minute=config.max_requests_per_minute,
+        )
+
         # WebSocket API
-        ws_url = self._determine_ws_url(config)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_bitmex_ws_url(config.testnet)
 
         self._ws_client = nautilus_pyo3.BitmexWebSocketClient(
-            url=ws_url,  # TODO: Move this to Rust
+            url=ws_url,
             api_key=config.api_key,
             api_secret=config.api_secret,
             account_id=self.pyo3_account_id,
@@ -159,14 +178,6 @@ class BitmexExecutionClient(LiveExecutionClient):
     def instrument_provider(self) -> BitmexInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
-    def _determine_ws_url(self, config: BitmexExecClientConfig) -> str:
-        if config.base_url_ws:
-            return config.base_url_ws
-        elif config.testnet:
-            return "wss://testnet.bitmex.com/realtime"
-        else:
-            return "wss://ws.bitmex.com/realtime"
-
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
@@ -174,6 +185,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         for inst in instruments_pyo3:
             self._http_client.add_instrument(inst)
+            self._canceller.add_instrument(inst)  # type: ignore[attr-defined]
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -202,6 +214,9 @@ class BitmexExecutionClient(LiveExecutionClient):
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+
+        await self._canceller.start()
+        self._log.info("Started cancel broadcaster", LogColor.BLUE)
 
         try:
             # Subscribe to authenticated channels for execution updates
@@ -239,6 +254,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to update account state: {e}")
 
     async def _disconnect(self) -> None:
+        await self._canceller.stop()
+        self._log.info("Stopped cancel broadcaster", LogColor.BLUE)
+
         if not self._ws_client.is_closed():
             try:
                 # Unsubscribe from authenticated channels before disconnecting
@@ -547,7 +565,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
 
         try:
-            await self._http_client.cancel_order(
+            await self._canceller.broadcast_cancel(
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
@@ -567,7 +585,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         pyo3_order_side = order_side_to_pyo3(command.order_side) if command.order_side else None
 
         try:
-            await self._http_client.cancel_all_orders(
+            await self._canceller.broadcast_cancel_all(
                 instrument_id=pyo3_instrument_id,
                 order_side=pyo3_order_side,
             )
@@ -618,7 +636,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         ]
 
         try:
-            await self._http_client.cancel_orders(
+            await self._canceller.broadcast_batch_cancel(
                 instrument_id=pyo3_instrument_id,
                 client_order_ids=pyo3_client_order_ids,
                 venue_order_ids=None,

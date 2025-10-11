@@ -453,8 +453,8 @@ async def test_cancel_order_by_client_id(exec_client, instrument, strategy, cach
     await exec_client._cancel_order(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_order.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_order.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel.call_args[1]
     assert call_args["client_order_id"].value == "O-008"
 
 
@@ -488,8 +488,8 @@ async def test_cancel_order_by_venue_id(exec_client, instrument, strategy, cache
     await exec_client._cancel_order(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_order.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_order.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel.call_args[1]
     assert call_args["venue_order_id"].value == "V-67890"
 
 
@@ -509,15 +509,15 @@ async def test_cancel_all_orders(exec_client, instrument, strategy):
     await exec_client._cancel_all_orders(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_all_orders.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_all_orders.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel_all.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel_all.call_args[1]
     assert call_args["instrument_id"].value == "XBTUSD.BITMEX"
 
 
 @pytest.mark.asyncio
 async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
     # Arrange
-    exec_client._mock_http_client.cancel_order.side_effect = Exception("Order already filled")
+    exec_client._mock_canceller.broadcast_cancel.side_effect = Exception("Order already filled")
 
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -546,7 +546,7 @@ async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
     await exec_client._cancel_order(command)
 
     # Assert - rejection is handled internally
-    exec_client._mock_http_client.cancel_order.assert_called_once()
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
 
 
 # ============================================================================

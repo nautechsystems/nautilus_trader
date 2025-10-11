@@ -22,14 +22,14 @@ echo
 
 # If no command is provided, check if we have a TTY and start appropriate shell
 if [ $# -eq 0 ]; then
-    if [ -t 0 ]; then
-        echo "Starting interactive shell..."
-        exec bash
-    else
-        echo "No TTY detected. Use docker run -it for interactive mode."
-        echo "Container ready for commands. Example:"
-        echo "  docker run --rm -itv \"\$(pwd)\":/workspace nautilus-dev"
-    fi
+  if [ -t 0 ]; then
+    echo "Starting interactive shell..."
+    exec bash
+  else
+    echo "No TTY detected. Use docker run -it for interactive mode."
+    echo "Container ready for commands. Example:"
+    echo "  docker run --rm -itv \"\$(pwd)\":/workspace nautilus-dev"
+  fi
 else
-    exec "$@"
+  exec "$@"
 fi

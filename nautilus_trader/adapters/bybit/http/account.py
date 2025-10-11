@@ -507,6 +507,7 @@ class BybitAccountHttpAPI:
         sl_quantity: str | None = None,
         tp_limit_price: str | None = None,
         sl_limit_price: str | None = None,
+        active_price: str | None = None,
     ) -> BybitSetTradingStopResponse:
         position_idx = BybitPositionIdx.ONE_WAY  # TODO
         return await self._endpoint_set_trading_stop.post(
@@ -519,7 +520,7 @@ class BybitAccountHttpAPI:
                 trailingStop=trailing_offset,
                 slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
-                activePrice=None,  # Immediately active
+                activePrice=active_price,
                 tpslMode=tpsl_mode,
                 tpSize=tp_quantity,
                 slSize=sl_quantity,

@@ -32,11 +32,13 @@ This will be the final release with support for Python 3.11.
 - Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
 - Added OKX conditional trigger orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
+- Added OKX demo account support
 - Added Polymarket native market orders support
 
 ### Breaking Changes
 - Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
+- Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
 ### Internal Improvements
@@ -47,6 +49,7 @@ This will be the final release with support for Python 3.11.
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
+- Implemented `PoolFlash` event in blockchain adapter (#3055, #3058), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -64,6 +67,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
+- Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved order books error handling, state integrity, and pprint/display
@@ -76,9 +80,11 @@ This will be the final release with support for Python 3.11.
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
+- Refined setting of flags in Makefile (#3060), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
 - Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
+- Optimized `ExecutionEngine` hot path with topic caching and reduced cache lookups
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4
@@ -116,12 +122,15 @@ This will be the final release with support for Python 3.11.
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Bybit account endpoint pagination handling
+- Fixed Coinbase Intx API credentials handling to allow passing explicitly
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
 - Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
 - Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
 - Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
+- Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
+- Fixed OKX API credentials handling to allow passing explicitly
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq

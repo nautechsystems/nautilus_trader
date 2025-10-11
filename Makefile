@@ -38,17 +38,21 @@ RESET  := $(shell tput -Txterm sgr0)
 
 .DEFAULT_GOAL := help
 
+# Requires GNU Make across all platforms (Windows users should install it via MSYS2 or WSL).
+
 #== Installation
 
 .PHONY: install
+install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
-	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
+install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode for development...)
-	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:  #-- Install dependencies only without building the package
@@ -58,40 +62,46 @@ install-just-deps:  #-- Install dependencies only without building the package
 #== Build
 
 .PHONY: build
+build: export BUILD_MODE=release
 build:  #-- Build the package in release mode
-	BUILD_MODE=release uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 .PHONY: build-debug
+build-debug: export BUILD_MODE=debug
 build-debug:  #-- Build the package in debug mode (recommended for development)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with verbose output...)
-	BUILD_MODE=debug uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode (errors will still be shown)...)
-	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-debug-pyo3
+build-debug-pyo3: export BUILD_MODE=debug-pyo3
 build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with PyO3 debug symbols...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-wheel
+build-wheel: export BUILD_MODE=release
 build-wheel:  #-- Build wheel distribution in release mode
-	BUILD_MODE=release uv build --wheel
+	uv build --wheel
 
 .PHONY: build-wheel-debug
+build-wheel-debug: export BUILD_MODE=debug
 build-wheel-debug:  #-- Build wheel distribution in debug mode
-	BUILD_MODE=debug uv build --wheel
+	uv build --wheel
 
 .PHONY: build-dry-run
+build-dry-run: export DRY_RUN=true
 build-dry-run:  #-- Show build commands without executing them
-	DRY_RUN=true uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 #== Clean
 
@@ -174,16 +184,19 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
+docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
+docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
 docs-rust:  #-- Build Rust documentation with cargo doc
-	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
+	cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
+docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
+	cargo hack --workspace doc --no-deps --all-features
 
 #== Rust Development
 
@@ -236,8 +249,8 @@ check-features: check-hack-installed
 #== Rust Testing
 
 .PHONY: cargo-test
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
+cargo-test: export RUST_BACKTRACE=1
+cargo-test: export HIGH_PRECISION=true
 cargo-test: check-nextest-installed
 cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
 ifeq ($(VERBOSE),true)
@@ -249,38 +262,31 @@ else
 endif
 
 .PHONY: cargo-test-hypersync
-cargo-test-hypersync: RUST_BACKTRACE=1
+cargo-test-hypersync: export RUST_BACKTRACE=1
 cargo-test-hypersync: check-nextest-installed
 cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
 
 .PHONY: cargo-test-lib
-cargo-test-lib: RUST_BACKTRACE=1
-cargo-test-lib: HIGH_PRECISION=true
+cargo-test-lib: export RUST_BACKTRACE=1
+cargo-test-lib: export HIGH_PRECISION=true
 cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
 	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
-cargo-test-standard-precision: RUST_BACKTRACE=1
-cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision: export RUST_BACKTRACE=1
+cargo-test-standard-precision: export HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest-installed
-cargo-test-standard-precision:  #-- Run Rust tests with standard precision (64-bit)
-	cargo nextest run --workspace --features "ffi,python" $(FAIL_FAST_FLAG) --cargo-profile nextest
+cargo-test-standard-precision:  #-- Run Rust tests in debug mode with standard precision (64-bit)
+	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-debug
-cargo-test-debug: RUST_BACKTRACE=1
-cargo-test-debug: HIGH_PRECISION=true
+cargo-test-debug: export RUST_BACKTRACE=1
+cargo-test-debug: export HIGH_PRECISION=true
 cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG)
-
-.PHONY: cargo-test-standard-precision-debug
-cargo-test-standard-precision-debug: RUST_BACKTRACE=1
-cargo-test-standard-precision-debug: HIGH_PRECISION=false
-cargo-test-standard-precision-debug: check-nextest-installed
-cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with standard precision
-	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed
@@ -302,15 +308,15 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 # -----------------------------------------------------------------------------
 
 .PHONY: cargo-test-crate-%
-cargo-test-crate-%: RUST_BACKTRACE=1
-cargo-test-crate-%: HIGH_PRECISION=true
+cargo-test-crate-%: export RUST_BACKTRACE=1
+cargo-test-crate-%: export HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest-installed
 cargo-test-crate-%:  #-- Run Rust tests for a specific crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
 .PHONY: cargo-test-coverage-crate-%
-cargo-test-coverage-crate-%: RUST_BACKTRACE=1
-cargo-test-coverage-crate-%: HIGH_PRECISION=true
+cargo-test-coverage-crate-%: export RUST_BACKTRACE=1
+cargo-test-coverage-crate-%: export HIGH_PRECISION=true
 cargo-test-coverage-crate-%: check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage-crate-%:  #-- Run Rust tests with coverage reporting for a specific crate (usage: make cargo-test-coverage-crate-<crate_name>)
 	cargo llvm-cov nextest --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
@@ -418,6 +424,7 @@ help:  #-- Show this help message and exit
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
 	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"
+	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"

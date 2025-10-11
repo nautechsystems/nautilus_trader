@@ -1129,7 +1129,7 @@ class BybitExecutionClient(LiveExecutionClient):
             await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
-                self._submit_order_methods[order.order_type],  # type: ignore[arg-type]
+                self._submit_order_methods[order.order_type],
                 order,
                 is_leverage,
             )
@@ -1400,11 +1400,27 @@ class BybitExecutionClient(LiveExecutionClient):
             is_leverage=is_leverage,
         )
 
-    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
+    async def _submit_trailing_stop_market(
+        self,
+        order: TrailingStopMarketOrder,
+        is_leverage: bool = False,
+    ) -> None:
+        # Note: is_leverage parameter is accepted to match the method signature expected by
+        # the retry manager, but is not passed to Bybit's set_trading_stop endpoint since
+        # trailing stops are position-level operations and leverage is already set on the position
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        active_price = str(order.activation_price) if order.activation_price else None
+
+        if order.trigger_price is not None:
+            self._log.warning(
+                f"Bybit trailing stops do not support `trigger_price` - will be ignored: "
+                f"only `activation_price` and `trailing_offset` are used for {order.client_order_id}",
+            )
+
         self._pending_trailing_stops[order.client_order_id] = order
+
         await self._http_account.set_trading_stop(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
@@ -1413,6 +1429,7 @@ class BybitExecutionClient(LiveExecutionClient):
             tpsl_mode=BybitTpSlMode.FULL,
             trigger_type=trigger_type,
             trailing_offset=str(order.trailing_offset),
+            active_price=active_price,
         )
 
     def _handle_ws_message_trade(self, raw: bytes) -> None:

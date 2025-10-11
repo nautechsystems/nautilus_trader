@@ -38,7 +38,17 @@ use crate::{
 #[pymethods]
 impl OKXHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[pyo3(signature = (
+        api_key=None,
+        api_secret=None,
+        api_passphrase=None,
+        base_url=None,
+        timeout_secs=None,
+        max_retries=None,
+        retry_delay_ms=None,
+        retry_delay_max_ms=None,
+        is_demo=false,
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -49,6 +59,7 @@ impl OKXHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> PyResult<Self> {
         Self::with_credentials(
             api_key,
@@ -59,6 +70,7 @@ impl OKXHttpClient {
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
+            is_demo,
         )
         .map_err(to_pyvalue_err)
     }

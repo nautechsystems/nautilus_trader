@@ -87,6 +87,13 @@ where
 
     /// Executes an operation with retry logic and optional cancellation.
     ///
+    /// Cancellation is checked at three points:
+    /// (1) Before each operation attempt.
+    /// (2) During operation execution (via `tokio::select!`).
+    /// (3) During retry delays.
+    ///
+    /// This means cancellation may be delayed by up to one operation timeout if it occurs mid-execution.
+    ///
     /// # Errors
     ///
     /// Returns an error if the operation fails after exhausting all retries,
@@ -232,8 +239,9 @@ where
                         "Retrying after failure"
                     );
 
-                    // Skip zero-delay sleep to avoid unnecessary yield
+                    // Yield even on zero-delay to avoid busy-wait loop
                     if delay.is_zero() {
+                        tokio::task::yield_now().await;
                         attempt += 1;
                         continue;
                     }
@@ -309,8 +317,9 @@ where
                         "Retrying after timeout"
                     );
 
-                    // Skip zero-delay sleep to avoid unnecessary yield
+                    // Yield even on zero-delay to avoid busy-wait loop
                     if delay.is_zero() {
+                        tokio::task::yield_now().await;
                         attempt += 1;
                         continue;
                     }

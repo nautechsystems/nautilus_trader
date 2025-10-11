@@ -18,7 +18,6 @@
 pub mod enums;
 pub mod http;
 pub mod urls;
-pub mod websocket;
 
 use pyo3::prelude::*;
 
@@ -26,12 +25,12 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HyperliquidHttpClient>()?;
-
-    // Register conditional order enums
+    m.add_class::<crate::websocket::HyperliquidWebSocketClient>()?;
     m.add_class::<crate::common::enums::HyperliquidTpSl>()?;
     m.add_class::<crate::common::enums::HyperliquidTriggerPriceType>()?;
     m.add_class::<crate::common::enums::HyperliquidConditionalOrderType>()?;
     m.add_class::<crate::common::enums::HyperliquidTrailingOffsetType>()?;
-
+    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_http_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_ws_url, m)?)?;
     Ok(())
 }

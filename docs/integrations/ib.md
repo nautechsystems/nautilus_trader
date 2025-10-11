@@ -988,13 +988,42 @@ production_data_config = InteractiveBrokersDataClientConfig(
 )
 ```
 
-#### Configuration options explained
+### Data client configuration options
+
+| Option                          | Default                                         | Description |
+|---------------------------------|-------------------------------------------------|-------------|
+| `instrument_provider`           | `InteractiveBrokersInstrumentProviderConfig()`  | Instrument provider settings controlling which contracts load at startup. |
+| `ibg_host`                      | `127.0.0.1`                                     | Hostname or IP for TWS/IB Gateway. |
+| `ibg_port`                      | `None`                                          | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG). |
+| `ibg_client_id`                 | `1`                                             | Unique client identifier used when connecting to TWS/IB Gateway. |
+| `use_regular_trading_hours`     | `True`                                          | Request bars limited to regular trading hours when `True`. |
+| `market_data_type`              | `REALTIME`                                      | Market data feed type (`REALTIME`, `DELAYED`, `DELAYED_FROZEN`, etc.). |
+| `ignore_quote_tick_size_updates`| `False`                                         | Suppress quote ticks where only size changes when `True`. |
+| `dockerized_gateway`            | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
+| `connection_timeout`            | `300`                                           | Seconds to wait for the initial API connection. |
+| `request_timeout`               | `60`                                            | Seconds to wait for historical data requests before timing out. |
+
+#### Notes
 
 - **`use_regular_trading_hours`**: When `True`, only requests data during regular trading hours. Primarily affects bar data for stocks.
 - **`ignore_quote_tick_size_updates`**: When `True`, filters out quote ticks where only the size changed (not price), reducing data volume.
 - **`handle_revised_bars`**: When `True`, processes bar revisions from IB (bars can be updated after initial publication).
 - **`connection_timeout`**: Maximum time to wait for initial connection establishment.
 - **`request_timeout`**: Maximum time to wait for historical data requests.
+
+### Execution client configuration options
+
+| Option                                  | Default                                         | Description |
+|-----------------------------------------|-------------------------------------------------|-------------|
+| `instrument_provider`                   | `InteractiveBrokersInstrumentProviderConfig()`  | Instrument provider settings controlling which contracts load at startup. |
+| `ibg_host`                              | `127.0.0.1`                                     | Hostname or IP for TWS/IB Gateway. |
+| `ibg_port`                              | `None`                                          | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG). |
+| `ibg_client_id`                         | `1`                                             | Unique client identifier used when connecting to TWS/IB Gateway. |
+| `account_id`                            | `None`                                          | Interactive Brokers account identifier (falls back to `TWS_ACCOUNT` env var). |
+| `dockerized_gateway`                    | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
+| `connection_timeout`                    | `300`                                           | Seconds to wait for the initial API connection. |
+| `fetch_all_open_orders`                 | `False`                                         | When `True`, pulls open orders for every API client ID (not just this session). |
+| `track_option_exercise_from_position_update` | `False`                                    | Subscribe to real-time position updates to detect option exercises when `True`. |
 
 ### Execution client configuration
 

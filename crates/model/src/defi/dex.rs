@@ -126,6 +126,8 @@ pub struct Dex {
     pub burn_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect collect fee events.
     pub collect_created_event: Cow<'static, str>,
+    // Optional Flash event signature emitted when flash loan occurs.
+    pub flash_created_event: Option<Cow<'static, str>>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
@@ -193,6 +195,7 @@ impl Dex {
             mint_created_event: encoded_mint_event.into(),
             burn_created_event: encoded_burn_event.into(),
             collect_created_event: encoded_collect_event.into(),
+            flash_created_event: None,
             amm_type,
             pairs: vec![],
         }
@@ -203,6 +206,7 @@ impl Dex {
         format!("{}:{}", self.chain.name, self.name)
     }
 
+    /// Sets the pool initialization event signature by hashing and encoding the provided event string.
     pub fn set_initialize_event(&mut self, event: &str) {
         let initialize_event_hash = keccak256(event.as_bytes());
         let encoded_initialized_event = format!(
@@ -210,6 +214,16 @@ impl Dex {
             encoded_hash = hex::encode(initialize_event_hash)
         );
         self.initialize_event = Some(encoded_initialized_event.into());
+    }
+
+    /// Sets the flash loan event signature by hashing and encoding the provided event string.
+    pub fn set_flash_event(&mut self, event: &str) {
+        let flash_event_hash = keccak256(event.as_bytes());
+        let encoded_flash_event = format!(
+            "0x{encoded_hash}",
+            encoded_hash = hex::encode(flash_event_hash)
+        );
+        self.flash_created_event = Some(encoded_flash_event.into());
     }
 }
 

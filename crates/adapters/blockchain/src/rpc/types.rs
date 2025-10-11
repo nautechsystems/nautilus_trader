@@ -17,7 +17,9 @@ use nautilus_model::defi::Block;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
-use crate::events::{burn::BurnEvent, collect::CollectEvent, mint::MintEvent, swap::SwapEvent};
+use crate::events::{
+    burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
+};
 
 /// Represents normalized blockchain messages.
 #[derive(Debug, Clone)]
@@ -27,6 +29,7 @@ pub enum BlockchainMessage {
     MintEvent(MintEvent),
     BurnEvent(BurnEvent),
     CollectEvent(CollectEvent),
+    FlashEvent(FlashEvent),
 }
 
 /// Represents the types of events that can be subscribed to via the blockchain RPC interface.

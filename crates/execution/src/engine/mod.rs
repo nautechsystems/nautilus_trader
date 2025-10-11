@@ -622,7 +622,7 @@ impl ExecutionEngine {
         match event {
             OrderEventAny::Filled(fill) => {
                 let oms_type = self.determine_oms_type(fill);
-                let position_id = self.determine_position_id(*fill, oms_type);
+                let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
 
                 // Create a new fill with the determined position ID
                 let mut fill = *fill;
@@ -659,15 +659,24 @@ impl ExecutionEngine {
         OmsType::Netting // Default fallback
     }
 
-    fn determine_position_id(&mut self, fill: OrderFilled, oms_type: OmsType) -> PositionId {
+    fn determine_position_id(
+        &mut self,
+        fill: OrderFilled,
+        oms_type: OmsType,
+        order: Option<&OrderAny>,
+    ) -> PositionId {
         match oms_type {
-            OmsType::Hedging => self.determine_hedging_position_id(fill),
+            OmsType::Hedging => self.determine_hedging_position_id(fill, order),
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill), // Default to netting
         }
     }
 
-    fn determine_hedging_position_id(&mut self, fill: OrderFilled) -> PositionId {
+    fn determine_hedging_position_id(
+        &mut self,
+        fill: OrderFilled,
+        order: Option<&OrderAny>,
+    ) -> PositionId {
         // Check if position ID already exists
         if let Some(position_id) = fill.position_id {
             if self.config.debug {
@@ -676,15 +685,19 @@ impl ExecutionEngine {
             return position_id;
         }
 
-        // Check for order
         let cache = self.cache.borrow();
-        let order = match cache.order(&fill.client_order_id()) {
-            Some(o) => o,
-            None => {
-                panic!(
-                    "Order for {} not found to determine position ID",
-                    fill.client_order_id()
-                );
+
+        let order = if let Some(o) = order {
+            o
+        } else {
+            match cache.order(&fill.client_order_id()) {
+                Some(o) => o,
+                None => {
+                    panic!(
+                        "Order for {} not found to determine position ID",
+                        fill.client_order_id()
+                    );
+                }
             }
         };
 

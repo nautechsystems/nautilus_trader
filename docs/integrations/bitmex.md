@@ -1,9 +1,9 @@
 # BitMEX
 
 Founded in 2014, BitMEX (Bitcoin Mercantile Exchange) is a cryptocurrency derivatives
-trading platform offering spot, perpetual contracts, traditional futures, and other
-advanced trading products. This integration supports live market data ingest and order
-execution with BitMEX.
+trading platform offering spot, perpetual contracts, traditional futures, prediction
+markets, and other advanced trading products. This integration supports live market data
+ingest and order execution with BitMEX.
 
 ## Overview
 
@@ -50,13 +50,14 @@ NautilusTrader integration guide.
 
 ## Product support
 
-| Product Type      | Data Feed | Trading | Notes                                           |
-|-------------------|-----------|---------|-------------------------------------------------|
-| Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives. |
-| Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.         |
-| Futures           | ✓         | ✓       | Traditional fixed expiration contracts.         |
-| Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.  |
-| Options           | -         | -       | *Not available*.                                |
+| Product Type      | Data Feed | Trading | Notes                                               |
+|-------------------|-----------|---------|-----------------------------------------------------|
+| Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives.     |
+| Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.             |
+| Futures           | ✓         | ✓       | Traditional fixed expiration contracts.             |
+| Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.      |
+| Prediction Markets| ✓         | ✓       | Event-based contracts, 0-100 pricing, USDT settled. |
+| Options           | -         | -       | *Not provided by BitMEX*.                           |
 
 :::note
 BitMEX has discontinued their options products to focus on their core derivatives and spot offerings.
@@ -73,6 +74,7 @@ BitMEX has discontinued their options products to focus on their core derivative
 - **Perpetual contracts**: Inverse (e.g., XBTUSD) and linear (e.g., ETHUSDT).
 - **Traditional futures**: Fixed expiration date contracts.
 - **Quanto futures**: Contracts settled in a different currency than the underlying.
+- **Prediction markets**: Event-based derivatives (e.g., P_FTXZ26, P_SBFJAILZ26) allowing traders to speculate on outcomes across crypto, finance, and other events. No leverage, priced 0-100, settled in USDT.
 
 ## Symbology
 
@@ -87,6 +89,7 @@ BitMEX symbols typically follow these patterns:
 - **Perpetual contracts**: Base currency + Quote currency (e.g., `XBTUSD`, `ETHUSD`).
 - **Futures contracts**: Base currency + Expiry code (e.g., `XBTM24`, `ETHH25`).
 - **Quanto contracts**: Special naming for non-USD settled contracts.
+- **Prediction markets**: `P_` prefix + Event identifier + Expiry code (e.g., `P_POWELLK26`, `P_FTXZ26`).
 
 :::info
 BitMEX uses `XBT` as the symbol for Bitcoin instead of `BTC`. This follows the ISO 4217
@@ -131,6 +134,9 @@ linear_perp_id = InstrumentId.from_str("ETHUSDT.BITMEX")  # Ethereum perpetual (
 
 # Futures contract (June 2024)
 futures_id = InstrumentId.from_str("XBTM24.BITMEX")  # Bitcoin futures expiring June 2024
+
+# Prediction market contracts
+prediction_id = InstrumentId.from_str("P_XBTETFV23.BITMEX")  # Bitcoin ETF SEC approval prediction expiring October 2023
 ```
 
 :::note
@@ -303,39 +309,8 @@ persistent connections and avoiding the overhead of establishing new connections
 
 BitMEX uses an `api-expires` header for request authentication to prevent replay attacks:
 
-- Each signed request includes a Unix timestamp (in seconds) indicating when it expires.
-- The timestamp is calculated as: `current_timestamp + (recv_window_ms / 1000)`.
-- BitMEX rejects requests where the `api-expires` timestamp has already passed.
-
-#### Configuring the expiration window
-
-The expiration window is controlled by the `recv_window_ms` configuration parameter (default: 10000ms = 10 seconds):
-
-```python
-from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
-
-config = BitmexExecClientConfig(
-    api_key="YOUR_API_KEY",
-    api_secret="YOUR_API_SECRET",
-    recv_window_ms=30000,  # 30 seconds for high-latency networks
-)
-```
-
-**When to adjust this value:**
-
-- **Default (10s)**: Sufficient for most deployments with accurate system clocks and low network latency.
-- **Increase (20-30s)**: If you experience "request has expired" errors due to:
-  - Clock skew between your system and BitMEX servers.
-  - High network latency or packet loss.
-  - Requests queued due to rate limiting.
-- **Decrease (5s)**: For tighter security in low-latency, time-synchronized environments.
-
-**Important considerations:**
-
-- **Milliseconds to seconds**: Specified in milliseconds for consistency with other adapters, but converted to seconds via integer division (`recv_window_ms / 1000`) since BitMEX uses seconds-granularity timestamps.
-- Larger windows increase tolerance for timing issues but widen the replay attack window.
-- Ensure your system clock is synchronized with NTP to minimize clock drift.
-- Network latency and processing time consume part of the window.
+- Signed requests include an `api-expires` Unix timestamp set `recv_window_ms / 1000` seconds ahead (10 seconds by default).
+- BitMEX rejects any request once that timestamp has passed, so keep latency within your configured window.
 
 ## Rate limiting
 
@@ -371,6 +346,19 @@ The rate limits can be configured if your account has different limits than the 
 For more details on rate limiting, see the [BitMEX API documentation on rate limits](https://www.bitmex.com/app/restAPI#Limits).
 :::
 
+:::warning
+**Cancel Broadcaster Rate Limit Considerations**
+
+The cancel broadcaster (when `canceller_pool_size > 1`) fans out each cancel request to multiple independent HTTP clients in parallel. Each client maintains its own rate limiter, which means the effective request rate is multiplied by the pool size.
+
+**Example**: With `canceller_pool_size=3` (default) and `max_requests_per_second=10`, a single cancel operation consumes **3 requests** (one per client), potentially reaching **30 requests/second** if canceling rapidly.
+
+Since BitMEX enforces rate limits **at the account level** (not per connection), the broadcaster can push you over the exchange's default limits of 10 req/s burst and 120 req/min rolling window.
+
+**Mitigations**: Reduce `max_requests_per_second` and `max_requests_per_minute` proportionally (divide by `canceller_pool_size`), or adjust the pool size itself (see [Cancel broadcaster configuration](#cancel-broadcaster)).
+Future versions may support shared rate limiters across the pool.
+:::
+
 ### Rate-limit headers
 
 BitMEX exposes the current allowance via response headers:
@@ -379,6 +367,74 @@ BitMEX exposes the current allowance via response headers:
 - `x-ratelimit-remaining`: remaining requests before throttling occurs.
 - `x-ratelimit-reset`: UNIX timestamp when the allowance resets.
 - `retry-after`: seconds to wait after a 429 response.
+
+## Cancel broadcaster
+
+The BitMEX execution client includes a cancel broadcaster that provides fault-tolerant order cancellation through parallel request fanout.
+
+### Concepts
+
+Order cancellations are time-critical operations - when a strategy decides to cancel an order, any delay or failure can result in unintended fills, slippage, or unwanted position exposure. The cancel broadcaster addresses this by:
+
+- **Parallel fanout**: Cancel requests are simultaneously broadcast to multiple independent HTTP client instances.
+- **First-success short-circuiting**: The first successful response wins, and remaining in-flight requests are immediately aborted.
+- **Fault tolerance**: If one HTTP client experiences network issues, DNS failures, or connection timeouts, other clients in the pool continue processing.
+- **Idempotent success handling**: Responses indicating the order was already canceled (such as "orderID not found" or similar idempotent states) are treated as success rather than failure, preventing unnecessary error propagation.
+
+This architecture ensures that a single network path failure or slow connection doesn't block critical cancel operations, improving the reliability of risk management and position control in live trading.
+
+### Health monitoring
+
+Each HTTP client in the broadcaster pool maintains health metrics:
+
+- Successful cancellations mark a client as healthy.
+- Failed requests increment error counters.
+- Background health checks periodically verify client connectivity.
+- Degraded clients are tracked but remain in the pool to maintain fault tolerance.
+
+The broadcaster exposes metrics including total cancels, successful cancels, failed cancels, expected rejects (already canceled orders), and idempotent successes for operational monitoring and debugging.
+
+#### Tracked metrics
+
+| Metric                   | Type   | Description                                                                                                           |
+|--------------------------|--------|-----------------------------------------------------------------------------------------------------------------------|
+| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel-all requests).                        |
+| `successful_cancels`     | `u64`  | Number of cancel operations that successfully received acknowledgement from BitMEX.                                   |
+| `failed_cancels`         | `u64`  | Number of cancel operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
+| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post-only order rejections).                                    |
+| `idempotent_successes`   | `u64`  | Number of idempotent success responses (order already cancelled, order not found, unable to cancel due to state).     |
+| `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
+| `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                          |
+
+These metrics can be accessed programmatically via the `get_metrics()` and `get_metrics_async()` methods on the `CancelBroadcaster` instance.
+
+### Configuration
+
+The cancel broadcaster is configured via the execution client configuration:
+
+| Option                | Default | Description                                                                               |
+|-----------------------|---------|-------------------------------------------------------------------------------------------|
+| `canceller_pool_size` | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
+
+**Example configuration**:
+
+```python
+from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
+
+exec_config = BitmexExecClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    canceller_pool_size=3,  # Default pool size
+)
+```
+
+:::tip
+For HFT strategies without higher rate limits, consider reducing `canceller_pool_size=1` to minimize rate limit consumption.
+The default pool size of 3 broadcasts each cancel request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per cancel operation.
+Single-client mode still benefits from the broadcaster's idempotent success handling but uses standard rate limits.
+:::
+
+The broadcaster is automatically started when the execution client connects and stopped when it disconnects. All cancel operations (`cancel_order`, `cancel_all_orders`, `batch_cancel_orders`) are automatically routed through the broadcaster without requiring any changes to strategy code.
 
 ## Configuration
 
@@ -424,6 +480,8 @@ The BitMEX data client provides the following configuration options:
 | `retry_delay_max_ms`              | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`                  | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
+| `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 
 ### Execution client configuration options
 
@@ -441,6 +499,9 @@ The BitMEX execution client provides the following configuration options:
 | `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
 | `retry_delay_max_ms`     | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
+| `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
+| `canceller_pool_size`    | `3`      | Number of redundant HTTP clients in the cancel broadcaster pool. See [Cancel broadcaster](#cancel-broadcaster). |
 
 ### Configuration examples
 
@@ -509,6 +570,7 @@ handles the required BitMEX wiring automatically.
 - **Maker fees**: Typically negative (rebate) for providing liquidity.
 - **Taker fees**: Positive fee for taking liquidity.
 - **Funding rates**: Apply to perpetual contracts every 8 hours.
+- **Prediction market fees**: Maker 0.00%, Taker 0.25% (no leverage allowed).
 
 :::info
 For additional features or to contribute to the BitMEX adapter, please see our

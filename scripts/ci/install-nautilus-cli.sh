@@ -17,7 +17,7 @@ if [ "${NAUTILUS_CLI_FORCE_SOURCE:-0}" = "1" ]; then
 else
   echo "Installing Nautilus CLI to $BIN_DIR..."
   if ! curl -fL --connect-timeout 10 --retry 5 --retry-delay 2 --retry-max-time 60 --retry-all-errors "$INSTALL_URL" | bash -s -- -b "$BIN_DIR"; then
-    if command -v nautilus >/dev/null 2>&1; then
+    if command -v nautilus > /dev/null 2>&1; then
       echo "Installer exit ignored (known cleanup trap bug)"
     else
       echo "Prebuilt install failed; building CLI from source..."

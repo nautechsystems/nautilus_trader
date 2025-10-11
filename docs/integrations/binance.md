@@ -325,18 +325,48 @@ For more details on rate limiting, see the official documentation: <https://bina
 
 ## Configuration
 
-### Configuration options
+### Data client configuration options
 
-The following execution client configuration options affect order behavior:
+| Option                             | Default | Description |
+|------------------------------------|---------|-------------|
+| `venue`                            | `BINANCE` | Venue identifier used when registering the client. |
+| `api_key`                          | `None`  | Binance API key; loaded from environment variables when omitted. |
+| `api_secret`                       | `None`  | Binance API secret; loaded from environment variables when omitted. |
+| `key_type`                         | `HMAC`  | Cryptographic key type (`HMAC`, `RSA`, or `ED25519`). |
+| `account_type`                     | `SPOT`  | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
+| `base_url_http`                    | `None`  | Override for the HTTP REST base URL. |
+| `base_url_ws`                      | `None`  | Override for the WebSocket base URL. |
+| `us`                               | `False` | Route requests to Binance US endpoints when `True`. |
+| `testnet`                          | `False` | Use Binance testnet endpoints when `True`. |
+| `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalogue refreshes. |
+| `use_agg_trade_ticks`              | `False` | When `True`, subscribe to aggregated trade ticks instead of raw trades. |
 
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
-| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
-| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
-| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
-| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
-| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
+### Execution client configuration options
+
+| Option                               | Default | Description |
+|--------------------------------------|---------|-------------|
+| `venue`                              | `BINANCE` | Venue identifier used when registering the client. |
+| `api_key`                            | `None`  | Binance API key; loaded from environment variables when omitted. |
+| `api_secret`                         | `None`  | Binance API secret; loaded from environment variables when omitted. |
+| `key_type`                           | `HMAC`  | Cryptographic key type (`HMAC`, `RSA`, or `ED25519`). |
+| `account_type`                       | `SPOT`  | Account type for order placement (spot, margin, USDT futures, coin futures). |
+| `base_url_http`                      | `None`  | Override for the HTTP REST base URL. |
+| `base_url_ws`                        | `None`  | Override for the WebSocket base URL. |
+| `us`                                 | `False` | Route requests to Binance US endpoints when `True`. |
+| `testnet`                            | `False` | Use Binance testnet endpoints when `True`. |
+| `use_gtd`                            | `True`  | When `False`, remaps GTD orders to GTC for local expiry management. |
+| `use_reduce_only`                    | `True`  | When `True`, passes through `reduce_only` instructions to Binance. |
+| `use_position_ids`                   | `True`  | Enable Binance hedging position IDs; set `False` for virtual hedging. |
+| `use_trade_lite`                     | `False` | Use TRADE_LITE execution events that include derived fees. |
+| `treat_expired_as_canceled`          | `False` | Treat `EXPIRED` execution types as `CANCELED` when `True`. |
+| `recv_window_ms`                     | `5,000` | Receive window (milliseconds) for signed REST requests. |
+| `max_retries`                        | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms`             | `None`  | Initial delay (milliseconds) between retry attempts. |
+| `retry_delay_max_ms`                 | `None`  | Maximum delay (milliseconds) between retry attempts. |
+| `futures_leverages`                  | `None`  | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
+| `futures_margin_types`               | `None`  | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
+| `listen_key_ping_max_failures`       | `3`     | Consecutive listen key ping failures allowed before recovery triggers. |
+| `log_rejected_due_post_only_as_warning` | `True` | Log post-only rejections as warnings when `True`; otherwise as errors. |
 
 The most common use case is to configure a live `TradingNode` to include Binance
 data and execution clients. To achieve this, add a `BINANCE` section to your client

@@ -303,7 +303,7 @@ pub enum HyperliquidWsMessage {
     /// Web data
     WebData2 { data: serde_json::Value },
     /// Candlestick data
-    Candle { data: Vec<CandleData> },
+    Candle { data: CandleData },
     /// Level 2 order book
     L2Book { data: WsBookData },
     /// Trade updates
@@ -374,15 +374,15 @@ pub struct CandleData {
     /// Interval
     pub i: String,
     /// Open price
-    pub o: f64,
+    pub o: String,
     /// Close price
-    pub c: f64,
+    pub c: String,
     /// High price
-    pub h: f64,
+    pub h: String,
     /// Low price
-    pub l: f64,
+    pub l: String,
     /// Volume
-    pub v: f64,
+    pub v: String,
     /// Number of trades
     pub n: u32,
 }

@@ -36,10 +36,10 @@ if [[ $# -lt 4 ]]; then
 fi
 
 # Positional arguments
-slug="$1"          # Dataset directory name, e.g. fi2010_day1
-file="$2"          # Output filename, e.g. lob_5stocks.csv.gz
-url="$3"           # Original download URL
-licence="$4"       # Licence identifier or URL (e.g. CC-BY-SA-4.0)
+slug="$1"    # Dataset directory name, e.g. fi2010_day1
+file="$2"    # Output filename, e.g. lob_5stocks.csv.gz
+url="$3"     # Original download URL
+licence="$4" # Licence identifier or URL (e.g. CC-BY-SA-4.0)
 
 # Create target directory under versioned root
 root_dir="v1/${slug}"
@@ -61,7 +61,7 @@ echo "${licence}" > "${root_dir}/LICENSE.txt"
 # Write metadata.json
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-cat > "${root_dir}/metadata.json" <<JSON
+cat > "${root_dir}/metadata.json" << JSON
 {
   "file": "${file}",
   "sha256": "${sha256}",

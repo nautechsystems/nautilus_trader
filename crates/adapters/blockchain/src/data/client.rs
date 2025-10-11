@@ -18,8 +18,9 @@ use nautilus_common::{
         DataEvent,
         defi::{
             DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
-            SubscribePool, SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates,
-            SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+            SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+            SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+            UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
@@ -274,6 +275,23 @@ impl BlockchainDataClient {
                                         }
                                     }
                                 }
+                            BlockchainMessage::FlashEvent(flash_event) => {
+                                    match core_client.get_pool(&flash_event.pool_address) {
+                                        Ok(pool) => {
+                                            match core_client.process_pool_flash_event(&flash_event,pool){
+                                                Ok(flash) => Some(DataEvent::DeFi(DefiData::PoolFlash(flash))),
+                                                Err(e) => {
+                                                    tracing::error!("Error processing pool flash event: {e}");
+                                                    None
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to get pool {} with error {:?}", flash_event.pool_address, e);
+                                            None
+                                        }
+                                    }
+                                }
                             };
 
                             if let Some(event) = data_event {
@@ -308,6 +326,9 @@ impl BlockchainDataClient {
                                 }
                                 Ok(BlockchainMessage::CollectEvent(_)) => {
                                     tracing::warn!("RPC collect events are not yet supported")
+                                }
+                                Ok(BlockchainMessage::FlashEvent(_)) => {
+                                    tracing::warn!("RPC flash events are not yet supported")
                                 }
                                 Err(e) => {
                                     tracing::error!("Error processing RPC message: {e}");
@@ -456,6 +477,38 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
+            DefiSubscribeCommand::PoolFlashEvents(cmd) => {
+                tracing::info!(
+                    "Processing subscribe pool flash command for address: {}",
+                    cmd.instrument_id
+                );
+
+                if let Some(ref mut _rpc) = core_client.rpc_client {
+                    tracing::warn!(
+                        "RPC pool fee collects subscription not yet implemented, using HyperSync"
+                    );
+                }
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|_| {
+                            anyhow::anyhow!(
+                                "Invalid pool flash subscribe address: {}",
+                                cmd.instrument_id
+                            )
+                        })?;
+                    core_client
+                        .subscription_manager
+                        .subscribe_flashes(dex, pool_address);
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
+                Ok(())
+            }
         }
     }
 
@@ -548,6 +601,29 @@ impl BlockchainDataClient {
                     core_client
                         .subscription_manager
                         .unsubscribe_collects(dex, pool_address);
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
+                Ok(())
+            }
+            DefiUnsubscribeCommand::PoolFlashEvents(cmd) => {
+                tracing::info!(
+                    "Processing unsubscribe pool flash command for {}",
+                    cmd.instrument_id
+                );
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|_| {
+                            anyhow::anyhow!("Invalid pool flash address: {}", cmd.instrument_id)
+                        })?;
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_flashes(dex, pool_address);
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -692,6 +768,16 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
+    fn subscribe_pool_flash_events(
+        &mut self,
+        cmd: &SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFlashEvents(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
         let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::Blocks(cmd.clone()));
         self.command_tx.send(command)?;
@@ -726,6 +812,16 @@ impl DataClient for BlockchainDataClient {
     ) -> anyhow::Result<()> {
         let command =
             DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())
     }

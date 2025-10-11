@@ -757,16 +757,14 @@ pub fn parse_account_state(
     for coin in &wallet_balance.coin {
         let currency = Currency::from_str(&coin.coin)?;
 
-        let initial_margin_f64 = if coin.total_position_im.is_empty() {
-            0.0
-        } else {
-            coin.total_position_im.parse::<f64>()?
+        let initial_margin_f64 = match &coin.total_position_im {
+            Some(im) if !im.is_empty() => im.parse::<f64>()?,
+            _ => 0.0,
         };
 
-        let maintenance_margin_f64 = if coin.total_position_mm.is_empty() {
-            0.0
-        } else {
-            coin.total_position_mm.parse::<f64>()?
+        let maintenance_margin_f64 = match &coin.total_position_mm {
+            Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
+            _ => 0.0,
         };
 
         // Only create margin balance if there are actual margin requirements

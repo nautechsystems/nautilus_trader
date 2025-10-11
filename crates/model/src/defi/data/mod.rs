@@ -26,6 +26,7 @@ use crate::{defi::Pool, identifiers::InstrumentId};
 
 pub mod block;
 pub mod collect;
+pub mod flash;
 pub mod liquidity;
 pub mod swap;
 pub mod transaction;
@@ -33,6 +34,7 @@ pub mod transaction;
 // Re-exports
 pub use block::Block;
 pub use collect::PoolFeeCollect;
+pub use flash::PoolFlash;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
 pub use transaction::Transaction;
@@ -42,6 +44,7 @@ pub enum DexPoolData {
     Swap(PoolSwap),
     LiquidityUpdate(PoolLiquidityUpdate),
     FeeCollect(PoolFeeCollect),
+    Flash(PoolFlash),
 }
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
@@ -62,6 +65,8 @@ pub enum DefiData {
     PoolLiquidityUpdate(PoolLiquidityUpdate),
     /// A fee collection event from a DEX pool position.
     PoolFeeCollect(PoolFeeCollect),
+    /// A flash event
+    PoolFlash(PoolFlash),
 }
 
 impl DefiData {
@@ -78,6 +83,7 @@ impl DefiData {
             Self::PoolLiquidityUpdate(update) => update.instrument_id(),
             Self::PoolFeeCollect(collect) => collect.instrument_id(),
             Self::Pool(pool) => pool.instrument_id,
+            Self::PoolFlash(flash) => flash.instrument_id(),
         }
     }
 }
@@ -90,6 +96,7 @@ impl Display for DefiData {
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::PoolFeeCollect(c) => write!(f, "{c}"),
+            Self::PoolFlash(p) => write!(f, "{p}"),
         }
     }
 }

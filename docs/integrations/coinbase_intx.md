@@ -202,15 +202,6 @@ Coinbase International offers market, limit, and stop order types, enabling a br
 | Bracket orders      | ?           | ?    | Requires further investigation.              |
 | Conditional orders  | ✓           | ✓    | Stop and stop-limit orders.                |
 
-### Configuration Options
-
-The following execution client configuration options are available:
-
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `portfolio_id`               | `None`  | Specifies the Coinbase International portfolio to trade. Required for execution. |
-| `http_timeout_secs`          | `60`    | Default timeout for HTTP requests in seconds. |
-
 ### FIX drop copy integration
 
 The Coinbase International adapter includes a FIX (Financial Information eXchange) [drop copy](https://docs.cdp.coinbase.com/intx/docs/fix-msg-drop-copy) client.
@@ -259,6 +250,31 @@ To comply, set the `use_uuid_client_order_ids=True` config option in your strate
 
 See the Coinbase International [Create order](https://docs.cdp.coinbase.com/intx/reference/createorder) REST API documentation for further details.
 :::
+
+### Data client configuration options
+
+| Option            | Default        | Description |
+|-------------------|----------------|-------------|
+| `venue`           | `COINBASE_INTX`| Venue identifier registered for the data client. |
+| `api_key`         | `None`         | API key; loaded from `COINBASE_INTX_API_KEY` (or testnet variant) when omitted. |
+| `api_secret`      | `None`         | API secret; loaded from `COINBASE_INTX_API_SECRET` (or testnet variant) when omitted. |
+| `api_passphrase`  | `None`         | API passphrase; loaded from `COINBASE_INTX_API_PASSPHRASE` when omitted. |
+| `base_url_http`   | `None`         | Override for the REST base URL. |
+| `base_url_ws`     | `None`         | Override for the WebSocket base URL. |
+| `http_timeout_secs` | `60`        | Default timeout (seconds) applied to REST calls. |
+
+### Execution client configuration options
+
+| Option             | Default        | Description |
+|--------------------|----------------|-------------|
+| `venue`            | `COINBASE_INTX`| Venue identifier registered for the execution client. |
+| `api_key`          | `None`         | API key; loaded from `COINBASE_INTX_API_KEY` (or testnet variant) when omitted. |
+| `api_secret`       | `None`         | API secret; loaded from `COINBASE_INTX_API_SECRET` (or testnet variant) when omitted. |
+| `api_passphrase`   | `None`         | API passphrase; loaded from `COINBASE_INTX_API_PASSPHRASE` when omitted. |
+| `portfolio_id`     | `None`         | Portfolio identifier to trade; required for order submission. |
+| `base_url_http`    | `None`         | Override for the REST base URL. |
+| `base_url_ws`      | `None`         | Override for the WebSocket base URL. |
+| `http_timeout_secs`| `60`           | Default timeout (seconds) applied to REST calls. |
 
 An example configuration could be:
 

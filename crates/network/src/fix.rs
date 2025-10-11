@@ -90,8 +90,13 @@ pub(crate) fn process_fix_buffer(buf: &mut Vec<u8>, handler: &TcpMessageHandler)
                 processed_to = idx + 1;
             }
         } else {
-            // No message start found in the remaining buffer, clear it to avoid garbage buildup
-            buf.clear();
+            // No message start found in the remaining buffer
+            // Keep last 4 bytes in case they contain a partial "8=FIX" pattern at buffer boundary
+            // This prevents discarding partial message starts that span buffer reads
+            if buf.len() > START_PATTERN.len() - 1 {
+                let keep_from = buf.len() - (START_PATTERN.len() - 1);
+                buf.drain(0..keep_from);
+            }
             return;
         }
     }

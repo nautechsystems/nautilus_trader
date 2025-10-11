@@ -130,6 +130,9 @@ def mock_http_client():
     # Mock account number retrieval
     mock.http_get_margin = AsyncMock(return_value="1234567")
 
+    # Mock server time retrieval
+    mock.http_get_server_time = AsyncMock(return_value=1234567890000)
+
     # Mock account state request
     mock_account_state = MagicMock()
     mock_account_state.to_dict = MagicMock(
@@ -228,6 +231,28 @@ def mock_ws_client():
 
 
 @pytest.fixture()
+def mock_canceller():
+    """
+    Create a mock BitMEX cancel broadcaster.
+    """
+    mock = MagicMock(spec=nautilus_pyo3.CancelBroadcaster)
+
+    # Mock lifecycle methods
+    mock.start = AsyncMock()
+    mock.stop = AsyncMock()
+
+    # Mock instrument caching
+    mock.add_instrument = MagicMock()
+
+    # Mock cancel operations
+    mock.broadcast_cancel = AsyncMock()
+    mock.broadcast_cancel_all = AsyncMock()
+    mock.broadcast_batch_cancel = AsyncMock()
+
+    return mock
+
+
+@pytest.fixture()
 def mock_instrument_provider(instrument):
     """
     Create a mock BitMEX instrument provider.
@@ -249,6 +274,7 @@ def exec_client(
     event_loop,
     mock_http_client,
     mock_ws_client,
+    mock_canceller,
     msgbus,
     cache,
     live_clock,
@@ -262,6 +288,12 @@ def exec_client(
     monkeypatch.setattr(
         "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.BitmexWebSocketClient",
         lambda *args, **kwargs: mock_ws_client,
+    )
+
+    # Patch the CancelBroadcaster creation
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.CancelBroadcaster",
+        lambda *args, **kwargs: mock_canceller,
     )
 
     config = BitmexExecClientConfig(
@@ -284,6 +316,7 @@ def exec_client(
     # Store the mocked clients for test access
     client._mock_http_client = mock_http_client
     client._mock_ws_client = mock_ws_client
+    client._mock_canceller = mock_canceller
 
     return client
 

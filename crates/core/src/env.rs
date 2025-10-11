@@ -30,9 +30,26 @@ pub fn get_env_var(key: &str) -> anyhow::Result<String> {
     }
 }
 
+/// Returns the provided `value` if `Some`, otherwise falls back to reading
+/// the environment variable for the given `key`.
+///
+/// Only attempts to read the environment variable when `value` is `None`,
+/// avoiding unnecessary environment variable lookups and errors.
+///
+/// # Errors
+///
+/// Returns an error if `value` is `None` and the environment variable is not set.
+pub fn get_or_env_var(value: Option<String>, key: &str) -> anyhow::Result<String> {
+    match value {
+        Some(v) => Ok(v),
+        None => get_env_var(key),
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::*;
@@ -67,5 +84,53 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains(var_name));
         assert!(error_msg.contains("must be set"));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_some_value() {
+        let provided_value = Some("provided_value".to_string());
+        let result = get_or_env_var(provided_value, "PATH");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "provided_value");
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_none_and_env_var_set() {
+        // Test with a commonly available environment variable
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_or_env_var(None, "PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), path);
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_none_and_env_var_not_set() {
+        let result = get_or_env_var(None, "NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_67890");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(
+            "environment variable 'NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_67890' must be set"
+        ));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_empty_string_value() {
+        // Empty string is still a valid value that should be returned
+        let provided_value = Some(String::new());
+        let result = get_or_env_var(provided_value, "PATH");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_priority() {
+        // When both value and env var are available, value takes precedence
+        // Using PATH as it should be available in most environments
+        if std::env::var("PATH").is_ok() {
+            let provided = Some("custom_value_takes_priority".to_string());
+            let result = get_or_env_var(provided, "PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), "custom_value_takes_priority");
+        }
     }
 }

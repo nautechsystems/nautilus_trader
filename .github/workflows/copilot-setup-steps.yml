@@ -15,7 +15,8 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      COPILOT_AGENT_FIREWALL_ALLOW_LIST: "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
+      COPILOT_AGENT_FIREWALL_ALLOW_LIST:
+        "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
     services:
       redis:
         image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21

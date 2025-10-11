@@ -27,10 +27,12 @@ pub struct DefiDataSubscriptionManager {
     pool_mint_event_encoded: AHashMap<DexType, String>,
     pool_burn_event_encoded: AHashMap<DexType, String>,
     pool_collect_event_encoded: AHashMap<DexType, String>,
+    pool_flash_event_encoded: AHashMap<DexType, String>,
     subscribed_pool_swaps: AHashMap<DexType, AHashSet<Address>>,
     subscribed_pool_mints: AHashMap<DexType, AHashSet<Address>>,
     subscribed_pool_burns: AHashMap<DexType, AHashSet<Address>>,
     subscribed_pool_collects: AHashMap<DexType, AHashSet<Address>>,
+    subscribed_pool_flashes: AHashMap<DexType, AHashSet<Address>>,
 }
 
 impl Default for DefiDataSubscriptionManager {
@@ -48,10 +50,12 @@ impl DefiDataSubscriptionManager {
             pool_burn_event_encoded: AHashMap::new(),
             pool_mint_event_encoded: AHashMap::new(),
             pool_collect_event_encoded: AHashMap::new(),
+            pool_flash_event_encoded: AHashMap::new(),
             subscribed_pool_burns: AHashMap::new(),
             subscribed_pool_mints: AHashMap::new(),
             subscribed_pool_swaps: AHashMap::new(),
             subscribed_pool_collects: AHashMap::new(),
+            subscribed_pool_flashes: AHashMap::new(),
         }
     }
 
@@ -70,6 +74,9 @@ impl DefiDataSubscriptionManager {
             unique_addresses.extend(addresses.iter().copied());
         }
         if let Some(addresses) = self.subscribed_pool_collects.get(dex) {
+            unique_addresses.extend(addresses.iter().copied());
+        }
+        if let Some(addresses) = self.subscribed_pool_flashes.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
 
@@ -92,6 +99,9 @@ impl DefiDataSubscriptionManager {
         }
         if let Some(collect_event_signature) = self.pool_collect_event_encoded.get(dex) {
             result.push(collect_event_signature.clone());
+        }
+        if let Some(flash_event_signature) = self.pool_flash_event_encoded.get(dex) {
+            result.push(flash_event_signature.clone());
         }
 
         result
@@ -158,6 +168,7 @@ impl DefiDataSubscriptionManager {
         mint_event_signature: &str,
         burn_event_signature: &str,
         collect_event_signature: &str,
+        flash_event_signature: Option<&str>,
     ) {
         self.subscribed_pool_swaps.insert(dex, AHashSet::new());
         self.pool_swap_event_encoded
@@ -174,6 +185,12 @@ impl DefiDataSubscriptionManager {
         self.subscribed_pool_collects.insert(dex, AHashSet::new());
         self.pool_collect_event_encoded
             .insert(dex, Self::normalize_topic(collect_event_signature));
+
+        if let Some(flash_event_signature) = flash_event_signature {
+            self.subscribed_pool_flashes.insert(dex, AHashSet::new());
+            self.pool_flash_event_encoded
+                .insert(dex, Self::normalize_topic(flash_event_signature));
+        }
 
         tracing::info!("Registered DEX for subscriptions: {dex:?}");
     }
@@ -249,6 +266,24 @@ impl DefiDataSubscriptionManager {
             tracing::error!("DEX not registered for collect subscriptions: {dex:?}");
         }
     }
+
+    /// Subscribes to flash events for a specific pool address on a DEX.
+    pub fn subscribe_flashes(&mut self, dex: DexType, address: Address) {
+        if let Some(pool_set) = self.subscribed_pool_flashes.get_mut(&dex) {
+            pool_set.insert(address);
+        } else {
+            tracing::error!("DEX not registered for flash subscriptions: {dex:?}");
+        }
+    }
+
+    /// Unsubscribes from flash events for a specific pool address on a DEX.
+    pub fn unsubscribe_flashes(&mut self, dex: DexType, address: Address) {
+        if let Some(pool_set) = self.subscribed_pool_flashes.get_mut(&dex) {
+            pool_set.remove(&address);
+        } else {
+            tracing::error!("DEX not registered for flash subscriptions: {dex:?}");
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -276,6 +311,7 @@ mod tests {
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
             "Collect(address,address,int24,int24,uint128,uint128)",
+            Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
         manager
     }
@@ -316,7 +352,7 @@ mod tests {
         // Should have all four event signatures
         let signatures =
             registered_manager.get_subscribed_dex_event_signatures(&DexType::UniswapV3);
-        assert_eq!(signatures.len(), 4);
+        assert_eq!(signatures.len(), 5);
 
         // Each signature should be properly encoded
         assert!(
@@ -470,6 +506,7 @@ mod tests {
             "Mint(address,uint256)",
             "Burn(address,uint256)",
             "Collect(address,uint256,uint256)",
+            Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
 
         // Step 2: Subscribe to events
@@ -486,7 +523,7 @@ mod tests {
 
         // Step 4: Get event signatures
         let signatures = manager.get_subscribed_dex_event_signatures(&dex_type);
-        assert_eq!(signatures.len(), 4);
+        assert_eq!(signatures.len(), 5);
 
         // Step 5: Unsubscribe from some events
         manager.unsubscribe_swaps(dex_type, pool1);
@@ -509,6 +546,7 @@ mod tests {
             "Mint(address,address,int24,int24,uint128,uint256,uint256)",
             "Burn(address,int24,int24,uint128,uint256,uint256)",
             "Collect(address,address,int24,int24,uint128,uint128)",
+            Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
 
         // Known keccak256 hashes for UniswapV3 events
@@ -544,10 +582,11 @@ mod tests {
         // Register with pre-encoded keccak256 hashes (with 0x prefix)
         manager.register_dex_for_subscriptions(
             DexType::UniswapV3,
-            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
-            "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
-            "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
-            "0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01",
+            "Swap(address,address,int256,int256,uint160,uint128,int24)",
+            "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+            "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
+            Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
 
         // Should store them unchanged (normalized to lowercase)
@@ -582,10 +621,11 @@ mod tests {
         // Register with pre-encoded hashes without 0x prefix
         manager.register_dex_for_subscriptions(
             DexType::UniswapV3,
-            "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
-            "7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
-            "0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
-            "40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01",
+            "Swap(address,address,int256,int256,uint160,uint128,int24)",
+            "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+            "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
+            Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
 
         // Should add 0x prefix and normalize to lowercase

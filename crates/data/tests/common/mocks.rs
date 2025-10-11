@@ -25,9 +25,9 @@ use std::{cell::RefCell, rc::Rc};
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
     DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
-    SubscribePoolFeeCollects, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
-    UnsubscribePool, UnsubscribePoolFeeCollects, UnsubscribePoolLiquidityUpdates,
-    UnsubscribePoolSwaps,
+    SubscribePoolFeeCollects, SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates,
+    SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+    UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
 };
 use nautilus_common::{
     cache::Cache,
@@ -336,6 +336,19 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_flash_events(
+        &mut self,
+        cmd: &SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiSubscribe(
+                DefiSubscribeCommand::PoolFlashEvents(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
@@ -532,6 +545,19 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
                 DefiUnsubscribeCommand::PoolFeeCollects(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolFlashEvents(cmd.clone()),
             ));
         }
         Ok(())

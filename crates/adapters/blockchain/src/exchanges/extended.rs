@@ -26,8 +26,8 @@ use nautilus_model::{
 };
 
 use crate::events::{
-    burn::BurnEvent, collect::CollectEvent, initialize::InitializeEvent, mint::MintEvent,
-    pool_created::PoolCreatedEvent, swap::SwapEvent,
+    burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, initialize::InitializeEvent,
+    mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent,
 };
 
 type ConvertTradeDataFn =
@@ -50,6 +50,8 @@ pub struct DexExtended {
     pub parse_burn_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<BurnEvent>>,
     /// Function to parse collect events.
     pub parse_collect_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<CollectEvent>>,
+    /// Function to parse flash events.
+    pub parse_flash_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<FlashEvent>>,
     /// Function to convert to trade data.
     pub convert_to_trade_data_fn: Option<ConvertTradeDataFn>,
 }
@@ -67,6 +69,7 @@ impl DexExtended {
             parse_burn_event_fn: None,
             parse_collect_event_fn: None,
             convert_to_trade_data_fn: None,
+            parse_flash_event_fn: None,
         }
     }
 
@@ -116,6 +119,14 @@ impl DexExtended {
         parse_collect_event: fn(SharedDex, Log) -> anyhow::Result<CollectEvent>,
     ) {
         self.parse_collect_event_fn = Some(parse_collect_event);
+    }
+
+    /// Sets the function used to parse flash events for this Dex.
+    pub fn set_flash_event_parsing(
+        &mut self,
+        parse_flash_event: fn(SharedDex, Log) -> anyhow::Result<FlashEvent>,
+    ) {
+        self.parse_flash_event_fn = Some(parse_flash_event);
     }
 
     /// Sets the function used to convert trade data for this Dex.

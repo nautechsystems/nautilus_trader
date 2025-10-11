@@ -38,7 +38,10 @@ use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, nanos::UnixNanos,
+    UUID4,
+    consts::NAUTILUS_USER_AGENT,
+    env::{get_env_var, get_or_env_var},
+    nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -304,9 +307,9 @@ impl OKXWebSocketClient {
         heartbeat: Option<u64>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
-        let api_key = api_key.unwrap_or(get_env_var("OKX_API_KEY")?);
-        let api_secret = api_secret.unwrap_or(get_env_var("OKX_API_SECRET")?);
-        let api_passphrase = api_passphrase.unwrap_or(get_env_var("OKX_API_PASSPHRASE")?);
+        let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
+        let api_secret = get_or_env_var(api_secret, "OKX_API_SECRET")?;
+        let api_passphrase = get_or_env_var(api_passphrase, "OKX_API_PASSPHRASE")?;
 
         Self::new(
             Some(url),

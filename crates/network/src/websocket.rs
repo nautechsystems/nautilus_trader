@@ -66,6 +66,7 @@ pub const TEXT_PONG: &str = "pong";
 const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
 
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
@@ -441,15 +442,21 @@ impl WebSocketClientInner {
                 log_task_aborted("read");
             }
 
-            // If a disconnect was requested during reconnect, do not proceed to reactivate
-            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
-                tracing::debug!("Reconnect aborted mid-flight (before spawn read)");
+            // Atomically transition from Reconnect to Active
+            // This prevents race condition where disconnect could be requested between check and store
+            if self
+                .connection_mode
+                .compare_exchange(
+                    ConnectionMode::Reconnect.as_u8(),
+                    ConnectionMode::Active.as_u8(),
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
+            {
+                tracing::debug!("Reconnect aborted (state changed during reconnect)");
                 return Ok(());
             }
-
-            // Mark as active only if not disconnecting
-            self.connection_mode
-                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             self.read_task = if self.config.message_handler.is_some() {
                 Some(Self::spawn_message_handler_task(
@@ -696,6 +703,7 @@ impl Drop for WebSocketClientInner {
     }
 }
 
+/// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
 impl CleanDrop for WebSocketClientInner {
     fn clean_drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take()
@@ -734,8 +742,9 @@ impl CleanDrop for WebSocketClientInner {
 pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
-    pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    pub(crate) reconnect_timeout: Duration,
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
 }
 
 impl Debug for WebSocketClient {
@@ -777,20 +786,21 @@ impl WebSocketClient {
         let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
 
         let connection_mode = inner.connection_mode.clone();
+        let reconnect_timeout = inner.reconnect_timeout;
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
         let writer_tx = inner.writer_tx.clone();
 
         let controller_task =
             Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnect);
-
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Ok((
             reader,
             Self {
                 controller_task,
                 connection_mode,
-                writer_tx,
+                reconnect_timeout,
                 rate_limiter,
+                writer_tx,
             },
         ))
     }
@@ -821,6 +831,7 @@ impl WebSocketClient {
         let inner = WebSocketClientInner::connect_url(config).await?;
         let connection_mode = inner.connection_mode.clone();
         let writer_tx = inner.writer_tx.clone();
+        let reconnect_timeout = inner.reconnect_timeout;
 
         let controller_task =
             Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnection);
@@ -830,8 +841,9 @@ impl WebSocketClient {
         Ok(Self {
             controller_task,
             connection_mode,
-            writer_tx,
+            reconnect_timeout,
             rate_limiter,
+            writer_tx,
         })
     }
 
@@ -887,6 +899,42 @@ impl WebSocketClient {
         self.connection_mode().is_closed()
     }
 
+    /// Wait for the client to become active before sending.
+    ///
+    /// Returns an error if the client is closed, disconnecting, or if the wait times out.
+    async fn wait_for_active(&self) -> Result<(), SendError> {
+        if self.is_closed() {
+            return Err(SendError::Closed);
+        }
+
+        let timeout = self.reconnect_timeout;
+        let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
+
+        if !self.is_active() {
+            tracing::debug!("Waiting for client to become ACTIVE before sending...");
+
+            let inner = tokio::time::timeout(timeout, async {
+                loop {
+                    if self.is_active() {
+                        return Ok(());
+                    }
+                    if matches!(
+                        self.connection_mode(),
+                        ConnectionMode::Disconnect | ConnectionMode::Closed
+                    ) {
+                        return Err(());
+                    }
+                    tokio::time::sleep(check_interval).await;
+                }
+            })
+            .await
+            .map_err(|_| SendError::Timeout)?;
+            inner.map_err(|()| SendError::Closed)?;
+        }
+
+        Ok(())
+    }
+
     /// Set disconnect mode to true.
     ///
     /// Controller task will periodically check the disconnect mode
@@ -913,6 +961,10 @@ impl WebSocketClient {
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
+                if !self.controller_task.is_finished() {
+                    self.controller_task.abort();
+                    log_task_aborted("controller");
+                }
             }
         }
     }
@@ -929,10 +981,7 @@ impl WebSocketClient {
         keys: Option<Vec<String>>,
     ) -> Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
-
-        if !self.is_active() {
-            return Err(SendError::Closed);
-        }
+        self.wait_for_active().await?;
 
         tracing::trace!("Sending text: {data:?}");
 
@@ -948,9 +997,7 @@ impl WebSocketClient {
     ///
     /// Returns a websocket error if unable to send.
     pub async fn send_pong(&self, data: Vec<u8>) -> Result<(), SendError> {
-        if !self.is_active() {
-            return Err(SendError::Closed);
-        }
+        self.wait_for_active().await?;
 
         tracing::trace!("Sending pong frame ({} bytes)", data.len());
 
@@ -972,10 +1019,7 @@ impl WebSocketClient {
         keys: Option<Vec<String>>,
     ) -> Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
-
-        if !self.is_active() {
-            return Err(SendError::Closed);
-        }
+        self.wait_for_active().await?;
 
         tracing::trace!("Sending bytes: {data:?}");
 
@@ -991,9 +1035,7 @@ impl WebSocketClient {
     ///
     /// Returns a websocket error if unable to send.
     pub async fn send_close_message(&self) -> Result<(), SendError> {
-        if !self.is_active() {
-            return Err(SendError::Closed);
-        }
+        self.wait_for_active().await?;
 
         let msg = Message::Close(None);
         self.writer_tx
@@ -1745,6 +1787,324 @@ mod rust_tests {
         );
 
         client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_timeout_uses_configured_reconnect_timeout() {
+        // Test that send operations respect the configured reconnect_timeout.
+        // When a client is stuck in RECONNECT longer than the timeout, sends should fail with Timeout.
+        use nautilus_common::testing::wait_until_async;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // Accept first connection and immediately close it
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+            // Don't accept second connection - client will be stuck in RECONNECT
+            sleep(Duration::from_secs(60)).await;
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        // Configure with SHORT 2s reconnect timeout
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            message_handler: Some(handler),
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(2_000), // 2s timeout
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .unwrap();
+
+        // Wait for client to enter RECONNECT state
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        // Attempt send while stuck in RECONNECT - should timeout after 2s (configured timeout)
+        let start = std::time::Instant::now();
+        let send_result = client.send_text("test".to_string(), None).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            send_result.is_err(),
+            "Send should fail when client stuck in RECONNECT"
+        );
+        assert!(
+            matches!(send_result, Err(crate::error::SendError::Timeout)),
+            "Send should return Timeout error, got: {:?}",
+            send_result
+        );
+        // Verify timeout respects configured value (2s), but don't check upper bound
+        // as CI scheduler jitter can cause legitimate delays beyond the timeout
+        assert!(
+            elapsed >= Duration::from_millis(1800),
+            "Send should timeout after at least 2s (configured timeout), took {:?}",
+            elapsed
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_waits_during_reconnection() {
+        // Test that send operations wait for reconnection to complete (up to timeout)
+        use nautilus_common::testing::wait_until_async;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection - accept and immediately close
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Wait a bit before accepting second connection
+            sleep(Duration::from_millis(500)).await;
+
+            // Second connection - accept and keep alive
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                // Echo messages
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            message_handler: Some(handler),
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(5_000), // 5s timeout - enough for reconnect
+            reconnect_delay_initial_ms: Some(100),
+            reconnect_delay_max_ms: Some(200),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .unwrap();
+
+        // Wait for reconnection to trigger
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        // Try to send while reconnecting - should wait and succeed after reconnect
+        let send_result = tokio::time::timeout(
+            Duration::from_secs(3),
+            client.send_text("test_message".to_string(), None),
+        )
+        .await;
+
+        assert!(
+            send_result.is_ok() && send_result.unwrap().is_ok(),
+            "Send should succeed after waiting for reconnection"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rate_limiter_before_active_wait() {
+        // Test that rate limiting happens BEFORE active state check.
+        // This prevents race conditions where connection state changes during rate limit wait.
+        // We verify this by: (1) exhausting rate limit, (2) ensuring client is RECONNECTING,
+        // (3) sending again and confirming it waits for rate limit THEN reconnection.
+        use std::{num::NonZeroU32, sync::Arc};
+
+        use nautilus_common::testing::wait_until_async;
+
+        use crate::ratelimiter::quota::Quota;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection - accept and close after receiving one message
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                // Receive first message then close
+                if let Some(Ok(_)) = ws.next().await {
+                    drop(ws);
+                }
+            }
+
+            // Wait before accepting reconnection
+            sleep(Duration::from_millis(500)).await;
+
+            // Second connection - accept and keep alive
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            message_handler: Some(handler),
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        // Very restrictive rate limit: 1 request per second, burst of 1
+        let quota =
+            Quota::per_second(NonZeroU32::new(1).unwrap()).allow_burst(NonZeroU32::new(1).unwrap());
+
+        let client = Arc::new(
+            WebSocketClient::connect(config, None, vec![("test_key".to_string(), quota)], None)
+                .await
+                .unwrap(),
+        );
+
+        // First send exhausts burst capacity and triggers connection close
+        client
+            .send_text("msg1".to_string(), Some(vec!["test_key".to_string()]))
+            .await
+            .unwrap();
+
+        // Wait for client to enter RECONNECT state
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        // Second send: will hit rate limit (~1s) THEN wait for reconnection (~0.5s)
+        let start = std::time::Instant::now();
+        let send_result = client
+            .send_text("msg2".to_string(), Some(vec!["test_key".to_string()]))
+            .await;
+        let elapsed = start.elapsed();
+
+        // Should succeed after both rate limit AND reconnection
+        assert!(
+            send_result.is_ok(),
+            "Send should succeed after rate limit + reconnection, got: {:?}",
+            send_result
+        );
+        // Total wait should be at least rate limit time (~1s)
+        // The reconnection completes while rate limiting or after
+        // Use 850ms threshold to account for timing jitter in CI
+        assert!(
+            elapsed >= Duration::from_millis(850),
+            "Should wait for rate limit (~1s), waited {:?}",
+            elapsed
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_disconnect_during_reconnect_exits_cleanly() {
+        // Test CAS race condition: disconnect called during reconnection
+        // Should exit cleanly without spawning new tasks
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // Accept first connection and immediately close
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+            // Don't accept second connection - let reconnect hang
+            sleep(Duration::from_secs(60)).await;
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            message_handler: Some(handler),
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(2_000), // 2s timeout - shorter than disconnect timeout
+            reconnect_delay_initial_ms: Some(100),
+            reconnect_delay_max_ms: Some(200),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .unwrap();
+
+        // Wait for reconnection to start
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.is_reconnecting() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Client should enter RECONNECT state");
+
+        // Disconnect while reconnecting
+        client.disconnect().await;
+
+        // Should be cleanly closed
+        assert!(
+            client.is_disconnected(),
+            "Client should be cleanly disconnected"
+        );
+
         server.abort();
     }
 }

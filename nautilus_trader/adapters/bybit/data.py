@@ -648,7 +648,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

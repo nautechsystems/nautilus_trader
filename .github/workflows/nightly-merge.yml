@@ -131,7 +131,8 @@ jobs:
 
       - name: Configure authenticated git remote
         run: |
-          git remote set-url origin "https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}"
+          git remote set-url origin \
+            "https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}"
 
       - name: Configure Git user
         run: |
