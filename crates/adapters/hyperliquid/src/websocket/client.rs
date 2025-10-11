@@ -27,7 +27,6 @@ use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_mess
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use tokio::sync::{RwLock, mpsc};
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, error, info, warn};
 use ustr::Ustr;
 
 use crate::{
@@ -144,7 +143,7 @@ impl HyperliquidWebSocketInnerClient {
         };
 
         let client = Arc::new(WebSocketClient::connect(cfg, None, vec![], None).await?);
-        info!("Hyperliquid WebSocket connected: {}", url);
+        tracing::info!("Hyperliquid WebSocket connected: {}", url);
 
         let post_router = PostRouter::new();
         let post_ids = PostIds::new(1);
@@ -159,7 +158,7 @@ impl HyperliquidWebSocketInnerClient {
             while let Some(msg) = raw_rx.recv().await {
                 match msg {
                     Message::Text(txt) => {
-                        debug!("Received WS text: {}", txt);
+                        tracing::debug!("Received WS text: {}", txt);
                         match serde_json::from_str::<HyperliquidWsMessage>(&txt) {
                             Ok(hl_msg) => {
                                 if let HyperliquidWsMessage::Post { data } = &hl_msg {
@@ -167,31 +166,36 @@ impl HyperliquidWebSocketInnerClient {
                                     post_router_for_reader.complete(data.clone()).await;
                                 }
                                 if let Err(e) = tx_inbound.send(hl_msg).await {
-                                    error!("Failed to send decoded message: {}", e);
+                                    tracing::error!("Failed to send decoded message: {}", e);
                                     break;
                                 }
                             }
                             Err(err) => {
-                                error!(
+                                tracing::error!(
                                     "Failed to decode Hyperliquid message: {} | text: {}",
-                                    err, txt
+                                    err,
+                                    txt
                                 );
                             }
                         }
                     }
                     Message::Binary(data) => {
-                        debug!("Received binary message ({} bytes), ignoring", data.len())
+                        tracing::debug!("Received binary message ({} bytes), ignoring", data.len())
                     }
-                    Message::Ping(data) => debug!("Received ping frame ({} bytes)", data.len()),
-                    Message::Pong(data) => debug!("Received pong frame ({} bytes)", data.len()),
+                    Message::Ping(data) => {
+                        tracing::debug!("Received ping frame ({} bytes)", data.len())
+                    }
+                    Message::Pong(data) => {
+                        tracing::debug!("Received pong frame ({} bytes)", data.len())
+                    }
                     Message::Close(close_frame) => {
-                        info!("Received close frame: {:?}", close_frame);
+                        tracing::info!("Received close frame: {:?}", close_frame);
                         break;
                     }
-                    Message::Frame(_) => warn!("Received raw frame (unexpected)"),
+                    Message::Frame(_) => tracing::warn!("Received raw frame (unexpected)"),
                 }
             }
-            info!("Hyperliquid WebSocket reader finished");
+            tracing::info!("Hyperliquid WebSocket reader finished");
         });
 
         // Spawn task to handle outbound messages
@@ -201,17 +205,17 @@ impl HyperliquidWebSocketInnerClient {
                 let json = match serde_json::to_string(&req) {
                     Ok(json) => json,
                     Err(e) => {
-                        error!("Failed to serialize WS request: {}", e);
+                        tracing::error!("Failed to serialize WS request: {}", e);
                         continue;
                     }
                 };
-                debug!("Sending WS message: {}", json);
+                tracing::debug!("Sending WS message: {}", json);
                 if let Err(e) = client_for_sender.send_text(json, None).await {
-                    error!("Failed to send WS message: {}", e);
+                    tracing::error!("Failed to send WS message: {}", e);
                     break;
                 }
             }
-            info!("WebSocket sender task finished");
+            tracing::info!("WebSocket sender task finished");
         });
 
         // Create send function for batcher using a proper async closure
@@ -242,7 +246,7 @@ impl HyperliquidWebSocketInnerClient {
     /// Low-level method to send a Hyperliquid WebSocket request.
     pub async fn ws_send(&self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
-        debug!("Sending WS message: {}", json);
+        tracing::debug!("Sending WS message: {}", json);
         self.inner
             .send_text(json, None)
             .await
@@ -253,11 +257,11 @@ impl HyperliquidWebSocketInnerClient {
     pub async fn ws_send_once(&mut self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
         if self.sent_subscriptions.contains(&json) {
-            debug!("Skipping duplicate request: {}", json);
+            tracing::debug!("Skipping duplicate request: {}", json);
             return Ok(());
         }
 
-        debug!("Sending WS message: {}", json);
+        tracing::debug!("Sending WS message: {}", json);
         self.inner
             .send_text(json.clone(), None)
             .await

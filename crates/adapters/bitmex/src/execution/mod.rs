@@ -47,7 +47,6 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
 
 use crate::{
     config::BitmexExecClientConfig,
@@ -252,7 +251,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.ensure_instruments_initialized()?;
         self.started = true;
-        info!("BitMEX execution client {} started", self.core.client_id);
+        tracing::info!("BitMEX execution client {} started", self.core.client_id);
         Ok(())
     }
 
@@ -267,7 +266,7 @@ impl ExecutionClient for BitmexExecutionClient {
             handle.abort();
         }
         self.abort_pending_tasks();
-        info!("BitMEX execution client {} stopped", self.core.client_id);
+        tracing::info!("BitMEX execution client {} stopped", self.core.client_id);
         Ok(())
     }
 
@@ -275,7 +274,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let order = cmd.order.clone();
 
         if order.is_closed() {
-            warn!("Cannot submit closed order {}", order.client_order_id());
+            tracing::warn!("Cannot submit closed order {}", order.client_order_id());
             return Ok(());
         }
 
@@ -351,7 +350,7 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        warn!(
+        tracing::warn!(
             "submit_order_list not yet implemented for BitMEX execution client ({} orders)",
             cmd.order_list.orders.len()
         );
@@ -508,7 +507,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
 
         self.connected = true;
         self.core.set_connected(true);
-        info!("BitMEX execution client {} connected", self.core.client_id);
+        tracing::info!("BitMEX execution client {} connected", self.core.client_id);
         Ok(())
     }
 
@@ -519,7 +518,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
 
         self.http_client.cancel_all_requests();
         if let Err(err) = self.ws_client.close().await {
-            warn!("Error while closing BitMEX execution websocket: {err:?}");
+            tracing::warn!("Error while closing BitMEX execution websocket: {err:?}");
         }
 
         if let Some(handle) = self.ws_stream_handle.take() {
@@ -529,7 +528,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
         self.abort_pending_tasks();
         self.connected = false;
         self.core.set_connected(false);
-        info!(
+        tracing::info!(
             "BitMEX execution client {} disconnected",
             self.core.client_id
         );
@@ -604,7 +603,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
         &self,
         _lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        warn!("generate_mass_status not yet implemented for BitMEX execution client");
+        tracing::warn!("generate_mass_status not yet implemented for BitMEX execution client");
         Ok(None)
     }
 }
@@ -632,7 +631,7 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
             tracing::debug!("Ignoring BitMEX data message on execution stream");
         }
         NautilusWsMessage::Reconnected => {
-            info!("BitMEX execution websocket reconnected");
+            tracing::info!("BitMEX execution websocket reconnected");
         }
     }
 }
@@ -645,7 +644,7 @@ fn dispatch_order_status_report(report: OrderStatusReport) {
     let sender = get_exec_event_sender();
     let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        warn!("Failed to send order status report: {e}");
+        tracing::warn!("Failed to send order status report: {e}");
     }
 }
 
@@ -653,7 +652,7 @@ fn dispatch_fill_report(report: FillReport) {
     let sender = get_exec_event_sender();
     let exec_report = nautilus_common::messages::ExecutionReport::Fill(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        warn!("Failed to send fill report: {e}");
+        tracing::warn!("Failed to send fill report: {e}");
     }
 }
 
@@ -661,14 +660,14 @@ fn dispatch_position_status_report(report: PositionStatusReport) {
     let sender = get_exec_event_sender();
     let exec_report = nautilus_common::messages::ExecutionReport::Position(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        warn!("Failed to send position status report: {e}");
+        tracing::warn!("Failed to send position status report: {e}");
     }
 }
 
 fn dispatch_order_event(event: OrderEventAny) {
     let sender = get_exec_event_sender();
     if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
-        warn!("Failed to send order event: {e}");
+        tracing::warn!("Failed to send order event: {e}");
     }
 }
 

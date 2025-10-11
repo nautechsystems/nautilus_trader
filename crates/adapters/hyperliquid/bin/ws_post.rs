@@ -26,7 +26,7 @@ use nautilus_hyperliquid::{
         post::{Grouping, OrderBuilder},
     },
 };
-use tracing::{info, level_filters::LevelFilter, warn};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
@@ -42,9 +42,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let testnet = args.get(1).is_some_and(|s| s == "testnet");
     let ws_url = ws_url(testnet);
 
-    info!(component = "ws_post", %ws_url, ?testnet, "connecting");
+    tracing::info!(component = "ws_post", %ws_url, ?testnet, "connecting");
     let client = HyperliquidWebSocketClient::connect(ws_url).await?;
-    info!(component = "ws_post", "websocket connected");
+    tracing::info!(component = "ws_post", "websocket connected");
 
     let book = client.info_l2_book("BTC", Duration::from_secs(2)).await?;
     let best_bid = book
@@ -59,14 +59,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|asks| asks.first())
         .map(|l| l.px.clone())
         .unwrap_or_default();
-    info!(component = "ws_post", best_bid = %best_bid, best_ask = %best_ask, "BTC top of book");
+    tracing::info!(component = "ws_post", best_bid = %best_bid, best_ask = %best_ask, "BTC top of book");
 
     // Only attempt the action when explicitly requested (HYPERLIQUID_SEND=1).
     let should_send = env::var("HYPERLIQUID_SEND")
         .map(|v| v == "1")
         .unwrap_or(false);
     if !should_send {
-        warn!(
+        tracing::warn!(
             component = "ws_post",
             "skipping action: set HYPERLIQUID_SEND=1 to send the order"
         );
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if best_bid.is_empty() {
-        warn!(
+        tracing::warn!(
             component = "ws_post",
             "no best bid available; aborting action"
         );
@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         v: format!("0x{}", &sig[130..132]), // Extract v component
     };
 
-    info!(component = "ws_post", "action signed successfully");
+    tracing::info!(component = "ws_post", "action signed successfully");
 
     let payload = ActionPayload {
         action,
@@ -143,9 +143,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .post_action_raw(payload, Duration::from_secs(2))
         .await
     {
-        Ok(resp) => info!(component = "ws_post", ?resp, "action response (success)"),
+        Ok(resp) => tracing::info!(component = "ws_post", ?resp, "action response (success)"),
         Err(e) => {
-            warn!(component = "ws_post", error = %e, "action failed")
+            tracing::warn!(component = "ws_post", error = %e, "action failed")
         }
     }
 

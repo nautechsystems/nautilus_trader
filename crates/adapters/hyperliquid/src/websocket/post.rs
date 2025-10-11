@@ -28,7 +28,6 @@ use tokio::{
     sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
     time,
 };
-use tracing::{error, info, warn};
 
 use crate::{
     common::consts::INFLIGHT_MAX,
@@ -108,11 +107,11 @@ impl PostRouter {
         };
         if let Some(waiter) = waiter {
             if waiter.tx.send(resp).is_err() {
-                warn!(id, "post waiter dropped before delivery");
+                tracing::warn!(id, "post waiter dropped before delivery");
             }
             // waiter drops here → permit released
         } else {
-            warn!(id, "post response with unknown id (late/duplicate?)");
+            tracing::warn!(id, "post response with unknown id (late/duplicate?)");
         }
     }
 
@@ -239,13 +238,13 @@ impl PostBatcher {
                     for item in to_send {
                         let req = HyperliquidWsRequest::Post { id: item.id, request: item.request.clone() };
                         if let Err(e) = send_fn(req).await {
-                            error!(lane=%lane_name, id=%item.id, "failed to send post: {e}");
+                            tracing::error!(lane=%lane_name, id=%item.id, "failed to send post: {e}");
                         }
                     }
                 }
             }
         }
-        info!(lane=%lane_name, "post lane terminated");
+        tracing::info!(lane=%lane_name, "post lane terminated");
     }
 
     pub async fn enqueue(&self, item: ScheduledPost) -> Result<()> {

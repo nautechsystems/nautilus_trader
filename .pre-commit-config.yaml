@@ -119,6 +119,16 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-logging-macro-usage
+        name: check logging macro usage
+        description:
+          Enforces logging macro conventions (use fully qualified log::debug!, tracing::info!,
+          etc. instead of importing the macros)
+        entry: .pre-commit-hooks/check_logging_macro_usage.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.
