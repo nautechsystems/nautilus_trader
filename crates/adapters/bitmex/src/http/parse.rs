@@ -96,6 +96,18 @@ pub fn parse_instrument_any(
                 e
             })
             .ok(),
+        BitmexInstrumentType::PredictionMarket => {
+            // Prediction markets work similarly to futures (bounded 0-100, cash settled)
+            parse_futures_instrument(instrument, ts_init)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse prediction market instrument {}: {e}",
+                        instrument.symbol,
+                    );
+                    e
+                })
+                .ok()
+        }
         BitmexInstrumentType::BasketIndex
         | BitmexInstrumentType::CryptoIndex
         | BitmexInstrumentType::FxIndex
@@ -590,13 +602,13 @@ pub fn parse_order_status_report(
         .unwrap_or(TimeInForce::Gtc);
 
     // BitMEX may omit ord_status in responses for completed orders
-    // Defensively infer from leaves_qty and cum_qty when possible
+    // Defensively infer from leaves_qty, cum_qty, and working_indicator when possible
     let order_status: OrderStatus = if let Some(status) = order.ord_status.as_ref() {
         (*status).into()
     } else {
-        // Infer status from quantity fields
-        match (order.leaves_qty, order.cum_qty) {
-            (Some(0), Some(cum)) if cum > 0 => {
+        // Infer status from quantity fields and working indicator
+        match (order.leaves_qty, order.cum_qty, order.working_indicator) {
+            (Some(0), Some(cum), _) if cum > 0 => {
                 tracing::debug!(
                     order_id = ?order.order_id,
                     client_order_id = ?order.cl_ord_id,
@@ -605,7 +617,7 @@ pub fn parse_order_status_report(
                 );
                 OrderStatus::Filled
             }
-            (Some(0), _) => {
+            (Some(0), _, _) => {
                 tracing::debug!(
                     order_id = ?order.order_id,
                     client_order_id = ?order.cl_ord_id,
@@ -614,14 +626,24 @@ pub fn parse_order_status_report(
                 );
                 OrderStatus::Canceled
             }
+            // BitMEX cancel responses may omit all quantity fields but include working_indicator
+            (None, None, Some(false)) => {
+                tracing::debug!(
+                    order_id = ?order.order_id,
+                    client_order_id = ?order.cl_ord_id,
+                    "Inferred Canceled from missing ordStatus with working_indicator=false"
+                );
+                OrderStatus::Canceled
+            }
             _ => {
                 let order_json = serde_json::to_string(order)?;
                 anyhow::bail!(
-                    "Order missing ord_status and cannot infer (order_id={}, client_order_id={:?}, leaves_qty={:?}, cum_qty={:?}, order_json={})",
+                    "Order missing ord_status and cannot infer (order_id={}, client_order_id={:?}, leaves_qty={:?}, cum_qty={:?}, working_indicator={:?}, order_json={})",
                     order.order_id,
                     order.cl_ord_id,
                     order.leaves_qty,
                     order.cum_qty,
+                    order.working_indicator,
                     order_json
                 );
             }

@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common types and utilities shared across the BitMEX adapter.
-//!
-//! This module provides reusable components that are used by both the HTTP and WebSocket
-//! clients, including:
-//! - Constants for BitMEX URLs and venue identifier.
-//! - Credential management for API authentication.
-//! - Enumerations for order types, sides, and statuses.
-//! - Parsing utilities for currency codes and other data transformations.
+//! Python wrapper functions for BitMEX URL helpers.
 
-pub mod consts;
-pub mod credential;
-pub mod enums;
-pub mod parse;
-pub mod urls;
+use pyo3::prelude::*;
 
-#[cfg(test)]
-pub(crate) mod testing;
+use crate::common::urls;
+
+/// Gets the BitMEX HTTP base URL.
+#[pyfunction]
+pub fn get_bitmex_http_base_url(testnet: bool) -> String {
+    urls::get_http_base_url(testnet)
+}
+
+/// Gets the BitMEX WebSocket URL.
+#[pyfunction]
+pub fn get_bitmex_ws_url(testnet: bool) -> String {
+    urls::get_ws_url(testnet)
+}

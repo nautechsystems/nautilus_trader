@@ -6551,6 +6551,9 @@ class OKXVipLevel(Enum):
 
 # BitMEX
 
+def get_bitmex_http_base_url(testnet: bool) -> str: ...
+def get_bitmex_ws_url(testnet: bool) -> str: ...
+
 class BitmexHttpClient:
     def __init__(
         self,
@@ -6723,6 +6726,48 @@ class BitmexWebSocketClient:
     async def unsubscribe_positions(self) -> None: ...
     async def unsubscribe_margin(self) -> None: ...
     async def unsubscribe_wallet(self) -> None: ...
+
+class CancelBroadcaster:
+    def __init__(
+        self,
+        pool_size: int,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        health_check_interval_secs: int = 30,
+        health_check_timeout_secs: int = 5,
+        expected_reject_patterns: list[str] | None = None,
+        idempotent_success_patterns: list[str] | None = None,
+    ) -> None: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def broadcast_cancel(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None: ...
+    async def broadcast_batch_cancel(
+        self,
+        instrument_id: InstrumentId,
+        client_order_ids: list[ClientOrderId] | None = None,
+        venue_order_ids: list[VenueOrderId] | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def broadcast_cancel_all(
+        self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide | None = None,
+    ) -> list[OrderStatusReport]: ...
+    def get_metrics(self) -> dict[str, int]: ...
+    def get_client_stats(self) -> list[dict[str, Any]]: ...
 
 # Greeks
 

@@ -490,7 +490,7 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct BitmexExecutionMsg {
     #[serde(rename = "execID")]
-    pub exec_id: Uuid,
+    pub exec_id: Option<Uuid>,
     #[serde(rename = "orderID")]
     pub order_id: Option<Uuid>,
     #[serde(rename = "clOrdID")]
