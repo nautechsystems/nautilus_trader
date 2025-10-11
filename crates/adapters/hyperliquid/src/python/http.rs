@@ -101,53 +101,185 @@ impl HyperliquidHttpClient {
 
     /// Submit a single order to the Hyperliquid exchange.
     ///
-    /// Takes order parameters as JSON string and submits via the authenticated POST /exchange endpoint.
+    /// Takes Nautilus domain types and handles serialization internally.
     ///
     /// Returns the response from the exchange as a JSON string.
     #[pyo3(name = "submit_order")]
+    #[pyo3(signature = (
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        price=None,
+        trigger_price=None,
+        post_only=false,
+        reduce_only=false,
+    ))]
+    #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
-        order_request_json: String,
+        instrument_id: nautilus_model::identifiers::InstrumentId,
+        client_order_id: nautilus_model::identifiers::ClientOrderId,
+        order_side: nautilus_model::enums::OrderSide,
+        order_type: nautilus_model::enums::OrderType,
+        quantity: nautilus_model::types::Quantity,
+        time_in_force: nautilus_model::enums::TimeInForce,
+        price: Option<nautilus_model::types::Price>,
+        trigger_price: Option<nautilus_model::types::Price>,
+        post_only: bool,
+        reduce_only: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Parse the order request from JSON
-            let order_request: serde_json::Value =
-                serde_json::from_str(&order_request_json).map_err(to_pyvalue_err)?;
+            let response = client
+                .submit_order(
+                    instrument_id,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    trigger_price,
+                    post_only,
+                    reduce_only,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
 
-            // Create orders array with single order
-            let orders_value = serde_json::to_value(vec![order_request]).map_err(to_pyvalue_err)?;
-
-            // Create exchange action
-            let action = ExchangeAction::order(orders_value);
-
-            // Submit to exchange
-            let response = client.post_action(&action).await.map_err(to_pyvalue_err)?;
-
-            // Return response as JSON string
             to_string(&response).map_err(to_pyvalue_err)
         })
     }
 
     /// Submit multiple orders to the Hyperliquid exchange in a single request.
     ///
-    /// Takes a JSON string of order requests and submits them via the authenticated POST /exchange endpoint.
+    /// Takes a list of orders as domain types and handles serialization internally.
     ///
     /// Returns the response from the exchange as a JSON string.
     #[pyo3(name = "submit_orders")]
+    #[allow(clippy::type_complexity)]
     fn py_submit_orders<'py>(
         &self,
         py: Python<'py>,
-        orders_json: String,
+        orders: Vec<(
+            nautilus_model::identifiers::InstrumentId,
+            nautilus_model::identifiers::ClientOrderId,
+            nautilus_model::enums::OrderSide,
+            nautilus_model::enums::OrderType,
+            nautilus_model::types::Quantity,
+            nautilus_model::enums::TimeInForce,
+            Option<nautilus_model::types::Price>,
+            Option<nautilus_model::types::Price>, // trigger_price
+            bool,                                 // post_only
+            bool,                                 // reduce_only
+        )>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Parse the orders from JSON
-            let orders_value: serde_json::Value =
-                serde_json::from_str(&orders_json).map_err(to_pyvalue_err)?;
+            use nautilus_model::enums::{OrderSide, OrderType, TimeInForce};
+
+            let mut order_requests = Vec::new();
+
+            for (
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                time_in_force,
+                price,
+                trigger_price,
+                post_only,
+                reduce_only,
+            ) in orders
+            {
+                // Extract asset from instrument symbol
+                let symbol = instrument_id.symbol.as_str();
+                let asset = symbol
+                    .trim_end_matches("-PERP")
+                    .trim_end_matches("-USD")
+                    .to_string();
+
+                // Determine order side (isBuy)
+                let is_buy = matches!(order_side, OrderSide::Buy);
+
+                // Determine price
+                let limit_px = match (price, order_type) {
+                    (Some(p), _) => p.to_string(),
+                    (None, OrderType::Market) => "0".to_string(),
+                    _ => {
+                        return Err(to_pyvalue_err(anyhow::anyhow!(
+                            "Price required for non-market orders"
+                        )));
+                    }
+                };
+
+                // Determine order type and time-in-force
+                let order_type_obj = match order_type {
+                    OrderType::Market => serde_json::json!({
+                        "limit": {
+                            "tif": "Ioc"
+                        }
+                    }),
+                    OrderType::Limit => {
+                        let tif = match time_in_force {
+                            TimeInForce::Gtc if post_only => "Alo",
+                            TimeInForce::Gtc => "Gtc",
+                            TimeInForce::Ioc => "Ioc",
+                            TimeInForce::Fok => "Ioc",
+                            _ => "Gtc",
+                        };
+                        serde_json::json!({
+                            "limit": {
+                                "tif": tif
+                            }
+                        })
+                    }
+                    OrderType::StopLimit | OrderType::StopMarket => {
+                        let trigger_px = trigger_price
+                            .ok_or_else(|| {
+                                to_pyvalue_err(anyhow::anyhow!(
+                                    "Trigger price required for stop orders"
+                                ))
+                            })?
+                            .to_string();
+                        let is_market = matches!(order_type, OrderType::StopMarket);
+                        serde_json::json!({
+                            "trigger": {
+                                "isMarket": is_market,
+                                "triggerPx": trigger_px,
+                                "tpsl": "tp"
+                            }
+                        })
+                    }
+                    _ => {
+                        return Err(to_pyvalue_err(anyhow::anyhow!(
+                            "Unsupported order type: {order_type:?}"
+                        )));
+                    }
+                };
+
+                // Build the order request
+                let order_request = serde_json::json!({
+                    "asset": asset,
+                    "isBuy": is_buy,
+                    "limitPx": limit_px,
+                    "sz": quantity.to_string(),
+                    "reduceOnly": reduce_only,
+                    "orderType": order_type_obj,
+                    "cloid": client_order_id.to_string(),
+                });
+
+                order_requests.push(order_request);
+            }
+
+            // Create orders array
+            let orders_value = serde_json::json!(order_requests);
 
             // Create exchange action
             let action = ExchangeAction::order(orders_value);

@@ -645,6 +645,110 @@ impl HyperliquidHttpClient {
         }
     }
 
+    /// Submit a single order to the Hyperliquid exchange.
+    ///
+    /// Takes Nautilus domain types and handles serialization to Hyperliquid format internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, order validation fails, serialization fails,
+    /// or the API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        instrument_id: nautilus_model::identifiers::InstrumentId,
+        client_order_id: nautilus_model::identifiers::ClientOrderId,
+        order_side: nautilus_model::enums::OrderSide,
+        order_type: nautilus_model::enums::OrderType,
+        quantity: nautilus_model::types::Quantity,
+        time_in_force: nautilus_model::enums::TimeInForce,
+        price: Option<nautilus_model::types::Price>,
+        trigger_price: Option<nautilus_model::types::Price>,
+        post_only: bool,
+        reduce_only: bool,
+    ) -> Result<HyperliquidExchangeResponse> {
+        use nautilus_model::enums::{OrderSide, OrderType, TimeInForce};
+
+        // Extract asset from instrument symbol
+        let symbol = instrument_id.symbol.as_str();
+        let asset = symbol
+            .trim_end_matches("-PERP")
+            .trim_end_matches("-USD")
+            .to_string();
+
+        // Determine order side (isBuy)
+        let is_buy = matches!(order_side, OrderSide::Buy);
+
+        // Determine price
+        let limit_px = match (price, order_type) {
+            (Some(p), _) => p.to_string(),
+            (None, OrderType::Market) => "0".to_string(), // Market orders use IOC with price 0
+            _ => return Err(Error::bad_request("Price required for non-market orders")),
+        };
+
+        // Determine order type and time-in-force
+        let order_type_obj = match order_type {
+            OrderType::Market => serde_json::json!({
+                "limit": {
+                    "tif": "Ioc"
+                }
+            }),
+            OrderType::Limit => {
+                let tif = match time_in_force {
+                    TimeInForce::Gtc if post_only => "Alo", // Add Liquidity Only for post-only
+                    TimeInForce::Gtc => "Gtc",
+                    TimeInForce::Ioc => "Ioc",
+                    TimeInForce::Fok => "Ioc", // FOK maps to IOC (no native FOK support)
+                    _ => "Gtc",                // Default to GTC for other TIF values
+                };
+                serde_json::json!({
+                    "limit": {
+                        "tif": tif
+                    }
+                })
+            }
+            OrderType::StopLimit | OrderType::StopMarket => {
+                // Handle stop/trigger orders
+                let trigger_px = trigger_price
+                    .ok_or_else(|| Error::bad_request("Trigger price required for stop orders"))?
+                    .to_string();
+                let is_market = matches!(order_type, OrderType::StopMarket);
+                serde_json::json!({
+                    "trigger": {
+                        "isMarket": is_market,
+                        "triggerPx": trigger_px,
+                        "tpsl": "tp" // Default to take-profit; can be enhanced later
+                    }
+                })
+            }
+            _ => {
+                return Err(Error::bad_request(format!(
+                    "Unsupported order type: {order_type:?}"
+                )));
+            }
+        };
+
+        // Build the order request
+        let order_request = serde_json::json!({
+            "asset": asset,
+            "isBuy": is_buy,
+            "limitPx": limit_px,
+            "sz": quantity.to_string(),
+            "reduceOnly": reduce_only,
+            "orderType": order_type_obj,
+            "cloid": client_order_id.to_string(),
+        });
+
+        // Create orders array with single order
+        let orders_value = serde_json::json!([order_request]);
+
+        // Create exchange action
+        let action = ExchangeAction::order(orders_value);
+
+        // Submit to exchange
+        self.post_action(&action).await
+    }
+
     /// Raw HTTP roundtrip for exchange requests
     async fn http_roundtrip_exchange(
         &self,

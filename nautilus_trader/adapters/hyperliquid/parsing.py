@@ -13,15 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Helper functions for converting Nautilus orders to Hyperliquid format.
+DEPRECATED: Helper functions for converting Nautilus orders to Hyperliquid format.
+
+.. deprecated::
+    These functions are deprecated and no longer used. Order serialization is now
+    handled entirely in Rust for better performance and consistency. The HTTP client
+    submit_order() and submit_orders() methods now accept domain types directly.
 """
 
 import json
+import warnings
 
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.orders import Order
+
+
+warnings.warn(
+    "The hyperliquid.parsing module is deprecated. Order serialization is now handled in Rust.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def extract_asset_from_symbol(symbol: str) -> str:

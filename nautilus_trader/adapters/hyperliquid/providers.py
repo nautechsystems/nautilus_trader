@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
@@ -24,12 +24,16 @@ from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import instruments_from_pyo3
+
+
+if TYPE_CHECKING:
+    # PyO3 types from Rust (temporary namespace qualification)
+    HyperliquidHttpClient = Any  # nautilus_pyo3.HyperliquidHttpClient (stub not yet available)
 
 
 class HyperliquidInstrumentProvider(InstrumentProvider):
@@ -157,16 +161,13 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self,
         instrument: Instrument,
     ) -> HyperliquidProductType | None:
-        # Check by type name to handle both Python and PyO3 instrument types
-        type_name = type(instrument).__name__
-
-        if type_name == "CryptoPerpetual" or isinstance(instrument, CryptoPerpetual):
+        if isinstance(instrument, CryptoPerpetual):
             return HyperliquidProductType.PERP
-        if type_name == "CurrencyPair" or isinstance(instrument, CurrencyPair):
+        if isinstance(instrument, CurrencyPair):
             return HyperliquidProductType.SPOT
 
         self._log.warning(
-            f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type_name})",
+            f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type(instrument).__name__})",
         )
         return None
 
@@ -232,13 +233,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
                 if isinstance(item, str)
             }
 
-        # Check by type name to handle both Python and PyO3 instrument types
-        type_name = type(instrument).__name__
-        market_type = (
-            "perp"
-            if (type_name == "CryptoPerpetual" or isinstance(instrument, CryptoPerpetual))
-            else "spot"
-        )
+        market_type = "perp" if isinstance(instrument, CryptoPerpetual) else "spot"
         kinds = _normalize(filters.get("market_types") or filters.get("kinds"), to_lower=True)
         if kinds and market_type not in kinds:
             return False

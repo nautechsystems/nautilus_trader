@@ -122,14 +122,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         """
         Cache instruments into HTTP client following OKX/BitMEX pattern.
         """
-        # Check if the HTTP client supports add_instrument
-        if not hasattr(self._client, "add_instrument"):
-            self._log.debug(
-                "HTTP client does not have add_instrument method, skipping instrument caching",
-                LogColor.YELLOW,
-            )
-            return
-
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()
@@ -152,8 +144,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._cache_instruments()
 
         # Set account ID on HTTP client for report generation
-        if hasattr(self._client, "set_account_id"):
-            self._client.set_account_id(str(self.account_id))
+        self._client.set_account_id(str(self.account_id))
 
         self._log.info(
             f"Loaded {len(self._instrument_provider.list_all())} instruments",
@@ -218,13 +209,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting order to Hyperliquid: {order}")
 
-            # Convert order to Hyperliquid JSON format
-            from nautilus_trader.adapters.hyperliquid.parsing import order_to_hyperliquid_json
-
-            order_json = order_to_hyperliquid_json(order)
-
-            # Submit via HTTP client
-            response_json = await self._client.submit_order(order_json)
+            # Submit via HTTP client with domain types (Rust handles serialization)
+            response_json = await self._client.submit_order(
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                order_side=order.side,
+                order_type=order.order_type,
+                quantity=order.quantity,
+                time_in_force=order.time_in_force,
+                price=order.price,
+                trigger_price=order.trigger_price,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
+            )
 
             # Parse the response
             import json
@@ -299,13 +296,25 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
 
-            # Convert orders to Hyperliquid JSON format
-            from nautilus_trader.adapters.hyperliquid.parsing import orders_to_hyperliquid_json
-
-            orders_json = orders_to_hyperliquid_json(orders)
+            # Convert orders to list of tuples with domain types (Rust handles serialization)
+            orders_list = [
+                (
+                    order.instrument_id,
+                    order.client_order_id,
+                    order.side,
+                    order.order_type,
+                    order.quantity,
+                    order.time_in_force,
+                    order.price,
+                    order.trigger_price,
+                    order.is_post_only,
+                    order.is_reduce_only,
+                )
+                for order in orders
+            ]
 
             # Submit all orders via HTTP client
-            response_json = await self._client.submit_orders(orders_json)
+            response_json = await self._client.submit_orders(orders_list)
 
             # Parse the response
             import json
@@ -439,10 +448,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[OrderStatusReport]
 
         """
-        if not hasattr(self._client, "request_order_status_reports"):
-            self._log.warning("Order status reports generation not yet implemented")
-            return []
-
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
@@ -470,10 +475,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[FillReport]
 
         """
-        if not hasattr(self._client, "request_fill_reports"):
-            self._log.warning("Fill reports generation not yet implemented")
-            return []
-
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_fill_reports(instrument_id=instrument_id)
@@ -501,10 +502,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         list[PositionStatusReport]
 
         """
-        if not hasattr(self._client, "request_position_status_reports"):
-            self._log.warning("Position status reports generation not yet implemented")
-            return []
-
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_position_status_reports(

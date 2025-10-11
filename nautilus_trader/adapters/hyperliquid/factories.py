@@ -28,13 +28,16 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core.nautilus_pyo3.hyperliquid import HyperliquidHttpClient
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
 if TYPE_CHECKING:
-    pass
+    from typing import Any
+
+    # PyO3 types from Rust (temporary namespace qualification)
+    HyperliquidHttpClient = Any  # nautilus_pyo3.HyperliquidHttpClient (stub not yet available)
 
 
 @lru_cache(1)
@@ -72,7 +75,7 @@ def get_cached_hyperliquid_http_client(
 
     Returns
     -------
-    HyperliquidHttpClient
+    nautilus_pyo3.HyperliquidHttpClient
         The Hyperliquid HTTP client instance.
 
     """
@@ -80,10 +83,10 @@ def get_cached_hyperliquid_http_client(
     # The from_env() method will read HYPERLIQUID_PK/HYPERLIQUID_TESTNET_PK from environment
     try:
         # Try to create an authenticated client from environment variables
-        return HyperliquidHttpClient.from_env()
+        return nautilus_pyo3.HyperliquidHttpClient.from_env()  # type: ignore[attr-defined]
     except Exception:
         # If no credentials in environment, create unauthenticated client (for data only)
-        return HyperliquidHttpClient(
+        return nautilus_pyo3.HyperliquidHttpClient(  # type: ignore[attr-defined]
             is_testnet=testnet,
             timeout_secs=timeout_secs,
         )
