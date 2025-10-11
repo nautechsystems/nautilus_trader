@@ -401,11 +401,6 @@ pytest:  #-- Run Python tests with pytest in parallel with immediate failure rep
 	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
 	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
 
-.PHONY: pytest-memory-tracking
-pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled
-	$(info $(M) Running Python tests with memory tracking enabled...)
-	MEMORY_TRACKING_ENABLED_PY=true uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
-
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
