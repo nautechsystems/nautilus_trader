@@ -136,13 +136,12 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 	-cargo clean
 
 .PHONY: distclean
-distclean: clean  #-- Nuclear clean - remove all uncommitted changes and untracked files (requires FORCE=1)
+distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
 	@if [ "$$FORCE" != "1" ]; then \
 		echo "Pass FORCE=1 to really nuke"; \
 		exit 1; \
 	fi
-	@echo "WARNING: resetting all uncommitted changes and removing untracked files..."
-	git reset --hard
+	@echo "WARNING: removing all untracked files (git clean -fxd)..."
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality
@@ -397,9 +396,7 @@ purge-services:  #-- Purge all development services (stop containers and remove 
 .PHONY: init-db
 init-db:  #-- Initialize PostgreSQL database schema
 	$(info $(M) Initializing PostgreSQL database schema...)
-	@for sql_file in schema/sql/*.sql; do \
-		cat "$$sql_file" | docker exec -i nautilus-database psql -U nautilus -d nautilus; \
-	done
+	cat schema/sql/types.sql schema/sql/tables.sql schema/sql/functions.sql schema/sql/partitions.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
 
