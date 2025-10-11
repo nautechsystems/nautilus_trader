@@ -158,7 +158,7 @@ impl PyHyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut inner = client.inner.write().await;
             if let Err(e) = inner.disconnect().await {
-                log::error!("Error on close: {e}");
+                tracing::error!("Error on close: {e}");
             }
             Ok(())
         })

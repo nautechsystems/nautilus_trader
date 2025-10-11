@@ -140,16 +140,12 @@ impl HyperliquidDataClient {
     }
 
     async fn spawn_ws(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Connecting to Hyperliquid WebSocket");
-
         self.ws_client
             .write()
             .await
             .ensure_connected()
             .await
             .context("Failed to connect to Hyperliquid WebSocket")?;
-
-        tracing::info!("Hyperliquid WebSocket client connected successfully");
 
         Ok(())
     }
@@ -227,8 +223,6 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
-        tracing::info!("Connecting HyperliquidDataClient...");
-
         // Bootstrap instruments from HTTP API
         let _instruments = self
             .bootstrap_instruments()
@@ -241,7 +235,7 @@ impl DataClient for HyperliquidDataClient {
             .context("Failed to spawn WebSocket client")?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("HyperliquidDataClient connected");
+        tracing::info!("Hyperliquid data client connected");
 
         Ok(())
     }
@@ -250,8 +244,6 @@ impl DataClient for HyperliquidDataClient {
         if !self.is_connected() {
             return Ok(());
         }
-
-        tracing::info!("Disconnecting HyperliquidDataClient...");
 
         // Cancel all tasks
         self.cancellation_token.cancel();
@@ -275,7 +267,7 @@ impl DataClient for HyperliquidDataClient {
         }
 
         self.is_connected.store(false, Ordering::Relaxed);
-        tracing::info!("HyperliquidDataClient disconnected");
+        tracing::info!("Hyperliquid data client disconnected");
 
         Ok(())
     }
