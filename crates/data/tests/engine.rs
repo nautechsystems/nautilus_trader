@@ -350,7 +350,7 @@ fn test_execute_subscribe_custom_data(
 
     assert!(data_engine.subscribed_custom_data().contains(&data_type));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeCustomData::new(
@@ -408,7 +408,7 @@ fn test_execute_subscribe_book_deltas(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd =
@@ -475,7 +475,7 @@ fn test_execute_subscribe_book_snapshots(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeBookSnapshots::new(
@@ -535,7 +535,7 @@ fn test_execute_subscribe_instrument(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeInstrument::new(
@@ -591,7 +591,7 @@ fn test_execute_subscribe_quotes(
 
     assert!(data_engine.subscribed_quotes().contains(&audusd_sim.id));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeQuotes::new(
@@ -643,7 +643,7 @@ fn test_execute_subscribe_trades(
 
     assert!(data_engine.subscribed_trades().contains(&audusd_sim.id));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let ubsub = UnsubscribeTrades::new(
@@ -700,7 +700,7 @@ fn test_execute_subscribe_bars(
 
     assert!(data_engine.subscribed_bars().contains(&bar_type));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeBars::new(
@@ -757,7 +757,7 @@ fn test_execute_subscribe_mark_prices(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeMarkPrices::new(
@@ -816,7 +816,7 @@ fn test_execute_subscribe_index_prices(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(
@@ -879,7 +879,7 @@ fn test_execute_subscribe_funding_rates(
             .contains(&audusd_sim.id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub = UnsubscribeFundingRates::new(
@@ -1759,7 +1759,7 @@ fn test_execute_subscribe_blocks(
 
     assert!(data_engine.subscribed_blocks().contains(&blockchain));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd =
@@ -1811,7 +1811,7 @@ fn test_execute_subscribe_pool_swaps(
 
     assert!(data_engine.subscribed_pool_swaps().contains(&instrument_id));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd =
@@ -2003,7 +2003,7 @@ fn test_execute_subscribe_pool_liquidity_updates(
             .contains(&instrument_id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(
@@ -2066,7 +2066,7 @@ fn test_execute_subscribe_pool_fee_collects(
             .contains(&instrument_id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(
@@ -2125,7 +2125,7 @@ fn test_execute_subscribe_pool_flash_events(
 
     assert!(data_engine.subscribed_pool_flash().contains(&instrument_id));
     {
-        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(
