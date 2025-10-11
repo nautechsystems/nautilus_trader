@@ -1140,9 +1140,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
                 self._log.info(f"{self._account_summary}", LogColor.GREEN)
-                locked = self._account_summary[currency]["FullMaintMarginReq"]
                 total = self._account_summary[currency]["NetLiquidation"]
-                free = self._account_summary[currency].get("FullAvailableFunds", total - locked)
+                free = self._account_summary[currency]["FullAvailableFunds"]
+                locked = total - free
+
                 account_balance = AccountBalance(
                     total=Money(total, Currency.from_str(currency)),
                     free=Money(free, Currency.from_str(currency)),
