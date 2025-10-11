@@ -37,7 +37,6 @@ use nautilus_model::{
 };
 use serde_json;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
 
 use crate::{
     common::{
@@ -188,9 +187,11 @@ impl HyperliquidExecutionClient {
             .context("failed to request Hyperliquid instruments")?;
 
         if instruments.is_empty() {
-            warn!("Instrument bootstrap yielded no instruments; WebSocket submissions may fail");
+            tracing::warn!(
+                "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
+            );
         } else {
-            info!("Initialized {} instruments", instruments.len());
+            tracing::info!("Initialized {} instruments", instruments.len());
         }
 
         self.instruments_initialized = true;
@@ -226,7 +227,7 @@ impl HyperliquidExecutionClient {
             serde_json::from_value(clearinghouse_state)
                 .context("Failed to deserialize clearinghouse state")?;
 
-        debug!(
+        tracing::debug!(
             "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}",
             state.cross_margin_summary,
             state.asset_positions.len()
@@ -250,9 +251,9 @@ impl HyperliquidExecutionClient {
                 ts_event,
             )?;
 
-            info!("Account state updated successfully");
+            tracing::info!("Account state updated successfully");
         } else {
-            warn!("No cross margin summary in clearinghouse state");
+            tracing::warn!("No cross margin summary in clearinghouse state");
         }
 
         Ok(())
@@ -274,7 +275,7 @@ impl HyperliquidExecutionClient {
         // Get address directly from signer
         let address = format!("{:?}", signer.address());
 
-        debug!("Derived Ethereum address: {}", address);
+        tracing::debug!("Derived Ethereum address: {}", address);
         Ok(address)
     }
 
@@ -285,7 +286,7 @@ impl HyperliquidExecutionClient {
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
             if let Err(err) = fut.await {
-                warn!("{description} failed: {err:?}");
+                tracing::warn!("{description} failed: {err:?}");
             }
         });
 
@@ -348,20 +349,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        info!("Starting Hyperliquid execution client");
+        tracing::info!("Starting Hyperliquid execution client");
 
         // Ensure instruments are initialized
         self.ensure_instruments_initialized()?;
 
         // Initialize account state
         if let Err(e) = self.update_account_state() {
-            warn!("Failed to initialize account state: {}", e);
+            tracing::warn!("Failed to initialize account state: {}", e);
         }
 
         self.connected = true;
         self.started = true;
 
-        info!("Hyperliquid execution client started");
+        tracing::info!("Hyperliquid execution client started");
         Ok(())
     }
     fn stop(&mut self) -> anyhow::Result<()> {
@@ -369,7 +370,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        info!("Stopping Hyperliquid execution client");
+        tracing::info!("Stopping Hyperliquid execution client");
 
         // Abort any pending tasks
         self.abort_pending_tasks();
@@ -379,7 +380,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let runtime = get_runtime();
             runtime.block_on(async {
                 if let Err(e) = self.ws_client.disconnect().await {
-                    warn!("Error disconnecting WebSocket client: {e}");
+                    tracing::warn!("Error disconnecting WebSocket client: {e}");
                 }
             });
         }
@@ -387,7 +388,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.connected = false;
         self.started = false;
 
-        info!("Hyperliquid execution client stopped");
+        tracing::info!("Hyperliquid execution client stopped");
         Ok(())
     }
 
@@ -395,7 +396,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let order = &command.order;
 
         if order.is_closed() {
-            warn!("Cannot submit closed order {}", order.client_order_id());
+            tracing::warn!("Cannot submit closed order {}", order.client_order_id());
             return Ok(());
         }
 
@@ -434,12 +435,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             match http_client.post_action(&action).await {
                                 Ok(response) => {
                                     if is_response_successful(&response) {
-                                        info!("Order submitted successfully: {:?}", response);
+                                        tracing::info!(
+                                            "Order submitted successfully: {:?}",
+                                            response
+                                        );
                                         // Order acceptance/rejection events will be generated from WebSocket updates
                                         // which provide the venue_order_id and definitive status
                                     } else {
                                         let error_msg = extract_error_message(&response);
-                                        warn!(
+                                        tracing::warn!(
                                             "Order submission rejected by exchange: {}",
                                             error_msg
                                         );
@@ -447,19 +451,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                     }
                                 }
                                 Err(err) => {
-                                    warn!("Order submission HTTP request failed: {err}");
+                                    tracing::warn!("Order submission HTTP request failed: {err}");
                                     // WebSocket reconnection and order reconciliation will handle recovery
                                 }
                             }
                         }
                         Err(err) => {
-                            warn!("Failed to serialize order to JSON: {err}");
+                            tracing::warn!("Failed to serialize order to JSON: {err}");
                             // This indicates a client-side bug that should be fixed
                         }
                     }
                 }
                 Err(err) => {
-                    warn!("Failed to convert order to Hyperliquid format: {err}");
+                    tracing::warn!("Failed to convert order to Hyperliquid format: {err}");
                     // This indicates a client-side bug or unsupported order configuration
                 }
             }
@@ -471,7 +475,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn submit_order_list(&self, command: &SubmitOrderList) -> anyhow::Result<()> {
-        debug!(
+        tracing::debug!(
             "Submitting order list with {} orders",
             command.order_list.orders.len()
         );
@@ -500,11 +504,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             match http_client.post_action(&action).await {
                                 Ok(response) => {
                                     if is_response_successful(&response) {
-                                        info!("Order list submitted successfully: {:?}", response);
+                                        tracing::info!(
+                                            "Order list submitted successfully: {:?}",
+                                            response
+                                        );
                                         // Order acceptance/rejection events will be generated from WebSocket updates
                                     } else {
                                         let error_msg = extract_error_message(&response);
-                                        warn!(
+                                        tracing::warn!(
                                             "Order list submission rejected by exchange: {}",
                                             error_msg
                                         );
@@ -512,18 +519,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                     }
                                 }
                                 Err(err) => {
-                                    warn!("Order list submission HTTP request failed: {err}");
+                                    tracing::warn!(
+                                        "Order list submission HTTP request failed: {err}"
+                                    );
                                     // WebSocket reconciliation will handle recovery
                                 }
                             }
                         }
                         Err(err) => {
-                            warn!("Failed to serialize order list to JSON: {err}");
+                            tracing::warn!("Failed to serialize order list to JSON: {err}");
                         }
                     }
                 }
                 Err(err) => {
-                    warn!("Failed to convert order list to Hyperliquid format: {err}");
+                    tracing::warn!("Failed to convert order list to Hyperliquid format: {err}");
                 }
             }
 
@@ -534,15 +543,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn modify_order(&self, command: &ModifyOrder) -> anyhow::Result<()> {
-        debug!("Modifying order: {:?}", command);
+        tracing::debug!("Modifying order: {:?}", command);
 
         // Parse venue_order_id as u64
         let oid: u64 = match command.venue_order_id.as_str().parse() {
             Ok(id) => id,
             Err(err) => {
-                warn!(
+                tracing::warn!(
                     "Failed to parse venue_order_id '{}' as u64: {}",
-                    command.venue_order_id, err
+                    command.venue_order_id,
+                    err
                 );
                 return Ok(());
             }
@@ -572,16 +582,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
             match http_client.post_action(&action).await {
                 Ok(response) => {
                     if is_response_successful(&response) {
-                        info!("Order modified successfully: {:?}", response);
+                        tracing::info!("Order modified successfully: {:?}", response);
                         // Order update events will be generated from WebSocket updates
                     } else {
                         let error_msg = extract_error_message(&response);
-                        warn!("Order modification rejected by exchange: {}", error_msg);
+                        tracing::warn!("Order modification rejected by exchange: {}", error_msg);
                         // Order modify rejected events will be generated from WebSocket updates
                     }
                 }
                 Err(err) => {
-                    warn!("Order modification HTTP request failed: {err}");
+                    tracing::warn!("Order modification HTTP request failed: {err}");
                     // WebSocket reconciliation will handle recovery
                 }
             }
@@ -593,7 +603,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn cancel_order(&self, command: &CancelOrder) -> anyhow::Result<()> {
-        debug!("Cancelling order: {:?}", command);
+        tracing::debug!("Cancelling order: {:?}", command);
 
         let http_client = self.http_client.clone();
         let client_order_id = command.client_order_id.to_string();
@@ -610,12 +620,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             match http_client.post_action(&action).await {
                                 Ok(response) => {
                                     if is_response_successful(&response) {
-                                        info!("Order cancelled successfully: {:?}", response);
+                                        tracing::info!(
+                                            "Order cancelled successfully: {:?}",
+                                            response
+                                        );
                                         // Order cancelled events will be generated from WebSocket updates
                                         // which provide definitive confirmation and venue_order_id
                                     } else {
                                         let error_msg = extract_error_message(&response);
-                                        warn!(
+                                        tracing::warn!(
                                             "Order cancellation rejected by exchange: {}",
                                             error_msg
                                         );
@@ -623,18 +636,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                     }
                                 }
                                 Err(err) => {
-                                    warn!("Order cancellation HTTP request failed: {err}");
+                                    tracing::warn!("Order cancellation HTTP request failed: {err}");
                                     // WebSocket reconnection and reconciliation will handle recovery
                                 }
                             }
                         }
                         Err(err) => {
-                            warn!("Failed to serialize cancel request to JSON: {:?}", err);
+                            tracing::warn!("Failed to serialize cancel request to JSON: {:?}", err);
                         }
                     }
                 }
                 Err(err) => {
-                    warn!(
+                    tracing::warn!(
                         "Failed to convert order to Hyperliquid cancel format: {:?}",
                         err
                     );
@@ -648,7 +661,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn cancel_all_orders(&self, command: &CancelAllOrders) -> anyhow::Result<()> {
-        debug!("Cancelling all orders: {:?}", command);
+        tracing::debug!("Cancelling all orders: {:?}", command);
 
         // Query cache for all open orders matching the instrument and side
         let cache = self.core.cache().borrow();
@@ -660,7 +673,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         if open_orders.is_empty() {
-            debug!("No open orders to cancel for {:?}", command.instrument_id);
+            tracing::debug!("No open orders to cancel for {:?}", command.instrument_id);
             return Ok(());
         }
 
@@ -673,9 +686,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
                 Ok(req) => cancel_requests.push(req),
                 Err(e) => {
-                    warn!(
+                    tracing::warn!(
                         "Failed to convert order {} to cancel request: {}",
-                        client_order_id, e
+                        client_order_id,
+                        e
                     );
                     continue;
                 }
@@ -683,7 +697,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if cancel_requests.is_empty() {
-            debug!("No valid cancel requests to send");
+            tracing::debug!("No valid cancel requests to send");
             return Ok(());
         }
 
@@ -698,7 +712,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let runtime = get_runtime();
         runtime.spawn(async move {
             if let Err(e) = http_client.post_action(&action).await {
-                warn!("Failed to send cancel all orders request: {}", e);
+                tracing::warn!("Failed to send cancel all orders request: {}", e);
             }
         });
 
@@ -706,10 +720,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn batch_cancel_orders(&self, command: &BatchCancelOrders) -> anyhow::Result<()> {
-        debug!("Batch cancelling orders: {:?}", command);
+        tracing::debug!("Batch cancelling orders: {:?}", command);
 
         if command.cancels.is_empty() {
-            debug!("No orders to cancel in batch");
+            tracing::debug!("No orders to cancel in batch");
             return Ok(());
         }
 
@@ -722,9 +736,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
                 Ok(req) => cancel_requests.push(req),
                 Err(e) => {
-                    warn!(
+                    tracing::warn!(
                         "Failed to convert order {} to cancel request: {}",
-                        client_order_id, e
+                        client_order_id,
+                        e
                     );
                     continue;
                 }
@@ -732,7 +747,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if cancel_requests.is_empty() {
-            warn!("No valid cancel requests in batch");
+            tracing::warn!("No valid cancel requests in batch");
             return Ok(());
         }
 
@@ -747,7 +762,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let runtime = get_runtime();
         runtime.spawn(async move {
             if let Err(e) = http_client.post_action(&action).await {
-                warn!("Failed to send batch cancel orders request: {}", e);
+                tracing::warn!("Failed to send batch cancel orders request: {}", e);
             }
         });
 
@@ -755,13 +770,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn query_account(&self, command: &QueryAccount) -> anyhow::Result<()> {
-        debug!("Querying account: {:?}", command);
+        tracing::debug!("Querying account: {:?}", command);
 
         // Use existing infrastructure to refresh account state
         let runtime = get_runtime();
         runtime.block_on(async {
             if let Err(e) = self.refresh_account_state().await {
-                warn!("Failed to query account state: {}", e);
+                tracing::warn!("Failed to query account state: {}", e);
             }
         });
 
@@ -769,7 +784,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn query_order(&self, command: &QueryOrder) -> anyhow::Result<()> {
-        debug!("Querying order: {:?}", command);
+        tracing::debug!("Querying order: {:?}", command);
 
         // Get venue order ID from cache
         let cache = self.core.cache().borrow();
@@ -778,7 +793,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let venue_order_id = match venue_order_id {
             Some(oid) => *oid,
             None => {
-                warn!(
+                tracing::warn!(
                     "No venue order ID found for client order {}",
                     command.client_order_id
                 );
@@ -791,7 +806,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let oid = match u64::from_str(venue_order_id.as_ref()) {
             Ok(id) => id,
             Err(e) => {
-                warn!("Failed to parse venue order ID {}: {}", venue_order_id, e);
+                tracing::warn!("Failed to parse venue order ID {}: {}", venue_order_id, e);
                 return Ok(());
             }
         };
@@ -807,10 +822,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         runtime.spawn(async move {
             match http_client.info_order_status(&user_address, oid).await {
                 Ok(status) => {
-                    debug!("Order status for oid {}: {:?}", oid, status);
+                    tracing::debug!("Order status for oid {}: {:?}", oid, status);
                 }
                 Err(e) => {
-                    warn!("Failed to query order status for oid {}: {}", oid, e);
+                    tracing::warn!("Failed to query order status for oid {}: {}", oid, e);
                 }
             }
         });
@@ -839,7 +854,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        info!("Connecting Hyperliquid execution client");
+        tracing::info!("Connecting Hyperliquid execution client");
 
         // Ensure instruments are initialized
         self.ensure_instruments_initialized_async().await?;
@@ -863,7 +878,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.connected = true;
         self.core.set_connected(true);
 
-        info!(
+        tracing::info!(
             "Hyperliquid execution client {} connected",
             self.core.client_id
         );
@@ -875,7 +890,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        info!("Disconnecting Hyperliquid execution client");
+        tracing::info!("Disconnecting Hyperliquid execution client");
 
         // Disconnect WebSocket
         self.ws_client.disconnect().await?;
@@ -886,7 +901,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.connected = false;
         self.core.set_connected(false);
 
-        info!(
+        tracing::info!(
             "Hyperliquid execution client {} disconnected",
             self.core.client_id
         );
@@ -900,7 +915,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         // NOTE: Single order status report generation requires instrument cache integration.
         // The HTTP client methods and parsing functions are implemented and ready to use.
         // When implemented: query via info_order_status(), parse with parse_order_status_report_from_basic().
-        warn!("generate_order_status_report not yet fully implemented");
+        tracing::warn!("generate_order_status_report not yet fully implemented");
         Ok(None)
     }
 
@@ -915,17 +930,17 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         //  Pending: Instrument cache integration to look up instruments by ID
         // Implementation: Fetch via info_frontend_open_orders(), parse each order, filter by cmd params
 
-        warn!("generate_order_status_reports requires instrument cache integration");
+        tracing::warn!("generate_order_status_reports requires instrument cache integration");
 
         // Log what would be queried
         if let Some(instrument_id) = cmd.instrument_id {
-            debug!("Would query orders for instrument: {}", instrument_id);
+            tracing::debug!("Would query orders for instrument: {}", instrument_id);
         }
         if let Some(client_order_id) = cmd.client_order_id {
-            debug!("Would filter by client_order_id: {}", client_order_id);
+            tracing::debug!("Would filter by client_order_id: {}", client_order_id);
         }
         if let Some(venue_order_id) = cmd.venue_order_id {
-            debug!("Would filter by venue_order_id: {}", venue_order_id);
+            tracing::debug!("Would filter by venue_order_id: {}", venue_order_id);
         }
 
         Ok(Vec::new())
@@ -942,17 +957,17 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         //  Pending: Instrument cache integration to look up instruments by symbol
         // Implementation: Fetch via info_user_fills(), filter by time range, parse each fill
 
-        warn!("generate_fill_reports requires instrument cache integration");
+        tracing::warn!("generate_fill_reports requires instrument cache integration");
 
         // Log what would be queried
         if let Some(start) = cmd.start {
-            debug!("Would filter fills from: {}", start);
+            tracing::debug!("Would filter fills from: {}", start);
         }
         if let Some(end) = cmd.end {
-            debug!("Would filter fills until: {}", end);
+            tracing::debug!("Would filter fills until: {}", end);
         }
         if let Some(instrument_id) = cmd.instrument_id {
-            debug!("Would filter fills for instrument: {}", instrument_id);
+            tracing::debug!("Would filter fills for instrument: {}", instrument_id);
         }
 
         Ok(Vec::new())
@@ -979,7 +994,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         //  Pending: Instrument cache integration to look up instruments by coin symbol
         // Implementation: Deserialize response to ClearinghouseState, iterate asset_positions,
         //                parse each with parse_position_status_report(), filter by cmd params
-        warn!("Position status report parsing requires instrument cache integration");
+        tracing::warn!("Position status report parsing requires instrument cache integration");
 
         // When cache available:
         // 1. Deserialize clearinghouse state: serde_json::from_value::<ClearinghouseState>(response)
@@ -988,7 +1003,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         // 4. Filter by cmd.instrument_id if specified
 
         if cmd.instrument_id.is_some() {
-            debug!(
+            tracing::debug!(
                 "Would filter positions by instrument_id: {:?}",
                 cmd.instrument_id
             );
@@ -1001,7 +1016,9 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        warn!("generate_mass_status not yet implemented (lookback_mins={lookback_mins:?})");
+        tracing::warn!(
+            "generate_mass_status not yet implemented (lookback_mins={lookback_mins:?})"
+        );
         // Full implementation would require:
         // 1. Query all orders within lookback window
         // 2. Query all fills within lookback window

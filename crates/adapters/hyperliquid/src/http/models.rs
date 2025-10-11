@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy_primitives::Address;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -147,6 +148,16 @@ pub struct SpotMeta {
     pub universe: Vec<SpotPair>,
 }
 
+/// EVM contract information for a spot token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct EvmContract {
+    /// EVM contract address (20 bytes).
+    pub address: Address,
+    /// Extra wei decimals for EVM precision (can be negative).
+    pub evm_extra_wei_decimals: i32,
+}
+
 /// A single spot token from the tokens list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,12 +174,15 @@ pub struct SpotToken {
     pub token_id: String,
     /// Whether this is the canonical token.
     pub is_canonical: bool,
-    /// Optional EVM contract address.
+    /// Optional EVM contract information.
     #[serde(default)]
-    pub evm_contract: Option<String>,
+    pub evm_contract: Option<EvmContract>,
     /// Optional full name.
     #[serde(default)]
     pub full_name: Option<String>,
+    /// Optional deployer trading fee share.
+    #[serde(default)]
+    pub deployer_trading_fee_share: Option<String>,
 }
 
 /// A single spot pair from the universe.
@@ -261,11 +275,9 @@ pub struct HyperliquidLevel {
 }
 
 /// Represents user fills response from `POST /info`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HyperliquidFills {
-    #[serde(default)]
-    pub fills: Vec<HyperliquidFill>,
-}
+///
+/// The Hyperliquid API returns fills directly as an array, not wrapped in an object.
+pub type HyperliquidFills = Vec<HyperliquidFill>;
 
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]

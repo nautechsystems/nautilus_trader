@@ -39,8 +39,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Hyperliquid HTTP private example");
     if testnet {
         tracing::info!(
-            "Testnet parameter provided - set HYPERLIQUID_NETWORK=testnet environment variable"
+            "Testnet parameter provided - ensure HYPERLIQUID_TESTNET_PK environment variable is set"
         );
+    } else {
+        tracing::info!("Mainnet mode - ensure HYPERLIQUID_PK environment variable is set");
     }
     if test_conditional {
         tracing::info!("Conditional orders test mode enabled");
@@ -73,8 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get user fills
     match client.info_user_fills(user_address).await {
         Ok(fills) => {
-            tracing::info!("Fetched {} fills", fills.fills.len());
-            for (i, fill) in fills.fills.iter().take(3).enumerate() {
+            tracing::info!("Fetched {} fills", fills.len());
+            for (i, fill) in fills.iter().take(3).enumerate() {
                 tracing::info!("Fill {}: {} {} @ {}", i, fill.side, fill.sz, fill.px);
             }
         }

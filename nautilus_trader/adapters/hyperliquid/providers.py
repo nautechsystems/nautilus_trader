@@ -16,9 +16,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from nautilus_trader._libnautilus.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
@@ -29,6 +28,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import instruments_from_pyo3
+
+
+if TYPE_CHECKING:
+    # PyO3 types from Rust (temporary namespace qualification)
+    HyperliquidHttpClient = Any  # nautilus_pyo3.HyperliquidHttpClient (stub not yet available)
 
 
 class HyperliquidInstrumentProvider(InstrumentProvider):
@@ -59,16 +64,22 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self._product_types = resolved_types
 
         self._loaded_instruments: dict[InstrumentId, Instrument] = {}
+        self._instruments_pyo3: list[Any] = []
 
     # ---------------------------------------------------------------------
     # Public helpers
     # ---------------------------------------------------------------------
 
-    def instruments_pyo3(self) -> list[Instrument]:
+    def instruments_pyo3(self) -> list[Any]:
         """
-        Return the cached PyO3 instruments (mostly for debugging/testing).
+        Return the cached PyO3 instruments (for WebSocket client).
+
+        Returns
+        -------
+        list[nautilus_pyo3.Instrument]
+
         """
-        return list(self._loaded_instruments.values())
+        return self._instruments_pyo3
 
     # ---------------------------------------------------------------------
     # InstrumentProvider interface
@@ -97,10 +108,16 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
     async def _load_instruments(self) -> list[Instrument]:
         try:
-            return await self._client.load_instrument_definitions(
+            pyo3_instruments = await self._client.load_instrument_definitions(
                 include_perp=HyperliquidProductType.PERP in self._product_types,
                 include_spot=HyperliquidProductType.SPOT in self._product_types,
             )
+            # Store PyO3 instruments for WebSocket client
+            self._instruments_pyo3 = pyo3_instruments
+            # Convert PyO3 instruments to Python (Cython) instruments
+            # This is necessary because the data engine expects Python instruments
+            instruments = instruments_from_pyo3(pyo3_instruments)
+            return instruments
         except AttributeError:  # method missing (old wheel?)
             self._log.error("HyperliquidHttpClient is missing load_instrument_definitions")
             raise
@@ -112,6 +129,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self._instruments.clear()
         self._currencies.clear()
         self._loaded_instruments.clear()
+        self._instruments_pyo3.clear()
 
     def _ingest_instruments(
         self,
@@ -149,9 +167,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             return HyperliquidProductType.SPOT
 
         self._log.warning(
-            "Ignoring Hyperliquid instrument %s (unsupported type %s)",
-            instrument.id.value,
-            type(instrument).__name__,
+            f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type(instrument).__name__})",
         )
         return None
 

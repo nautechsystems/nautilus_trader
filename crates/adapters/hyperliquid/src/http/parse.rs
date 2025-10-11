@@ -66,16 +66,19 @@ pub struct HyperliquidInstrumentDef {
 /// - Quote is always USD (USDC settled)
 /// - Price decimals = max(0, 6 - sz_decimals) per venue docs
 /// - Active = !is_delisted
+///
+/// **Important:** Delisted instruments are included in the returned list but marked as inactive.
+/// This is necessary to support parsing historical data (orders, fills, positions) for instruments
+/// that have been delisted but may still have associated trading history.
 pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     const PERP_MAX_DECIMALS: i32 = 6; // Hyperliquid perps price decimal limit
 
     let mut defs = Vec::new();
 
     for asset in meta.universe.iter() {
-        // Skip delisted assets
-        if asset.is_delisted.unwrap_or(false) {
-            continue;
-        }
+        // Include delisted assets but mark them as inactive
+        // This allows parsing of historical data for delisted instruments
+        let is_delisted = asset.is_delisted.unwrap_or(false);
 
         let price_decimals = (PERP_MAX_DECIMALS - asset.sz_decimals as i32).max(0) as u32;
         let tick_size = pow10_neg(price_decimals)?;
@@ -94,7 +97,7 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
             lot_size,
             max_leverage: asset.max_leverage,
             only_isolated: asset.only_isolated.unwrap_or(false),
-            active: true,
+            active: !is_delisted, // Mark delisted instruments as inactive
             raw_data: serde_json::to_string(asset).unwrap_or_default(),
         };
 
@@ -109,7 +112,8 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 /// Hyperliquid spot follows these rules:
 /// - Price decimals = max(0, 8 - base_sz_decimals) per venue docs
 /// - Size decimals from base token
-/// - Active = is_canonical (only canonical pairs are tradeable)
+/// - All pairs are loaded (including non-canonical) to support parsing fills/positions
+///   for instruments that may have been traded
 pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     const SPOT_MAX_DECIMALS: i32 = 8; // Hyperliquid spot price decimal limit
 
@@ -122,10 +126,8 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
     }
 
     for pair in &meta.universe {
-        // Skip non-canonical pairs
-        if !pair.is_canonical {
-            continue;
-        }
+        // Load all pairs (including non-canonical) to support parsing fills/positions
+        // for instruments that may have been traded but are not currently canonical
 
         // Resolve base and quote tokens
         let base_token = tokens_by_index
@@ -152,7 +154,7 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
             lot_size,
             max_leverage: None,
             only_isolated: false,
-            active: true,
+            active: pair.is_canonical, // Use canonical status to indicate if pair is actively tradeable
             raw_data: serde_json::to_string(pair).unwrap_or_default(),
         };
 
@@ -328,7 +330,7 @@ mod tests {
                     sz_decimals: 3,
                     max_leverage: Some(10),
                     only_isolated: Some(true),
-                    is_delisted: Some(true), // Should be filtered out
+                    is_delisted: Some(true), // Should be included but marked as inactive
                 },
             ],
             margin_tables: vec![],
@@ -336,8 +338,8 @@ mod tests {
 
         let defs = parse_perp_instruments(&meta).unwrap();
 
-        // Should only have BTC (DELIST filtered out)
-        assert_eq!(defs.len(), 1);
+        // Should have both BTC and DELIST (delisted instruments are included for historical data)
+        assert_eq!(defs.len(), 2);
 
         let btc = &defs[0];
         assert_eq!(btc.symbol, "BTC-USD-PERP");
@@ -351,6 +353,11 @@ mod tests {
         assert_eq!(btc.max_leverage, Some(50));
         assert!(!btc.only_isolated);
         assert!(btc.active);
+
+        let delist = &defs[1];
+        assert_eq!(delist.symbol, "DELIST-USD-PERP");
+        assert_eq!(delist.base, "DELIST");
+        assert!(!delist.active); // Delisted instruments are marked as inactive
     }
 
     #[rstest]
@@ -365,6 +372,7 @@ mod tests {
                 is_canonical: true,
                 evm_contract: None,
                 full_name: None,
+                deployer_trading_fee_share: None,
             },
             SpotToken {
                 name: "PURR".to_string(),
@@ -375,6 +383,7 @@ mod tests {
                 is_canonical: true,
                 evm_contract: None,
                 full_name: None,
+                deployer_trading_fee_share: None,
             },
         ];
 
@@ -389,7 +398,7 @@ mod tests {
                 name: "ALIAS".to_string(),
                 tokens: [1, 0],
                 index: 1,
-                is_canonical: false, // Should be filtered out
+                is_canonical: false, // Should be included but marked as inactive
             },
         ];
 
@@ -400,8 +409,8 @@ mod tests {
 
         let defs = parse_spot_instruments(&meta).unwrap();
 
-        // Should only have PURR/USDC (ALIAS filtered out)
-        assert_eq!(defs.len(), 1);
+        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
+        assert_eq!(defs.len(), 2);
 
         let purr_usdc = &defs[0];
         assert_eq!(purr_usdc.symbol, "PURR-USDC-SPOT");
@@ -418,6 +427,11 @@ mod tests {
         assert_eq!(purr_usdc.max_leverage, None);
         assert!(!purr_usdc.only_isolated);
         assert!(purr_usdc.active);
+
+        let alias = &defs[1];
+        assert_eq!(alias.symbol, "PURR-USDC-SPOT");
+        assert_eq!(alias.base, "PURR");
+        assert!(!alias.active); // Non-canonical pairs are marked as inactive
     }
 
     #[rstest]
