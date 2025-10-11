@@ -11,7 +11,7 @@ This will be the final release with support for Python 3.11.
 - Added `subscribe_order_fills(...)` and `unsubscribe_order_fills(...)` for `Actor` allowing to subscribe to all fills for an instrument ID
 - Added `on_order_filled(...)` for `Actor`
 - Added Renko bar aggregator (#2941), thanks @faysou
-- Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
+- Added `time_range_generator` for on-the-fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
 - Added `convert_quote_qty_to_base` config option to `ExecEngineConfig` (default `True` to retain current behavior) allows adapters to keep quote-denominated sizes when needed
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
@@ -40,6 +40,58 @@ This will be the final release with support for Python 3.11.
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
 - Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
+
+### Security
+- Fixed non-executable stack for Cython extensions to support hardened Linux systems
+- Fixed divide-by-zero and overflow bugs in model crate that could cause crashes
+- Fixed core arithmetic operations to reject NaN/Infinity values and improve overflow handling
+
+### Fixes
+- Fixed reduce-only order panic when quantity exceeds position
+- Fixed position purge logic to prevent purging re-opened position
+- Fixed order average price calculation that was double-counting current fill in weighted average
+- Fixed own order book cleanup for terminal orders and inflight handling
+- Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks
+- Fixed crypto instruments PyO3 -> Cython conversion for `lot_size` where it was not being passed through
+- Fixed `serialization` crate bugs and improve error handling
+- Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
+- Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
+- Fixed edge case where rejected orders can remain in own order book
+- Fixed Currency registration to synchronize between Cython and PyO3 runtimes via new `register_currency()` helper
+- Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
+- Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
+- Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
+- Fixed `SandboxExecutionClient` instrument data handling
+- Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
+- Fixed safe encoded symbols (#2964), thanks @ms32035
+- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
+- Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
+- Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
+- Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
+- Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
+- Fixed BitMEX testnet support
+- Fixed BitMEX instrument parsing of lot size
+- Fixed BitMEX order rejection handling and response parsing
+- Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
+- Fixed Bybit handling of `OrderModifyRejected` events from pending updates
+- Fixed Bybit account endpoint pagination handling
+- Fixed Coinbase Intx API credentials handling to allow passing explicitly
+- Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
+- Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
+- Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
+- Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
+- Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
+- Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
+- Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
+- Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
+- Fixed OKX API credentials handling to allow passing explicitly
+- Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
+- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
+- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
+- Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
+- Fixed Tardis instruments `lot_size` mapping
+- Fixed Tardis adapter error handling and connection robustness
+- Fixed Tardis replay to use catalog-compatible filenames
 
 ### Internal Improvements
 - Added ARM64 support to Docker builds
@@ -95,53 +147,6 @@ This will be the final release with support for Python 3.11.
 - Upgraded `datafusion` crate to v50.1.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
-
-### Fixes
-- Fixed reduce-only order panic when quantity exceeds position
-- Fixed position purge logic to prevent purging re-opened position
-- Fixed order average price calculation that was double-counting current fill in weighted average
-- Fixed own order book cleanup for terminal orders and inflight handling
-- Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks
-- Fixed crypto instruments PyO3 -> Cython conversion for `lot_size` where it was not being passed through
-- Fixed `serialization` crate bugs and improve error handling
-- Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
-- Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
-- Fixed edge case where rejected orders can remain in own order book
-- Fixed Currency registration to synchronize between Cython and PyO3 runtimes via new `register_currency()` helper
-- Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
-- Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
-- Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
-- Fixed `SandboxExecutionClient` instrument data handling
-- Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
-- Fixed safe encoded symbols (#2964), thanks @ms32035
-- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
-- Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
-- Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
-- Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
-- Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
-- Fixed BitMEX testnet support
-- Fixed BitMEX instrument parsing of lot size
-- Fixed BitMEX order rejection handling and response parsing
-- Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
-- Fixed Bybit handling of `OrderModifyRejected` events from pending updates
-- Fixed Bybit account endpoint pagination handling
-- Fixed Coinbase Intx API credentials handling to allow passing explicitly
-- Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
-- Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
-- Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
-- Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
-- Fixed Interactive Brokers flat position reconciliation and instrument loading (#3023), thanks @idobz
-- Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
-- Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
-- Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
-- Fixed OKX API credentials handling to allow passing explicitly
-- Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
-- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
-- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
-- Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
-- Fixed Tardis instruments `lot_size` mapping
-- Fixed Tardis adapter error handling and connection robustness
-- Fixed Tardis replay to use catalog-compatible filenames
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
