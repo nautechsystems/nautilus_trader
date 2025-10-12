@@ -512,7 +512,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         parquet_files = self.fs.glob(os.path.join(directory, "*.parquet"))
 
         for file in parquet_files:
-            first_ts, last_ts = _min_max_from_parquet_metadata(file, "ts_init")
+            first_ts, last_ts = self._min_max_from_parquet_metadata(file, "ts_init")
 
             if first_ts == -1:
                 continue
@@ -525,6 +525,35 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert _are_intervals_disjoint(
             intervals,
         ), "Intervals are not disjoint after resetting file names"
+
+    def _min_max_from_parquet_metadata(self, file_path: str, column_name: str) -> tuple[int, int]:
+        parquet_file = pq.ParquetFile(file_path, filesystem=self.fs)
+        metadata = parquet_file.metadata
+
+        overall_min_value = None
+        overall_max_value = None
+
+        for i in range(metadata.num_row_groups):
+            row_group_metadata = metadata.row_group(i)
+
+            for j in range(row_group_metadata.num_columns):
+                col_metadata = row_group_metadata.column(j)
+
+                if col_metadata.path_in_schema == column_name:
+                    if col_metadata.statistics is not None:
+                        min_value = col_metadata.statistics.min
+                        max_value = col_metadata.statistics.max
+
+                        if overall_min_value is None or min_value < overall_min_value:
+                            overall_min_value = min_value
+                        if overall_max_value is None or max_value > overall_max_value:
+                            overall_max_value = max_value
+
+        if overall_min_value is None or overall_max_value is None:
+            print(f"Column '{column_name}' not found or has no statistics in any row group.")
+            return -1, -1
+        else:
+            return overall_min_value, overall_max_value
 
     def consolidate_catalog(
         self,
@@ -868,6 +897,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 # Skip if no data found, but maintain contiguity by using query start
                 if file_start_ns is None:
                     file_start_ns = query_info["query_start"]
+
                 continue
             else:
                 file_start_ns = None
@@ -973,6 +1003,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         used_end: pd.Timestamp | None = time_object_to_dt(end)
 
         filtered_intervals = []
+
         for interval_start, interval_end in intervals:
             # Check if interval overlaps with the specified range
             if (used_start is None or used_start.value <= interval_end) and (
@@ -1019,6 +1050,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Handle interval splitting by creating split operations for data preservation
         if filtered_intervals and used_start is not None:
             first_interval = filtered_intervals[0]
+
             if first_interval[0] < used_start.value <= first_interval[1]:
                 # Split before start: preserve data from interval_start to start-1
                 queries_to_execute.append(
@@ -1031,6 +1063,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if filtered_intervals and used_end is not None:
             last_interval = filtered_intervals[-1]
+
             if last_interval[0] <= used_end.value < last_interval[1]:
                 # Split after end: preserve data from end+1 to interval_end
                 queries_to_execute.append(
@@ -1070,6 +1103,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             while current_start_ns <= group_end_ts:
                 iteration_count += 1
+
                 if iteration_count > max_iterations:
                     # Safety break to prevent infinite loops
                     break
@@ -1176,6 +1210,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     ) -> tuple[type | None, str | None]:
         # Remove the base catalog path to get the relative path
         base_path = self.path.rstrip("/")
+
         if directory.startswith(base_path):
             relative_path = directory[len(base_path) :].lstrip("/")
         else:
@@ -1243,6 +1278,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if f"/data/{data_cls_name}/" in directory:
                     # Extract the identifier from the directory path
                     parts = directory.split("/")
+
                     if len(parts) >= 3 and parts[-2] == data_cls_name:
                         dir_identifier = parts[-1]
                         # Recursively call delete for this specific identifier
@@ -1285,6 +1321,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     end=operation["query_end"],
                     files=operation["files"],
                 )
+
                 if before_data:
                     self.write_data(
                         data=before_data,
@@ -1302,6 +1339,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     end=operation["query_end"],
                     files=operation["files"],
                 )
+
                 if after_data:
                     self.write_data(
                         data=after_data,
@@ -2334,36 +2372,6 @@ def _file_timestamp_to_iso_timestamp(file_timestamp: str) -> str:
     final_time_part = time_with_dot_for_nanos.replace("-", ":")
 
     return f"{date_part}T{final_time_part}Z"
-
-
-def _min_max_from_parquet_metadata(file_path: str, column_name: str) -> tuple[int, int]:
-    parquet_file = pq.ParquetFile(file_path)
-    metadata = parquet_file.metadata
-
-    overall_min_value = None
-    overall_max_value = None
-
-    for i in range(metadata.num_row_groups):
-        row_group_metadata = metadata.row_group(i)
-
-        for j in range(row_group_metadata.num_columns):
-            col_metadata = row_group_metadata.column(j)
-
-            if col_metadata.path_in_schema == column_name:
-                if col_metadata.statistics is not None:
-                    min_value = col_metadata.statistics.min
-                    max_value = col_metadata.statistics.max
-
-                    if overall_min_value is None or min_value < overall_min_value:
-                        overall_min_value = min_value
-                    if overall_max_value is None or max_value > overall_max_value:
-                        overall_max_value = max_value
-
-    if overall_min_value is None or overall_max_value is None:
-        print(f"Column '{column_name}' not found or has no statistics in any row group.")
-        return -1, -1
-    else:
-        return overall_min_value, overall_max_value
 
 
 def _are_intervals_disjoint(intervals: list[tuple[int, int]]) -> bool:
