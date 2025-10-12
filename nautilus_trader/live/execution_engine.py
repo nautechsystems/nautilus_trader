@@ -1289,7 +1289,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Reconcile each mass status with the execution engine
             for mass_status_or_exception in mass_status_all:
-                if isinstance(mass_status_or_exception, Exception):
+                if isinstance(mass_status_or_exception, BaseException):
                     self._log.error(f"Failed to generate mass status: {mass_status_or_exception}")
                     results.append(False)
                     continue
