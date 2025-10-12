@@ -795,6 +795,12 @@ cdef class Position:
             return 0.0  # FLAT
 
     cdef double _calculate_points_inverse(self, double avg_px_open, double avg_px_close):
+        cdef double EPSILON = 1e-15
+
+        # Defensive check for zero or near-zero prices
+        if fabs(avg_px_open) < EPSILON or fabs(avg_px_close) < EPSILON:
+            return 0.0
+
         if self.side == PositionSide.LONG:
             return (1.0 / avg_px_open) - (1.0 / avg_px_close)
         elif self.side == PositionSide.SHORT:
@@ -803,6 +809,10 @@ cdef class Position:
             return 0.0  # FLAT
 
     cdef double _calculate_return(self, double avg_px_open, double avg_px_close):
+        # Defensive check for zero open price
+        if avg_px_open == 0.0:
+            return 0.0
+
         return self._calculate_points(avg_px_open, avg_px_close) / avg_px_open
 
     cdef double _calculate_pnl(

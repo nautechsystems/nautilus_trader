@@ -337,18 +337,25 @@ impl Position {
             // SHORT POSITION
             let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
             self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
-            realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
+            self.realized_return = self
+                .calculate_return(self.avg_px_open, avg_px_close)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating return: {e}");
+                    0.0
+                });
+            realized_pnl += self
+                .calculate_pnl_raw(self.avg_px_open, last_px, last_qty)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating PnL: {e}");
+                    0.0
+                });
         }
 
-        if self.realized_pnl.is_none() {
-            self.realized_pnl = Some(Money::new(realized_pnl, self.settlement_currency));
-        } else {
-            self.realized_pnl = Some(Money::new(
-                self.realized_pnl.unwrap().as_f64() + realized_pnl,
-                self.settlement_currency,
-            ));
-        }
+        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
+        self.realized_pnl = Some(Money::new(
+            current_pnl + realized_pnl,
+            self.settlement_currency,
+        ));
 
         self.signed_qty += last_qty;
         self.buy_qty += last_qty_object;
@@ -375,18 +382,25 @@ impl Position {
         } else if self.signed_qty > 0.0 {
             let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
             self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
-            realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
+            self.realized_return = self
+                .calculate_return(self.avg_px_open, avg_px_close)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating return: {e}");
+                    0.0
+                });
+            realized_pnl += self
+                .calculate_pnl_raw(self.avg_px_open, last_px, last_qty)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating PnL: {e}");
+                    0.0
+                });
         }
 
-        if self.realized_pnl.is_none() {
-            self.realized_pnl = Some(Money::new(realized_pnl, self.settlement_currency));
-        } else {
-            self.realized_pnl = Some(Money::new(
-                self.realized_pnl.unwrap().as_f64() + realized_pnl,
-                self.settlement_currency,
-            ));
-        }
+        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
+        self.realized_pnl = Some(Money::new(
+            current_pnl + realized_pnl,
+            self.settlement_currency,
+        ));
 
         self.signed_qty -= last_qty;
         self.sell_qty += last_qty_object;
@@ -426,18 +440,30 @@ impl Position {
     /// - **Round-trip**: Open/close at same price produces exact PnL (commissions only).
     ///
     /// See precision validation tests: `test_position_pnl_precision_*`
-    #[must_use]
-    fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Both `qty` and `last_qty` are zero.
+    /// - `last_qty` is zero (prevents division by zero).
+    /// - `total_qty` is zero or negative (arithmetic error).
+    fn calculate_avg_px(
+        &self,
+        qty: f64,
+        avg_pg: f64,
+        last_px: f64,
+        last_qty: f64,
+    ) -> anyhow::Result<f64> {
         if qty == 0.0 && last_qty == 0.0 {
-            panic!("Cannot calculate average price: both quantities are zero");
+            anyhow::bail!("Cannot calculate average price: both quantities are zero");
         }
 
         if last_qty == 0.0 {
-            panic!("Cannot calculate average price: fill quantity is zero");
+            anyhow::bail!("Cannot calculate average price: fill quantity is zero");
         }
 
         if qty == 0.0 {
-            return last_px;
+            return Ok(last_px);
         }
 
         let start_cost = avg_pg * qty;
@@ -446,36 +472,39 @@ impl Position {
 
         // Runtime check to prevent division by zero even in release builds
         if total_qty <= 0.0 {
-            panic!(
+            anyhow::bail!(
                 "Total quantity unexpectedly zero or negative in average price calculation: qty={}, last_qty={}, total_qty={}",
-                qty, last_qty, total_qty
+                qty,
+                last_qty,
+                total_qty
             );
         }
 
-        (start_cost + event_cost) / total_qty
+        Ok((start_cost + event_cost) / total_qty)
     }
 
-    #[must_use]
     fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating average open price: {}", e);
+                last_px
+            })
     }
 
-    #[must_use]
     fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
-        if self.avg_px_close.is_none() {
+        let Some(avg_px_close) = self.avg_px_close else {
             return last_px;
-        }
+        };
         let closing_qty = if self.side == PositionSide::Long {
             self.sell_qty
         } else {
             self.buy_qty
         };
-        self.calculate_avg_px(
-            closing_qty.as_f64(),
-            self.avg_px_close.unwrap(),
-            last_px,
-            last_qty,
-        )
+        self.calculate_avg_px(closing_qty.as_f64(), avg_px_close, last_px, last_qty)
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating average close price: {}", e);
+                last_px
+            })
     }
 
     fn calculate_points(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
@@ -486,19 +515,19 @@ impl Position {
         }
     }
 
-    fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+    fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
         // Epsilon at the limit of IEEE f64 precision before rounding errors (f64::EPSILON ≈ 2.22e-16)
         const EPSILON: f64 = 1e-15;
 
         // Invalid state: zero or near-zero prices should never occur in valid market data
         if avg_px_open.abs() < EPSILON {
-            panic!(
+            anyhow::bail!(
                 "Cannot calculate inverse points: open price is zero or too small ({})",
                 avg_px_open
             );
         }
         if avg_px_close.abs() < EPSILON {
-            panic!(
+            anyhow::bail!(
                 "Cannot calculate inverse points: close price is zero or too small ({})",
                 avg_px_close
             );
@@ -506,39 +535,49 @@ impl Position {
 
         let inverse_open = 1.0 / avg_px_open;
         let inverse_close = 1.0 / avg_px_close;
-        match self.side {
+        let result = match self.side {
             PositionSide::Long => inverse_open - inverse_close,
             PositionSide::Short => inverse_close - inverse_open,
             _ => 0.0, // FLAT - this is a valid case
-        }
+        };
+        Ok(result)
     }
 
-    #[must_use]
-    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
         // Prevent division by zero in return calculation
         if avg_px_open == 0.0 {
-            panic!(
+            anyhow::bail!(
                 "Cannot calculate return: open price is zero (close price: {})",
                 avg_px_close
             );
         }
-        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
+        Ok(self.calculate_points(avg_px_open, avg_px_close) / avg_px_open)
     }
 
-    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
+    fn calculate_pnl_raw(
+        &self,
+        avg_px_open: f64,
+        avg_px_close: f64,
+        quantity: f64,
+    ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
-        if self.is_inverse {
-            quantity
-                * self.multiplier.as_f64()
-                * self.calculate_points_inverse(avg_px_open, avg_px_close)
+        let result = if self.is_inverse {
+            let points = self.calculate_points_inverse(avg_px_open, avg_px_close)?;
+            quantity * self.multiplier.as_f64() * points
         } else {
             quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
-        }
+        };
+        Ok(result)
     }
 
     #[must_use]
     pub fn calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
-        let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64());
+        let pnl_raw = self
+            .calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64())
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating PnL: {e}");
+                0.0
+            });
         Money::new(pnl_raw, self.settlement_currency)
     }
 
@@ -559,7 +598,12 @@ impl Position {
             let avg_px_open = self.avg_px_open;
             let avg_px_close = last.as_f64();
             let quantity = self.quantity.as_f64();
-            let pnl = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity);
+            let pnl = self
+                .calculate_pnl_raw(avg_px_open, avg_px_close, quantity)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating unrealized PnL: {e}");
+                    0.0
+                });
             Money::new(pnl, self.settlement_currency)
         }
     }
