@@ -606,9 +606,19 @@ impl OrderBook {
         }
 
         if self.update_count == u64::MAX {
-            let msg = format!("Update count approaching overflow: {}", self.update_count);
-            debug_assert!(self.update_count < u64::MAX, "{}", msg);
-            log::warn!("{}", msg);
+            // Debug assert to catch in development
+            debug_assert!(
+                self.update_count < u64::MAX,
+                "Update count at u64::MAX limit (about to overflow): {}",
+                self.update_count
+            );
+
+            // Spam warnings in production when at/near u64::MAX
+            log::warn!(
+                "Update count at u64::MAX: {} (instrument_id={})",
+                self.update_count,
+                self.instrument_id
+            );
         }
 
         self.sequence = sequence;
