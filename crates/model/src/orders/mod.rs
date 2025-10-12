@@ -234,9 +234,11 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::Triggered(_)) => Self::Triggered,
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PendingCancel, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingCancel, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
+            (Self::PendingCancel, OrderEventAny::CancelRejected(_)) => Self::PendingCancel,  // Handled by cancel_rejected to restore previous_status
             (Self::PendingCancel, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PendingCancel, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PendingCancel, OrderEventAny::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
@@ -634,8 +636,23 @@ impl OrderCore {
         assert_eq!(self.client_order_id, event.client_order_id());
         assert_eq!(self.strategy_id, event.strategy_id());
 
+        // Save current status as previous_status for ALL transitions except:
+        // - Initialized (no prior state exists)
+        // - ModifyRejected/CancelRejected (need to preserve the pre-Pending state)
+        // - When already in Pending* state (avoid overwriting the pre-pending state when receiving multiple pending requests)
+        if !matches!(
+            event,
+            OrderEventAny::Initialized(_)
+                | OrderEventAny::ModifyRejected(_)
+                | OrderEventAny::CancelRejected(_)
+        ) && !matches!(
+            self.status,
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+        ) {
+            self.previous_status = Some(self.status);
+        }
+
         let new_status = self.status.transition(&event)?;
-        self.previous_status = Some(self.status);
         self.status = new_status;
 
         match &event {
@@ -681,6 +698,7 @@ impl OrderCore {
 
     fn accepted(&mut self, event: &OrderAccepted) {
         self.venue_order_id = Some(event.venue_order_id);
+        self.venue_order_ids.push(event.venue_order_id);
         self.ts_accepted = Some(event.ts_event);
     }
 
@@ -729,7 +747,13 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled) {
-        if self.filled_qty + event.last_qty < self.quantity {
+        // Use saturating arithmetic to prevent overflow
+        let new_filled_qty = Quantity::from_raw(
+            self.filled_qty.raw.saturating_add(event.last_qty.raw),
+            self.filled_qty.precision,
+        );
+
+        if new_filled_qty < self.quantity {
             self.status = OrderStatus::PartiallyFilled;
         } else {
             self.status = OrderStatus::Filled;
@@ -741,7 +765,7 @@ impl OrderCore {
         self.trade_ids.push(event.trade_id);
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
-        self.filled_qty += event.last_qty;
+        self.filled_qty = new_filled_qty;
         self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
         if self.ts_accepted.is_none() {

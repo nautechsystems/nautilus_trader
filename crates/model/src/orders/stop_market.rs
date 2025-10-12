@@ -439,9 +439,21 @@ impl Order for StopMarketOrder {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         };
+
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
+        let ts_event = if is_order_triggered {
+            Some(event.ts_event())
+        } else {
+            None
+        };
 
         self.core.apply(event)?;
+
+        if is_order_triggered {
+            self.is_triggered = true;
+            self.ts_triggered = ts_event;
+        }
 
         if is_order_filled {
             self.core.set_slippage(self.trigger_price);
