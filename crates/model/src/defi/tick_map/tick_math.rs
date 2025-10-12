@@ -15,7 +15,7 @@
 
 use alloy_primitives::{U160, U256};
 
-use crate::defi::tick_map::{bit_math::most_significant_bit, tick::Tick};
+use crate::defi::tick_map::{bit_math::most_significant_bit, tick::PoolTick};
 
 /// The minimum value that can be returned from get_sqrt_ratio_at_tick
 pub const MIN_SQRT_RATIO: U160 = U160::from_limbs([4295128739u64, 0, 0]);
@@ -40,12 +40,16 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 ///
 /// # Panics
 ///
-/// Panics if the absolute tick exceeds [`Tick::MAX_TICK`].
+/// Panics if the absolute tick exceeds [`PoolTick::MAX_TICK`].
 #[inline]
 pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
     let abs_tick = tick.abs();
 
-    assert!(abs_tick <= Tick::MAX_TICK, "Tick {} out of bounds", tick);
+    assert!(
+        abs_tick <= PoolTick::MAX_TICK,
+        "Tick {} out of bounds",
+        tick
+    );
 
     // Equivalent: ratio = 2**128 / sqrt(1.0001) if abs_tick & 0x1 else 1 << 128
     let mut ratio = if abs_tick & 0x1 != 0 {
@@ -256,13 +260,13 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Tick 887273 out of bounds")]
     fn test_get_sqrt_ratio_at_tick_panics_above_max() {
-        let _ = get_sqrt_ratio_at_tick(Tick::MAX_TICK + 1);
+        let _ = get_sqrt_ratio_at_tick(PoolTick::MAX_TICK + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Tick -887273 out of bounds")]
     fn test_get_sqrt_ratio_at_tick_panics_below_min() {
-        let _ = get_sqrt_ratio_at_tick(Tick::MIN_TICK - 1);
+        let _ = get_sqrt_ratio_at_tick(PoolTick::MIN_TICK - 1);
     }
 
     // Tests for get_tick_at_sqrt_ratio matching the JavaScript tests
@@ -281,7 +285,7 @@ mod tests {
     #[rstest]
     fn test_get_tick_at_sqrt_ratio_min_tick() {
         let result = get_tick_at_sqrt_ratio(MIN_SQRT_RATIO);
-        assert_eq!(result, Tick::MIN_TICK);
+        assert_eq!(result, PoolTick::MIN_TICK);
     }
 
     #[rstest]
@@ -303,7 +307,7 @@ mod tests {
     #[rstest]
     fn test_get_tick_at_sqrt_ratio_min_tick_plus_one() {
         let result = get_tick_at_sqrt_ratio(U160::from(4295343490u64));
-        assert_eq!(result, Tick::MIN_TICK + 1);
+        assert_eq!(result, PoolTick::MIN_TICK + 1);
     }
 
     #[rstest]
@@ -319,7 +323,7 @@ mod tests {
         // This should give us MAX_TICK - 1 (887271)
         assert_eq!(
             result,
-            Tick::MAX_TICK - 1,
+            PoolTick::MAX_TICK - 1,
             "Uniswap test value should map to MAX_TICK - 1"
         );
     }
@@ -331,7 +335,7 @@ mod tests {
         let result = get_tick_at_sqrt_ratio(sqrt_ratio);
 
         // Verify it's a valid positive tick less than MAX_TICK
-        assert!(result > 0 && result < Tick::MAX_TICK);
+        assert!(result > 0 && result < PoolTick::MAX_TICK);
 
         // Verify that MAX_SQRT_RATIO itself would panic (it's exclusive upper bound)
         // This is tested in test_get_tick_at_sqrt_ratio_throws_for_too_high
@@ -389,7 +393,7 @@ mod tests {
     fn test_get_tick_at_sqrt_ratio_specific_values() {
         // Test some specific known values
         let test_cases = vec![
-            (MIN_SQRT_RATIO, Tick::MIN_TICK),
+            (MIN_SQRT_RATIO, PoolTick::MIN_TICK),
             (U160::from(1u128 << 96), 0), // sqrt price = 1, price = 1, tick = 0
         ];
 
@@ -438,7 +442,7 @@ mod tests {
 
     #[rstest]
     fn test_extreme_ticks_behavior() {
-        let min_sqrt = get_sqrt_ratio_at_tick(Tick::MIN_TICK);
+        let min_sqrt = get_sqrt_ratio_at_tick(PoolTick::MIN_TICK);
         assert_eq!(
             min_sqrt, MIN_SQRT_RATIO,
             "MIN_TICK should produce MIN_SQRT_RATIO"
@@ -446,12 +450,12 @@ mod tests {
         let recovered_min = get_tick_at_sqrt_ratio(min_sqrt);
         assert_eq!(
             recovered_min,
-            Tick::MIN_TICK,
+            PoolTick::MIN_TICK,
             "MIN_TICK should round-trip correctly"
         );
 
         // MAX_TICK produces a value equal to MAX_SQRT_RATIO
-        let max_sqrt = get_sqrt_ratio_at_tick(Tick::MAX_TICK);
+        let max_sqrt = get_sqrt_ratio_at_tick(PoolTick::MAX_TICK);
 
         // Now that MAX_SQRT_RATIO has been updated to the actual max value,
         // get_sqrt_ratio_at_tick(MAX_TICK) should equal MAX_SQRT_RATIO
@@ -468,7 +472,7 @@ mod tests {
         // This should give us MAX_TICK - 1 (887271)
         assert_eq!(
             max_valid_tick,
-            Tick::MAX_TICK - 1,
+            PoolTick::MAX_TICK - 1,
             "MAX_SQRT_RATIO - 1 should map to MAX_TICK - 1"
         );
     }

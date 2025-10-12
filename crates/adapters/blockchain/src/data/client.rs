@@ -17,8 +17,8 @@ use nautilus_common::{
     messages::{
         DataEvent,
         defi::{
-            DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
-            SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+            DefiDataCommand, DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand,
+            SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
             SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
             UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
@@ -158,6 +158,11 @@ impl BlockchainDataClient {
 
                                     if let Err(e) = Self::handle_unsubscribe_command(cmd, &mut core_client).await{
                                         tracing::error!("Error processing subscribe command: {e}");
+                                    }
+                                }
+                                DefiDataCommand::Request(cmd) => {
+                                    if let Err(e) = Self::handle_request_command(cmd, &mut core_client).await {
+                                        tracing::error!("Error processing request command: {e}");
                                     }
                                 }
                             }
@@ -636,6 +641,78 @@ impl BlockchainDataClient {
         }
     }
 
+    /// Processes DeFi request commands to fetch specific blockchain data.
+    async fn handle_request_command(
+        command: DefiRequestCommand,
+        core_client: &mut BlockchainDataClientCore,
+    ) -> anyhow::Result<()> {
+        match command {
+            DefiRequestCommand::PoolSnapshot(cmd) => {
+                tracing::info!("Processing pool snapshot request for {}", cmd.instrument_id);
+
+                let pool_address =
+                    validate_address(cmd.instrument_id.symbol.as_str()).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Invalid pool address '{}' failed with error: {:?}",
+                            cmd.instrument_id,
+                            e
+                        )
+                    })?;
+
+                match core_client.get_pool(&pool_address) {
+                    Ok(pool) => {
+                        tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
+
+                        // Send the pool definition
+                        let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
+                        core_client.send_data(pool_data);
+
+                        // Load and send the stored snapshot from database
+                        if let Some(database) = &core_client.cache.database {
+                            match database
+                                .load_latest_valid_pool_snapshot(
+                                    core_client.chain.chain_id,
+                                    &pool_address,
+                                )
+                                .await
+                            {
+                                Ok(Some(snapshot)) => {
+                                    tracing::info!(
+                                        "Loaded pool snapshot for {} at block {} with {} positions and {} ticks",
+                                        cmd.instrument_id,
+                                        snapshot.block_position.number,
+                                        snapshot.positions.len(),
+                                        snapshot.ticks.len()
+                                    );
+                                    let snapshot_data =
+                                        DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
+                                    core_client.send_data(snapshot_data);
+                                }
+                                Ok(None) => {
+                                    tracing::warn!(
+                                        "No valid pool snapshot found in database for {}",
+                                        cmd.instrument_id
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to load pool snapshot for {}: {e}",
+                                        cmd.instrument_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Pool {} not found in cache: {e}", cmd.instrument_id);
+                    }
+                }
+
+                Ok(())
+            }
+        }
+    }
+
     /// Waits for the background processing task to complete.
     ///
     /// This method blocks until the spawned process task finishes execution,
@@ -822,6 +899,15 @@ impl DataClient for BlockchainDataClient {
     ) -> anyhow::Result<()> {
         let command =
             DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn request_pool_snapshot(
+        &self,
+        cmd: &nautilus_common::messages::defi::RequestPoolSnapshot,
+    ) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())
     }

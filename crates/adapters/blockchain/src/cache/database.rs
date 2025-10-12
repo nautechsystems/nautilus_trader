@@ -24,7 +24,7 @@ use nautilus_model::defi::{
         position::PoolPosition,
         snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
     },
-    tick_map::tick::Tick,
+    tick_map::tick::PoolTick,
     validation::validate_address,
 };
 use sqlx::{PgPool, Row, postgres::PgConnectOptions};
@@ -1461,7 +1461,7 @@ impl BlockchainCacheDatabase {
         snapshot_block: u64,
         snapshot_transaction_index: u32,
         snapshot_log_index: u32,
-        ticks: &[(Address, &Tick)],
+        ticks: &[(Address, &PoolTick)],
     ) -> anyhow::Result<()> {
         if ticks.is_empty() {
             return Ok(());
@@ -1787,7 +1787,7 @@ impl BlockchainCacheDatabase {
         snapshot_block: u64,
         snapshot_transaction_index: u32,
         snapshot_log_index: u32,
-    ) -> anyhow::Result<Vec<Tick>> {
+    ) -> anyhow::Result<Vec<PoolTick>> {
         let rows = sqlx::query(
             r"
             SELECT
@@ -1813,7 +1813,7 @@ impl BlockchainCacheDatabase {
 
         rows.iter()
             .map(|row| {
-                let tick = Tick::new(
+                let tick = PoolTick::new(
                     row.get("tick_value"),
                     row.get::<String, _>("liquidity_gross").parse()?,
                     row.get::<String, _>("liquidity_net").parse()?,

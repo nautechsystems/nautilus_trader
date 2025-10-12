@@ -100,7 +100,7 @@ cdef extern from "../includes/model.h":
     const double QUANTITY_MIN # = 0.0
 
     # Minimum valid tick value for Uniswap V3 pools.
-    const int32_t Tick_MIN_TICK # = -887272
+    const int32_t PoolTick_MIN_TICK # = -887272
 
 
 

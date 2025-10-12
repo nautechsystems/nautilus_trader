@@ -35,7 +35,7 @@ use crate::defi::{
         full_math::{FullMath, Q128},
         liquidity_math::liquidity_math_add,
         sqrt_price_math::{get_amount0_delta, get_amount1_delta, get_amounts_for_liquidity},
-        tick::Tick,
+        tick::PoolTick,
         tick_math::{
             MAX_SQRT_RATIO, MIN_SQRT_RATIO, get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio,
         },
@@ -428,7 +428,7 @@ impl PoolProfiler {
                 .next_initialized_tick(current_tick, zero_for_one);
 
             // Make sure we do not overshoot MIN/MAX tick
-            tick_next = tick_next.clamp(Tick::MIN_TICK, Tick::MAX_TICK);
+            tick_next = tick_next.clamp(PoolTick::MIN_TICK, PoolTick::MAX_TICK);
 
             // Get the price for the next tick
             let sqrt_price_next = get_sqrt_ratio_at_tick(tick_next);
@@ -1187,7 +1187,7 @@ impl PoolProfiler {
             )
         }
 
-        if tick_lower < Tick::MIN_TICK || tick_upper > Tick::MAX_TICK {
+        if tick_lower < PoolTick::MIN_TICK || tick_upper > PoolTick::MAX_TICK {
             anyhow::bail!("Invalid tick bounds for {} and {}", tick_lower, tick_upper);
         }
         Ok(())
@@ -1310,7 +1310,7 @@ impl PoolProfiler {
     ///
     /// Returns the tick data structure containing liquidity and fee information
     /// for the specified tick, if it exists.
-    pub fn get_tick(&self, tick: i32) -> Option<&Tick> {
+    pub fn get_tick(&self, tick: i32) -> Option<&PoolTick> {
         self.tick_map.get_tick(tick)
     }
 

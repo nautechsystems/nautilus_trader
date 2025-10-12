@@ -22,7 +22,10 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{defi::Pool, identifiers::InstrumentId};
+use crate::{
+    defi::{Pool, pool_analysis::snapshot::PoolSnapshot},
+    identifiers::InstrumentId,
+};
 
 pub mod block;
 pub mod collect;
@@ -59,6 +62,8 @@ pub enum DefiData {
     Block(Block),
     /// A DEX liquidity pool definition or update.
     Pool(Pool),
+    /// A complete snapshot of a pool's state at a specific point in time.
+    PoolSnapshot(PoolSnapshot),
     /// A token swap transaction on a decentralized exchange.
     PoolSwap(PoolSwap),
     /// A liquidity update event (mint/burn) in a DEX pool.
@@ -74,11 +79,12 @@ impl DefiData {
     ///
     /// # Panics
     ///
-    /// Panics if the variant is a `Block` where instrument IDs are not applicable.
+    /// Panics if the variant is a `Block` or `PoolSnapshot` where instrument IDs are not applicable.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Block(_) => panic!("`InstrumentId` not applicable to `Block`"), // TBD?
+            Self::PoolSnapshot(_) => panic!("`InstrumentId` not applicable to `PoolSnapshot`"), // TBD?
             Self::PoolSwap(swap) => swap.instrument_id(),
             Self::PoolLiquidityUpdate(update) => update.instrument_id(),
             Self::PoolFeeCollect(collect) => collect.instrument_id(),
@@ -93,6 +99,7 @@ impl Display for DefiData {
         match self {
             Self::Block(b) => write!(f, "{b}"),
             Self::Pool(p) => write!(f, "{p}"),
+            Self::PoolSnapshot(s) => write!(f, "PoolSnapshot(block={})", s.block_position.number),
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::PoolFeeCollect(c) => write!(f, "{c}"),
@@ -122,5 +129,11 @@ impl From<PoolLiquidityUpdate> for DefiData {
 impl From<PoolFeeCollect> for DefiData {
     fn from(value: PoolFeeCollect) -> Self {
         Self::PoolFeeCollect(value)
+    }
+}
+
+impl From<PoolSnapshot> for DefiData {
+    fn from(value: PoolSnapshot) -> Self {
+        Self::PoolSnapshot(value)
     }
 }

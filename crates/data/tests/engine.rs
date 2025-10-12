@@ -21,8 +21,9 @@ use alloy_primitives::{Address, I256, U160, U256};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
-    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolFeeCollects,
-    SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
+    DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
     UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
     UnsubscribePoolSwaps,
 };
@@ -1811,7 +1812,28 @@ fn test_execute_subscribe_pool_swaps(
 
     assert!(data_engine.subscribed_pool_swaps().contains(&instrument_id));
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        // Verify two commands: RequestPoolSnapshot (from setup_pool_updater) and SubscribePoolSwaps
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected RequestPoolSnapshot and SubscribePoolSwaps"
+        );
+
+        // First command should be RequestPoolSnapshot
+        match &recorded[0] {
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request)) => {
+                assert_eq!(request.instrument_id, instrument_id);
+                assert_eq!(request.client_id, Some(client_id));
+            }
+            _ => panic!(
+                "Expected first command to be RequestPoolSnapshot, got: {:?}",
+                recorded[0]
+            ),
+        }
+
+        // Second command should be the SubscribePoolSwaps
+        assert_eq!(recorded[1], sub_cmd);
     }
 
     let unsub_cmd =
@@ -1825,7 +1847,10 @@ fn test_execute_subscribe_pool_swaps(
     data_engine.execute(&unsub_cmd);
 
     assert!(!data_engine.subscribed_pool_swaps().contains(&instrument_id));
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    // After unsubscribe, should have snapshot request, subscribe, and unsubscribe
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(recorded[2], unsub_cmd);
 }
 
 #[cfg(feature = "defi")]
@@ -2003,7 +2028,28 @@ fn test_execute_subscribe_pool_liquidity_updates(
             .contains(&instrument_id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        // Verify two commands: RequestPoolSnapshot (from setup_pool_updater) and SubscribePoolLiquidityUpdates
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected RequestPoolSnapshot and SubscribePoolLiquidityUpdates"
+        );
+
+        // First command should be RequestPoolSnapshot
+        match &recorded[0] {
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request)) => {
+                assert_eq!(request.instrument_id, instrument_id);
+                assert_eq!(request.client_id, Some(client_id));
+            }
+            _ => panic!(
+                "Expected first command to be RequestPoolSnapshot, got: {:?}",
+                recorded[0]
+            ),
+        }
+
+        // Second command should be the SubscribePoolLiquidityUpdates
+        assert_eq!(recorded[1], sub_cmd);
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(
@@ -2022,7 +2068,10 @@ fn test_execute_subscribe_pool_liquidity_updates(
             .subscribed_pool_liquidity_updates()
             .contains(&instrument_id)
     );
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    // After unsubscribe, should have snapshot request, subscribe, and unsubscribe
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(recorded[2], unsub_cmd);
 }
 
 #[cfg(feature = "defi")]
@@ -2066,7 +2115,28 @@ fn test_execute_subscribe_pool_fee_collects(
             .contains(&instrument_id)
     );
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        // Verify two commands: RequestPoolSnapshot (from setup_pool_updater) and SubscribePoolFeeCollects
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected RequestPoolSnapshot and SubscribePoolFeeCollects"
+        );
+
+        // First command should be RequestPoolSnapshot
+        match &recorded[0] {
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request)) => {
+                assert_eq!(request.instrument_id, instrument_id);
+                assert_eq!(request.client_id, Some(client_id));
+            }
+            _ => panic!(
+                "Expected first command to be RequestPoolSnapshot, got: {:?}",
+                recorded[0]
+            ),
+        }
+
+        // Second command should be the SubscribePoolFeeCollects
+        assert_eq!(recorded[1], sub_cmd);
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(
@@ -2085,7 +2155,10 @@ fn test_execute_subscribe_pool_fee_collects(
             .subscribed_pool_fee_collects()
             .contains(&instrument_id)
     );
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    // After unsubscribe, should have snapshot request, subscribe, and unsubscribe
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(recorded[2], unsub_cmd);
 }
 
 #[cfg(feature = "defi")]
@@ -2125,7 +2198,28 @@ fn test_execute_subscribe_pool_flash_events(
 
     assert!(data_engine.subscribed_pool_flash().contains(&instrument_id));
     {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+        // Verify two commands: RequestPoolSnapshot (from setup_pool_updater) and SubscribePoolFlashEvents
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected RequestPoolSnapshot and SubscribePoolFlashEvents"
+        );
+
+        // First command should be RequestPoolSnapshot
+        match &recorded[0] {
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request)) => {
+                assert_eq!(request.instrument_id, instrument_id);
+                assert_eq!(request.client_id, Some(client_id));
+            }
+            _ => panic!(
+                "Expected first command to be RequestPoolSnapshot, got: {:?}",
+                recorded[0]
+            ),
+        }
+
+        // Second command should be the SubscribePoolFlashEvents
+        assert_eq!(recorded[1], sub_cmd);
     }
 
     let unsub_cmd = DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(
@@ -2140,7 +2234,10 @@ fn test_execute_subscribe_pool_flash_events(
     data_engine.execute(&unsub_cmd);
 
     assert!(!data_engine.subscribed_pool_flash().contains(&instrument_id));
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+    // After unsubscribe, should have snapshot request, subscribe, and unsubscribe
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(recorded[2], unsub_cmd);
 }
 
 #[cfg(feature = "defi")]
@@ -3070,4 +3167,162 @@ fn test_pool_updater_processes_flash_updates_profiler(
 
     // PoolProfiler should still be valid and initialized
     assert!(is_initialized, "PoolProfiler should remain initialized");
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_execute_defi_request_pool_snapshot(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
+    let request = RequestPoolSnapshot::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    data_engine.execute(&cmd);
+
+    // Verify command was forwarded to the client
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&cmd));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_setup_pool_updater_requests_snapshot(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
+    data_engine.execute(&cmd);
+
+    // Verify two commands were recorded:
+    // 1. The RequestPoolSnapshot command (automatically sent by setup_pool_updater first)
+    // 2. The SubscribePool command (forwarded to client after)
+    let recorded = recorder.borrow();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "Expected 2 commands (RequestPoolSnapshot and SubscribePool)"
+    );
+
+    // First command should be RequestPoolSnapshot
+    match &recorded[0] {
+        DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request)) => {
+            assert_eq!(request.instrument_id, instrument_id);
+            assert_eq!(request.client_id, Some(client_id));
+        }
+        _ => panic!(
+            "Expected first command to be RequestPoolSnapshot, got: {:?}",
+            recorded[0]
+        ),
+    }
+
+    // Second command should be the SubscribePool
+    assert_eq!(recorded[1], cmd);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_snapshot_request_routing_by_client_id(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    // Register two clients
+    let client_id_1 = ClientId::from("CLIENT1");
+    let venue_1 = Venue::from("VENUE1");
+    let recorder_1: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        client_id_1,
+        venue_1,
+        None,
+        &recorder_1,
+        &mut data_engine,
+    );
+
+    let client_id_2 = ClientId::from("CLIENT2");
+    let venue_2 = Venue::from("VENUE2");
+    let recorder_2: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id_2,
+        venue_2,
+        None,
+        &recorder_2,
+        &mut data_engine,
+    );
+
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
+    // Request snapshot with specific client_id
+    let request = RequestPoolSnapshot::new(
+        instrument_id,
+        Some(client_id_1),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    data_engine.execute(&cmd);
+
+    // Verify request was routed to CLIENT1 only
+    assert_eq!(recorder_1.borrow().len(), 1);
+    assert_eq!(recorder_1.borrow()[0], cmd);
+    assert_eq!(recorder_2.borrow().len(), 0);
 }

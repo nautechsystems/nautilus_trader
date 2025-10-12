@@ -170,7 +170,7 @@
 /**
  * Minimum valid tick value for Uniswap V3 pools.
  */
-#define Tick_MIN_TICK -887272
+#define PoolTick_MIN_TICK -887272
 
 
 

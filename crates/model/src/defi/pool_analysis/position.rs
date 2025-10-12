@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy_primitives::{Address, U256};
+use serde::{Deserialize, Serialize};
 
 use crate::defi::tick_map::full_math::{FullMath, Q128};
 
@@ -21,7 +22,11 @@ use crate::defi::tick_map::full_math::{FullMath, Q128};
 ///
 /// This struct tracks a specific liquidity provider's position within a price range,
 /// including the liquidity amount, fee accumulation, and token deposits/withdrawals.
-#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolPosition {
     /// The owner of the position
     pub owner: Address,

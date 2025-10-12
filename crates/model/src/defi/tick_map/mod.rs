@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::{
-    liquidity_math::tick_spacing_to_max_liquidity_per_tick, tick::Tick, tick_bitmap::TickBitmap,
+    liquidity_math::tick_spacing_to_max_liquidity_per_tick, tick::PoolTick, tick_bitmap::TickBitmap,
 };
 
 pub mod bit_math;
@@ -37,7 +37,7 @@ pub mod tick_math;
 #[derive(Debug, Clone)]
 pub struct TickMap {
     /// Mapping of tick indices to tick data
-    ticks: HashMap<i32, Tick>,
+    ticks: HashMap<i32, PoolTick>,
     /// Tick bitmap for efficient tick navigation
     tick_bitmap: TickBitmap,
     /// Current active liquidity
@@ -64,15 +64,15 @@ impl TickMap {
     }
 
     /// Retrieves a reference to the tick data at the specified tick index.
-    pub fn get_tick(&self, tick: i32) -> Option<&Tick> {
+    pub fn get_tick(&self, tick: i32) -> Option<&PoolTick> {
         self.ticks.get(&tick)
     }
 
     /// Gets a mutable reference to the tick data, initializing it if it doesn't exist.
-    pub fn get_tick_or_init(&mut self, tick: i32) -> &mut Tick {
+    pub fn get_tick_or_init(&mut self, tick: i32) -> &mut PoolTick {
         self.ticks
             .entry(tick)
-            .or_insert_with(|| Tick::from_tick(tick))
+            .or_insert_with(|| PoolTick::from_tick(tick))
     }
 
     /// Calculates the fee growth inside a price range defined by lower and upper ticks.
@@ -87,10 +87,10 @@ impl TickMap {
         // Ensure both ticks exist by initializing them first
         self.ticks
             .entry(lower_tick)
-            .or_insert_with(|| Tick::from_tick(lower_tick));
+            .or_insert_with(|| PoolTick::from_tick(lower_tick));
         self.ticks
             .entry(upper_tick)
-            .or_insert_with(|| Tick::from_tick(upper_tick));
+            .or_insert_with(|| PoolTick::from_tick(upper_tick));
 
         // Now safely access both ticks (they're guaranteed to exist)
         let lower_tick = &self.ticks[&lower_tick];
@@ -217,12 +217,12 @@ impl TickMap {
 
     /// Returns a reference to all ticks in the map for debugging/analysis purposes.
     #[must_use]
-    pub fn get_all_ticks(&self) -> &HashMap<i32, Tick> {
+    pub fn get_all_ticks(&self) -> &HashMap<i32, PoolTick> {
         &self.ticks
     }
 
     /// Sets the tick data for a specific tick index.
-    pub fn set_tick(&mut self, tick_data: Tick) {
+    pub fn set_tick(&mut self, tick_data: PoolTick) {
         let tick = tick_data.value;
         self.ticks.insert(tick, tick_data);
     }
@@ -231,7 +231,7 @@ impl TickMap {
     ///
     /// This method is used when restoring pool state from a saved snapshot.
     /// It sets the tick data and updates the bitmap if the tick is initialized.
-    pub fn restore_tick(&mut self, tick_data: Tick) {
+    pub fn restore_tick(&mut self, tick_data: PoolTick) {
         let is_initialized = tick_data.initialized;
         let tick_value = tick_data.value;
 
@@ -309,7 +309,7 @@ mod tests {
 
     #[rstest]
     fn test_get_fee_growth_inside_if_upper_tick_is_below(mut tick_map: TickMap) {
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             2, // Set 2 at the upper range boundary
             0,
             0,
@@ -328,7 +328,7 @@ mod tests {
 
     #[rstest]
     fn test_get_fee_growth_inside_if_lower_tick_is_above(mut tick_map: TickMap) {
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             -2, // Set -2 at the lower range boundary
             0,
             0,
@@ -347,7 +347,7 @@ mod tests {
 
     #[rstest]
     fn test_get_fee_growth_inside_if_upper_and_lower_tick_are_initialized(mut tick_map: TickMap) {
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             -2, // Set -2 at the lower range boundary
             0,
             0,
@@ -356,7 +356,7 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             2, // Set -2 at the lower range boundary
             0,
             0,
@@ -375,7 +375,7 @@ mod tests {
 
     #[rstest]
     fn test_get_fee_growth_inside_with_overflow(mut tick_map: TickMap) {
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             -2,
             0,
             0,
@@ -384,7 +384,7 @@ mod tests {
             true,
             0,
         ));
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             2,
             0,
             0,
@@ -566,7 +566,7 @@ mod tests {
     #[rstest]
     fn test_clear_deletes_all_data_in_tick(mut tick_map: TickMap) {
         // Set a tick with various data
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             2,
             3,
             4,
@@ -594,7 +594,7 @@ mod tests {
     #[rstest]
     fn test_cross_tick_flips_growth_variables(mut tick_map: TickMap) {
         // Set a tick with initial values
-        tick_map.set_tick(Tick::new(
+        tick_map.set_tick(PoolTick::new(
             2,
             3,
             4,

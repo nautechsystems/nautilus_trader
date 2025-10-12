@@ -14,9 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy_primitives::{U160, U256};
+use serde::{Deserialize, Serialize};
 
 use crate::defi::{
-    data::block::BlockPosition, pool_analysis::position::PoolPosition, tick_map::tick::Tick,
+    data::block::BlockPosition, pool_analysis::position::PoolPosition, tick_map::tick::PoolTick,
 };
 
 /// Complete snapshot of a liquidity pool's state at a specific point in time.
@@ -24,14 +25,18 @@ use crate::defi::{
 /// `PoolSnapshot` provides a comprehensive, self-contained representation of a pool's
 /// entire state, bundling together the global state variables, all liquidity positions,
 /// and the complete tick distribution.
-#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolSnapshot {
     /// Global pool state including price, tick, fees, and cumulative flows.
     pub state: PoolState,
     /// All liquidity positions in the pool.
     pub positions: Vec<PoolPosition>,
     /// Complete tick distribution across the pool's price range.
-    pub ticks: Vec<Tick>,
+    pub ticks: Vec<PoolTick>,
     /// Analytics counters for the pool.
     pub analytics: PoolAnalytics,
     /// Block position where this snapshot was taken.
@@ -43,7 +48,7 @@ impl PoolSnapshot {
     pub fn new(
         state: PoolState,
         positions: Vec<PoolPosition>,
-        ticks: Vec<Tick>,
+        ticks: Vec<PoolTick>,
         analytics: PoolAnalytics,
         block_position: BlockPosition,
     ) -> Self {
@@ -62,7 +67,11 @@ impl PoolSnapshot {
 /// `PoolState` encapsulates the core global variables that define a UniswapV3-style
 /// AMM pool's current state. This includes the current price position, cumulative
 /// deposit/withdrawal flows, and protocol fee configuration.
-#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PoolState {
     /// Current tick position of the pool price.
     pub current_tick: i32,
@@ -117,7 +126,11 @@ impl Default for PoolState {
 ///
 /// It tracks cumulative statistics about pool activity, including
 /// deposit and collection flows, event counts, and performance metrics for debugging.
-#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PoolAnalytics {
     /// Total amount of token0 deposited through mints.
     pub total_amount0_deposited: U256,
@@ -139,15 +152,19 @@ pub struct PoolAnalytics {
     pub total_flashes: u64,
     /// Time spent processing swap events (debug builds only).
     #[cfg(debug_assertions)]
+    #[serde(skip)]
     pub swap_processing_time: std::time::Duration,
     /// Time spent processing mint events (debug builds only).
     #[cfg(debug_assertions)]
+    #[serde(skip)]
     pub mint_processing_time: std::time::Duration,
     /// Time spent processing burn events (debug builds only).
     #[cfg(debug_assertions)]
+    #[serde(skip)]
     pub burn_processing_time: std::time::Duration,
     /// Time spent processing collect events (debug builds only).
     #[cfg(debug_assertions)]
+    #[serde(skip)]
     pub collect_processing_time: std::time::Duration,
 }
 

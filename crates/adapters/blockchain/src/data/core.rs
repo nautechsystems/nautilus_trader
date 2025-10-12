@@ -51,7 +51,7 @@ use crate::{
     },
 };
 
-const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50000;
+const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
 
 /// Core blockchain data client responsible for fetching, processing, and caching blockchain data.
 ///
@@ -1103,8 +1103,7 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if database streaming fails or event processing fails.
-    #[allow(dead_code)]
-    async fn replay_pool_events(&self, pool: &Pool, dex: &SharedDex) -> anyhow::Result<()> {
+    pub async fn replay_pool_events(&self, pool: &Pool, dex: &SharedDex) -> anyhow::Result<()> {
         if let Some(database) = &self.cache.database {
             tracing::info!(
                 "Replaying historical events for pool {} to hydrate profiler",

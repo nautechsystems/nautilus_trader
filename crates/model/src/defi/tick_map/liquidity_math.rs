@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::defi::tick_map::tick::Tick;
+use crate::defi::tick_map::tick::PoolTick;
 
 /// Add a signed liquidity delta to liquidity and panic if it overflows or underflows.
 ///
@@ -57,8 +57,8 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
 /// Derives max liquidity per tick from a given tick spacing
 pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
     // Calculate min and max tick aligned to tick spacing
-    let min_tick = (Tick::MIN_TICK / tick_spacing) * tick_spacing;
-    let max_tick = (Tick::MAX_TICK / tick_spacing) * tick_spacing;
+    let min_tick = (PoolTick::MIN_TICK / tick_spacing) * tick_spacing;
+    let max_tick = (PoolTick::MAX_TICK / tick_spacing) * tick_spacing;
 
     // Calculate total number of ticks, cast to i64 to avoid potential overflow in subtraction
     let num_ticks = ((max_tick as i64 - min_tick as i64) / tick_spacing as i64) + 1;
