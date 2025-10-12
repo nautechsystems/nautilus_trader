@@ -711,6 +711,23 @@ class OKXExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _parse_trade_mode_from_params(self, params: dict[str, Any] | None) -> OKXTradeMode:
+        if not params:
+            return self._trade_mode
+
+        td_mode_str = params.get("td_mode")
+        if not td_mode_str:
+            return self._trade_mode
+
+        try:
+            return OKXTradeMode(td_mode_str)
+        except ValueError:
+            self._log.warning(
+                f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
+                f"falling back to '{str(self._trade_mode).lower()}'",
+            )
+            return self._trade_mode
+
     async def _query_account(self, _command: QueryAccount) -> None:
         # TODO: Specific account ID (sub account) not yet supported
         await self._update_account_state()
@@ -764,19 +781,7 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        td_mode = self._trade_mode
-
-        if command.params:
-            td_mode_str = command.params.get("td_mode")
-            if td_mode_str:
-                try:
-                    td_mode = OKXTradeMode(td_mode_str)
-                except ValueError:
-                    self._log.warning(
-                        f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
-                        f"falling back to '{str(self._trade_mode).lower()}'",
-                    )
-                    td_mode = self._trade_mode
+        td_mode = self._parse_trade_mode_from_params(command.params)
 
         try:
             await self._ws_client.submit_order(
@@ -824,13 +829,7 @@ class OKXExecutionClient(LiveExecutionClient):
             trigger_type_to_pyo3(order.trigger_type) if hasattr(order, "trigger_type") else None
         )
 
-        td_mode = self._trade_mode
-        if command.params and "td_mode" in command.params:
-            td_mode_str = command.params["td_mode"]
-            try:
-                td_mode = OKXTradeMode(td_mode_str)
-            except ValueError:
-                self._log.warning(f"Invalid trade mode '{td_mode_str}', using default")
+        td_mode = self._parse_trade_mode_from_params(command.params)
 
         try:
             response = await self._http_client.place_algo_order(

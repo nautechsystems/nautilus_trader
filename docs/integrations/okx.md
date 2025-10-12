@@ -216,10 +216,10 @@ OKX supports four trade modes, which the adapter selects automatically based on 
 
 | Mode                | Used For                                   | Leverage | Borrowing | Configuration |
 |---------------------|--------------------------------------------|----------|-----------|---------------|
-| **`cash`**          | Simple spot trading                        | ❌ No    | ❌ No     | `use_spot_margin=False` (default for SPOT) |
-| **`spot_isolated`** | Spot trading with margin/leverage          | ✅ Yes   | ✅ Yes    | `use_spot_margin=True` |
-| **`isolated`**      | Derivatives trading (SWAP/FUTURES/OPTIONS) | ✅ Yes   | ✅ Yes    | `margin_mode=ISOLATED` or unset (default for derivatives) |
-| **`cross`**         | Derivatives with shared margin pool        | ✅ Yes   | ✅ Yes    | `margin_mode=CROSS` |
+| **`cash`**          | Simple spot trading                        | -        | -         | `use_spot_margin=False` (default for SPOT) |
+| **`spot_isolated`** | Spot trading with margin/leverage          | ✓        | ✓         | `use_spot_margin=True` |
+| **`isolated`**      | Derivatives trading (SWAP/FUTURES/OPTIONS) | ✓        | ✓         | `margin_mode=ISOLATED` or unset (default for derivatives) |
+| **`cross`**         | Derivatives with shared margin pool        | ✓        | ✓         | `margin_mode=CROSS` |
 
 #### Configuration-based trade mode selection
 

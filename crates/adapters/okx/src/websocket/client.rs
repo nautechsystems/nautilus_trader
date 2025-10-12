@@ -88,7 +88,7 @@ use crate::{
         consts::{
             OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_WS_PUBLIC_URL, should_retry_error_code,
+            OKX_TARGET_CCY_BASE, OKX_TARGET_CCY_QUOTE, OKX_WS_PUBLIC_URL, should_retry_error_code,
         },
         credential::Credential,
         enums::{
@@ -2260,7 +2260,6 @@ impl OKXWebSocketClient {
             _ => {
                 // For other instrument types (OPTIONS, etc.), use quote currency as fallback
                 builder.ccy(quote_currency.to_string());
-                builder.tgt_ccy(quote_currency.to_string());
 
                 // TODO: Consider position mode (only applicable for NET)
                 if let Some(ro) = reduce_only
@@ -2271,12 +2270,27 @@ impl OKXWebSocketClient {
             }
         };
 
-        if let Some(is_quote_quantity) = quote_quantity
-            && is_quote_quantity
-        {
-            builder.tgt_ccy(quote_currency.to_string());
+        if instrument_type == OKXInstrumentType::Spot && order_type == OrderType::Market {
+            // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
+            // OKX API default behavior for SPOT:
+            // - BUY orders default to tgtCcy=quote_ccy
+            // - SELL orders default to tgtCcy=base_ccy
+            match quote_quantity {
+                Some(true) => {
+                    builder.tgt_ccy(OKX_TARGET_CCY_QUOTE.to_string());
+                }
+                Some(false) => {
+                    if order_side == OrderSide::Buy {
+                        // For BUY orders, must explicitly set to base_ccy to override OKX default
+                        builder.tgt_ccy(OKX_TARGET_CCY_BASE.to_string());
+                    }
+                    // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
+                }
+                None => {
+                    // No preference specified, use OKX defaults
+                }
+            }
         }
-        // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
 
         builder.side(order_side);
 

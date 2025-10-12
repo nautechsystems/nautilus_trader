@@ -27,10 +27,9 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -64,6 +63,8 @@ elif instrument_type == OKXInstrumentType.OPTION:
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 
+instrument_id = InstrumentId.from_str(f"{symbol}.{OKX}")
+
 instrument_types = (instrument_type,)
 
 # instrument_types = (
@@ -78,7 +79,6 @@ instrument_families = (
     # "ETH-USDT",
 )
 
-
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
@@ -89,6 +89,7 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        reconciliation_instrument_ids=[instrument_id],
         # reconciliation_lookback_mins=60,
         open_check_interval_secs=5.0,
         open_check_open_only=True,
@@ -105,6 +106,7 @@ config_node = TradingNodeConfig(
         purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
         graceful_shutdown_on_exception=True,
     ),
+    risk_engine=LiveRiskEngineConfig(bypass=True),  # Must bypass for spot margin for now
     # cache=CacheConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
@@ -147,6 +149,8 @@ config_node = TradingNodeConfig(
             instrument_types=instrument_types,
             instrument_families=instrument_families,
             contract_types=contract_types,
+            # margin_mode=OKXMarginMode.ISOLATED,
+            use_spot_margin=False,
             # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API
             use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
@@ -165,25 +169,26 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 config_tester = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.OKX"),
-    external_order_claims=[InstrumentId.from_str(f"{symbol}.OKX")],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
-    # enable_buys=False,
-    # enable_sells=False,
+    enable_buys=True,
+    enable_sells=True,
     # open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.FOK,
-    tob_offset_ticks=0,
-    stop_offset_ticks=1,
+    tob_offset_ticks=100,
+    # stop_offset_ticks=1,
     order_qty=order_qty,
     # modify_orders_to_maintain_tob_offset=True,
-    use_post_only=True,
+    # use_post_only=True,
+    # use_quote_quantity=True,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
-    stop_order_type=OrderType.STOP_MARKET,
-    stop_trigger_type=TriggerType.LAST_PRICE,
+    # stop_order_type=OrderType.STOP_MARKET,
+    # stop_trigger_type=TriggerType.LAST_PRICE,
     # stop_offset_ticks=50,  # Offset from current price for stop trigger
     # stop_limit_offset_ticks=10,  # Additional offset for STOP_LIMIT orders
     # cancel_orders_on_stop=False,

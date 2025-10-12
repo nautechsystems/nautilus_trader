@@ -16,7 +16,7 @@
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
 use ahash::AHashMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -644,8 +644,12 @@ pub fn parse_order_msg(
 
     let previous_fee = fee_cache.get(&msg.ord_id).copied();
 
+    // Only generate fill reports when there's actual new fill data
+    // Check if fillSz is non-zero/non-empty OR trade_id is present
+    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0") || !msg.trade_id.is_empty();
+
     match msg.state {
-        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
             parse_fill_report(msg, instrument, account_id, previous_fee, ts_init)
                 .map(ExecutionReport::Fill)
         }
@@ -804,7 +808,6 @@ pub fn parse_order_status_report(
     let size_precision = instrument.size_precision();
     let quantity = parse_quantity(&msg.sz, size_precision)?;
     let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
-
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
     let ts_last = parse_millisecond_timestamp(msg.u_time);
 
@@ -904,16 +907,65 @@ pub fn parse_fill_report(
 ) -> anyhow::Result<FillReport> {
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
-    let trade_id = TradeId::from(msg.trade_id.as_str());
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide a trade_id, so generate a UUID4 as fallback
+    let trade_id = if msg.trade_id.is_empty() {
+        TradeId::from(UUID4::new().to_string().as_str())
+    } else {
+        TradeId::from(msg.trade_id.as_str())
+    };
+
     let order_side: OrderSide = msg.side.into();
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let last_px = parse_price(&msg.fill_px, price_precision)?;
-    let last_qty = parse_quantity(&msg.fill_sz, size_precision)?;
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide fillPx for some orders, fall back to avgPx or lastPx
+    let price_str = if !msg.fill_px.is_empty() {
+        &msg.fill_px
+    } else if !msg.avg_px.is_empty() {
+        &msg.avg_px
+    } else {
+        &msg.px // Last resort, use order price
+    };
+    let last_px = parse_price(price_str, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse price (fill_px='{}', avg_px='{}', px='{}'): {}",
+            msg.fill_px,
+            msg.avg_px,
+            msg.px,
+            e
+        )
+    })?;
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide fillSz for some orders, fall back to accFillSz (accumulated fill size)
+    let qty_str = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        &msg.fill_sz
+    } else if let Some(ref acc_fill_sz) = msg.acc_fill_sz {
+        if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
+            acc_fill_sz
+        } else {
+            &msg.sz // Last resort, use order size
+        }
+    } else {
+        &msg.sz // Last resort, use order size
+    };
+    let last_qty = parse_quantity(qty_str, size_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse quantity (fill_sz='{}', acc_fill_sz={:?}, sz='{}'): {}",
+            msg.fill_sz,
+            msg.acc_fill_sz,
+            msg.sz,
+            e
+        )
+    })?;
 
     let fee_currency = Currency::from(&msg.fee_ccy);
-    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)?;
+    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {}", msg.fee, e))?;
     let commission = if let Some(previous_fee) = previous_fee {
         total_fee - previous_fee
     } else {

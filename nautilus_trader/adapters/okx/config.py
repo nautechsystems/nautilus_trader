@@ -40,13 +40,13 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SPOT,)`
         The OKX instrument types of instruments to load.
         If None, all instrument types are loaded (subject to contract types and their compatibility with instrument types).
-    contract_types : tuple[OKXInstrumentType], optional
-        The OKX contract types of instruments to load.
-        If None, all contract types are loaded (subject to instrument types and their compatibility with contract types).
     instrument_families : tuple[str, ...], optional
         The OKX instrument families to load (e.g., "BTC-USD", "ETH-USD").
         Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
         If None, all available instrument families will be attempted (may fail for OPTIONS).
+    contract_types : tuple[OKXInstrumentType], optional
+        The OKX contract types of instruments to load.
+        If None, all contract types are loaded (subject to instrument types and their compatibility with contract types).
     base_url_http : str, optional
         The base url to OKX's http api.
         If ``None`` then will source the `get_http_base_url()`.
@@ -68,8 +68,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret: str | None = None
     api_passphrase: str | None = None
     instrument_types: tuple[OKXInstrumentType, ...] = (OKXInstrumentType.SPOT,)
-    contract_types: tuple[OKXContractType, ...] | None = None
     instrument_families: tuple[str, ...] | None = None
+    contract_types: tuple[OKXContractType, ...] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     is_demo: bool = False
