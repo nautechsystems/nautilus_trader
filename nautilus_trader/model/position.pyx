@@ -114,6 +114,9 @@ cdef class Position:
         """
         Purge all order events for the given client order ID.
 
+        After purging, the position is rebuilt from remaining fills. If no fills
+        remain, the position state becomes inconsistent.
+
         Parameters
         ----------
         client_order_id : ClientOrderId
@@ -122,18 +125,28 @@ cdef class Position:
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef list[OrderFilled] events = []
-        cdef list[TradeId] trade_ids = []
+        # Collect remaining fills
+        cdef list[OrderFilled] remaining_events = [
+            event for event in self._events
+            if event.client_order_id != client_order_id
+        ]
 
-        cdef:
-            OrderFilled event
-        for event in self._events:
-            if event.client_order_id != client_order_id:
-                events.append(event)
-                trade_ids.append(event.trade_id)
+        # Clear current state
+        self._events.clear()
+        self._trade_ids.clear()
 
-        self._events = events
-        self._trade_ids = trade_ids
+        # If no fills remain, leave state inconsistent
+        if not remaining_events:
+            return
+
+        # Force reset by setting to FLAT and resetting signed_qty
+        self.side = PositionSide.FLAT
+        self.signed_qty = 0.0
+
+        # Replay all remaining fills to rebuild position state
+        cdef OrderFilled event
+        for event in remaining_events:
+            self.apply(event)
 
     cpdef str info(self):
         """

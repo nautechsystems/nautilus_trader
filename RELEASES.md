@@ -49,6 +49,7 @@ This will be the final release with support for Python 3.11.
 ### Fixes
 - Fixed reduce-only order panic when quantity exceeds position
 - Fixed position purge logic to prevent purging re-opened position
+- Fixed `Position.purge_events_for_order` to properly rebuild state from remaining order fills
 - Fixed order average price calculation that was double-counting current fill in weighted average
 - Fixed own order book cleanup for terminal orders and inflight handling
 - Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks

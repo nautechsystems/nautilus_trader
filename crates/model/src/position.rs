@@ -144,21 +144,90 @@ impl Position {
         item
     }
 
-    /// Purges all order fill events for the given client order ID.
+    /// Purges all order fill events for the given client order ID and recalculates derived state.
+    ///
+    /// # Warning
+    ///
+    /// This operation recalculates the entire position from scratch after removing the specified
+    /// order's fills. This is an expensive operation and should be used sparingly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if after purging, no fills remain and the position cannot be reconstructed.
     pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
-        // Create new vectors without the events from the specified order
-        let mut filtered_events = Vec::new();
-        let mut filtered_trade_ids = Vec::new();
+        // Filter out events from the specified order
+        let filtered_events: Vec<OrderFilled> = self
+            .events
+            .iter()
+            .filter(|e| e.client_order_id != client_order_id)
+            .copied()
+            .collect();
 
-        for event in &self.events {
-            if event.client_order_id != client_order_id {
-                filtered_events.push(*event);
-                filtered_trade_ids.push(event.trade_id);
-            }
+        // If no events remain, log warning - position should be closed/removed instead
+        if filtered_events.is_empty() {
+            log::warn!(
+                "Position {} has no fills remaining after purging order {}; consider closing the position instead",
+                self.id,
+                client_order_id
+            );
+            // Reset to flat state
+            self.events.clear();
+            self.trade_ids.clear();
+            self.buy_qty = Quantity::zero(self.size_precision);
+            self.sell_qty = Quantity::zero(self.size_precision);
+            self.commissions.clear();
+            self.signed_qty = 0.0;
+            self.quantity = Quantity::zero(self.size_precision);
+            self.side = PositionSide::Flat;
+            self.avg_px_close = None;
+            self.realized_pnl = None;
+            self.realized_return = 0.0;
+            return;
         }
 
-        self.events = filtered_events;
-        self.trade_ids = filtered_trade_ids;
+        // Recalculate position from scratch
+        // Save immutable fields needed for reconstruction
+        let position_id = self.id;
+        let size_precision = self.size_precision;
+
+        // Reset mutable state
+        self.events = Vec::new();
+        self.trade_ids = Vec::new();
+        self.buy_qty = Quantity::zero(size_precision);
+        self.sell_qty = Quantity::zero(size_precision);
+        self.commissions.clear();
+        self.signed_qty = 0.0;
+        self.quantity = Quantity::zero(size_precision);
+        self.peak_qty = Quantity::zero(size_precision);
+        self.side = PositionSide::Flat;
+        self.avg_px_open = 0.0;
+        self.avg_px_close = None;
+        self.realized_pnl = None;
+        self.realized_return = 0.0;
+
+        // Use the first remaining event to set opening state
+        let first_event = &filtered_events[0];
+        self.entry = first_event.order_side;
+        self.opening_order_id = first_event.client_order_id;
+        self.ts_opened = first_event.ts_event;
+        self.ts_init = first_event.ts_init;
+        self.closing_order_id = None;
+        self.ts_closed = None;
+        self.duration_ns = 0;
+
+        // Reapply all remaining fills to reconstruct state
+        for event in filtered_events {
+            self.apply(&event);
+        }
+
+        log::info!(
+            "Purged fills for order {} from position {}; recalculated state: qty={}, signed_qty={}, side={:?}",
+            client_order_id,
+            position_id,
+            self.quantity,
+            self.signed_qty,
+            self.side
+        );
     }
 
     /// Applies an `OrderFilled` event to this position.
@@ -222,7 +291,7 @@ impl Position {
         // SAFETY: size_precision is valid from instrument
         self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
         if self.quantity > self.peak_qty {
-            self.peak_qty.raw = self.quantity.raw;
+            self.peak_qty = self.quantity;
         }
 
         // Set state
@@ -375,10 +444,13 @@ impl Position {
         let event_cost = last_px * last_qty;
         let total_qty = qty + last_qty;
 
-        debug_assert!(
-            total_qty > 0.0,
-            "Total quantity unexpectedly zero in average price calculation"
-        );
+        // Runtime check to prevent division by zero even in release builds
+        if total_qty <= 0.0 {
+            panic!(
+                "Total quantity unexpectedly zero or negative in average price calculation: qty={}, last_qty={}, total_qty={}",
+                qty, last_qty, total_qty
+            );
+        }
 
         (start_cost + event_cost) / total_qty
     }
@@ -415,12 +487,21 @@ impl Position {
     }
 
     fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        // Invalid state: zero prices should never occur in valid market data
-        if avg_px_open == 0.0 {
-            panic!("Cannot calculate inverse points: open price is zero");
+        // Epsilon at the limit of IEEE f64 precision before rounding errors (f64::EPSILON ≈ 2.22e-16)
+        const EPSILON: f64 = 1e-15;
+
+        // Invalid state: zero or near-zero prices should never occur in valid market data
+        if avg_px_open.abs() < EPSILON {
+            panic!(
+                "Cannot calculate inverse points: open price is zero or too small ({})",
+                avg_px_open
+            );
         }
-        if avg_px_close == 0.0 {
-            panic!("Cannot calculate inverse points: close price is zero");
+        if avg_px_close.abs() < EPSILON {
+            panic!(
+                "Cannot calculate inverse points: close price is zero or too small ({})",
+                avg_px_close
+            );
         }
 
         let inverse_open = 1.0 / avg_px_open;
@@ -434,6 +515,13 @@ impl Position {
 
     #[must_use]
     fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+        // Prevent division by zero in return calculation
+        if avg_px_open == 0.0 {
+            panic!(
+                "Cannot calculate return: open price is zero (close price: {})",
+                avg_px_close
+            );
+        }
         self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
     }
 

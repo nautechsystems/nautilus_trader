@@ -2189,7 +2189,11 @@ class TestPosition:
 
     def test_purge_events_preserves_financial_state(self) -> None:
         """
-        Test that purging events doesn't affect financial calculations and state.
+        Test that purging events correctly rebuilds position state from remaining fills.
+
+        When the opening fill is purged, the remaining fill becomes the new opening
+        fill, causing the position to flip sides and recalculate all financial state.
+
         """
         # Arrange
         order1 = self.order_factory.market(
@@ -2223,34 +2227,29 @@ class TestPosition:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        # Capture state before purge
-        avg_px_open_before = position.avg_px_open
-        avg_px_close_before = position.avg_px_close
-        realized_pnl_before = position.realized_pnl
-        realized_return_before = position.realized_return
-        quantity_before = position.quantity
-        signed_qty_before = position.signed_qty
-        side_before = position.side
-        ts_opened_before = position.ts_opened
-        ts_closed_before = position.ts_closed
+        # Before purge: LONG 50,000 @ 1.00 avg open (partially closed at 1.10)
+        assert position.side == PositionSide.LONG
+        assert position.signed_qty == 50_000.0
+        assert position.avg_px_open == 1.0
+        assert position.avg_px_close == 1.1
 
-        # Act - Purge events for order1
+        # Act - Purge the opening BUY fill
         position.purge_events_for_order(order1.client_order_id)
 
-        # Assert - Financial state should be unchanged
-        assert position.avg_px_open == avg_px_open_before
-        assert position.avg_px_close == avg_px_close_before
-        assert position.realized_pnl == realized_pnl_before
-        assert position.realized_return == realized_return_before
-        assert position.quantity == quantity_before
-        assert position.signed_qty == signed_qty_before
-        assert position.side == side_before
-        assert position.ts_opened == ts_opened_before
-        assert position.ts_closed == ts_closed_before
-
-        # But events should be reduced
+        # Assert - Position rebuilt from remaining SELL fill
+        # The SELL now becomes the opening fill, creating a SHORT position
         assert position.event_count == 1  # Only fill2 remains
         assert len(position.trade_ids) == 1
+
+        # State should be recalculated from the remaining fill
+        assert position.side == PositionSide.SHORT  # Flipped to SHORT
+        assert position.signed_qty == -50_000.0  # Now short
+        assert position.quantity == Quantity.from_int(50_000)
+        assert position.avg_px_open == 1.1  # The SELL @ 1.10 is now the opening price
+        assert position.avg_px_close == 0.0  # No closing fills yet
+        assert position.realized_return == 0.0  # No realized return yet
+        assert position.ts_opened == fill2.ts_event  # Opened at fill2, not fill1
+        assert position.ts_closed == 0  # Still open
 
     def test_peak_quantity_tracking(self) -> None:
         """
