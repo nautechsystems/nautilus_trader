@@ -323,7 +323,65 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
-        elif self.x == BinanceExecutionType.TRADE:
+        elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
+            if self.x == BinanceExecutionType.CALCULATED:
+                exec_client._log.info(
+                    f"Received CALCULATED (liquidation) execution for order {venue_order_id}, "
+                    f"generating OrderFilled event",
+                )
+
+            if Decimal(self.L) == 0:
+                exec_client._log.warning(
+                    f"Received {self.x.value} execution with L=0 for order {venue_order_id}, "
+                    f"order status={self.X.value}",
+                )
+
+                # Route based on order status to ensure terminal events are generated
+                if self.X == BinanceOrderStatus.EXPIRED:
+                    if order.order_type == OrderType.TRAILING_STOP_MARKET:
+                        exec_client.generate_order_updated(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            quantity=Quantity(float(self.q), size_precision),
+                            price=Price(float(self.p), price_precision),
+                            trigger_price=(
+                                Price(float(self.sp), price_precision) if self.sp else None
+                            ),
+                            ts_event=ts_event,
+                        )
+                    else:
+                        exec_client.generate_order_expired(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            ts_event=ts_event,
+                        )
+                    return
+                elif self.X == BinanceOrderStatus.CANCELED or (
+                    exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
+                ):
+                    exec_client.generate_order_canceled(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        ts_event=ts_event,
+                    )
+                    return
+                elif self.X in (BinanceOrderStatus.FILLED, BinanceOrderStatus.PARTIALLY_FILLED):
+                    # Continue to generate fill with L=0 to close order
+                    # Better to have bad price data than stuck order
+                    exec_client._log.warning(
+                        f"Generating OrderFilled with L=0 for terminal state {self.X.value} "
+                        f"to prevent order from being stuck",
+                    )
+                else:
+                    # Non-terminal status with L=0, skip fill generation
+                    return
+
             # Determine commission
             commission_asset: str | None = self.N
             commission_amount: str | float | None = self.n
@@ -343,6 +401,13 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             if exec_client.use_position_ids:
                 venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 
+            # Liquidations are always taker, regular trades use the 'm' field
+            liquidity_side = (
+                LiquiditySide.TAKER
+                if self.x == BinanceExecutionType.CALCULATED
+                else (LiquiditySide.MAKER if self.m else LiquiditySide.TAKER)
+            )
+
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -356,7 +421,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 last_px=last_px,
                 quote_currency=instrument.quote_currency,
                 commission=commission,
-                liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
+                liquidity_side=liquidity_side,
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.CANCELED or (
@@ -410,6 +475,11 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 reason="REJECTED",  # Reason string not provided by futures WS
                 ts_event=ts_event,
                 due_post_only=due_post_only,
+            )
+        elif self.x == BinanceExecutionType.TRADE_PREVENTION:
+            exec_client._log.info(
+                f"Self-trade prevention triggered for order {venue_order_id}, "
+                f"prevented qty={self.l} at price={self.L}",
             )
         else:
             # Event not handled

@@ -1,0 +1,287 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+import pkgutil
+
+import msgspec
+
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+
+
+class TestBinanceSpotExecutionHandlers:
+    """
+    Tests for Binance Spot execution report handler methods with mocked dependencies.
+    """
+
+    def test_trade_execution_generates_fill_with_correct_params(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._enum_parser.parse_binance_order_type.return_value = mocker.MagicMock()
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_filled.assert_called_once()
+        call_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        assert call_kwargs["last_qty"] == Quantity.from_str("0.50000000")
+        assert call_kwargs["last_px"] == Price.from_str("2499.50000000")
+        assert call_kwargs["liquidity_side"] == LiquiditySide.MAKER  # m=true in test data
+
+    def test_trade_execution_with_l_zero_filled_generates_fill_with_warning(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_l_zero.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._enum_parser.parse_binance_order_type.return_value = mocker.MagicMock()
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - Terminal FILLED status with L=0 should generate fill to close order
+        exec_client.generate_order_filled.assert_called_once()
+        assert exec_client._log.warning.call_count == 2
+        warning_calls = [call[0][0] for call in exec_client._log.warning.call_args_list]
+        assert any("L=0" in msg for msg in warning_calls)
+        assert any("Generating OrderFilled with L=0" in msg for msg in warning_calls)
+
+        # Verify fill has L=0
+        call_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        assert call_kwargs["last_px"] == Price.from_str("0.00000000")
+        assert call_kwargs["last_qty"] == Quantity.from_str("0.00100000")
+
+    def test_trade_execution_with_l_zero_canceled_generates_order_canceled(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_l_zero_canceled.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - Terminal CANCELED status with L=0 should generate order_canceled
+        exec_client.generate_order_canceled.assert_called_once()
+        exec_client.generate_order_filled.assert_not_called()
+        exec_client._log.warning.assert_called_once()
+        assert "L=0" in exec_client._log.warning.call_args[0][0]
+
+    def test_trade_execution_with_l_zero_expired_generates_order_expired(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_l_zero_expired.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - Terminal EXPIRED status with L=0 should generate order_expired
+        exec_client.generate_order_expired.assert_called_once()
+        exec_client.generate_order_filled.assert_not_called()
+        exec_client._log.warning.assert_called_once()
+        assert "L=0" in exec_client._log.warning.call_args[0][0]
+
+    def test_trade_execution_with_l_zero_non_terminal_skips_fill(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_l_zero_new.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - Non-terminal status with L=0 should skip fill generation
+        exec_client.generate_order_filled.assert_not_called()
+        exec_client.generate_order_canceled.assert_not_called()
+        exec_client.generate_order_expired.assert_not_called()
+        exec_client._log.warning.assert_called_once()
+        assert "L=0" in exec_client._log.warning.call_args[0][0]
+
+    def test_calculated_execution_generates_fill_with_taker_side(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_calculated.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = BTCUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.SELL
+        exec_client._enum_parser.parse_binance_order_type.return_value = mocker.MagicMock()
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client._log.info.assert_called_once()
+        assert "CALCULATED" in exec_client._log.info.call_args[0][0]
+        assert "liquidation" in exec_client._log.info.call_args[0][0]
+
+        exec_client.generate_order_filled.assert_called_once()
+        call_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        assert call_kwargs["last_qty"] == Quantity.from_str("0.01000000")
+        assert call_kwargs["last_px"] == Price.from_str("49500.00000000")
+        assert call_kwargs["liquidity_side"] == LiquiditySide.TAKER  # Liquidations always taker
+
+    def test_trade_prevention_logs_but_no_fill(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_prevention.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_filled.assert_not_called()
+        exec_client._log.info.assert_called_once()
+        assert "Self-trade prevention" in exec_client._log.info.call_args[0][0]
+
+    def test_canceled_execution_generates_order_canceled(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_canceled.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_canceled.assert_called_once()
+        call_kwargs = exec_client.generate_order_canceled.call_args.kwargs
+        assert call_kwargs["client_order_id"] == ClientOrderId(wrapper.data.c)
+
+    def test_expired_execution_generates_order_expired(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_expired.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_expired.assert_called_once()
+        call_kwargs = exec_client.generate_order_expired.call_args.kwargs
+        assert call_kwargs["client_order_id"] == ClientOrderId(wrapper.data.c)
+
+    def test_rejected_execution_generates_order_rejected_with_post_only_flag(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_rejected.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_rejected.assert_called_once()
+        call_kwargs = exec_client.generate_order_rejected.call_args.kwargs
+        assert call_kwargs["client_order_id"] == ClientOrderId(wrapper.data.c)
+        assert call_kwargs["reason"] == "GTX_ORDER_REJECT"
+        assert call_kwargs["due_post_only"] is True  # GTX order rejected

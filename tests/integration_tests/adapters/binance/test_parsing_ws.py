@@ -192,3 +192,74 @@ class TestBinanceWebSocketParsing:
 
         assert report.order_status == OrderStatus.PENDING_CANCEL
         assert wrapper.data.X == BinanceOrderStatus.PENDING_CANCEL
+
+    def test_parse_spot_execution_report_trade_with_l_zero(self):
+        # Arrange: Load execution report with TRADE execution type but L=0
+        # This can occur with self-trade prevention or other edge cases
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_l_zero.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert: Message should parse successfully
+        assert wrapper.data.e.value == "executionReport"
+        assert wrapper.data.x == BinanceExecutionType.TRADE
+        assert wrapper.data.L == "0.00000000"  # Last filled price is zero
+
+        from decimal import Decimal
+
+        assert Decimal(wrapper.data.L) == 0
+
+    def test_parse_spot_execution_report_calculated(self):
+        # Arrange: Load execution report with CALCULATED (liquidation) execution type
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_calculated.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert: Message should parse successfully
+        assert wrapper.data.e.value == "executionReport"
+        assert wrapper.data.s == "BTCUSDT"
+        assert wrapper.data.x == BinanceExecutionType.CALCULATED
+        assert wrapper.data.X == BinanceOrderStatus.FILLED
+        assert wrapper.data.c.startswith("autoclose-")  # Liquidation order client ID
+        assert wrapper.data.l == "0.01000000"
+        assert wrapper.data.L == "49500.00000000"
+        assert wrapper.data.m is False  # Liquidations are taker
+
+        from decimal import Decimal
+
+        assert Decimal(wrapper.data.L) > 0
+
+    def test_parse_spot_execution_report_trade_prevention(self):
+        # Arrange: Load execution report with TRADE_PREVENTION execution type
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_prevention.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert: Message should parse successfully
+        assert wrapper.data.e.value == "executionReport"
+        assert wrapper.data.s == "ETHUSDT"
+        assert wrapper.data.x == BinanceExecutionType.TRADE_PREVENTION
+        assert wrapper.data.X == BinanceOrderStatus.EXPIRED_IN_MATCH
+        assert wrapper.data.r == "SELF_TRADE_PREVENTION"
+        assert wrapper.data.l == "0.50000000"  # Prevented quantity
+        assert wrapper.data.z == "0.00000000"  # No actual fill occurred
+        assert wrapper.data.t == -1  # No trade ID
+        assert wrapper.data.V == "EXPIRE_MAKER"  # Self-Trade Prevention Mode
