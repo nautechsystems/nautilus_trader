@@ -21,8 +21,10 @@ from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPosition
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
@@ -143,7 +145,22 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
         ts_init: int,
     ) -> PositionStatusReport:
         net_size = Decimal(self.positionAmt)
-        position_side = enum_parser.parse_futures_position_side(net_size)
+
+        venue_position_id: PositionId | None = None
+
+        if self.positionSide in (
+            BinanceFuturesPositionSide.LONG,
+            BinanceFuturesPositionSide.SHORT,
+        ):
+            position_side = (
+                PositionSide.LONG
+                if self.positionSide == BinanceFuturesPositionSide.LONG
+                else PositionSide.SHORT
+            )
+            venue_position_id = PositionId(f"{instrument_id}-{self.positionSide.value}")
+        else:
+            position_side = enum_parser.parse_futures_position_side(net_size)
+
         avg_px_open = Decimal(self.entryPrice) if self.entryPrice else None
 
         return PositionStatusReport(
@@ -154,6 +171,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
             report_id=report_id,
             ts_last=ts_init,
             ts_init=ts_init,
+            venue_position_id=venue_position_id,
             avg_px_open=avg_px_open,
         )
 
