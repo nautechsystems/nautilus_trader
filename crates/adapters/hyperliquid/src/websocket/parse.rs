@@ -15,6 +15,8 @@
 
 //! Parsing helpers for Hyperliquid WebSocket payloads.
 
+use std::str::FromStr;
+
 use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -26,11 +28,12 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity, price::PriceRaw, quantity::QuantityRaw},
 };
 use rust_decimal::Decimal;
-use std::str::FromStr;
 
 use super::messages::{CandleData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData};
-use crate::common::enums::hyperliquid_status_to_order_status;
-use crate::common::parse::{is_conditional_order_data, parse_trigger_order_type};
+use crate::common::{
+    enums::hyperliquid_status_to_order_status,
+    parse::{is_conditional_order_data, parse_trigger_order_type},
+};
 
 /// Helper to parse a price string with instrument precision.
 fn parse_price(
@@ -417,13 +420,14 @@ pub fn parse_ws_fill_report(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
     use ustr::Ustr;
+
+    use super::*;
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID"));
