@@ -32,6 +32,7 @@ This will be the final release with support for Python 3.11.
 - Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
 - Added OKX conditional trigger orders support
 - Added OKX trade mode per order via `params` using `td_mode` key
+- Added OKX margin configuration and spot margin support
 - Added OKX demo account support
 - Added Polymarket native market orders support
 

@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let account_id = AccountId::new("OKX-001");
 
     let inst_type = OKXInstrumentType::Swap;
-    let instruments = client.request_instruments(inst_type).await?;
+    let instruments = client.request_instruments(inst_type, None).await?;
     client.add_instruments(instruments);
 
     // Set position mode

@@ -27,11 +27,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Request instruments
     let inst_type = OKXInstrumentType::Swap;
-    let instruments = client.request_instruments(inst_type).await?;
+    let instruments = client.request_instruments(inst_type, None).await?;
     client.add_instruments(instruments);
 
     let inst_type = OKXInstrumentType::Spot;
-    let instruments = client.request_instruments(inst_type).await?;
+    let instruments = client.request_instruments(inst_type, None).await?;
     client.add_instruments(instruments);
 
     // Request mark price

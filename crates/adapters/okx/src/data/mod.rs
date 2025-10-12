@@ -214,7 +214,7 @@ impl OKXDataClient {
         for inst_type in instrument_types {
             let mut instruments = self
                 .http_client
-                .request_instruments(inst_type)
+                .request_instruments(inst_type, None)
                 .await
                 .with_context(|| format!("failed to load instruments for {inst_type:?}"))?;
             instruments.retain(|instrument| self.contract_filter(instrument));
@@ -388,7 +388,7 @@ impl OKXDataClient {
                         let mut collected: Vec<InstrumentAny> = Vec::new();
 
                         for inst_type in instrument_types {
-                            match http_client.request_instruments(inst_type).await {
+                            match http_client.request_instruments(inst_type, None).await {
                                 Ok(mut instruments) => {
                                     instruments.retain(|instrument| contract_filter_with_config(&config, instrument));
                                     collected.extend(instruments);

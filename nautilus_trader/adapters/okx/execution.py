@@ -28,6 +28,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -132,6 +133,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
+        self._log.info(f"{config.use_spot_margin=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
@@ -169,11 +171,19 @@ class OKXExecutionClient(LiveExecutionClient):
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
+        # Determine trade mode based on account type and configuration
         if account_type == AccountType.CASH:
-            self._trade_mode = OKXTradeMode.CASH
+            # SPOT trading
+            if config.use_spot_margin:
+                self._trade_mode = OKXTradeMode.SPOT_ISOLATED
+            else:
+                self._trade_mode = OKXTradeMode.CASH
         else:
-            # TODO: Initially support isolated margin only
-            self._trade_mode = OKXTradeMode.ISOLATED
+            # Derivatives trading (SWAP, FUTURES, OPTIONS)
+            if config.margin_mode == OKXMarginMode.CROSS:
+                self._trade_mode = OKXTradeMode.CROSS
+            else:
+                self._trade_mode = OKXTradeMode.ISOLATED
 
     @property
     def okx_instrument_provider(self) -> OKXInstrumentProvider:
@@ -215,8 +225,15 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
         for instrument_type in self._instrument_provider._instrument_types:
+            self._log.info(
+                f"Subscribing to orders channel for instrument type: {instrument_type}",
+                LogColor.BLUE,
+            )
             await self._ws_client.subscribe_orders(instrument_type)
-            await self._ws_business_client.subscribe_orders_algo(instrument_type)
+
+            # OKX doesn't support algo orders channel for OPTIONS
+            if instrument_type != OKXInstrumentType.OPTION:
+                await self._ws_business_client.subscribe_orders_algo(instrument_type)
 
             # Only subscribe to fills channel if VIP5+ (configurable)
             if self._config.use_fills_channel:
@@ -603,7 +620,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_position_status_reports(
+    async def generate_position_status_reports(  # noqa: C901 (too complex)
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
@@ -622,21 +639,13 @@ class OKXExecutionClient(LiveExecutionClient):
 
         try:
             if command.instrument_id:
-                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
-                    command.instrument_id.value,
-                )
-                response = await self._http_client.request_position_status_reports(
-                    account_id=self.pyo3_account_id,
-                    instrument_id=pyo3_instrument_id,
-                )
-
-                if not response:
+                # SPOT instruments in CASH account don't have positions - return FLAT
+                if self.account_type == AccountType.CASH:
                     instrument = self._cache.instrument(command.instrument_id)
                     if instrument is None:
                         raise RuntimeError(
-                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found",
+                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found in cache",
                         )
-
                     report = PositionStatusReport.create_flat(
                         account_id=self.account_id,
                         instrument_id=command.instrument_id,
@@ -645,9 +654,37 @@ class OKXExecutionClient(LiveExecutionClient):
                     )
                     reports.append(report)
                 else:
-                    pyo3_reports.extend(response)
+                    # Derivatives have positions - query OKX
+                    pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                        command.instrument_id.value,
+                    )
+                    response = await self._http_client.request_position_status_reports(
+                        account_id=self.pyo3_account_id,
+                        instrument_id=pyo3_instrument_id,
+                    )
+
+                    if not response:
+                        # No position on OKX - create FLAT report
+                        instrument = self._cache.instrument(command.instrument_id)
+                        if instrument is None:
+                            raise RuntimeError(
+                                f"Cannot create FLAT position report - instrument {command.instrument_id} not found in cache",
+                            )
+                        report = PositionStatusReport.create_flat(
+                            account_id=self.account_id,
+                            instrument_id=command.instrument_id,
+                            size_precision=instrument.size_precision,
+                            ts_init=self._clock.timestamp_ns(),
+                        )
+                        reports.append(report)
+                    else:
+                        pyo3_reports.extend(response)
             else:
                 for instrument_type in self._config.instrument_types:
+                    # SPOT trading uses CASH account and doesn't have positions
+                    if instrument_type == OKXInstrumentType.SPOT:
+                        continue
+
                     response = await self._http_client.request_position_status_reports(
                         account_id=self.pyo3_account_id,
                         instrument_type=instrument_type,
@@ -1129,6 +1166,12 @@ class OKXExecutionClient(LiveExecutionClient):
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
+        self._log.debug(
+            f"Received order status report: {pyo3_report.client_order_id!r}, "
+            f"status={pyo3_report.order_status}, is_connected={self.is_connected}",
+            LogColor.MAGENTA,
+        )
+
         # Discard order status reports until account is properly initialized
         # Reconciliation will handle getting the current state of open orders
         if not self.is_connected or not self.account_id or not self._cache.account(self.account_id):

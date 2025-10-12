@@ -986,7 +986,7 @@ impl OKXHttpClient {
             OKXInstrumentType::Margin,
             OKXInstrumentType::Futures,
         ] {
-            if let Ok(instruments) = self.request_instruments(group).await {
+            if let Ok(instruments) = self.request_instruments(group, None).await {
                 let mut guard = self.instruments_cache.lock().unwrap();
                 for inst in instruments {
                     guard.insert(inst.raw_symbol().inner(), inst);
@@ -1148,8 +1148,7 @@ impl OKXHttpClient {
         match self.inner.http_set_position_mode(params).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                // Check if this is the "Invalid request type" error for accounts without derivatives
-                if let crate::http::error::OKXHttpError::OkxError {
+                if let OKXHttpError::OkxError {
                     error_code,
                     message,
                 } = &e
@@ -1173,9 +1172,15 @@ impl OKXHttpClient {
     pub async fn request_instruments(
         &self,
         instrument_type: OKXInstrumentType,
+        instrument_family: Option<String>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let mut params = GetInstrumentsParamsBuilder::default();
         params.inst_type(instrument_type);
+
+        if let Some(family) = instrument_family {
+            params.inst_family(family);
+        }
+
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self

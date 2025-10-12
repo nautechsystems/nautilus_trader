@@ -160,7 +160,7 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
         InstrumentAny::CurrencyPair(_) => Ok(OKXInstrumentType::Spot),
         InstrumentAny::CryptoPerpetual(_) => Ok(OKXInstrumentType::Swap),
         InstrumentAny::CryptoFuture(_) => Ok(OKXInstrumentType::Futures),
-        InstrumentAny::CryptoOption(_) => Ok(OKXInstrumentType::Option),
+        InstrumentAny::OptionContract(_) => Ok(OKXInstrumentType::Option),
         _ => anyhow::bail!("Invalid instrument type for OKX: {instrument:?}"),
     }
 }

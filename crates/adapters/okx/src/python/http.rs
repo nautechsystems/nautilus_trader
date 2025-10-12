@@ -140,16 +140,18 @@ impl OKXHttpClient {
     }
 
     #[pyo3(name = "request_instruments")]
+    #[pyo3(signature = (instrument_type, instrument_family=None))]
     fn py_request_instruments<'py>(
         &self,
         py: Python<'py>,
         instrument_type: OKXInstrumentType,
+        instrument_family: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client
-                .request_instruments(instrument_type)
+                .request_instruments(instrument_type, instrument_family)
                 .await
                 .map_err(to_pyvalue_err)?;
 

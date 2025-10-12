@@ -141,7 +141,7 @@ impl OKXExecutionClient {
         for instrument_type in self.instrument_types() {
             let instruments = self
                 .http_client
-                .request_instruments(instrument_type)
+                .request_instruments(instrument_type, None)
                 .await
                 .with_context(|| {
                     format!("failed to request OKX instruments for {instrument_type:?}")
@@ -530,8 +530,16 @@ impl LiveExecutionClient for OKXExecutionClient {
         self.ws_client.wait_until_active(10.0).await?;
 
         for inst_type in self.instrument_types() {
+            tracing::info!(
+                "Subscribing to orders channel for instrument type: {:?}",
+                inst_type
+            );
             self.ws_client.subscribe_orders(inst_type).await?;
-            self.ws_client.subscribe_orders_algo(inst_type).await?;
+
+            // OKX doesn't support algo orders channel for OPTIONS
+            if inst_type != OKXInstrumentType::Option {
+                self.ws_client.subscribe_orders_algo(inst_type).await?;
+            }
 
             if self.config.use_fills_channel
                 && let Err(err) = self.ws_client.subscribe_fills(inst_type).await

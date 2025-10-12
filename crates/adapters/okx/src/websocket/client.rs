@@ -2239,7 +2239,8 @@ impl OKXWebSocketClient {
 
         match instrument_type {
             OKXInstrumentType::Spot => {
-                // Defaults
+                // SPOT: ccy parameter is required by OKX for spot trading
+                builder.ccy(quote_currency.to_string());
             }
             OKXInstrumentType::Margin => {
                 // MARGIN: use quote currency for margin
@@ -3718,10 +3719,23 @@ impl OKXWsMessageHandler {
                                 }
                             };
 
+                            tracing::debug!(
+                                "Received {} order message(s) from orders channel",
+                                orders.len()
+                            );
+
                             let mut exec_reports: Vec<ExecutionReport> =
                                 Vec::with_capacity(orders.len());
 
                             for msg in orders {
+                                tracing::debug!(
+                                    "Processing order message: inst_id={}, cl_ord_id={}, state={:?}, exec_type={:?}",
+                                    msg.inst_id,
+                                    msg.cl_ord_id,
+                                    msg.state,
+                                    msg.exec_type
+                                );
+
                                 if self.try_handle_post_only_auto_cancel(
                                     &msg,
                                     ts_init,
@@ -3747,6 +3761,10 @@ impl OKXWsMessageHandler {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
+                                        tracing::debug!(
+                                            "Successfully parsed execution report: {:?}",
+                                            report
+                                        );
                                         let adjusted = self.adjust_execution_report(
                                             report,
                                             &effective_client_id,
@@ -3760,8 +3778,16 @@ impl OKXWsMessageHandler {
                             }
 
                             if !exec_reports.is_empty() {
+                                tracing::debug!(
+                                    "Pushing {} execution report(s) to message queue",
+                                    exec_reports.len()
+                                );
                                 self.pending_messages
                                     .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
+                            } else {
+                                tracing::debug!(
+                                    "No execution reports generated from order messages"
+                                );
                             }
 
                             if let Some(message) = self.pending_messages.pop_front() {

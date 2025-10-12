@@ -36,6 +36,9 @@ pub struct OKXDataClientConfig {
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to loaded instruments.
     pub contract_types: Option<Vec<OKXContractType>>,
+    /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
+    /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
+    pub instrument_families: Option<Vec<String>>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the public WebSocket URL.
@@ -60,6 +63,7 @@ impl Default for OKXDataClientConfig {
             api_passphrase: None,
             instrument_types: vec![OKXInstrumentType::Spot],
             contract_types: None,
+            instrument_families: None,
             base_url_http: None,
             base_url_ws_public: None,
             base_url_ws_business: None,
@@ -126,6 +130,9 @@ pub struct OKXExecClientConfig {
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to operations.
     pub contract_types: Option<Vec<OKXContractType>>,
+    /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
+    /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
+    pub instrument_families: Option<Vec<String>>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the private WebSocket URL.
@@ -156,6 +163,7 @@ impl Default for OKXExecClientConfig {
             api_passphrase: None,
             instrument_types: vec![OKXInstrumentType::Spot],
             contract_types: None,
+            instrument_families: None,
             base_url_http: None,
             base_url_ws_private: None,
             base_url_ws_business: None,

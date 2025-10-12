@@ -64,12 +64,21 @@ def exec_client_builder(
         mock_instrument_provider.instruments_pyo3.reset_mock()
         mock_instrument_provider.instruments_pyo3.return_value = [MagicMock(name="py_instrument")]
 
+        config_kwargs = config_kwargs or {}
+        instrument_types = config_kwargs.pop(
+            "instrument_types",
+            (nautilus_pyo3.OKXInstrumentType.SPOT,),
+        )
+
+        # Set the mock provider's instrument_types to match config
+        mock_instrument_provider.instrument_types = instrument_types
+
         config = OKXExecClientConfig(
             api_key="test_api_key",
             api_secret="test_api_secret",
             api_passphrase="test_passphrase",
-            instrument_types=(nautilus_pyo3.OKXInstrumentType.SPOT,),
-            **(config_kwargs or {}),
+            instrument_types=instrument_types,
+            **config_kwargs,
         )
 
         client = OKXExecutionClient(
@@ -210,7 +219,11 @@ async def test_generate_fill_reports_converts_results(exec_client_builder, monke
 @pytest.mark.asyncio
 async def test_generate_position_status_reports_converts_results(exec_client_builder, monkeypatch):
     # Arrange
-    client, _, _, http_client, _ = exec_client_builder(monkeypatch)
+    # Use SWAP (derivatives) so positions are actually queried
+    client, _, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"instrument_types": (nautilus_pyo3.OKXInstrumentType.SWAP,)},
+    )
 
     expected_report = MagicMock()
     monkeypatch.setattr(

@@ -58,11 +58,25 @@ elif instrument_type == OKXInstrumentType.FUTURES:
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
 elif instrument_type == OKXInstrumentType.OPTION:
-    symbol = "ETH-USD-250328-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-03-28
+    symbol = "ETH-USD-251226-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-12-26
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
+
+instrument_types = (instrument_type,)
+
+# instrument_types = (
+#     OKXInstrumentType.SPOT,
+#     OKXInstrumentType.SWAP,
+#     OKXInstrumentType.FUTURES,
+#     OKXInstrumentType.OPTION,
+# )
+
+instrument_families = (
+    # "BTC-USD",
+    # "ETH-USDT",
+)
 
 
 # Configure the trading node
@@ -115,7 +129,8 @@ config_node = TradingNodeConfig(
             api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(instrument_type,),
+            instrument_types=instrument_types,
+            instrument_families=instrument_families,
             contract_types=contract_types,
             is_demo=False,  # If client uses the demo API
             http_timeout_secs=10,  # Set to reasonable duration
@@ -129,7 +144,8 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(instrument_type,),
+            instrument_types=instrument_types,
+            instrument_families=instrument_families,
             contract_types=contract_types,
             # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API
@@ -162,7 +178,6 @@ config_tester = ExecTesterConfig(
     tob_offset_ticks=0,
     stop_offset_ticks=1,
     order_qty=order_qty,
-    order_params={"td_mode": "isolated"},
     # modify_orders_to_maintain_tob_offset=True,
     use_post_only=True,
     # enable_stop_buys=True,

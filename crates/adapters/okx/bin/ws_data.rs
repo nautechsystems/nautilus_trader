@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let http_client = OKXHttpClient::from_env().unwrap();
     let instruments = http_client
-        .request_instruments(OKXInstrumentType::Swap)
+        .request_instruments(OKXInstrumentType::Swap, None)
         .await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();

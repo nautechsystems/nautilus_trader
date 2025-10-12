@@ -55,7 +55,7 @@ elif instrument_type == OKXInstrumentType.FUTURES:
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     trade_size = Decimal(1)
 elif instrument_type == OKXInstrumentType.OPTION:
-    symbol = "ETH-USD-250328-4000-C"  # Example: ETH-USD call option, strike $4000, exp 2025-03-28
+    symbol = "ETH-USD-251226-4000-C"  # Example: ETH-USD call option, strike $4000, exp 2025-12-26
     contract_types = None  # OPTIONS don't use contract types in the same way
     trade_size = Decimal(1)
 else:

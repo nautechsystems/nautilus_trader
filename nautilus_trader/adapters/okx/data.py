@@ -34,6 +34,8 @@ from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
@@ -230,6 +232,14 @@ class OKXDataClient(LiveMarketDataClient):
 
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
+
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
