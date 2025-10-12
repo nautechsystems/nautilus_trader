@@ -219,7 +219,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
   "json",
 ] }
 rmp-serde = "1.3.0"
-rust_decimal = "1.38.0"
+rust_decimal = "1.39.0"
 rust_decimal_macros = "1.38.0"
 rustls = { version = "0.23.32", default-features = false, features = [
   "aws-lc-rs",

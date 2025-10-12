@@ -58,6 +58,7 @@ This will be the final release with support for Python 3.11.
 - Fixed `serialization` crate bugs and improve error handling
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
+- Fixed handling of asyncio.CancelledError in execution reconciliation (#3073), thanks @dinana
 - Fixed edge case where rejected orders can remain in own order book
 - Fixed Currency registration to synchronize between Cython and PyO3 runtimes via new `register_currency()` helper
 - Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
@@ -142,6 +143,7 @@ This will be the final release with support for Python 3.11.
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
 - Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
+- Refined catalog `reset_data_file_names` method (#3071), thanks @adrianbeer and @faysou
 - Optimized `ExecutionEngine` hot path with topic caching and reduced cache lookups
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
 - Upgraded Rust (MSRV) to 1.90.0
