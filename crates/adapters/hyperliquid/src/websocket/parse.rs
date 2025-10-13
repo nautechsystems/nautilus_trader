@@ -420,14 +420,14 @@ pub fn parse_ws_fill_report(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
     use ustr::Ustr;
-
-    use super::*;
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID"));

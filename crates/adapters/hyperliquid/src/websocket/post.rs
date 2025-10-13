@@ -645,12 +645,6 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
-    use tokio::{
-        sync::oneshot,
-        time::{Duration, sleep, timeout},
-    };
-
     use super::*;
     use crate::{
         common::consts::INFLIGHT_MAX,
@@ -658,6 +652,12 @@ mod tests {
             ActionRequest, CancelByCloidRequest, CancelRequest, HyperliquidWsRequest, OrderRequest,
             OrderRequestBuilder, OrderTypeRequest, TimeInForceRequest,
         },
+    };
+
+    use rstest::rstest;
+    use tokio::{
+        sync::oneshot,
+        time::{Duration, sleep, timeout},
     };
 
     // --- helpers -------------------------------------------------------------------------------

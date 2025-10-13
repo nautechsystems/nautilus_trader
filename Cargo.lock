@@ -5055,6 +5055,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-data",
  "nautilus-execution",
+ "nautilus-live",
  "nautilus-model",
  "nautilus-network",
  "nautilus-serialization",

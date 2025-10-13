@@ -16,16 +16,17 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use futures_util::future::BoxFuture;
+use futures_util::{Stream, future::BoxFuture};
 #[cfg(feature = "python")]
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
+use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::time::get_atomic_clock_realtime;
 #[cfg(feature = "python")]
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
 use nautilus_model::{
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
@@ -37,15 +38,15 @@ use ustr::Ustr;
 
 #[cfg(feature = "python")]
 use crate::websocket::parse::{
-    parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
-    parse_ws_order_status_report, parse_ws_quote_tick, parse_ws_trade_tick,
+    parse_ws_candle, parse_ws_order_book_deltas, parse_ws_quote_tick, parse_ws_trade_tick,
 };
+use crate::websocket::parse::{parse_ws_fill_report, parse_ws_order_status_report};
 use crate::{
     http::error::{Error, Result as HyperliquidResult},
     websocket::{
         messages::{
-            ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, PostRequest,
-            PostResponsePayload, SubscriptionRequest,
+            ActionPayload, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest,
+            NautilusWsMessage, PostRequest, PostResponsePayload, SubscriptionRequest,
         },
         post::{
             PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
@@ -754,6 +755,169 @@ impl HyperliquidWebSocketClient {
             .post_action_raw(action, timeout)
             .await
     }
+
+    /// Creates a stream of execution messages (order updates and fills).
+    ///
+    /// This method spawns a background task that listens for WebSocket messages
+    /// and processes OrderUpdates and UserEvents (fills) into ExecutionReports.
+    /// The execution reports are sent through the returned stream for processing
+    /// by the execution client.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_id` - Account ID for report generation
+    /// * `user_address` - User address to subscribe to order updates and user events
+    ///
+    /// # Returns
+    ///
+    /// A stream of `NautilusWsMessage` containing execution reports
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or connection cannot be established
+    pub async fn stream_execution_messages(
+        &self,
+        account_id: AccountId,
+        user_address: String,
+    ) -> anyhow::Result<impl Stream<Item = NautilusWsMessage>> {
+        // Ensure connection
+        self.ensure_connected().await?;
+
+        // Subscribe to order updates and user events
+        self.subscribe_order_updates(&user_address).await?;
+        self.subscribe_user_events(&user_address).await?;
+
+        let client = self.clone();
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Spawn background task to process WebSocket messages
+        tokio::spawn(async move {
+            let clock = get_atomic_clock_realtime();
+
+            loop {
+                let event = client.next_event().await;
+
+                match event {
+                    Some(msg) => {
+                        match &msg {
+                            HyperliquidWsMessage::OrderUpdates { data } => {
+                                let mut exec_reports = Vec::new();
+
+                                // Process each order update in the array
+                                for order_update in data {
+                                    if let Some(instrument) =
+                                        client.get_instrument_by_symbol(&order_update.order.coin)
+                                    {
+                                        let ts_init = clock.get_time_ns();
+
+                                        match parse_ws_order_status_report(
+                                            order_update,
+                                            &instrument,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                exec_reports.push(ExecutionReport::Order(report));
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Error parsing order update: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "No instrument found for symbol: {}",
+                                            order_update.order.coin
+                                        );
+                                    }
+                                }
+
+                                // Send reports if any
+                                if !exec_reports.is_empty()
+                                    && let Err(e) =
+                                        tx.send(NautilusWsMessage::ExecutionReports(exec_reports))
+                                {
+                                    tracing::error!("Failed to send execution reports: {}", e);
+                                    break;
+                                }
+                            }
+                            HyperliquidWsMessage::UserEvents { data } => {
+                                use crate::websocket::messages::WsUserEventData;
+
+                                let ts_init = clock.get_time_ns();
+
+                                match data {
+                                    WsUserEventData::Fills { fills } => {
+                                        let mut exec_reports = Vec::new();
+
+                                        // Process each fill
+                                        for fill in fills {
+                                            if let Some(instrument) =
+                                                client.get_instrument_by_symbol(&fill.coin)
+                                            {
+                                                match parse_ws_fill_report(
+                                                    fill,
+                                                    &instrument,
+                                                    account_id,
+                                                    ts_init,
+                                                ) {
+                                                    Ok(report) => {
+                                                        exec_reports
+                                                            .push(ExecutionReport::Fill(report));
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!(
+                                                            "Error parsing fill: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                tracing::warn!(
+                                                    "No instrument found for symbol: {}",
+                                                    fill.coin
+                                                );
+                                            }
+                                        }
+
+                                        // Send reports if any
+                                        if !exec_reports.is_empty()
+                                            && let Err(e) = tx.send(
+                                                NautilusWsMessage::ExecutionReports(exec_reports),
+                                            )
+                                        {
+                                            tracing::error!("Failed to send fill reports: {}", e);
+                                            break;
+                                        }
+                                    }
+                                    _ => {
+                                        // Other user events (funding, liquidation, etc.) not handled yet
+                                    }
+                                }
+                            }
+                            _ => {
+                                // Ignore other message types in execution stream
+                            }
+                        }
+                    }
+                    None => {
+                        // Connection closed
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Return the stream
+        Ok(async_stream::stream! {
+            let mut rx = rx;
+            while let Some(msg) = rx.recv().await {
+                yield msg;
+            }
+        })
+    }
 }
 
 // Python bindings
@@ -1001,10 +1165,9 @@ impl HyperliquidWebSocketClient {
                                                 ts_init,
                                             ) {
                                                 Ok(report) => {
-                                                    // TODO: Reports need to be sent via execution engine, not data callbacks
-                                                    // The Data enum doesn't support OrderStatusReport or FillReport variants
-                                                    // These should be routed through a proper execution WebSocket client
-                                                    // For now, just log the successful parsing
+                                                    // Note: Execution reports should be handled via
+                                                    // stream_execution_messages() for execution clients,
+                                                    // not through data callbacks
                                                     tracing::info!(
                                                         "Parsed order status report: order_id={}, status={:?}",
                                                         report.venue_order_id,
@@ -1049,10 +1212,9 @@ impl HyperliquidWebSocketClient {
                                                         ts_init,
                                                     ) {
                                                         Ok(report) => {
-                                                            // TODO: Reports need to be sent via execution engine, not data callbacks
-                                                            // The Data enum doesn't support OrderStatusReport or FillReport variants
-                                                            // These should be routed through a proper execution WebSocket client
-                                                            // For now, just log the successful parsing
+                                                            // Note: Execution reports should be handled via
+                                                            // stream_execution_messages() for execution clients,
+                                                            // not through data callbacks
                                                             tracing::info!(
                                                                 "Parsed fill report: trade_id={}, side={:?}, qty={}, price={}",
                                                                 report.trade_id,
