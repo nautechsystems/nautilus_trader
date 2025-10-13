@@ -395,57 +395,86 @@ pub enum HyperliquidRejectCode {
 }
 
 impl HyperliquidRejectCode {
+    /// Parse reject code from Hyperliquid API error message.
     pub fn from_api_error(error_message: &str) -> Self {
-        // TODO: Research Hyperliquid's actual error response format
-        // Check if they provide:
-        // - Numeric error codes
-        // - Error type/category fields
-        // - Structured error objects
-        // If so, parse those instead of string matching
-
-        // For now, we still fall back to string matching, but this method provides
-        // a clear migration path when better error information becomes available
         Self::from_error_string_internal(error_message)
     }
 
-    /// Internal string parsing method - not exposed publicly.
-    ///
-    /// This encapsulates the fragile string matching logic and makes it clear
-    /// that it should only be used internally until we have better error handling.
     fn from_error_string_internal(error: &str) -> Self {
-        match error {
+        // Normalize: trim whitespace and convert to lowercase for robust matching
+        let normalized = error.trim().to_lowercase();
+
+        match normalized.as_str() {
+            // Tick size validation errors
             s if s.contains("tick size") => HyperliquidRejectCode::Tick,
+
+            // Minimum notional value errors (perp: $10, spot: 10 USDC)
             s if s.contains("minimum value of $10") => HyperliquidRejectCode::MinTradeNtl,
             s if s.contains("minimum value of 10") => HyperliquidRejectCode::MinTradeSpotNtl,
-            s if s.contains("Insufficient margin") => HyperliquidRejectCode::PerpMargin,
-            s if s.contains("Reduce only order would increase") => {
+
+            // Margin errors
+            s if s.contains("insufficient margin") => HyperliquidRejectCode::PerpMargin,
+
+            // Reduce-only order violations
+            s if s.contains("reduce only order would increase")
+                || s.contains("reduce-only order would increase") =>
+            {
                 HyperliquidRejectCode::ReduceOnly
             }
-            s if s.contains("Post only order would have immediately matched") => {
+
+            // Post-only order matching errors
+            s if s.contains("post only order would have immediately matched")
+                || s.contains("post-only order would have immediately matched") =>
+            {
                 HyperliquidRejectCode::BadAloPx
             }
+
+            // IOC (Immediate-or-Cancel) order errors
             s if s.contains("could not immediately match") => HyperliquidRejectCode::IocCancel,
-            s if s.contains("Invalid TP/SL price") => HyperliquidRejectCode::BadTriggerPx,
-            s if s.contains("No liquidity available for market order") => {
+
+            // TP/SL trigger price errors
+            s if s.contains("invalid tp/sl price") => HyperliquidRejectCode::BadTriggerPx,
+
+            // Market order liquidity errors
+            s if s.contains("no liquidity available for market order") => {
                 HyperliquidRejectCode::MarketOrderNoLiquidity
             }
-            s if s.contains("PositionIncreaseAtOpenInterestCap") => {
+
+            // Open interest cap errors (various types)
+            // Note: These patterns are case-insensitive due to normalization
+            s if s.contains("positionincreaseatopeninterestcap") => {
                 HyperliquidRejectCode::PositionIncreaseAtOpenInterestCap
             }
-            s if s.contains("PositionFlipAtOpenInterestCap") => {
+            s if s.contains("positionflipatopeninterestcap") => {
                 HyperliquidRejectCode::PositionFlipAtOpenInterestCap
             }
-            s if s.contains("TooAggressiveAtOpenInterestCap") => {
+            s if s.contains("tooaggressiveatopeninterestcap") => {
                 HyperliquidRejectCode::TooAggressiveAtOpenInterestCap
             }
-            s if s.contains("OpenInterestIncrease") => HyperliquidRejectCode::OpenInterestIncrease,
-            s if s.contains("Insufficient spot balance") => {
+            s if s.contains("openinterestincrease") => HyperliquidRejectCode::OpenInterestIncrease,
+
+            // Spot balance errors
+            s if s.contains("insufficient spot balance") => {
                 HyperliquidRejectCode::InsufficientSpotBalance
             }
-            s if s.contains("Oracle") => HyperliquidRejectCode::Oracle,
+
+            // Oracle errors
+            s if s.contains("oracle") => HyperliquidRejectCode::Oracle,
+
+            // Position size limit errors
             s if s.contains("max position") => HyperliquidRejectCode::PerpMaxPosition,
-            s if s.contains("MissingOrder") => HyperliquidRejectCode::MissingOrder,
-            s => HyperliquidRejectCode::Unknown(s.to_string()),
+
+            // Missing order errors (cancel/modify non-existent order)
+            s if s.contains("missingorder") => HyperliquidRejectCode::MissingOrder,
+
+            // Unknown error - log for monitoring and return with original message
+            _ => {
+                tracing::warn!(
+                    "Unknown Hyperliquid error pattern (consider updating error parsing): {}",
+                    error // Use original error, not normalized
+                );
+                HyperliquidRejectCode::Unknown(error.to_string())
+            }
         }
     }
 
@@ -858,6 +887,211 @@ mod tests {
             OrderType::from(HyperliquidConditionalOrderType::TrailingStopMarket),
             OrderType::TrailingStopMarket
         );
+    }
+
+    // Tests for error parsing with real and simulated error messages
+    mod error_parsing_tests {
+        use super::*;
+
+        #[rstest]
+        fn test_parse_tick_size_error() {
+            let error = "Price must be divisible by tick size 0.01";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::Tick);
+        }
+
+        #[rstest]
+        fn test_parse_tick_size_error_case_insensitive() {
+            let error = "PRICE MUST BE DIVISIBLE BY TICK SIZE 0.01";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::Tick);
+        }
+
+        #[rstest]
+        fn test_parse_min_notional_perp() {
+            let error = "Order must have minimum value of $10";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::MinTradeNtl);
+        }
+
+        #[rstest]
+        fn test_parse_min_notional_spot() {
+            let error = "Order must have minimum value of 10 USDC";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::MinTradeSpotNtl);
+        }
+
+        #[rstest]
+        fn test_parse_insufficient_margin() {
+            let error = "Insufficient margin to place order";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::PerpMargin);
+        }
+
+        #[rstest]
+        fn test_parse_insufficient_margin_case_variations() {
+            let variations = vec![
+                "insufficient margin to place order",
+                "INSUFFICIENT MARGIN TO PLACE ORDER",
+                "  Insufficient margin to place order  ", // with whitespace
+            ];
+
+            for error in variations {
+                let code = HyperliquidRejectCode::from_api_error(error);
+                assert_eq!(code, HyperliquidRejectCode::PerpMargin);
+            }
+        }
+
+        #[rstest]
+        fn test_parse_reduce_only_violation() {
+            let error = "Reduce only order would increase position";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::ReduceOnly);
+        }
+
+        #[rstest]
+        fn test_parse_reduce_only_with_hyphen() {
+            let error = "Reduce-only order would increase position";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::ReduceOnly);
+        }
+
+        #[rstest]
+        fn test_parse_post_only_match() {
+            let error = "Post only order would have immediately matched";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::BadAloPx);
+        }
+
+        #[rstest]
+        fn test_parse_post_only_with_hyphen() {
+            let error = "Post-only order would have immediately matched";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::BadAloPx);
+        }
+
+        #[rstest]
+        fn test_parse_ioc_no_match() {
+            let error = "Order could not immediately match";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::IocCancel);
+        }
+
+        #[rstest]
+        fn test_parse_invalid_trigger_price() {
+            let error = "Invalid TP/SL price";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::BadTriggerPx);
+        }
+
+        #[rstest]
+        fn test_parse_no_liquidity() {
+            let error = "No liquidity available for market order";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::MarketOrderNoLiquidity);
+        }
+
+        #[rstest]
+        fn test_parse_position_increase_at_oi_cap() {
+            let error = "PositionIncreaseAtOpenInterestCap";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(
+                code,
+                HyperliquidRejectCode::PositionIncreaseAtOpenInterestCap
+            );
+        }
+
+        #[rstest]
+        fn test_parse_position_flip_at_oi_cap() {
+            let error = "PositionFlipAtOpenInterestCap";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::PositionFlipAtOpenInterestCap);
+        }
+
+        #[rstest]
+        fn test_parse_too_aggressive_at_oi_cap() {
+            let error = "TooAggressiveAtOpenInterestCap";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::TooAggressiveAtOpenInterestCap);
+        }
+
+        #[rstest]
+        fn test_parse_open_interest_increase() {
+            let error = "OpenInterestIncrease";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::OpenInterestIncrease);
+        }
+
+        #[rstest]
+        fn test_parse_insufficient_spot_balance() {
+            let error = "Insufficient spot balance";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::InsufficientSpotBalance);
+        }
+
+        #[rstest]
+        fn test_parse_oracle_error() {
+            let error = "Oracle price unavailable";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::Oracle);
+        }
+
+        #[rstest]
+        fn test_parse_max_position() {
+            let error = "Exceeds max position size";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::PerpMaxPosition);
+        }
+
+        #[rstest]
+        fn test_parse_missing_order() {
+            let error = "MissingOrder";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert_eq!(code, HyperliquidRejectCode::MissingOrder);
+        }
+
+        #[rstest]
+        fn test_parse_unknown_error() {
+            let error = "This is a completely new error message";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert!(matches!(code, HyperliquidRejectCode::Unknown(_)));
+
+            // Verify the original message is preserved
+            if let HyperliquidRejectCode::Unknown(msg) = code {
+                assert_eq!(msg, error);
+            }
+        }
+
+        #[rstest]
+        fn test_parse_empty_error() {
+            let error = "";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert!(matches!(code, HyperliquidRejectCode::Unknown(_)));
+        }
+
+        #[rstest]
+        fn test_parse_whitespace_only() {
+            let error = "   ";
+            let code = HyperliquidRejectCode::from_api_error(error);
+            assert!(matches!(code, HyperliquidRejectCode::Unknown(_)));
+        }
+
+        #[rstest]
+        fn test_normalization_preserves_original_in_unknown() {
+            let error = "  UNKNOWN ERROR MESSAGE  ";
+            let code = HyperliquidRejectCode::from_api_error(error);
+
+            // Should be Unknown, and should contain original message (not normalized)
+            if let HyperliquidRejectCode::Unknown(msg) = code {
+                assert_eq!(msg, error);
+            } else {
+                panic!("Expected Unknown variant");
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_conditional_order_type_round_trip() {
         assert_eq!(
             OrderType::from(HyperliquidConditionalOrderType::TrailingStopLimit),
             OrderType::TrailingStopLimit

@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use derive_builder::Builder;
+use nautilus_model::reports::{FillReport, OrderStatusReport};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -885,4 +886,34 @@ mod tests {
         assert_eq!(data.tpsl, "tp");
         assert_eq!(data.resulting_oid, Some(99999));
     }
+}
+
+/// Nautilus WebSocket message wrapper for routing to execution engine.
+///
+/// Similar to OKX adapter, this enum wraps execution-specific messages
+/// that need to be routed through the execution engine rather than
+/// data callbacks.
+#[derive(Debug, Clone)]
+pub enum NautilusWsMessage {
+    /// Execution reports (order status and fills)
+    ExecutionReports(Vec<ExecutionReport>),
+    /// Raw HyperliquidWsMessage for data client processing
+    Data(HyperliquidWsMessage),
+    /// Error occurred
+    Error(String),
+    /// WebSocket reconnected
+    Reconnected,
+}
+
+/// Execution report wrapper for order status and fill reports.
+///
+/// This enum allows both order status updates and fill reports
+/// to be sent through the execution engine.
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum ExecutionReport {
+    /// Order status report
+    Order(OrderStatusReport),
+    /// Fill report
+    Fill(FillReport),
 }
