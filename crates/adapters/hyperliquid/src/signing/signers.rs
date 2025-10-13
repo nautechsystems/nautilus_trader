@@ -251,10 +251,10 @@ impl HyperliquidEip712Signer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use rstest::rstest;
     use serde_json::json;
+
+    use super::*;
 
     #[rstest]
     fn test_address_canonicalization() {

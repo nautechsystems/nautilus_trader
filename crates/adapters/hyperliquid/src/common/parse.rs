@@ -878,10 +878,10 @@ pub fn parse_account_balances_and_margins(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use rstest::rstest;
     use serde::{Deserialize, Serialize};
+
+    use super::*;
 
     #[derive(Serialize, Deserialize)]
     struct TestStruct {

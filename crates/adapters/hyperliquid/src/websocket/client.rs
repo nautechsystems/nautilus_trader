@@ -40,7 +40,6 @@ use ustr::Ustr;
 use crate::websocket::parse::{
     parse_ws_candle, parse_ws_order_book_deltas, parse_ws_quote_tick, parse_ws_trade_tick,
 };
-use crate::websocket::parse::{parse_ws_fill_report, parse_ws_order_status_report};
 use crate::{
     http::error::{Error, Result as HyperliquidResult},
     websocket::{
@@ -48,6 +47,7 @@ use crate::{
             ActionPayload, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest,
             NautilusWsMessage, PostRequest, PostResponsePayload, SubscriptionRequest,
         },
+        parse::{parse_ws_fill_report, parse_ws_order_status_report},
         post::{
             PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
         },

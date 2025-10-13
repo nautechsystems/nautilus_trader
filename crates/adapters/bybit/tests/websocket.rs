@@ -1339,7 +1339,7 @@ mod conditional_order_tests {
 
         // reduce_only should be Some(true)
         assert!(params.reduce_only.is_some());
-        assert_eq!(params.reduce_only.unwrap(), true);
+        assert!(params.reduce_only.unwrap());
     }
 
     // Helper function to create conditional order params for testing

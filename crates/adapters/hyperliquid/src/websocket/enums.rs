@@ -93,10 +93,10 @@ impl HyperliquidWsChannel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use rstest::rstest;
     use serde_json;
+
+    use super::*;
 
     #[rstest]
     #[case(HyperliquidWsChannel::Trades, r#""trades""#)]

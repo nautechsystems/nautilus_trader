@@ -203,11 +203,11 @@ pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::http::query::{ExchangeAction, InfoRequest};
-
     use rstest::rstest;
     use serde_json::json;
+
+    use super::*;
+    use crate::http::query::{ExchangeAction, InfoRequest};
 
     #[rstest]
     #[case("order", "orders", 1, 1)]

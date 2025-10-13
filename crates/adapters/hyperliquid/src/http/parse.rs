@@ -298,14 +298,14 @@ pub fn instruments_from_defs_owned(defs: Vec<HyperliquidInstrumentDef>) -> Vec<I
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use rstest::rstest;
+
     use super::{
         super::models::{PerpAsset, SpotPair, SpotToken},
         *,
     };
-
-    use std::str::FromStr;
-
-    use rstest::rstest;
 
     #[rstest]
     fn test_pow10_neg() {

@@ -271,11 +271,11 @@ impl Default for NonceManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::thread;
 
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_time_nonce_creation() {
