@@ -154,6 +154,16 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+.PHONY: pre-flight
+pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
+	$(info $(M) Running pre-flight checks...)
+	@$(MAKE) --no-print-directory format
+	@$(MAKE) --no-print-directory pre-commit
+	@$(MAKE) --no-print-directory cargo-test-hypersync
+	@$(MAKE) --no-print-directory build-debug
+	@$(MAKE) --no-print-directory pytest
+	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
+
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
 	uv run --active --no-sync ruff check . --fix
