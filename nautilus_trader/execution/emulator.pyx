@@ -635,6 +635,38 @@ cdef class OrderEmulator(Actor):
 
 # -------------------------------------------------------------------------------------------------
 
+    cpdef Price _validate_release(
+        self,
+        Order order,
+        MatchingCore matching_core,
+        InstrumentId trigger_instrument_id,
+    ):
+        # Returns the released price if market data is available, None otherwise.
+        # Logs appropriate warnings when market data is not yet available.
+        #
+        # Does NOT pop the submit order command - caller must do that and handle
+        # missing command according to their contract (raise for market orders,
+        # return for limit orders).
+
+        cdef Price released_price = None
+
+        if order.side == OrderSide.BUY:
+            released_price = matching_core.ask
+        elif order.side == OrderSide.SELL:
+            released_price = matching_core.bid
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
+
+        if released_price is None:
+            self._log.warning(
+                f"Cannot release order {order.client_order_id} yet: no market data available for {trigger_instrument_id}, will retry on next update",
+            )
+            return None
+
+        return released_price
+
+# -------------------------------------------------------------------------------------------------
+
     cpdef void _trigger_stop_order(self, Order order):
         if (
             order.order_type == OrderType.STOP_LIMIT
@@ -652,15 +684,24 @@ cdef class OrderEmulator(Actor):
             raise RuntimeError(f"invalid `OrderType`, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
     cpdef void _fill_market_order(self, Order order):
-        # Fetch command
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
+        if matching_core is None:
+            self._log.error(
+                f"Cannot fill market order: no matching core for instrument {trigger_instrument_id}",
+            )
+            return  # Order stays queued for retry
+
+        cdef Price released_price = self._validate_release(order, matching_core, trigger_instrument_id)
+        if released_price is None:
+            return  # Order stays queued for retry
+
         cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
             raise RuntimeError("invalid operation `_fill_market_order` with no command")  # pragma: no cover (design-time error)
 
-        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
-        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
-        if matching_core is not None:
-            matching_core.delete_order(order)
+        matching_core.delete_order(order)
 
         order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
@@ -682,14 +723,6 @@ cdef class OrderEmulator(Actor):
             topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
-
-        # Determine triggered price
-        if order.side == OrderSide.BUY:
-            released_price = matching_core.ask
-        elif order.side == OrderSide.SELL:
-            released_price = matching_core.bid
-        else:
-            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
 
         # Generate event
         cdef OrderReleased event = OrderReleased(
@@ -724,15 +757,26 @@ cdef class OrderEmulator(Actor):
             self._fill_market_order(order)
             return
 
-        # Fetch command
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
+        if matching_core is None:
+            self._log.error(
+                f"Cannot fill limit order: no matching core for instrument {trigger_instrument_id}",
+            )
+            return  # Order stays queued for retry
+
+        # Validate market data availability
+        cdef Price released_price = self._validate_release(order, matching_core, trigger_instrument_id)
+        if released_price is None:
+            return  # Order stays queued for retry
+
+        # Fetch command (only after confirming market data exists)
         cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
             return  # Order already released
 
-        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
-        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
-        if matching_core is not None:
-            matching_core.delete_order(order)
+        matching_core.delete_order(order)
 
         order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef LimitOrder transformed = LimitOrder.transform(order, self.clock.timestamp_ns())
@@ -754,14 +798,6 @@ cdef class OrderEmulator(Actor):
             topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
-
-        # Determine triggered price
-        if order.side == OrderSide.BUY:
-            released_price = matching_core.ask
-        elif order.side == OrderSide.SELL:
-            released_price = matching_core.bid
-        else:
-            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
 
         # Generate event
         cdef OrderReleased event = OrderReleased(

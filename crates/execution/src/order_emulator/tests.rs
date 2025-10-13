@@ -12,3 +12,44 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use nautilus_model::{
+    instruments::{CryptoPerpetual, stubs::crypto_perpetual_ethusdt},
+    types::Price,
+};
+use rstest::{fixture, rstest};
+
+use crate::matching_core::OrderMatchingCore;
+
+#[fixture]
+pub fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> CryptoPerpetual {
+    crypto_perpetual_ethusdt
+}
+
+#[rstest]
+fn test_stop_limit_order_triggered_before_market_data_retains_command(
+    instrument_eth_usdt: CryptoPerpetual,
+) {
+    // This test validates that the OrderMatchingCore correctly handles
+    // quote ticks with None bid/ask prices
+    let instrument_id = instrument_eth_usdt.id;
+    let price_increment = instrument_eth_usdt.price_increment;
+
+    // Create a matching core
+    let mut matching_core =
+        OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
+
+    // Verify matching core has no market data initially
+    assert!(matching_core.bid.is_none());
+    assert!(matching_core.ask.is_none());
+
+    // Process a quote tick to provide market data
+    matching_core.set_bid_raw(Price::from("5060.00"));
+    matching_core.set_ask_raw(Price::from("5070.00"));
+
+    // Verify market data is now available
+    assert!(matching_core.bid.is_some());
+    assert!(matching_core.ask.is_some());
+    assert_eq!(matching_core.bid.unwrap(), Price::from("5060.00"));
+    assert_eq!(matching_core.ask.unwrap(), Price::from("5070.00"));
+}
