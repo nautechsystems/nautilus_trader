@@ -921,6 +921,7 @@ cdef class BacktestEngine:
             request.params.get("time_range_generator", "")
         )(request)
         cdef bint append_data = request.params.get("append_data", True)
+        request.params.pop("time_range_generator", None) # so sub_requests don't use long data range requests as well
 
         self._data_requests[subscription_name] = request
         self._data_iterator.init_data(

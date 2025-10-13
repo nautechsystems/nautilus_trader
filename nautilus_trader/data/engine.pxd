@@ -103,6 +103,8 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, list] _query_group_responses
     cdef readonly dict[UUID4, RequestData] _query_group_main_request
     cdef readonly dict[UUID4, list[UUID4]] _query_group_request_ids
+    cdef readonly dict[UUID4, object] _long_request_generator
+    cdef readonly dict[UUID4, UUID4] _sub_request_id_to_main_id
 
     cdef readonly TopicCache _topic_cache
 
@@ -215,6 +217,10 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
+    cpdef void _handle_long_date_range_request(self, DataClient client, RequestData request)
+    cpdef void _update_long_request_data(self, UUID4 main_request_id, bint data_received = *, bint is_first_call = *)
+    cpdef void _handle_long_request_response(self, DataResponse response)
+    cpdef void _finalize_long_request(self, UUID4 main_request_id)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
@@ -263,7 +269,7 @@ cdef class DataEngine(Component):
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
     cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, uint64_t start = *)
-    cpdef void _deactivate_historical_bar_aggregator(self, BarType bar_type)
+    cpdef void _unsubscribe_historical_bar_aggregator(self, BarType bar_type)
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)

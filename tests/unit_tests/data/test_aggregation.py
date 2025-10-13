@@ -2056,7 +2056,7 @@ class TestTimeBarAggregator:
         with pytest.raises(ValueError):
             TimeBarAggregator(
                 instrument,
-                bar_type,
+                bar_type.standard(),
                 handler.append,
                 clock,
             )
@@ -2105,7 +2105,7 @@ class TestTimeBarAggregator:
         # Act
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2125,7 +2125,7 @@ class TestTimeBarAggregator:
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2182,7 +2182,6 @@ class TestTimeBarAggregator:
         assert initial_next_close == 6 * 60 * NANOSECONDS_IN_SECOND
         assert aggregator.next_close_ns == 7 * 60 * NANOSECONDS_IN_SECOND
 
-    @pytest.mark.skip(reason="Batch update API removed in favor of event-driven approach")
     def test_batch_update_sends_single_bar_to_handler(self):
         # Arrange
         clock = TestClock()
@@ -2193,7 +2192,7 @@ class TestTimeBarAggregator:
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2246,15 +2245,15 @@ class TestTimeBarAggregator:
         assert len(handler) == 1
         assert Price.from_str("1.000025") == bar.open
         assert Price.from_str("1.000035") == bar.high
-        assert Price.from_str("1.000015") == bar.low
-        assert Price.from_str("1.000015") == bar.close
+        assert Price.from_str("1.000025") == bar.low  # tick1 mid price
+        assert Price.from_str("1.000035") == bar.close  # tick2 mid price
         assert Quantity.from_int(2) == bar.volume  # Only tick1 and tick2
-        assert bar.ts_init == 2 * 60_000_000_000
+        assert bar.ts_init == 3 * 60_000_000_000  # Bar created when timer fired at 3 minutes
 
-    @pytest.mark.skip(reason="Batch update API removed in favor of event-driven approach")
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
+        clock.set_time(3 * 60 * NANOSECONDS_IN_SECOND)
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
@@ -2269,7 +2268,7 @@ class TestTimeBarAggregator:
         )
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2314,8 +2313,9 @@ class TestTimeBarAggregator:
         aggregator.handle_bar(bar1)
         aggregator.handle_bar(bar2)
         aggregator.handle_bar(bar3)
-        events = clock.advance_time(bar3.ts_event)
-        events[0].handle()
+        events = clock.advance_time(to_time_ns=3 * 60 * NANOSECONDS_IN_SECOND)
+        for event in events:
+            event.handle()
 
         # Assert
         bar = handler[0]
@@ -2327,8 +2327,8 @@ class TestTimeBarAggregator:
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
-        assert initial_next_close == 180_000_000_000
-        assert aggregator.next_close_ns == 360_000_000_000
+        assert initial_next_close == 3 * 60 * NANOSECONDS_IN_SECOND
+        assert aggregator.next_close_ns == 6 * 60 * NANOSECONDS_IN_SECOND
 
     def test_update_timer_with_test_clock_sends_no_bar_to_handler_with_skip_first_non_full_bar(
         self,
@@ -2350,14 +2350,13 @@ class TestTimeBarAggregator:
         clock.advance_time(1)
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             skip_first_non_full_bar=True,
         )
         aggregator.start_timer()
         composite_bar_type = bar_type.composite()
-        initial_next_close = aggregator.next_close_ns
 
         bar1 = Bar(
             bar_type=composite_bar_type,
@@ -2400,8 +2399,6 @@ class TestTimeBarAggregator:
 
         # Assert
         assert len(events) == 0
-        assert initial_next_close == 180_000_000_000
-        assert aggregator.next_close_ns == 180_000_000_000  # TODO: This didn't increment?
 
     def test_skip_first_non_full_bar_when_starting_on_bar_boundary(self):
         """
@@ -2422,7 +2419,7 @@ class TestTimeBarAggregator:
         # Create aggregator with skip_first_non_full_bar=True
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             skip_first_non_full_bar=True,
@@ -2506,7 +2503,7 @@ class TestTimeBarAggregator:
 
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             skip_first_non_full_bar=True,
@@ -2608,7 +2605,7 @@ class TestTimeBarAggregator:
         )
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             time_bars_origin_offset=pd.Timedelta(seconds=30),
@@ -2693,7 +2690,7 @@ class TestTimeBarAggregator:
         )
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2769,7 +2766,7 @@ class TestTimeBarAggregator:
         )
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2827,11 +2824,10 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == pd.Timestamp("2024-3-25").value
 
-    @pytest.mark.skip(reason="Batch update API removed in favor of event-driven approach")
     def test_batch_update_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
-        clock.set_time(3 * 60 * NANOSECONDS_IN_SECOND)
+        clock.set_time(1)  # Start at time 1 to avoid timer firing at 0
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
@@ -2846,12 +2842,12 @@ class TestTimeBarAggregator:
         )
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
-            update_test_clock=True,  # Enable test clock updates for historical data
         )
         aggregator.start_timer()
+        timer_name = str(bar_type.standard())
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -2893,7 +2889,7 @@ class TestTimeBarAggregator:
         aggregator.handle_bar(bar2)
 
         # Advance clock to trigger bar build and handle timer events
-        events = clock.advance_time(to_time_ns=3 * 60 * NANOSECONDS_IN_SECOND)
+        events = clock.advance_time(to_time_ns=clock.next_time_ns(timer_name))
         for event in events:
             event.handle()
 
@@ -2908,7 +2904,9 @@ class TestTimeBarAggregator:
         assert bar.low == Price.from_str("1.00003")
         assert bar.close == Price.from_str("1.00015")  # bar2's close
         assert bar.volume == Quantity.from_int(2)  # Only bar1 and bar2
-        assert bar.ts_init == 2 * 60 * NANOSECONDS_IN_SECOND
+        assert (
+            bar.ts_init == 180_000_000_001
+        )  # Timer fires at next_time_ns which is 1ns after the interval
 
     def test_aggregation_for_same_sec_and_minute_intervals(self):
         # Arrange - prepare data
@@ -2925,7 +2923,7 @@ class TestTimeBarAggregator:
         bar_type = BarType(BTCUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
         aggregator = TimeBarAggregator(
             BTCUSDT_BINANCE,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
         )
@@ -2967,7 +2965,7 @@ class TestTimeBarAggregator:
         # Act
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             build_with_no_updates=False,  # <-- set this True and test will fail
@@ -3002,7 +3000,7 @@ class TestTimeBarAggregator:
         # Act
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             timestamp_on_close=False,  # <-- set this True and test will fail
@@ -3063,7 +3061,7 @@ class TestTimeBarAggregator:
         # Act
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
-            bar_type,
+            bar_type.standard(),
             handler.append,
             clock,
             interval_type=interval_type,

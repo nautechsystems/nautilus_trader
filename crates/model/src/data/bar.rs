@@ -489,9 +489,9 @@ impl BarType {
 
     /// Returns the standard bar type component.
     pub fn standard(&self) -> Self {
-        match &self {
-            &&b @ Self::Standard { .. } => b,
-            Self::Composite {
+        match self {
+            &b @ BarType::Standard { .. } => b,
+            BarType::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -502,9 +502,9 @@ impl BarType {
 
     /// Returns any composite bar type component.
     pub fn composite(&self) -> Self {
-        match &self {
-            &&b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
-            Self::Composite {
+        match self {
+            &b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
+            BarType::Composite {
                 instrument_id,
                 spec,
                 aggregation_source: _,

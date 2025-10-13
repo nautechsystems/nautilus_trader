@@ -266,7 +266,7 @@ cdef class BarAggregator:
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
-            bar_type=self.bar_type.standard(),
+            bar_type=self.bar_type,
         )
         self.historical_mode = False
         self.is_running = False # is_running means that an aggregator receives data from the message bus
