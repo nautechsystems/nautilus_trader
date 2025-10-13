@@ -207,7 +207,9 @@ impl SyntheticInstrument {
                 input_values.push(value);
                 self.context
                     .set_value(variable.clone(), Value::Float(value))
-                    .expect("TODO: Unable to set value");
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to set value for variable {variable}: {e}");
+                    });
             } else {
                 panic!("Missing price for component: {variable}");
             }
