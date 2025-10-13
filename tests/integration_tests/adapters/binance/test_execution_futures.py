@@ -1173,12 +1173,12 @@ class TestBinanceFuturesExecutionClient:
         assert "INVALID_TRIGGER_PRICE" in reason
 
     @pytest.mark.asyncio()
-    async def test_submit_trailing_stop_without_activation_price_denied(self, mocker):
+    async def test_submit_trailing_stop_without_activation_price_omits_param(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
-        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", False)
 
         order = self.strategy.order_factory.trailing_stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1200,13 +1200,21 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await eventually(lambda: mock_generate_denied.called)
+        await eventually(lambda: mock_send_request.call_args)
 
-        # Assert
-        mock_send_request.assert_not_called()
-        mock_generate_denied.assert_called_once()
-        reason = mock_generate_denied.call_args.kwargs["reason"]
-        assert "MISSING_ACTIVATION_PRICE" in reason
+        # Assert: Order submitted successfully with activationPrice omitted
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        payload = request[1]["payload"]
+        assert payload["symbol"] == "ETHUSDT"
+        assert payload["type"] == "TRAILING_STOP_MARKET"
+        assert payload["side"] == "SELL"
+        assert payload["quantity"] == "10"
+        assert payload["callbackRate"] == "1.0"
+        # Critical: activationPrice should NOT be in the payload when None
+        # This allows Binance to use server-side current market price
+        assert "activationPrice" not in payload
 
     @pytest.mark.asyncio()
     async def test_submit_oco_order_list_denied(self, mocker):

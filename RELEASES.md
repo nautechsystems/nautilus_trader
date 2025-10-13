@@ -73,6 +73,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
+- Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
