@@ -34,13 +34,13 @@ repos:
       - id: shellcheck
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.10.0-1
+    rev: v3.12.0-2
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-sr", "-w"]
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.0
+    rev: v1.37.1
     hooks:
       - id: yamllint
         args: [--strict]
@@ -194,7 +194,7 @@ repos:
         args: ["--fix"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 6.1.0
+    rev: 7.0.0
     hooks:
       - id: isort
         name: isort (cython)

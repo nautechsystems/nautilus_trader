@@ -70,11 +70,13 @@ This will be the final release with support for Python 3.11.
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
+- Fixed return type annotation for `ArrowSerializer.deserialize` (#3076), thanks @MK27MK
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
 - Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
+- Fixed Binance futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
@@ -126,6 +128,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid conditional / advanced orders (#3035), thanks @nicolad
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
+- Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
@@ -152,7 +155,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.4
 - Upgraded `databento` crate to v0.34.1
-- Upgraded `datafusion` crate to v50.1.0
+- Upgraded `datafusion` crate to v50.2.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
 
