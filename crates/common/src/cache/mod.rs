@@ -952,46 +952,51 @@ impl Cache {
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
-    /// All `OrderFilled` events for the order will also be purged from any associated position.
+    /// For safety, an order is prevented from being purged if it's open.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
-        // Purge events from associated position if exists
-        if let Some(position_id) = self.index.order_position.get(&client_order_id)
-            && let Some(position) = self.positions.get_mut(position_id)
+        // Check if order exists and is safe to purge before removing
+        let order = self.orders.get(&client_order_id).cloned();
+
+        // SAFETY: Prevent purging open orders
+        if let Some(ref ord) = order
+            && ord.is_open()
         {
-            position.purge_events_for_order(client_order_id);
+            log::warn!("Order {client_order_id} found open when purging, skipping purge");
+            return;
         }
 
-        if let Some(order) = self.orders.remove(&client_order_id) {
+        // If order exists in cache, remove it and clean up order-specific indices
+        if let Some(ref ord) = order {
+            // Safe to purge
+            self.orders.remove(&client_order_id);
+
             // Remove order from venue index
-            if let Some(venue_orders) = self
-                .index
-                .venue_orders
-                .get_mut(&order.instrument_id().venue)
+            if let Some(venue_orders) = self.index.venue_orders.get_mut(&ord.instrument_id().venue)
             {
                 venue_orders.remove(&client_order_id);
             }
 
             // Remove venue order ID index if exists
-            if let Some(venue_order_id) = order.venue_order_id() {
+            if let Some(venue_order_id) = ord.venue_order_id() {
                 self.index.venue_order_ids.remove(&venue_order_id);
             }
 
             // Remove from instrument orders index
             if let Some(instrument_orders) =
-                self.index.instrument_orders.get_mut(&order.instrument_id())
+                self.index.instrument_orders.get_mut(&ord.instrument_id())
             {
                 instrument_orders.remove(&client_order_id);
             }
 
             // Remove from position orders index if associated with a position
-            if let Some(position_id) = order.position_id()
+            if let Some(position_id) = ord.position_id()
                 && let Some(position_orders) = self.index.position_orders.get_mut(&position_id)
             {
                 position_orders.remove(&client_order_id);
             }
 
             // Remove from exec algorithm orders index if it has an exec algorithm
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id()
+            if let Some(exec_algorithm_id) = ord.exec_algorithm_id()
                 && let Some(exec_algorithm_orders) =
                     self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
             {
@@ -1003,7 +1008,7 @@ impl Cache {
             log::warn!("Order {client_order_id} not found when purging");
         }
 
-        // Remove from all other index collections regardless of whether order was found
+        // Always clean up order indices (even if order was not in cache)
         self.index.order_position.remove(&client_order_id);
         self.index.order_strategy.remove(&client_order_id);
         self.index.order_client.remove(&client_order_id);
@@ -1017,35 +1022,47 @@ impl Cache {
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
+    ///
+    /// For safety, a position is prevented from being purged if it's open.
     pub fn purge_position(&mut self, position_id: PositionId) {
-        if let Some(position) = self.positions.remove(&position_id) {
+        // Check if position exists and is safe to purge before removing
+        let position = self.positions.get(&position_id).cloned();
+
+        // SAFETY: Prevent purging open positions
+        if let Some(ref pos) = position
+            && pos.is_open()
+        {
+            log::warn!("Position {position_id} found open when purging, skipping purge");
+            return;
+        }
+
+        // If position exists in cache, remove it and clean up position-specific indices
+        if let Some(ref pos) = position {
+            self.positions.remove(&position_id);
+
             // Remove from venue positions index
-            if let Some(venue_positions) = self
-                .index
-                .venue_positions
-                .get_mut(&position.instrument_id.venue)
+            if let Some(venue_positions) =
+                self.index.venue_positions.get_mut(&pos.instrument_id.venue)
             {
                 venue_positions.remove(&position_id);
             }
 
             // Remove from instrument positions index
-            if let Some(instrument_positions) = self
-                .index
-                .instrument_positions
-                .get_mut(&position.instrument_id)
+            if let Some(instrument_positions) =
+                self.index.instrument_positions.get_mut(&pos.instrument_id)
             {
                 instrument_positions.remove(&position_id);
             }
 
             // Remove from strategy positions index
             if let Some(strategy_positions) =
-                self.index.strategy_positions.get_mut(&position.strategy_id)
+                self.index.strategy_positions.get_mut(&pos.strategy_id)
             {
                 strategy_positions.remove(&position_id);
             }
 
             // Remove position ID from orders that reference it
-            for client_order_id in position.client_order_ids() {
+            for client_order_id in pos.client_order_ids() {
                 self.index.order_position.remove(&client_order_id);
             }
 
@@ -1054,12 +1071,15 @@ impl Cache {
             log::warn!("Position {position_id} not found when purging");
         }
 
-        // Remove from all other index collections regardless of whether position was found
+        // Always clean up position indices (even if position not in cache)
         self.index.position_strategy.remove(&position_id);
         self.index.position_orders.remove(&position_id);
         self.index.positions.remove(&position_id);
         self.index.positions_open.remove(&position_id);
         self.index.positions_closed.remove(&position_id);
+
+        // Always clean up position snapshots (even if position not in cache)
+        self.position_snapshots.remove(&position_id);
     }
 
     /// Purges all account state events which are outside the lookback window.

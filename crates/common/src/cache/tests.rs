@@ -1297,7 +1297,7 @@ fn test_purge_order() {
     let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
-        None,
+        Some(TradeId::new("T-1")),
         Some(PositionId::new("P-123456")),
         Some(Price::from("1.00001")),
         None,
@@ -1309,22 +1309,99 @@ fn test_purge_order() {
 
     cache.add_order(order, None, None, false).unwrap();
 
-    let position = Position::new(&audusd_sim, filled.into());
+    let mut position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
-    cache.add_position(position, OmsType::Netting).unwrap();
+    cache
+        .add_position(position.clone(), OmsType::Netting)
+        .unwrap();
+
+    // Close the position to test purging from closed positions
+    let order_close = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+        .build();
+
+    let filled_close = TestOrderEventStubs::filled(
+        &order_close,
+        &audusd_sim,
+        Some(TradeId::new("T-2")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    position.apply(&filled_close.into());
+    cache.update_position(&position).unwrap();
+
+    // Verify position is now closed
+    assert!(position.is_closed());
 
     // Verify the order exists
     assert!(cache.order_exists(&client_order_id));
     assert_eq!(cache.orders_total_count(None, None, None, None), 1);
 
-    // Purge the order
+    // Add the closing order to cache so it can be purged
+    let client_order_id_close = order_close.client_order_id();
+    cache
+        .add_order(order_close, Some(position_id), None, false)
+        .unwrap();
+
+    // Purge both orders - fills should NOT be purged from the position
+    cache.purge_order(client_order_id);
+    cache.purge_order(client_order_id_close);
+
+    // Verify the orders are gone
+    assert!(!cache.order_exists(&client_order_id));
+    assert!(!cache.order_exists(&client_order_id_close));
+    assert_eq!(cache.orders_total_count(None, None, None, None), 0);
+    // Verify position fills are preserved (purge_order doesn't touch position fills)
+    assert_eq!(cache.position(&position_id).unwrap().event_count(), 2);
+}
+
+#[rstest]
+fn test_purge_open_order_skips_purge() {
+    // Test that attempting to purge an open order is prevented by the guard
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+    // Create and accept an order to make it open
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = OrderSubmitted::default();
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    let accepted = OrderAccepted::default();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    // Verify order is open
+    assert!(order.is_open());
+    assert!(cache.order_exists(&client_order_id));
+    assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+
+    // Attempt to purge the open order - should be prevented by guard
     cache.purge_order(client_order_id);
 
-    // Verify the order is gone
-    assert!(!cache.order_exists(&client_order_id));
-    assert_eq!(cache.orders_total_count(None, None, None, None), 0);
-    // Verify associated order events were purged from the position
-    assert_eq!(cache.position(&position_id).unwrap().event_count(), 0);
+    // Verify the order still exists (guard prevented purge)
+    assert!(cache.order_exists(&client_order_id));
+    assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+    assert!(cache.order(&client_order_id).is_some());
 }
 
 #[rstest]
@@ -1353,15 +1430,45 @@ fn test_purge_position() {
         None,
     );
 
-    let position = Position::new(&audusd_sim, filled.into());
+    let mut position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
 
     // Add position to cache
-    cache.add_position(position, OmsType::Netting).unwrap();
+    cache
+        .add_position(position.clone(), OmsType::Netting)
+        .unwrap();
 
-    // Verify the position exists
+    // Verify the position exists and is open
     assert!(cache.position_exists(&position_id));
+    assert!(position.is_open());
     assert_eq!(cache.positions_total_count(None, None, None, None), 1);
+
+    // Close the position first (create a closing order and fill)
+    let order_close = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+        .build();
+
+    let filled_close = TestOrderEventStubs::filled(
+        &order_close,
+        &audusd_sim,
+        Some(TradeId::new("T-2")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    position.apply(&filled_close.into());
+    cache.update_position(&position).unwrap();
+
+    // Verify position is now closed
+    assert!(position.is_closed());
 
     // Purge the position
     cache.purge_position(position_id);
@@ -1369,6 +1476,57 @@ fn test_purge_position() {
     // Verify the position is gone
     assert!(!cache.position_exists(&position_id));
     assert_eq!(cache.positions_total_count(None, None, None, None), 0);
+}
+
+#[rstest]
+fn test_purge_open_position_skips_purge() {
+    // Test that attempting to purge an open position is prevented by the guard
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+    // Create an order and fill to generate an open position
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-123456")),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let position = Position::new(&audusd_sim, filled.into());
+    let position_id = position.id;
+
+    cache
+        .add_position(position.clone(), OmsType::Netting)
+        .unwrap();
+
+    // Verify position is open
+    assert!(position.is_open());
+    assert!(cache.position_exists(&position_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None), 1);
+    assert_eq!(position.event_count(), 1);
+
+    // Attempt to purge the open position - should be prevented by guard
+    cache.purge_position(position_id);
+
+    // Verify the position still exists (guard prevented purge)
+    assert!(cache.position_exists(&position_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None), 1);
+    assert!(cache.position(&position_id).is_some());
+    // Verify events are preserved
+    assert_eq!(cache.position(&position_id).unwrap().event_count(), 1);
 }
 
 #[rstest]
