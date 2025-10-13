@@ -17,23 +17,18 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, stubs::crypto_perpetual_ethusdt},
     types::Price,
 };
-use rstest::{fixture, rstest};
+use rstest::rstest;
 
 use crate::matching_core::OrderMatchingCore;
 
-#[fixture]
-pub fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> CryptoPerpetual {
-    crypto_perpetual_ethusdt
-}
-
 #[rstest]
 fn test_stop_limit_order_triggered_before_market_data_retains_command(
-    instrument_eth_usdt: CryptoPerpetual,
+    crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     // This test validates that the OrderMatchingCore correctly handles
     // quote ticks with None bid/ask prices
-    let instrument_id = instrument_eth_usdt.id;
-    let price_increment = instrument_eth_usdt.price_increment;
+    let instrument_id = crypto_perpetual_ethusdt.id;
+    let price_increment = crypto_perpetual_ethusdt.price_increment;
 
     // Create a matching core
     let mut matching_core =
