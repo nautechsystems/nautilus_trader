@@ -24,6 +24,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
@@ -150,7 +151,9 @@ class OKXExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        if self._http_client.api_key:
+            masked_key = mask_api_key(self._http_client.api_key)
+            self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # Track algo order IDs for cancellation
         self._algo_order_ids: dict[ClientOrderId, str] = {}
@@ -209,7 +212,11 @@ class OKXExecutionClient(LiveExecutionClient):
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
-        self._log.info(f"Private websocket API key {self._ws_client.api_key}", LogColor.BLUE)
+
+        if self._ws_client.api_key:
+            masked_key = mask_api_key(self._ws_client.api_key)
+            self._log.info(f"WebSocket API key {masked_key}", LogColor.BLUE)
+
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
         await self._ws_business_client.connect(

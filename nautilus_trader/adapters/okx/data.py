@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
@@ -122,7 +123,9 @@ class OKXDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        if self._http_client.api_key:
+            masked_key = mask_api_key(self._http_client.api_key)
+            self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API (using public endpoint for market data - no auth needed)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
