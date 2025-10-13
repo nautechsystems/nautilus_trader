@@ -16,8 +16,11 @@
 use alloy_primitives::{U160, U256};
 use serde::{Deserialize, Serialize};
 
-use crate::defi::{
-    data::block::BlockPosition, pool_analysis::position::PoolPosition, tick_map::tick::PoolTick,
+use crate::{
+    defi::{
+        data::block::BlockPosition, pool_analysis::position::PoolPosition, tick_map::tick::PoolTick,
+    },
+    identifiers::InstrumentId,
 };
 
 /// Complete snapshot of a liquidity pool's state at a specific point in time.
@@ -31,6 +34,8 @@ use crate::defi::{
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolSnapshot {
+    /// The instrument ID of the pool this snapshot represents.
+    pub instrument_id: InstrumentId,
     /// Global pool state including price, tick, fees, and cumulative flows.
     pub state: PoolState,
     /// All liquidity positions in the pool.
@@ -44,8 +49,9 @@ pub struct PoolSnapshot {
 }
 
 impl PoolSnapshot {
-    /// Creates a new `PoolSnapshot` with the specified state, positions, ticks, analytics, and block position.
+    /// Creates a new `PoolSnapshot` with the specified parameters.
     pub fn new(
+        instrument_id: InstrumentId,
         state: PoolState,
         positions: Vec<PoolPosition>,
         ticks: Vec<PoolTick>,
@@ -53,6 +59,7 @@ impl PoolSnapshot {
         block_position: BlockPosition,
     ) -> Self {
         Self {
+            instrument_id,
             state,
             positions,
             ticks,

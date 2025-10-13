@@ -670,6 +670,7 @@ impl BlockchainDataClientCore {
             dex_extended.convert_to_trade_data(&pool.token0, &pool.token1, swap_event)?;
         let swap = swap_event.to_pool_swap(
             self.chain.clone(),
+            pool.instrument_id,
             pool.address,
             Some(side),
             Some(size),
@@ -702,6 +703,7 @@ impl BlockchainDataClientCore {
         let liquidity_update = mint_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
+            pool.instrument_id,
             pool.address,
             timestamp,
         );
@@ -731,6 +733,7 @@ impl BlockchainDataClientCore {
         let liquidity_update = burn_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
+            pool.instrument_id,
             pool.address,
             timestamp,
         );
@@ -759,6 +762,7 @@ impl BlockchainDataClientCore {
         let fee_collect = collect_event.to_pool_fee_collect(
             self.chain.clone(),
             dex_extended.dex.clone(),
+            pool.instrument_id,
             pool.address,
             timestamp,
         );
@@ -781,7 +785,12 @@ impl BlockchainDataClientCore {
             .get_block_timestamp(flash_event.block_number)
             .copied();
 
-        let flash = flash_event.to_pool_flash(self.chain.clone(), pool.address, timestamp);
+        let flash = flash_event.to_pool_flash(
+            self.chain.clone(),
+            pool.instrument_id,
+            pool.address,
+            timestamp,
+        );
 
         Ok(flash)
     }
@@ -1110,8 +1119,13 @@ impl BlockchainDataClientCore {
                 pool.instrument_id
             );
 
-            let mut event_stream =
-                database.stream_pool_events(self.chain.clone(), dex.clone(), &pool.address, None);
+            let mut event_stream = database.stream_pool_events(
+                self.chain.clone(),
+                dex.clone(),
+                pool.instrument_id,
+                &pool.address,
+                None,
+            );
             let mut event_count = 0;
 
             while let Some(event_result) = event_stream.next().await {

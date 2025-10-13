@@ -17,15 +17,18 @@ use std::pin::Pin;
 
 use alloy::primitives::{Address, U256};
 use futures_util::{Stream, StreamExt};
-use nautilus_model::defi::{
-    Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
-    data::{DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
-    pool_analysis::{
-        position::PoolPosition,
-        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+use nautilus_model::{
+    defi::{
+        Block, Chain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
+        data::{DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        tick_map::tick::PoolTick,
+        validation::validate_address,
     },
-    tick_map::tick::PoolTick,
-    validation::validate_address,
+    identifiers::InstrumentId,
 };
 use sqlx::{PgPool, Row, postgres::PgConnectOptions};
 
@@ -1577,7 +1580,8 @@ impl BlockchainCacheDatabase {
                 fee_growth_global_0::TEXT, fee_growth_global_1::TEXT,
                 total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
                 total_amount0_collected::TEXT, total_amount1_collected::TEXT,
-                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes
+                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes,
+                (SELECT dex_name FROM pool WHERE chain_id = $1 AND address = $2) as dex_name
             FROM pool_snapshot
             WHERE chain_id = $1 AND pool_address = $2 AND is_valid = TRUE
             ORDER BY block DESC, transaction_index DESC, log_index DESC
@@ -1656,7 +1660,23 @@ impl BlockchainCacheDatabase {
                 )
                 .await?;
 
+            let dex_name: String = row.get("dex_name");
+            let chain = nautilus_model::defi::Chain::from_chain_id(chain_id)
+                .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {}", chain_id))?;
+
+            let dex_type = nautilus_model::defi::DexType::from_dex_name(&dex_name)
+                .ok_or_else(|| anyhow::anyhow!("Unknown dex_name: {}", dex_name))?;
+
+            let dex_extended = crate::exchanges::get_dex_extended(chain.name, &dex_type)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("No DEX extended found for {} on {}", dex_name, chain.name)
+                })?;
+
+            let instrument_id =
+                Pool::create_instrument_id(chain.name, &dex_extended.dex, pool_address);
+
             Ok(Some(PoolSnapshot::new(
+                instrument_id,
                 state,
                 positions,
                 ticks,
@@ -1843,6 +1863,7 @@ impl BlockchainCacheDatabase {
         &'a self,
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: &Address,
         from_position: Option<BlockPosition>,
     ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
@@ -2130,8 +2151,10 @@ impl BlockchainCacheDatabase {
 
         // Transform rows to events
         let stream = query.map(move |row_result| match row_result {
-            Ok(row) => transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone())
-                .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {}", e)),
+            Ok(row) => {
+                transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone(), instrument_id)
+                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {}", e))
+            }
             Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {}", e)),
         });
 

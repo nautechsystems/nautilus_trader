@@ -119,9 +119,13 @@ pub struct DataEngine {
     msgbus_priority: u8,
     config: DataEngineConfig,
     #[cfg(feature = "defi")]
-    pool_updaters: AHashMap<InstrumentId, Rc<crate::engine::pool::PoolUpdater>>,
+    pool_updaters: AHashMap<InstrumentId, Rc<PoolUpdater>>,
     #[cfg(feature = "defi")]
     pool_updaters_pending: AHashSet<InstrumentId>,
+    #[cfg(feature = "defi")]
+    pool_snapshot_pending: AHashSet<InstrumentId>,
+    #[cfg(feature = "defi")]
+    pool_event_buffers: AHashMap<InstrumentId, Vec<DefiData>>,
 }
 
 impl DataEngine {
@@ -163,6 +167,10 @@ impl DataEngine {
             pool_updaters: AHashMap::new(),
             #[cfg(feature = "defi")]
             pool_updaters_pending: AHashSet::new(),
+            #[cfg(feature = "defi")]
+            pool_snapshot_pending: AHashSet::new(),
+            #[cfg(feature = "defi")]
+            pool_event_buffers: AHashMap::new(),
         }
     }
 
@@ -599,26 +607,6 @@ impl DataEngine {
             return Ok(());
         }
 
-        match cmd {
-            DefiSubscribeCommand::Pool(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
-            }
-            DefiSubscribeCommand::PoolSwaps(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
-            }
-            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolFlashEvents(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            _ => {}
-        }
-
-        // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             log::info!("Forwarding subscription to client {:?}", cmd.client_id());
             client.execute_defi_subscribe(cmd);
@@ -628,6 +616,25 @@ impl DataEngine {
                 cmd.client_id(),
                 cmd.venue(),
             );
+        }
+
+        match cmd {
+            DefiSubscribeCommand::Pool(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+            }
+            DefiSubscribeCommand::PoolSwaps(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+            }
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+            }
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+            }
+            DefiSubscribeCommand::PoolFlashEvents(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+            }
+            DefiSubscribeCommand::Blocks(_) => {} // No pool setup needed for blocks
         }
 
         Ok(())
@@ -831,29 +838,254 @@ impl DataEngine {
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSnapshot(snapshot) => {
-                log::debug!(
-                    "Received pool snapshot at block {} with {} positions and {} ticks",
+                use std::sync::Arc;
+
+                use nautilus_model::defi::{PoolProfiler, data::DexPoolData};
+
+                let instrument_id = snapshot.instrument_id;
+                log::info!(
+                    "Received pool snapshot for {instrument_id} at block {} with {} positions and {} ticks",
                     snapshot.block_position.number,
                     snapshot.positions.len(),
                     snapshot.ticks.len()
                 );
-                // TODO: Process snapshot to hydrate PoolProfiler state
+
+                // Check if we're waiting for this snapshot
+                if !self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::warn!(
+                        "Received unexpected pool snapshot for {instrument_id} (not in pending set)"
+                    );
+                    return;
+                }
+
+                // Get pool from cache
+                let pool = match self.cache.borrow().pool(&instrument_id) {
+                    Some(pool) => Arc::new(pool.clone()),
+                    None => {
+                        log::error!(
+                            "Pool {instrument_id} not found in cache when processing snapshot"
+                        );
+                        return;
+                    }
+                };
+
+                // Create profiler and restore from snapshot
+                let mut profiler = PoolProfiler::new(pool.clone());
+                if let Err(e) = profiler.restore_from_snapshot(snapshot.clone()) {
+                    log::error!(
+                        "Failed to restore profiler from snapshot for {instrument_id}: {e}"
+                    );
+                    return;
+                }
+
+                log::debug!("Restored pool profiler for {instrument_id} from snapshot");
+
+                // Get buffered events for this pool and sort by block position
+                let buffered_events = self
+                    .pool_event_buffers
+                    .remove(&instrument_id)
+                    .unwrap_or_default();
+
+                if !buffered_events.is_empty() {
+                    log::info!(
+                        "Processing {} buffered events for {instrument_id}",
+                        buffered_events.len()
+                    );
+
+                    // Convert to DexPoolData and sort by block position
+                    let mut events_to_apply: Vec<DexPoolData> = Vec::new();
+
+                    for event in buffered_events {
+                        match event {
+                            DefiData::PoolSwap(swap) => {
+                                events_to_apply.push(DexPoolData::Swap(swap))
+                            }
+                            DefiData::PoolLiquidityUpdate(update) => {
+                                events_to_apply.push(DexPoolData::LiquidityUpdate(update))
+                            }
+                            DefiData::PoolFeeCollect(collect) => {
+                                events_to_apply.push(DexPoolData::FeeCollect(collect))
+                            }
+                            DefiData::PoolFlash(flash) => {
+                                events_to_apply.push(DexPoolData::Flash(flash))
+                            }
+                            _ => {} // Skip non-pool events
+                        }
+                    }
+
+                    // Sort events by block position
+                    events_to_apply.sort_by(|a, b| {
+                        let pos_a = match a {
+                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
+                            DexPoolData::LiquidityUpdate(u) => {
+                                (u.block, u.transaction_index, u.log_index)
+                            }
+                            DexPoolData::FeeCollect(c) => {
+                                (c.block, c.transaction_index, c.log_index)
+                            }
+                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
+                        };
+                        let pos_b = match b {
+                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
+                            DexPoolData::LiquidityUpdate(u) => {
+                                (u.block, u.transaction_index, u.log_index)
+                            }
+                            DexPoolData::FeeCollect(c) => {
+                                (c.block, c.transaction_index, c.log_index)
+                            }
+                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
+                        };
+                        pos_a.cmp(&pos_b)
+                    });
+
+                    // Apply events that occurred after the snapshot
+                    let snapshot_block = &snapshot.block_position;
+                    let mut applied_count = 0;
+
+                    for event in events_to_apply {
+                        let event_block = match &event {
+                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
+                            DexPoolData::LiquidityUpdate(u) => {
+                                (u.block, u.transaction_index, u.log_index)
+                            }
+                            DexPoolData::FeeCollect(c) => {
+                                (c.block, c.transaction_index, c.log_index)
+                            }
+                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
+                        };
+
+                        // Only apply events that occurred after the snapshot
+                        if event_block.0 > snapshot_block.number
+                            || (event_block.0 == snapshot_block.number
+                                && event_block.1 > snapshot_block.transaction_index)
+                            || (event_block.0 == snapshot_block.number
+                                && event_block.1 == snapshot_block.transaction_index
+                                && event_block.2 > snapshot_block.log_index)
+                        {
+                            if let Err(e) = profiler.process(&event) {
+                                log::error!(
+                                    "Failed to apply buffered event to profiler for {instrument_id}: {e}"
+                                );
+                            } else {
+                                applied_count += 1;
+                            }
+                        }
+                    }
+
+                    log::info!(
+                        "Applied {applied_count} buffered events to profiler for {instrument_id}"
+                    );
+                }
+
+                // Add profiler to cache
+                if let Err(e) = self.cache.borrow_mut().add_pool_profiler(profiler) {
+                    log::error!("Failed to add pool profiler to cache for {instrument_id}: {e}");
+                    return;
+                }
+
+                // Remove from pending and create updater
+                self.pool_snapshot_pending.remove(&instrument_id);
+
+                let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache.clone()));
+                let handler = ShareableMessageHandler(updater.clone());
+
+                // Subscribe to all required pool data topics
+                let swap_topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
+                if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
+                    msgbus::subscribe(
+                        swap_topic.into(),
+                        handler.clone(),
+                        Some(self.msgbus_priority),
+                    );
+                }
+
+                let liquidity_topic = switchboard::get_defi_liquidity_topic(instrument_id);
+                if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
+                    msgbus::subscribe(
+                        liquidity_topic.into(),
+                        handler.clone(),
+                        Some(self.msgbus_priority),
+                    );
+                }
+
+                let collect_topic = switchboard::get_defi_collect_topic(instrument_id);
+                if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
+                    msgbus::subscribe(
+                        collect_topic.into(),
+                        handler.clone(),
+                        Some(self.msgbus_priority),
+                    );
+                }
+
+                let flash_topic = switchboard::get_defi_flash_topic(instrument_id);
+                if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
+                    msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
+                }
+
+                self.pool_updaters.insert(instrument_id, updater);
+                log::info!(
+                    "Pool profiler setup completed for {instrument_id}, now processing live events"
+                );
             }
             DefiData::PoolSwap(swap) => {
-                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id());
-                msgbus::publish(topic, &swap as &dyn Any);
+                let instrument_id = swap.instrument_id;
+                // Buffer if waiting for snapshot, otherwise publish
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!("Buffering swap event for {instrument_id} (waiting for snapshot)");
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolSwap(swap));
+                } else {
+                    let topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
+                    msgbus::publish(topic, &swap as &dyn Any);
+                }
             }
             DefiData::PoolLiquidityUpdate(update) => {
-                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id());
-                msgbus::publish(topic, &update as &dyn Any);
+                let instrument_id = update.instrument_id;
+                // Buffer if waiting for snapshot, otherwise publish
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!(
+                        "Buffering liquidity update event for {instrument_id} (waiting for snapshot)"
+                    );
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolLiquidityUpdate(update));
+                } else {
+                    let topic = switchboard::get_defi_liquidity_topic(instrument_id);
+                    msgbus::publish(topic, &update as &dyn Any);
+                }
             }
             DefiData::PoolFeeCollect(collect) => {
-                let topic = switchboard::get_defi_collect_topic(collect.instrument_id());
-                msgbus::publish(topic, &collect as &dyn Any);
+                let instrument_id = collect.instrument_id;
+                // Buffer if waiting for snapshot, otherwise publish
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!(
+                        "Buffering fee collect event for {instrument_id} (waiting for snapshot)"
+                    );
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolFeeCollect(collect));
+                } else {
+                    let topic = switchboard::get_defi_collect_topic(instrument_id);
+                    msgbus::publish(topic, &collect as &dyn Any);
+                }
             }
             DefiData::PoolFlash(flash) => {
-                let topic = switchboard::get_defi_flash_topic(flash.instrument_id());
-                msgbus::publish(topic, &flash as &dyn Any);
+                let instrument_id = flash.instrument_id;
+                // Buffer if waiting for snapshot, otherwise publish
+                if self.pool_snapshot_pending.contains(&instrument_id) {
+                    log::debug!("Buffering flash event for {instrument_id} (waiting for snapshot)");
+                    self.pool_event_buffers
+                        .entry(instrument_id)
+                        .or_default()
+                        .push(DefiData::PoolFlash(flash));
+                } else {
+                    let topic = switchboard::get_defi_flash_topic(instrument_id);
+                    msgbus::publish(topic, &flash as &dyn Any);
+                }
             }
         }
     }
@@ -1384,27 +1616,50 @@ impl DataEngine {
 
         log::info!("Setting up pool updater for {instrument_id}");
 
-        // Request pool snapshot from the client early (before checking cache)
-        use nautilus_common::messages::defi::{DefiRequestCommand, RequestPoolSnapshot};
-        use nautilus_core::UUID4;
+        // Check cache first - if pool and profiler exist, we can set up immediately
+        {
+            let cache = self.cache.borrow();
 
-        let request_id = UUID4::new();
-        let ts_init = self.clock.borrow().timestamp_ns();
-        let request = RequestPoolSnapshot::new(
-            *instrument_id,
-            client_id.copied(),
-            request_id,
-            ts_init,
-            None,
-        );
-        let cmd = DefiRequestCommand::PoolSnapshot(request);
+            // If profiler already exists, we can proceed with setup
+            let has_profiler = cache.pool_profiler(instrument_id).is_some();
+            // If pool exists in cache, we can create profiler without snapshot
+            let has_pool = cache.pool(instrument_id).is_some();
 
-        if let Err(e) = self.execute_defi_request(&cmd) {
-            log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
-        } else {
-            log::debug!("Requested pool snapshot for {instrument_id}");
+            if !has_profiler && !has_pool {
+                // Pool not in cache - need to request snapshot first
+                drop(cache); // Release borrow before requesting snapshot
+
+                use nautilus_common::messages::defi::{DefiRequestCommand, RequestPoolSnapshot};
+                use nautilus_core::UUID4;
+
+                let request_id = UUID4::new();
+                let ts_init = self.clock.borrow().timestamp_ns();
+                let request = RequestPoolSnapshot::new(
+                    *instrument_id,
+                    client_id.copied(),
+                    request_id,
+                    ts_init,
+                    None,
+                );
+                let cmd = DefiRequestCommand::PoolSnapshot(request);
+
+                if let Err(e) = self.execute_defi_request(&cmd) {
+                    log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
+                    // Defer profiler creation until pool loads
+                    self.pool_updaters_pending.insert(*instrument_id);
+                    return;
+                } else {
+                    log::debug!("Requested pool snapshot for {instrument_id}");
+                    // Mark as pending so events are buffered until snapshot arrives
+                    self.pool_snapshot_pending.insert(*instrument_id);
+                    self.pool_event_buffers.entry(*instrument_id).or_default();
+                    // Snapshot processing will complete the setup when it arrives
+                    return;
+                }
+            }
         }
 
+        // Pool is in cache - proceed with immediate setup
         {
             let mut cache = self.cache.borrow_mut();
 
@@ -1412,17 +1667,10 @@ impl DataEngine {
             if cache.pool_profiler(instrument_id).is_some() {
                 log::debug!("Pool profiler for {instrument_id} already exists in cache");
             } else {
-                // Check if pool exists in cache, otherwise defer profiler creation
-                let pool = match cache.pool(instrument_id) {
-                    Some(pool) => pool,
-                    None => {
-                        log::info!(
-                            "Pool {instrument_id} not yet in cache, deferring profiler creation until pool loads"
-                        );
-                        self.pool_updaters_pending.insert(*instrument_id);
-                        return;
-                    }
-                };
+                // Pool exists in cache, create profiler
+                let pool = cache
+                    .pool(instrument_id)
+                    .expect("Pool should exist in cache");
 
                 let pool = Arc::new(pool.clone());
                 let mut pool_profiler = PoolProfiler::new(pool.clone());

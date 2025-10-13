@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    defi::{Pool, SharedChain, SharedDex},
+    defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -64,6 +64,8 @@ pub struct PoolLiquidityUpdate {
     pub chain: SharedChain,
     /// The decentralized exchange where the liquidity update was executed.
     pub dex: SharedDex,
+    /// The instrument ID for this pool's trading pair.
+    pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
     /// The type of the pool liquidity update.
@@ -103,6 +105,7 @@ impl PoolLiquidityUpdate {
     pub const fn new(
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: Address,
         kind: PoolLiquidityUpdateType,
         block: u64,
@@ -121,6 +124,7 @@ impl PoolLiquidityUpdate {
         Self {
             chain,
             dex,
+            instrument_id,
             pool_address,
             kind,
             block,
@@ -140,8 +144,9 @@ impl PoolLiquidityUpdate {
     }
 
     /// Returns the instrument ID for this pool's trading pair.
-    pub fn instrument_id(&self) -> InstrumentId {
-        Pool::create_instrument_id(self.chain.name, &self.dex, &self.pool_address)
+    #[must_use]
+    pub const fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
     }
 }
 
@@ -150,11 +155,7 @@ impl Display for PoolLiquidityUpdate {
         write!(
             f,
             "PoolLiquidityUpdate(instrument_id={}, kind={}, amount0={}, amount1={}, liquidity={})",
-            self.instrument_id(),
-            self.kind,
-            self.amount0,
-            self.amount1,
-            self.position_liquidity
+            self.instrument_id, self.kind, self.amount0, self.amount1, self.position_liquidity
         )
     }
 }

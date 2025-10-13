@@ -378,11 +378,55 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
-            DefiSubscribeCommand::Pool(_cmd) => {
-                tracing::info!("Processing subscribe pool command");
-                // Pool subscriptions are typically handled at the application level
-                // as they involve specific pool addresses and don't require blockchain streaming
-                tracing::warn!("Pool subscriptions are handled at application level");
+            DefiSubscribeCommand::Pool(cmd) => {
+                tracing::info!(
+                    "Processing subscribe pool command for {}",
+                    cmd.instrument_id
+                );
+
+                if let Some(ref mut _rpc) = core_client.rpc_client {
+                    tracing::warn!("RPC pool subscription not yet implemented, using HyperSync");
+                }
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid pool address '{}' failed with error: {:?}",
+                                cmd.instrument_id,
+                                e
+                            )
+                        })?;
+
+                    // Subscribe to all pool event types
+                    core_client
+                        .subscription_manager
+                        .subscribe_swaps(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .subscribe_burns(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .subscribe_mints(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .subscribe_collects(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .subscribe_flashes(dex, pool_address);
+
+                    tracing::info!(
+                        "Subscribed to all pool events for {} at address {}",
+                        cmd.instrument_id,
+                        pool_address
+                    );
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
                 Ok(())
             }
             DefiSubscribeCommand::PoolSwaps(cmd) => {
@@ -537,10 +581,47 @@ impl BlockchainDataClient {
 
                 Ok(())
             }
-            DefiUnsubscribeCommand::Pool(_cmd) => {
-                tracing::info!("Processing unsubscribe pool command");
-                // Pool unsubscriptions are typically handled at the application level
-                tracing::warn!("Pool unsubscriptions are handled at application level");
+            DefiUnsubscribeCommand::Pool(cmd) => {
+                tracing::info!(
+                    "Processing unsubscribe pool command for {}",
+                    cmd.instrument_id
+                );
+
+                if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
+                    let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
+                        .map_err(|_| {
+                            anyhow::anyhow!("Invalid pool address: {}", cmd.instrument_id)
+                        })?;
+
+                    // Unsubscribe from all pool event types
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_swaps(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_burns(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_mints(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_collects(dex, pool_address);
+                    core_client
+                        .subscription_manager
+                        .unsubscribe_flashes(dex, pool_address);
+
+                    tracing::info!(
+                        "Unsubscribed from all pool events for {} at address {}",
+                        cmd.instrument_id,
+                        pool_address
+                    );
+                } else {
+                    anyhow::bail!(
+                        "Invalid venue {}, expected Blockchain DEX format",
+                        cmd.instrument_id.venue
+                    )
+                }
+
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolSwaps(cmd) => {

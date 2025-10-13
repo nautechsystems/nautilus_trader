@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    defi::{Pool, SharedChain, SharedDex},
+    defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -35,6 +35,8 @@ pub struct PoolFeeCollect {
     pub chain: SharedChain,
     /// The decentralized exchange where the fee collection was executed.
     pub dex: SharedDex,
+    /// The instrument ID for this pool's trading pair.
+    pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
     /// The blockchain block number where the fee collection occurred.
@@ -68,6 +70,7 @@ impl PoolFeeCollect {
     pub const fn new(
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: Address,
         block: u64,
         transaction_hash: String,
@@ -83,6 +86,7 @@ impl PoolFeeCollect {
         Self {
             chain,
             dex,
+            instrument_id,
             pool_address,
             block,
             transaction_hash,
@@ -99,8 +103,9 @@ impl PoolFeeCollect {
     }
 
     /// Returns the instrument ID for this pool's trading pair.
-    pub fn instrument_id(&self) -> InstrumentId {
-        Pool::create_instrument_id(self.chain.name, &self.dex, &self.pool_address)
+    #[must_use]
+    pub const fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
     }
 }
 
@@ -109,7 +114,7 @@ impl Display for PoolFeeCollect {
         write!(
             f,
             "PoolFeeCollect({} fees collected: token0={}, token1={}, owner={}, tick_range=[{}, {}], tx={}:{}:{})",
-            self.instrument_id(),
+            self.instrument_id,
             self.amount0,
             self.amount1,
             self.owner,

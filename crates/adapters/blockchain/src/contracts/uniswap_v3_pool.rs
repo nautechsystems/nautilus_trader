@@ -20,13 +20,16 @@ use alloy::{
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
-use nautilus_model::defi::{
-    data::block::BlockPosition,
-    pool_analysis::{
-        position::PoolPosition,
-        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+use nautilus_model::{
+    defi::{
+        data::block::BlockPosition,
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        tick_map::tick::PoolTick,
     },
-    tick_map::tick::PoolTick,
+    identifiers::InstrumentId,
 };
 use thiserror::Error;
 
@@ -436,6 +439,7 @@ impl UniswapV3PoolContract {
     pub async fn fetch_snapshot(
         &self,
         pool_address: &Address,
+        instrument_id: InstrumentId,
         tick_values: &[i32],
         position_keys: &[(Address, i32, i32)],
         block: Option<u64>,
@@ -474,6 +478,7 @@ impl UniswapV3PoolContract {
         };
 
         Ok(PoolSnapshot::new(
+            instrument_id,
             pool_state,
             positions,
             ticks,

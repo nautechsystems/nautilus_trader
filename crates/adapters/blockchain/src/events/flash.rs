@@ -15,7 +15,10 @@
 
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
-use nautilus_model::defi::{SharedChain, SharedDex, data::PoolFlash};
+use nautilus_model::{
+    defi::{SharedChain, SharedDex, data::PoolFlash},
+    identifiers::InstrumentId,
+};
 
 /// Represents a flash loan event from liquidity pools emitted from smart contract.
 ///
@@ -88,12 +91,14 @@ impl FlashEvent {
     pub fn to_pool_flash(
         &self,
         chain: SharedChain,
+        instrument_id: InstrumentId,
         pool_address: Address,
         timestamp: Option<UnixNanos>,
     ) -> PoolFlash {
         PoolFlash::new(
             chain,
             self.dex.clone(),
+            instrument_id,
             pool_address,
             self.block_number,
             self.transaction_hash.clone(),

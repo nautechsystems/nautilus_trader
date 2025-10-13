@@ -1626,6 +1626,7 @@ fn test_subscribe_and_receive_pool_swaps(
     let swap = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
+        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1691,6 +1692,7 @@ fn test_unsubscribe_pool_swaps(
     let swap1 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex.clone()),
+        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1716,6 +1718,7 @@ fn test_unsubscribe_pool_swaps(
     let swap2 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
+        instrument_id,
         pool_address,
         2000u64,
         "0x456".to_string(),

@@ -342,6 +342,7 @@ impl PoolProfiler {
         let swap_event = PoolSwap::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
+            self.pool.instrument_id,
             self.pool.address,
             block.number,
             block.transaction_hash,
@@ -813,6 +814,7 @@ impl PoolProfiler {
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
+            self.pool.instrument_id,
             self.pool.address,
             PoolLiquidityUpdateType::Mint,
             block.number,
@@ -908,6 +910,7 @@ impl PoolProfiler {
         let event = PoolLiquidityUpdate::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
+            self.pool.instrument_id,
             self.pool.address,
             PoolLiquidityUpdateType::Burn,
             block.number,
@@ -1014,6 +1017,7 @@ impl PoolProfiler {
         let flash_event = PoolFlash::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
+            self.pool.instrument_id,
             self.pool.address,
             block.number,
             block.transaction_hash,
@@ -1398,6 +1402,7 @@ impl PoolProfiler {
         state.liquidity = self.tick_map.liquidity;
 
         PoolSnapshot::new(
+            self.pool.instrument_id,
             state,
             positions,
             ticks,

@@ -123,6 +123,7 @@ fn create_mint_event(
     PoolLiquidityUpdate::new(
         arbitrum(),
         uniswap_v3(arbitrum()),
+        pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
         100000,
@@ -157,6 +158,7 @@ fn create_burn_event(
     PoolLiquidityUpdate::new(
         arbitrum(),
         uniswap_v3(arbitrum()),
+        pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Burn,
         100000,
@@ -184,6 +186,7 @@ fn create_collect_event(
     PoolFeeCollect::new(
         arbitrum(),
         uniswap_v3(arbitrum()),
+        pool_definition.instrument_id,
         pool_definition.address,
         10000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
@@ -314,6 +317,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     let mint_event = PoolLiquidityUpdate::new(
         arbitrum(),
         uniswap_v3(arbitrum()),
+        pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
         100000,

@@ -18,6 +18,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolSwap, SharedChain, SharedDex},
     enums::OrderSide,
+    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 
@@ -100,6 +101,7 @@ impl SwapEvent {
     pub fn to_pool_swap(
         &self,
         chain: SharedChain,
+        instrument_id: InstrumentId,
         pool_address: Address,
         normalized_side: Option<OrderSide>,
         normalized_quantity: Option<Quantity>,
@@ -109,6 +111,7 @@ impl SwapEvent {
         PoolSwap::new(
             chain,
             self.dex.clone(),
+            instrument_id,
             pool_address,
             self.block_number,
             self.transaction_hash.clone(),

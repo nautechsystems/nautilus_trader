@@ -15,8 +15,6 @@
 
 # ruff: noqa (under development)
 
-import pandas as pd
-
 from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
@@ -85,8 +83,10 @@ class BlockchainActor(DataActor):
             self.subscribe_pool_fee_collects(instrument_id, self.client_id)
             self.subscribe_pool_flash_events(instrument_id, self.client_id)
 
-        self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
-        self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
+        # TODO: Uncomment to demonstrate timers
+        # import pandas as pd
+        # self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
+        # self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
 
     def on_stop(self) -> None:
         """

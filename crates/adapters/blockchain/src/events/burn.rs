@@ -15,7 +15,10 @@
 
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
-use nautilus_model::defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex};
+use nautilus_model::{
+    defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
+    identifiers::InstrumentId,
+};
 
 /// Represents a burn event that occurs when liquidity is removed from a position in a liquidity pool.
 #[derive(Debug, Clone)]
@@ -87,12 +90,14 @@ impl BurnEvent {
         &self,
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: Address,
         timestamp: Option<UnixNanos>,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
             chain,
             dex,
+            instrument_id,
             pool_address,
             PoolLiquidityUpdateType::Burn,
             self.block_number,
