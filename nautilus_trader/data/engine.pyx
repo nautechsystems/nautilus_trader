@@ -186,6 +186,8 @@ cdef class DataEngine(Component):
         self._query_group_responses: dict[UUID4, list] = {}
         self._query_group_main_request: dict[UUID4, RequestData] = {}
         self._query_group_request_ids: dict[UUID4, list[UUID4]] = {}
+        self._long_request_generator: dict[UUID4, object] = {}  # time_range_generator for each long request
+        self._sub_request_id_to_main_id: dict[UUID4, UUID4] = {}  # mapping from sub-request ID to main request ID
 
         self._topic_cache = TopicCache()
 
@@ -713,6 +715,8 @@ cdef class DataEngine(Component):
         self._snapshot_info.clear()
         self._query_group_main_request.clear()
         self._query_group_request_ids.clear()
+        self._long_request_generator.clear()
+        self._sub_request_id_to_main_id.clear()
         self._topic_cache.clear_cache()
 
         self._clock.cancel_timers()
@@ -1138,8 +1142,17 @@ cdef class DataEngine(Component):
 
         if command.bar_type.is_internally_aggregated():
             # Internal aggregation
-            if command.bar_type.standard() not in self._bar_aggregators or not self._bar_aggregators[command.bar_type.standard()].is_running:
+            bar_type_standard = command.bar_type.standard()
+
+            if bar_type_standard not in self._bar_aggregators:
+                # Aggregator doesn't exist, create and start it
                 self._start_bar_aggregator(client, command)
+            elif not self._bar_aggregators[bar_type_standard].is_running:
+                # Aggregator exists but not running, start it
+                self._start_bar_aggregator(client, command)
+            else:
+                # Aggregator exists and is running
+                self._log.warning(f"Aggregator for {bar_type_standard} is currently in use, subscription can't be started.")
         else:
             # External aggregation
             if command.bar_type.instrument_id.is_synthetic():
@@ -1471,6 +1484,10 @@ cdef class DataEngine(Component):
         if self._is_backtest_client(client):
             used_client = None
 
+        if "time_range_generator" in request.params:
+            self._handle_long_date_range_request(client, request)
+            return
+
         # Capping dates to the now datetime
         cdef bint query_past_data = request.params.get("subscription_name") is None
         cdef datetime now = self._clock.utc_now()
@@ -1489,7 +1506,6 @@ cdef class DataEngine(Component):
         cdef list query_interval = [(start.value, end.value)]
         cdef list missing_intervals = query_interval
         cdef bint has_catalog_data = False
-        cdef object instrument_id
 
         if isinstance(request, RequestBars):
             identifier = request.bar_type
@@ -1538,6 +1554,7 @@ cdef class DataEngine(Component):
         if has_catalog_data and not skip_catalog_data:
             new_request = request.with_dates(start, end, now.value)
             self._query_group_request_ids[new_request.correlation_id].append(new_request.id)
+            self._sub_request_id_to_main_id[new_request.id] = new_request.correlation_id
             self._query_catalog(new_request)
 
         # Client requests
@@ -1545,7 +1562,120 @@ cdef class DataEngine(Component):
             for request_start, request_end in missing_intervals:
                 new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end), now.value)
                 self._query_group_request_ids[new_request.correlation_id].append(new_request.id)
+                self._sub_request_id_to_main_id[new_request.id] = new_request.correlation_id
                 self._date_range_client_request(used_client, new_request)
+
+    cpdef void _handle_long_date_range_request(self, DataClient client, RequestData request):
+        time_range_generator = get_time_range_generator(
+            request.params.get("time_range_generator", "")
+        )(request)
+
+        self._long_request_generator[request.id] = time_range_generator
+        self._query_group_main_request[request.id] = request
+
+        self._update_long_request_data(request.id, is_first_call=True)
+
+    cpdef void _update_long_request_data(self, UUID4 main_request_id, bint data_received = False, bint is_first_call = False):
+        time_range_generator = self._long_request_generator.get(main_request_id)
+        if time_range_generator is None:
+            self._log.error(f"No time range generator found for request {main_request_id}")
+            return
+
+        cdef RequestData main_request = self._query_group_main_request.get(main_request_id)
+        if main_request is None:
+            self._log.error(f"No main request found for {main_request_id}")
+            return
+
+        # Get next time range from generator
+        cdef uint64_t request_start_ns
+        cdef uint64_t request_end_ns
+
+        try:
+            if is_first_call:
+                request_start_ns, request_end_ns = next(time_range_generator)
+            else:
+                request_start_ns, request_end_ns = time_range_generator.send(data_received)
+        except StopIteration:
+            # No more intervals, send final empty response
+            self._finalize_long_request(main_request_id)
+            return
+
+        if main_request.end is not None and request_start_ns > main_request.end.value:
+            self._finalize_long_request(main_request_id)
+            return
+
+        # Create a sub-request for this interval
+        # Remove time_range_generator from params to avoid infinite recursion
+        cdef dict params = main_request.params.copy()
+        params.pop("time_range_generator", None)
+
+        cdef datetime now = self._clock.utc_now()
+        cdef RequestData new_request = main_request.with_dates(
+            unix_nanos_to_dt(request_start_ns),
+            unix_nanos_to_dt(request_end_ns),
+            now.value,
+            self._handle_long_request_response
+        )
+        new_request.params = params
+
+        self._log.debug(f"Long request {main_request.data_type.type.__name__} data from {unix_nanos_to_dt(request_start_ns)} to {unix_nanos_to_dt(request_end_ns)}")
+
+        # Store mapping from sub-request ID to main request ID
+        self._sub_request_id_to_main_id[new_request.id] = main_request_id
+
+        # Send the sub-request through the message bus to properly register the callback
+        self._msgbus.request(endpoint="DataEngine.request", request=new_request)
+
+    cpdef void _handle_long_request_response(self, DataResponse response):
+        # The response correlation_id is the sub-request ID, look up the main request ID
+        cdef UUID4 sub_request_id = response.correlation_id
+        cdef UUID4 main_request_id = self._sub_request_id_to_main_id.get(sub_request_id)
+
+        if main_request_id is None:
+            self._log.error(f"No main request ID found for sub-request {sub_request_id}")
+            return
+
+        # Clean up the mapping for this sub-request
+        self._sub_request_id_to_main_id.pop(sub_request_id, None)
+
+        # Check if we got data
+        cdef int data_count = response.params.get("data_count", len(response.data))
+        cdef bint data_received = data_count > 0
+
+        # Process the next interval with feedback
+        self._update_long_request_data(main_request_id, data_received=data_received)
+
+    cpdef void _finalize_long_request(self, UUID4 main_request_id):
+        cdef RequestData main_request = self._query_group_main_request.get(main_request_id)
+        if main_request is None:
+            self._log.error(f"Cannot finalize long request: no main request found for {main_request_id}")
+            return
+
+        # Clean up the generator
+        time_range_generator = self._long_request_generator.pop(main_request_id, None)
+        if time_range_generator is not None:
+            try:
+                time_range_generator.close()
+            except (StopIteration, GeneratorExit):
+                pass
+
+        # Clean up the main request
+        self._query_group_main_request.pop(main_request_id, None)
+
+        # Send final empty response through message bus, this will handle the original callback
+        response = DataResponse(
+            client_id=main_request.client_id,
+            venue=main_request.venue,
+            data_type=main_request.data_type,
+            data=[],
+            correlation_id=main_request_id,
+            response_id=UUID4(),
+            start=main_request.start,
+            end=main_request.end,
+            ts_init=self._clock.timestamp_ns(),
+            params=main_request.params,
+        )
+        self._msgbus.response(response)
 
     cpdef void _date_range_client_request(self, DataClient client, RequestData request):
         if isinstance(request, RequestBars):
@@ -1983,19 +2113,24 @@ cdef class DataEngine(Component):
 
                 self._handle_instruments(grouped_response.data, update_catalog, force_update_catalog)
             elif grouped_response.params.get("bars_market_data_type"):
+                grouped_response.params["data_count"] = len(grouped_response.data)
                 self._handle_aggregated_bars(grouped_response)
                 grouped_response.data_type = DataType(Bar)
                 grouped_response.data = []
             elif grouped_response.data_type.type == QuoteTick:
+                grouped_response.params["data_count"] = len(grouped_response.data)
                 self._handle_quote_ticks(grouped_response.data)
                 grouped_response.data = []
             elif grouped_response.data_type.type == TradeTick:
+                grouped_response.params["data_count"] = len(grouped_response.data)
                 self._handle_trade_ticks(grouped_response.data)
                 grouped_response.data = []
             elif grouped_response.data_type.type == Bar:
+                grouped_response.params["data_count"] = len(grouped_response.data)
                 self._handle_bars(grouped_response.data)
                 grouped_response.data = []
             elif grouped_response.data_type.type == OrderBookDepth10:
+                grouped_response.params["data_count"] = len(grouped_response.data)
                 self._handle_order_book_depths(grouped_response.data)
                 grouped_response.data = []
             # Note: custom data will use the callback submitted by the user in actor.request_data
@@ -2016,11 +2151,11 @@ cdef class DataEngine(Component):
     cdef DataResponse _handle_query_group_aux(self, DataResponse response):
         correlation_id = response.correlation_id
 
-        # Look for main request id
-        for main_request_id in self._query_group_request_ids:
-            if correlation_id in self._query_group_request_ids[main_request_id]:
-                correlation_id = main_request_id
-                break
+        # Look for main request id using the mapping
+        main_request_id = self._sub_request_id_to_main_id.get(correlation_id)
+        if main_request_id is not None:
+            correlation_id = main_request_id
+            self._sub_request_id_to_main_id.pop(response.correlation_id, None)
 
         if correlation_id not in self._query_group_responses:
             self._log.error(f"_handle_query_group_aux: correlation_id {correlation_id} not found in _query_group_responses. Available keys: {list(self._query_group_responses.keys())}")
@@ -2124,14 +2259,15 @@ cdef class DataEngine(Component):
         if used_catalog is None and len(self._catalogs) > 0:
             used_catalog = list(self._catalogs.values())[0]
 
-        if used_catalog is not None:
-            if len(data) == 0 and data_cls and start and end:
-                # identifier can be None for custom data
-                used_catalog.extend_file_name(data_cls, identifier, start, end)
-            else:
-                used_catalog.write_data(data, start, end)
-        else:
+        if used_catalog is None:
             self._log.warning("No catalog available for appending data.")
+            return
+
+        if len(data) == 0 and data_cls and start and end:
+            # identifier can be None for custom data
+            used_catalog.extend_file_name(data_cls, identifier, start, end)
+        else:
+            used_catalog.write_data(data, start, end)
 
     cpdef tuple[datetime, object] _catalog_last_timestamp(
         self,
@@ -2182,31 +2318,44 @@ cdef class DataEngine(Component):
 
         for bar_type in bar_types:
             self._create_bar_aggregator(bar_type, response.params)
-            self._setup_bar_aggregator(bar_type, historical=True, start=first_ts_init)
+            aggregator = self._bar_aggregators.get(bar_type.standard())
+
+            # No need to setup again an already existing aggregator in historical_mode
+            if aggregator and not aggregator.historical_mode:
+                self._setup_bar_aggregator(bar_type, historical=True, start=first_ts_init)
 
         # 2. Process underlying data through aggregators
         bars_market_data_type = response.params.get("bars_market_data_type")
 
-        if bars_market_data_type in ("quotes", "quote_ticks"):
+        if bars_market_data_type == "quote_ticks":
             self._handle_quote_ticks(response.data)
-        elif bars_market_data_type in ("trades", "trade_ticks"):
+        elif bars_market_data_type == "trade_ticks":
             self._handle_trade_ticks(response.data)
         elif bars_market_data_type == "bars":
             self._handle_bars(response.data)
 
         # 3. Handle aggregator lifecycle based on update_subscriptions
-        for bar_type in bar_types:
-            self._deactivate_historical_bar_aggregator(bar_type)
-
         update_subscriptions = response.params.get("update_subscriptions", False)
 
-        if not update_subscriptions:
-            for bar_type in bar_types:
+        for bar_type in bar_types:
+            aggregator = self._bar_aggregators.get(bar_type.standard())
+
+            if not aggregator:
+                continue
+
+            # Setting aggregator.is_running to False allows to start a live subscription
+            # allowing the aggregator to still aggregate historical data if update_subscriptions is True
+            aggregator.is_running = False
+
+            if not update_subscriptions:
+                self._unsubscribe_historical_bar_aggregator(bar_type)
                 self._bar_aggregators.pop(bar_type.standard(), None)
 
     cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params):
-        if bar_type.standard() in self._bar_aggregators:
-            self._log.debug(f"Aggregator for {bar_type} already exists. Skipping _create_bar_aggregator.")
+        aggregated_bar_type = bar_type.standard()
+
+        if aggregated_bar_type in self._bar_aggregators:
+            self._log.debug(f"BarAggregator for {aggregated_bar_type} already exists.")
             return
 
         instrument = self._cache.instrument(bar_type.instrument_id)
@@ -2222,7 +2371,7 @@ cdef class DataEngine(Component):
             time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
             aggregator = TimeBarAggregator(
                 instrument=instrument,
-                bar_type=bar_type,
+                bar_type=aggregated_bar_type,
                 handler=self.process,
                 clock=self._clock,
                 interval_type=self._time_bars_interval_type,
@@ -2235,25 +2384,25 @@ cdef class DataEngine(Component):
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
-                bar_type=bar_type,
+                bar_type=aggregated_bar_type,
                 handler=self.process,
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
-                bar_type=bar_type,
+                bar_type=aggregated_bar_type,
                 handler=self.process,
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
                 instrument=instrument,
-                bar_type=bar_type,
+                bar_type=aggregated_bar_type,
                 handler=self.process,
             )
         elif bar_type.spec.aggregation == BarAggregation.RENKO:
             aggregator = RenkoBarAggregator(
                 instrument=instrument,
-                bar_type=bar_type,
+                bar_type=aggregated_bar_type,
                 handler=self.process,
             )
         else:
@@ -2261,7 +2410,7 @@ cdef class DataEngine(Component):
                 bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
             )
 
-        self._bar_aggregators[bar_type.standard()] = aggregator
+        self._bar_aggregators[aggregated_bar_type] = aggregator
 
     cpdef void _setup_bar_aggregator(
         self,
@@ -2277,6 +2426,10 @@ cdef class DataEngine(Component):
         if historical:
             aggregator.set_historical_mode(historical, self.process_historical)
         else:
+            if aggregator.historical_mode:
+                # When switching from historical to live mode we unsubscribe from a historical topic
+                self._unsubscribe_historical_bar_aggregator(bar_type)
+
             aggregator.set_historical_mode(historical, self.process)
 
         # Subscribe aggregator to message bus to receive underlying data
@@ -2307,18 +2460,18 @@ cdef class DataEngine(Component):
                 test_clock = TestClock()
                 aggregator.set_clock(test_clock)
                 aggregator.set_time(start)
+            else:
+                aggregator.set_clock(self._clock)
 
             aggregator.start_timer()
 
         aggregator.is_running = True
 
-    cpdef void _deactivate_historical_bar_aggregator(self, BarType bar_type):
+    cpdef void _unsubscribe_historical_bar_aggregator(self, BarType bar_type):
         aggregator = self._bar_aggregators.get(bar_type.standard())
         if aggregator is None:
             self._log.error(f"Cannot deactivate bar aggregator: no aggregator found for {bar_type}")
             return
-
-        aggregator.set_historical_mode(False, self.process)
 
         if bar_type.is_composite():
             composite_topic = self._topic_cache.get_bars_topic(bar_type.composite(), historical=True)
@@ -2338,11 +2491,6 @@ cdef class DataEngine(Component):
                 topic=quotes_topic,
                 handler=aggregator.handle_quote_tick,
             )
-
-        if isinstance(aggregator, TimeBarAggregator):
-            aggregator.set_clock(self._clock)
-
-        aggregator.is_running = False
 
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
         # Subscribe to required market data

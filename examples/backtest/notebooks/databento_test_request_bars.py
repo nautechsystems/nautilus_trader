@@ -149,8 +149,11 @@ class TestHistoricalAggStrategy(Strategy):
                 start=start_historical_bars,
                 end=end_historical_bars,
                 update_subscriptions=True,
-                # includes external bars in the response, not just internally aggregated ones
                 include_external_data=True,
+                params={
+                    "time_range_generator": "",  # Use default time range generator
+                    "durations_seconds": [120],  # Request 2-minute chunks
+                },
             )
 
             self.user_log("request_aggregated_bars done")
