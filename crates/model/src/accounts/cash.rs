@@ -64,7 +64,7 @@ impl CashAccount {
 
     #[must_use]
     pub const fn is_unleveraged(&self) -> bool {
-        false
+        true
     }
 
     /// Recalculates the account balance for the specified currency based on current margins.
