@@ -256,7 +256,7 @@ class ArrowSerializer:
         return pa.Table.from_batches(batches, schema=batches[0].schema)
 
     @staticmethod
-    def deserialize(data_cls: type, batch: pa.RecordBatch | pa.Table) -> Data:
+    def deserialize(data_cls: type, batch: pa.RecordBatch | pa.Table) -> list[Data | Event]:
         """
         Deserialize the given `Parquet` specification bytes to an object.
 
