@@ -743,10 +743,10 @@ pub struct WsBboData {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use rstest::rstest;
     use serde_json;
-
-    use super::*;
 
     #[rstest]
     fn test_subscription_request_serialization() {

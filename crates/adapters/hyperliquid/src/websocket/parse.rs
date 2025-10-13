@@ -30,11 +30,13 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::messages::{CandleData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData};
+use crate::common::{
     enums::hyperliquid_status_to_order_status,
     parse::{is_conditional_order_data, parse_trigger_order_type},
 };
-use std::str::FromStr;
 
+/// Helper to parse a price string with instrument precision.
+fn parse_price(
     price_str: &str,
     instrument: &InstrumentAny,
     field_name: &str,
@@ -418,14 +420,14 @@ pub fn parse_ws_fill_report(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
     use ustr::Ustr;
-
-    use super::*;
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID"));

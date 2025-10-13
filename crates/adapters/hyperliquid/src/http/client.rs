@@ -1181,12 +1181,12 @@ impl HyperliquidHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use super::HyperliquidHttpClient;
+    use crate::http::query::InfoRequest;
+
     use nautilus_model::instruments::{Instrument, InstrumentAny};
     use rstest::rstest;
     use ustr::Ustr;
-
-    use super::HyperliquidHttpClient;
-    use crate::http::query::InfoRequest;
 
     #[rstest]
     fn stable_json_roundtrips() {

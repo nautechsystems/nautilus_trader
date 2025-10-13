@@ -43,7 +43,6 @@ use nautilus_model::{
 };
 use serde_json;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
 
 use crate::{
     common::{
@@ -1092,21 +1091,21 @@ impl HyperliquidExecutionClient {
         let handle = runtime.spawn(async move {
             // Ensure connection and subscribe
             if let Err(e) = ws_client.ensure_connected().await {
-                warn!("Failed to connect WebSocket: {}", e);
+                tracing::warn!("Failed to connect WebSocket: {}", e);
                 return;
             }
 
             if let Err(e) = ws_client.subscribe_order_updates(&user_address).await {
-                warn!("Failed to subscribe to order updates: {}", e);
+                tracing::warn!("Failed to subscribe to order updates: {}", e);
                 return;
             }
 
             if let Err(e) = ws_client.subscribe_user_events(&user_address).await {
-                warn!("Failed to subscribe to user events: {}", e);
+                tracing::warn!("Failed to subscribe to user events: {}", e);
                 return;
             }
 
-            info!("Subscribed to Hyperliquid execution updates");
+            tracing::info!("Subscribed to Hyperliquid execution updates");
 
             let clock = get_atomic_clock_realtime();
 
@@ -1137,11 +1136,11 @@ impl HyperliquidExecutionClient {
                                                 exec_reports.push(ExecutionReport::Order(report));
                                             }
                                             Err(e) => {
-                                                warn!("Error parsing order update: {}", e);
+                                                tracing::warn!("Error parsing order update: {}", e);
                                             }
                                         }
                                     } else {
-                                        warn!(
+                                        tracing::warn!(
                                             "No instrument found for symbol: {}",
                                             order_update.order.coin
                                         );
@@ -1180,11 +1179,11 @@ impl HyperliquidExecutionClient {
                                                             .push(ExecutionReport::Fill(report));
                                                     }
                                                     Err(e) => {
-                                                        warn!("Error parsing fill: {}", e);
+                                                        tracing::warn!("Error parsing fill: {}", e);
                                                     }
                                                 }
                                             } else {
-                                                warn!(
+                                                tracing::warn!(
                                                     "No instrument found for symbol: {}",
                                                     fill.coin
                                                 );
@@ -1210,7 +1209,7 @@ impl HyperliquidExecutionClient {
                     }
                     None => {
                         // Connection closed
-                        warn!("Hyperliquid WebSocket connection closed");
+                        tracing::warn!("Hyperliquid WebSocket connection closed");
                         break;
                     }
                 }
@@ -1218,7 +1217,7 @@ impl HyperliquidExecutionClient {
         });
 
         *handle_guard = Some(handle);
-        info!("Hyperliquid WebSocket execution stream started");
+        tracing::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
     }
 }
@@ -1229,13 +1228,13 @@ fn dispatch_execution_report(report: ExecutionReport) {
         ExecutionReport::Order(order_report) => {
             let exec_report = NautilusExecutionReport::OrderStatus(Box::new(order_report));
             if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                warn!("Failed to send order status report: {e}");
+                tracing::warn!("Failed to send order status report: {e}");
             }
         }
         ExecutionReport::Fill(fill_report) => {
             let exec_report = NautilusExecutionReport::Fill(Box::new(fill_report));
             if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                warn!("Failed to send fill report: {e}");
+                tracing::warn!("Failed to send fill report: {e}");
             }
         }
     }
