@@ -794,7 +794,7 @@ pub fn parse_order_status_report(
     } else if order_status == OrderStatus::Canceled
         && let Some(reason) = order.ord_rej_reason.or(order.text)
     {
-        tracing::debug!(
+        tracing::trace!(
             order_id = ?order.order_id,
             client_order_id = ?order.cl_ord_id,
             reason = ?reason,
