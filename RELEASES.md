@@ -158,6 +158,7 @@ This will be the final release with support for Python 3.11.
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
+- Updated cache concept guide with purging ops
 - Improved dark and light themes for readability
 - Improved clarity of implemented bar aggregations
 - Standardized consistent styling per docs style guide
