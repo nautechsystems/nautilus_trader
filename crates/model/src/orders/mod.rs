@@ -373,15 +373,17 @@ pub trait Order: 'static + Send {
     }
 
     fn is_primary(&self) -> bool {
-        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
         self.exec_algorithm_id().is_some()
-            && self.client_order_id() == self.exec_spawn_id().unwrap()
+            && self
+                .exec_spawn_id()
+                .is_some_and(|spawn_id| self.client_order_id() == spawn_id)
     }
 
     fn is_secondary(&self) -> bool {
-        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
         self.exec_algorithm_id().is_some()
-            && self.client_order_id() != self.exec_spawn_id().unwrap()
+            && self
+                .exec_spawn_id()
+                .is_some_and(|spawn_id| self.client_order_id() != spawn_id)
     }
 
     fn is_contingency(&self) -> bool {

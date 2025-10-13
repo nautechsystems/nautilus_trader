@@ -214,6 +214,9 @@ impl OrderEmulator {
         Ok(())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order cannot be converted to a passive order.
     pub fn on_event(&mut self, event: OrderEventAny) {
         log::info!("{RECV}{EVT} {event}");
 
@@ -222,7 +225,9 @@ impl OrderEmulator {
         if let Some(order) = self.cache.borrow().order(&event.client_order_id())
             && order.is_closed()
             && let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id())
-            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+            && let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            )
         {
             log::error!("Error deleting order: {e}");
         }
@@ -360,7 +365,10 @@ impl OrderEmulator {
         self.manager.cache_submit_order_command(command);
 
         // Check if immediately marketable
-        matching_core.match_order(&PassiveOrderAny::from(order.clone()), true);
+        matching_core.match_order(
+            &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            true,
+        );
 
         // Handle data subscriptions
         match emulation_trigger.unwrap() {
@@ -398,7 +406,9 @@ impl OrderEmulator {
         }
 
         // Hold in matching core
-        if let Err(e) = matching_core.add_order(PassiveOrderAny::from(order.clone())) {
+        if let Err(e) = matching_core
+            .add_order(PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"))
+        {
             log::error!("Cannot add order: {e:?}");
             return;
         }
@@ -505,7 +515,10 @@ impl OrderEmulator {
                 .unwrap_or_else(|| order.instrument_id());
 
             if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-                matching_core.match_order(&PassiveOrderAny::from(order.clone()), false);
+                matching_core.match_order(
+                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                    false,
+                );
             } else {
                 log::error!(
                     "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
@@ -706,6 +719,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order cannot be converted to a passive order.
     pub fn cancel_order(&mut self, order: &OrderAny) {
         log::info!("Canceling order {}", order.client_order_id());
 
@@ -717,7 +733,9 @@ impl OrderEmulator {
             .unwrap_or(order.instrument_id());
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
-            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+            && let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            )
         {
             log::error!("Cannot delete order: {e:?}");
         }
@@ -804,7 +822,9 @@ impl OrderEmulator {
             .unwrap_or(order.instrument_id());
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+            if let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            ) {
                 log::error!("Error deleting order: {e:?}");
             }
 
@@ -946,7 +966,9 @@ impl OrderEmulator {
             .unwrap_or(order.instrument_id());
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+            if let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            ) {
                 log::error!("Cannot delete order: {e:?}");
             }
 

@@ -48,10 +48,11 @@ impl OrderAny {
     /// Returns an error if:
     /// - The `events` is empty.
     /// - The first event is not `OrderInitialized`.
+    /// - Any event has an invalid state transition when applied to the order.
     ///
     /// # Panics
     ///
-    /// Panics if `events` is empty or when applying events via `order.apply`, which may panic on invalid transitions.
+    /// Panics if `events` is empty (after the check, but before .unwrap()).
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create OrderAny");
@@ -65,8 +66,7 @@ impl OrderAny {
                 // Apply the rest of the events
                 for event in events.into_iter().skip(1) {
                     // Apply event to order
-                    println!("Applying event: {event:?}"); // TODO: Development
-                    order.apply(event).unwrap();
+                    order.apply(event)?;
                 }
                 Ok(order)
             }
@@ -106,18 +106,33 @@ impl Display for OrderAny {
     }
 }
 
-impl From<OrderAny> for PassiveOrderAny {
-    fn from(order: OrderAny) -> PassiveOrderAny {
+impl TryFrom<OrderAny> for PassiveOrderAny {
+    type Error = String;
+
+    fn try_from(order: OrderAny) -> Result<Self, Self::Error> {
         match order {
-            OrderAny::Limit(_) => PassiveOrderAny::Limit(order.into()),
-            OrderAny::LimitIfTouched(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::MarketIfTouched(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::StopLimit(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::StopMarket(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order.into()),
-            OrderAny::MarketToLimit(_) => PassiveOrderAny::Limit(order.into()),
-            _ => panic!("WIP: Implement trait bound to require `HasPrice`"),
+            OrderAny::Limit(_) => Ok(PassiveOrderAny::Limit(LimitOrderAny::try_from(order)?)),
+            OrderAny::LimitIfTouched(_) => {
+                Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?))
+            }
+            OrderAny::MarketIfTouched(_) => {
+                Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?))
+            }
+            OrderAny::StopLimit(_) => Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?)),
+            OrderAny::StopMarket(_) => Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?)),
+            OrderAny::TrailingStopLimit(_) => {
+                Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?))
+            }
+            OrderAny::TrailingStopMarket(_) => {
+                Ok(PassiveOrderAny::Stop(StopOrderAny::try_from(order)?))
+            }
+            OrderAny::MarketToLimit(_) => {
+                Ok(PassiveOrderAny::Limit(LimitOrderAny::try_from(order)?))
+            }
+            OrderAny::Market(_) => Err(
+                "Cannot convert Market order to PassiveOrderAny: Market orders are not passive"
+                    .to_string(),
+            ),
         }
     }
 }
@@ -131,16 +146,21 @@ impl From<PassiveOrderAny> for OrderAny {
     }
 }
 
-impl From<OrderAny> for StopOrderAny {
-    fn from(order: OrderAny) -> StopOrderAny {
+impl TryFrom<OrderAny> for StopOrderAny {
+    type Error = String;
+
+    fn try_from(order: OrderAny) -> Result<Self, Self::Error> {
         match order {
-            OrderAny::LimitIfTouched(order) => StopOrderAny::LimitIfTouched(order),
-            OrderAny::MarketIfTouched(order) => StopOrderAny::MarketIfTouched(order),
-            OrderAny::StopLimit(order) => StopOrderAny::StopLimit(order),
-            OrderAny::StopMarket(order) => StopOrderAny::StopMarket(order),
-            OrderAny::TrailingStopLimit(order) => StopOrderAny::TrailingStopLimit(order),
-            OrderAny::TrailingStopMarket(order) => StopOrderAny::TrailingStopMarket(order),
-            _ => panic!("WIP: Implement trait bound to require `HasStopPrice`"),
+            OrderAny::LimitIfTouched(order) => Ok(StopOrderAny::LimitIfTouched(order)),
+            OrderAny::MarketIfTouched(order) => Ok(StopOrderAny::MarketIfTouched(order)),
+            OrderAny::StopLimit(order) => Ok(StopOrderAny::StopLimit(order)),
+            OrderAny::StopMarket(order) => Ok(StopOrderAny::StopMarket(order)),
+            OrderAny::TrailingStopLimit(order) => Ok(StopOrderAny::TrailingStopLimit(order)),
+            OrderAny::TrailingStopMarket(order) => Ok(StopOrderAny::TrailingStopMarket(order)),
+            _ => Err(format!(
+                "Cannot convert {:?} order to StopOrderAny: order type does not have a stop/trigger price",
+                order.order_type()
+            )),
         }
     }
 }
@@ -158,14 +178,19 @@ impl From<StopOrderAny> for OrderAny {
     }
 }
 
-impl From<OrderAny> for LimitOrderAny {
-    fn from(order: OrderAny) -> LimitOrderAny {
+impl TryFrom<OrderAny> for LimitOrderAny {
+    type Error = String;
+
+    fn try_from(order: OrderAny) -> Result<Self, Self::Error> {
         match order {
-            OrderAny::Limit(order) => LimitOrderAny::Limit(order),
-            OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
-            OrderAny::StopLimit(order) => LimitOrderAny::StopLimit(order),
-            OrderAny::TrailingStopLimit(order) => LimitOrderAny::TrailingStopLimit(order),
-            _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
+            OrderAny::Limit(order) => Ok(LimitOrderAny::Limit(order)),
+            OrderAny::MarketToLimit(order) => Ok(LimitOrderAny::MarketToLimit(order)),
+            OrderAny::StopLimit(order) => Ok(LimitOrderAny::StopLimit(order)),
+            OrderAny::TrailingStopLimit(order) => Ok(LimitOrderAny::TrailingStopLimit(order)),
+            _ => Err(format!(
+                "Cannot convert {:?} order to LimitOrderAny: order type does not have a limit price",
+                order.order_type()
+            )),
         }
     }
 }
@@ -218,14 +243,16 @@ pub enum LimitOrderAny {
 }
 
 impl LimitOrderAny {
+    /// Returns the limit price for this order.
+    ///
     /// # Panics
     ///
-    /// Panics if called on a `MarketToLimit` variant when the inner `price` is `None`.
+    /// Panics if the MarketToLimit order price is not set.
     #[must_use]
     pub fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,
-            Self::MarketToLimit(order) => order.price.expect("No price for order"), // TBD
+            Self::MarketToLimit(order) => order.price.expect("MarketToLimit order price not set"),
             Self::StopLimit(order) => order.price,
             Self::TrailingStopLimit(order) => order.price,
         }
@@ -390,7 +417,7 @@ mod tests {
             .build();
 
         // Convert to PassiveOrderAny and back
-        let passive_order: PassiveOrderAny = limit_order.clone().into();
+        let passive_order = PassiveOrderAny::try_from(limit_order.clone()).unwrap();
         let order_any: OrderAny = passive_order.into();
 
         // Verify it maintained its properties
@@ -408,7 +435,7 @@ mod tests {
             .build();
 
         // Convert to StopOrderAny and back
-        let stop_order_any: StopOrderAny = stop_order.into();
+        let stop_order_any = StopOrderAny::try_from(stop_order).unwrap();
         let order_any: OrderAny = stop_order_any.into();
 
         // Verify it maintained its properties
@@ -427,7 +454,7 @@ mod tests {
             .build();
 
         // Convert to LimitOrderAny and back
-        let limit_order_any: LimitOrderAny = limit_order.into();
+        let limit_order_any = LimitOrderAny::try_from(limit_order).unwrap();
         let order_any: OrderAny = limit_order_any.into();
 
         // Verify it maintained its properties
@@ -445,7 +472,7 @@ mod tests {
             .build();
 
         // Convert to LimitOrderAny
-        let limit_order_any: LimitOrderAny = limit_order.into();
+        let limit_order_any = LimitOrderAny::try_from(limit_order).unwrap();
 
         // Check limit price accessor
         let limit_px = limit_order_any.limit_px();
@@ -462,7 +489,7 @@ mod tests {
             .build();
 
         // Convert to StopOrderAny
-        let stop_order_any: StopOrderAny = stop_order.into();
+        let stop_order_any = StopOrderAny::try_from(stop_order).unwrap();
 
         // Check stop price accessor
         let stop_px = stop_order_any.stop_px();
@@ -481,7 +508,7 @@ mod tests {
             .build();
 
         // Convert to StopOrderAny
-        let stop_order_any: StopOrderAny = trailing_stop_order.clone().into();
+        let stop_order_any = StopOrderAny::try_from(trailing_stop_order.clone()).unwrap();
 
         // And back to OrderAny
         let order_any: OrderAny = stop_order_any.into();
@@ -511,7 +538,7 @@ mod tests {
             .build();
 
         // Convert to LimitOrderAny
-        let limit_order_any: LimitOrderAny = trailing_stop_limit.clone().into();
+        let limit_order_any = LimitOrderAny::try_from(trailing_stop_limit.clone()).unwrap();
 
         // Check limit price
         assert_eq!(limit_order_any.limit_px(), Price::new(99.0, 2));
@@ -537,7 +564,7 @@ mod tests {
             .build();
 
         // Convert to PassiveOrderAny
-        let passive_order: PassiveOrderAny = limit_order.into();
+        let passive_order = PassiveOrderAny::try_from(limit_order).unwrap();
 
         // Use to_any method
         let order_any = passive_order.to_any();
