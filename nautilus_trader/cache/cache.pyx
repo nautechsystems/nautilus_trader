@@ -910,15 +910,40 @@ cdef class Cache(CacheFacade):
             if order.exec_algorithm_id is not None:
                 self._index_exec_algorithm_orders[order.exec_algorithm_id].discard(client_order_id)
 
+            # Clean up strategy orders reverse index
+            strategy_orders = self._index_strategy_orders.get(order.strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(order.strategy_id, None)
+
+            # Clean up exec spawn reverse index (if this order is a spawned child)
+            if order.exec_spawn_id is not None:
+                spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+                if spawn_orders is not None:
+                    spawn_orders.discard(client_order_id)
+                    if not spawn_orders:
+                        self._index_exec_spawn_orders.pop(order.exec_spawn_id, None)
+
             self._log.info(f"Purged order {client_order_id}", LogColor.BLUE)
 
         # Always clean up order indices (even if order was not in cache)
         self._index_order_position.pop(client_order_id, None)
-        self._index_order_strategy.pop(client_order_id, None)
         self._index_order_client.pop(client_order_id, None)
         self._index_client_order_ids.pop(client_order_id, None)
-        self._index_strategy_orders.pop(client_order_id, None)
+        strategy_id = self._index_order_strategy.pop(client_order_id, None)
+
+        # Clean up reverse index when order not in cache (using forward index)
+        if strategy_id is not None:
+            strategy_orders = self._index_strategy_orders.get(strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(strategy_id, None)
+
+        # Remove spawn parent entry if this order was a spawn root
         self._index_exec_spawn_orders.pop(client_order_id, None)
+
         self._index_orders.discard(client_order_id)
         self._index_orders_closed.discard(client_order_id)
         self._index_orders_emulated.discard(client_order_id)

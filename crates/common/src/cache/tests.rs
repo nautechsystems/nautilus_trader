@@ -28,7 +28,8 @@ use nautilus_model::{
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, Venue,
+        VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
@@ -1652,6 +1653,194 @@ fn test_purge_closed_positions_does_not_purge_reopened_position() {
     assert_eq!(cache.positions_total_count(None, None, None, None), 1);
     assert_eq!(cache.positions_open_count(None, None, None, None), 1);
     assert_eq!(cache.positions_closed_count(None, None, None, None), 0);
+}
+
+#[rstest]
+fn test_purge_order_cleans_up_strategy_orders_index() {
+    // Regression test for strategy_orders index cleanup bug
+    // Verifies that after purging an order, it is removed from the strategy's set
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+    // Create and add a closed order
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let strategy_id = order.strategy_id();
+    let client_order_id = order.client_order_id();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = OrderSubmitted::default();
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    let accepted = OrderAccepted::default();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        None,
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    order.apply(filled).unwrap();
+    cache.update_order(&order).unwrap();
+
+    // Verify order is in strategy index
+    assert!(cache.index.strategy_orders.contains_key(&strategy_id));
+    assert!(
+        cache
+            .index
+            .strategy_orders
+            .get(&strategy_id)
+            .unwrap()
+            .contains(&client_order_id)
+    );
+
+    // Purge the order
+    cache.purge_order(client_order_id);
+
+    // Verify order is removed from strategy index
+    if let Some(strategy_orders) = cache.index.strategy_orders.get(&strategy_id) {
+        assert!(!strategy_orders.contains(&client_order_id));
+        // If this was the only order, the strategy key should be removed
+        if strategy_orders.is_empty() {
+            panic!("Empty strategy_orders set should have been removed");
+        }
+    }
+
+    // Query orders for strategy should not crash and should not include purged order
+    let orders_for_strategy = cache.orders(None, None, Some(&strategy_id), None);
+    assert!(!orders_for_strategy.contains(&&order));
+}
+
+#[rstest]
+fn test_purge_order_cleans_up_exec_spawn_orders_index() {
+    // Regression test for exec_spawn_orders index cleanup bug
+    // Verifies that after purging a spawned child order, it is removed from the parent's set
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+    // Create parent order
+    let parent_id = ClientOrderId::new("PARENT-001");
+
+    // Create and add a child order with exec_spawn_id
+    let mut child_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .exec_spawn_id(parent_id)
+        .build();
+
+    let child_id = child_order.client_order_id();
+
+    cache
+        .add_order(child_order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = OrderSubmitted::default();
+    child_order
+        .apply(OrderEventAny::Submitted(submitted))
+        .unwrap();
+    cache.update_order(&child_order).unwrap();
+
+    let accepted = OrderAccepted::default();
+    child_order
+        .apply(OrderEventAny::Accepted(accepted))
+        .unwrap();
+    cache.update_order(&child_order).unwrap();
+
+    let filled = TestOrderEventStubs::filled(
+        &child_order,
+        &audusd_sim,
+        None,
+        None,
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    child_order.apply(filled).unwrap();
+    cache.update_order(&child_order).unwrap();
+
+    // Verify child is in parent's spawn set
+    assert!(cache.index.exec_spawn_orders.contains_key(&parent_id));
+    assert!(
+        cache
+            .index
+            .exec_spawn_orders
+            .get(&parent_id)
+            .unwrap()
+            .contains(&child_id)
+    );
+
+    // Purge the child order
+    cache.purge_order(child_id);
+
+    // Verify child is removed from parent's spawn set
+    if let Some(spawn_orders) = cache.index.exec_spawn_orders.get(&parent_id) {
+        assert!(!spawn_orders.contains(&child_id));
+    }
+
+    // Query orders for exec spawn should not crash and should not include purged order
+    let orders_for_spawn = cache.orders_for_exec_spawn(&parent_id);
+    assert!(!orders_for_spawn.contains(&&child_order));
+}
+
+#[rstest]
+fn test_purge_order_when_order_not_in_cache_still_cleans_up_indices() {
+    // Test that even when order is not in cache, indices are cleaned up using forward mapping
+    let mut cache = Cache::default();
+
+    let client_order_id = ClientOrderId::new("O-NOT-IN-CACHE");
+    let strategy_id = StrategyId::from("S-001");
+
+    // Manually add to indices (simulating a corrupted state)
+    cache
+        .index
+        .order_strategy
+        .insert(client_order_id, strategy_id);
+    cache
+        .index
+        .strategy_orders
+        .entry(strategy_id)
+        .or_default()
+        .insert(client_order_id);
+
+    // Verify indices are set up
+    assert!(cache.index.order_strategy.contains_key(&client_order_id));
+    assert!(
+        cache
+            .index
+            .strategy_orders
+            .get(&strategy_id)
+            .unwrap()
+            .contains(&client_order_id)
+    );
+
+    // Purge order that doesn't exist
+    cache.purge_order(client_order_id);
+
+    // Verify indices are cleaned up even though order wasn't in cache
+    assert!(!cache.index.order_strategy.contains_key(&client_order_id));
+    if let Some(strategy_orders) = cache.index.strategy_orders.get(&strategy_id) {
+        assert!(!strategy_orders.contains(&client_order_id));
+    }
 }
 
 #[rstest]

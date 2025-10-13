@@ -1003,6 +1003,24 @@ impl Cache {
                 exec_algorithm_orders.remove(&client_order_id);
             }
 
+            // Clean up strategy orders reverse index
+            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&ord.strategy_id()) {
+                strategy_orders.remove(&client_order_id);
+                if strategy_orders.is_empty() {
+                    self.index.strategy_orders.remove(&ord.strategy_id());
+                }
+            }
+
+            // Clean up exec spawn reverse index (if this order is a spawned child)
+            if let Some(exec_spawn_id) = ord.exec_spawn_id()
+                && let Some(spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
+            {
+                spawn_orders.remove(&client_order_id);
+                if spawn_orders.is_empty() {
+                    self.index.exec_spawn_orders.remove(&exec_spawn_id);
+                }
+            }
+
             log::info!("Purged order {client_order_id}");
         } else {
             log::warn!("Order {client_order_id} not found when purging");
@@ -1010,10 +1028,23 @@ impl Cache {
 
         // Always clean up order indices (even if order was not in cache)
         self.index.order_position.remove(&client_order_id);
-        self.index.order_strategy.remove(&client_order_id);
+        let strategy_id = self.index.order_strategy.remove(&client_order_id);
         self.index.order_client.remove(&client_order_id);
         self.index.client_order_ids.remove(&client_order_id);
+
+        // Clean up reverse index when order not in cache (using forward index)
+        if let Some(strategy_id) = strategy_id
+            && let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id)
+        {
+            strategy_orders.remove(&client_order_id);
+            if strategy_orders.is_empty() {
+                self.index.strategy_orders.remove(&strategy_id);
+            }
+        }
+
+        // Remove spawn parent entry if this order was a spawn root
         self.index.exec_spawn_orders.remove(&client_order_id);
+
         self.index.orders.remove(&client_order_id);
         self.index.orders_closed.remove(&client_order_id);
         self.index.orders_emulated.remove(&client_order_id);
@@ -1686,8 +1717,7 @@ impl Cache {
             .insert(client_order_id);
 
         // Update exec_algorithm -> orders index
-        // Update exec_algorithm -> orders index
-        if let (Some(exec_algorithm_id), Some(exec_spawn_id)) = (exec_algorithm_id, exec_spawn_id) {
+        if let Some(exec_algorithm_id) = exec_algorithm_id {
             self.index.exec_algorithms.insert(exec_algorithm_id);
 
             self.index
@@ -1695,7 +1725,10 @@ impl Cache {
                 .entry(exec_algorithm_id)
                 .or_default()
                 .insert(client_order_id);
+        }
 
+        // Update exec_spawn -> orders index
+        if let Some(exec_spawn_id) = exec_spawn_id {
             self.index
                 .exec_spawn_orders
                 .entry(exec_spawn_id)

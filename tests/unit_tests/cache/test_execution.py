@@ -2017,6 +2017,129 @@ class TestCache:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
+    def test_purge_order_cleans_up_strategy_orders_index(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        # Verify order is closed and in strategy index
+        assert order.is_closed
+        strategy_id = self.strategy.id
+        client_order_id = order.client_order_id
+
+        # Verify order is in index (by checking query doesn't crash and includes order)
+        orders_for_strategy = self.cache.orders(strategy_id=strategy_id)
+        assert order in orders_for_strategy
+
+        # Act
+        self.cache.purge_order(client_order_id)
+
+        # Assert - verify order is removed and queries don't crash
+        assert not self.cache.order_exists(client_order_id)
+        orders_for_strategy_after = self.cache.orders(strategy_id=strategy_id)
+        assert order not in orders_for_strategy_after
+
+    def test_purge_order_cleans_up_exec_spawn_orders_index(self):
+        # Arrange
+        parent_order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Verify parent order is in exec_spawn index
+        parent_id = parent_order.client_order_id
+        orders_for_spawn = self.cache.orders_for_exec_spawn(parent_id)
+        assert parent_order in orders_for_spawn
+
+        # Act
+        self.cache.purge_order(parent_id)
+
+        # Assert - verify query doesn't crash after purge
+        assert not self.cache.order_exists(parent_id)
+        orders_for_spawn_after = self.cache.orders_for_exec_spawn(parent_id)
+        assert parent_order not in orders_for_spawn_after
+        assert orders_for_spawn_after == []
+
+    def test_purge_order_multiple_times_does_not_crash(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        client_order_id = order.client_order_id
+
+        # Act - purge the order once
+        self.cache.purge_order(client_order_id)
+        assert not self.cache.order_exists(client_order_id)
+
+        self.cache.purge_order(client_order_id)
+        self.cache.purge_order(ClientOrderId("O-DOES-NOT-EXIST"))
+
+        # Assert - verify queries still work
+        orders_for_strategy = self.cache.orders(strategy_id=self.strategy.id)
+        assert order not in orders_for_strategy
+
 
 class TestExecutionCacheIntegrityCheck:
     def setup(self):
