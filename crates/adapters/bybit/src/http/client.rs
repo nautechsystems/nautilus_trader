@@ -805,7 +805,11 @@ impl BybitHttpInnerClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No order returned after submission"))?;
 
-        if order.order_status == crate::common::enums::BybitOrderStatus::Rejected {
+        // Only bail on rejection if there are no fills
+        // If the order has fills (cum_exec_qty > 0), let the parser remap Rejected -> Canceled
+        if order.order_status == crate::common::enums::BybitOrderStatus::Rejected
+            && (order.cum_exec_qty.as_str() == "0" || order.cum_exec_qty.is_empty())
+        {
             anyhow::bail!("Order rejected: {}", order.reject_reason);
         }
 

@@ -62,6 +62,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -670,6 +671,15 @@ class BybitWsAccountOrder(msgspec.Struct):
             trailing_offset = None
             trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
 
+        order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
+
+        # Special case: if Bybit reports "Rejected" but the order has fills, treat it as Canceled.
+        # This handles the case where the exchange partially fills an order then rejects the
+        # remaining quantity (e.g., due to margin, risk limits, or liquidity constraints).
+        # The state machine does not allow PARTIALLY_FILLED -> REJECTED transitions.
+        if self.orderStatus == BybitOrderStatus.REJECTED and Decimal(self.cumExecQty) > 0:
+            order_status = OrderStatus.CANCELED
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -678,7 +688,7 @@ class BybitWsAccountOrder(msgspec.Struct):
             order_side=enum_parser.parse_bybit_order_side(self.side),
             order_type=order_type,
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
-            order_status=enum_parser.parse_bybit_order_status(order_type, self.orderStatus),
+            order_status=order_status,
             price=Price.from_str(self.price) if self.price else None,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
