@@ -38,7 +38,6 @@ from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_uni
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
-from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
@@ -1161,7 +1160,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             venue_order_id=venue_order_id,
             venue_position_id=None,  # Not applicable on Polymarket
             trade_id=trade_id,
-            order_side=parse_order_side(msg.side),
+            order_side=msg.order_side(),
             order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px,

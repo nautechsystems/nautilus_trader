@@ -79,7 +79,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
 - Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
 - Fixed Binance futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
-- Fixed Binance futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks @woung717
+- Fixed Binance futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks for reporting @woung717
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
@@ -102,6 +102,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
+- Fixed Polymarket maker fill order side inversion (#3077), thanks for reporting @DarioHett
 - Fixed Tardis instruments `lot_size` mapping
 - Fixed Tardis adapter error handling and connection robustness
 - Fixed Tardis replay to use catalog-compatible filenames
