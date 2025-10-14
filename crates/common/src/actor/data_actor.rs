@@ -51,7 +51,7 @@ use super::{
     registry::{get_actor_unchecked, try_get_actor_unchecked},
 };
 #[cfg(feature = "defi")]
-use crate::msgbus::switchboard::{
+use crate::defi::switchboard::{
     get_defi_blocks_topic, get_defi_collect_topic, get_defi_flash_topic, get_defi_liquidity_topic,
     get_defi_pool_swaps_topic, get_defi_pool_topic,
 };

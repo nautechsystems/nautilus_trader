@@ -31,6 +31,7 @@
 pub mod book;
 pub mod config;
 mod handlers;
+
 #[cfg(feature = "defi")]
 pub mod pool;
 
@@ -48,6 +49,8 @@ use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
+#[cfg(feature = "defi")]
+use nautilus_common::defi;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
     DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand,
@@ -817,7 +820,7 @@ impl DataEngine {
     pub fn process_defi_data(&mut self, data: DefiData) {
         match data {
             DefiData::Block(block) => {
-                let topic = switchboard::get_defi_blocks_topic(block.chain());
+                let topic = defi::switchboard::get_defi_blocks_topic(block.chain());
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
@@ -834,7 +837,7 @@ impl DataEngine {
                     self.setup_pool_updater(&pool.instrument_id, None);
                 }
 
-                let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
+                let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSnapshot(snapshot) => {
@@ -990,7 +993,7 @@ impl DataEngine {
                 let handler = ShareableMessageHandler(updater.clone());
 
                 // Subscribe to all required pool data topics
-                let swap_topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
+                let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
                 if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
                     msgbus::subscribe(
                         swap_topic.into(),
@@ -999,7 +1002,7 @@ impl DataEngine {
                     );
                 }
 
-                let liquidity_topic = switchboard::get_defi_liquidity_topic(instrument_id);
+                let liquidity_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
                 if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
                     msgbus::subscribe(
                         liquidity_topic.into(),
@@ -1008,7 +1011,7 @@ impl DataEngine {
                     );
                 }
 
-                let collect_topic = switchboard::get_defi_collect_topic(instrument_id);
+                let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
                 if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
                     msgbus::subscribe(
                         collect_topic.into(),
@@ -1017,7 +1020,7 @@ impl DataEngine {
                     );
                 }
 
-                let flash_topic = switchboard::get_defi_flash_topic(instrument_id);
+                let flash_topic = defi::switchboard::get_defi_flash_topic(instrument_id);
                 if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
                     msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
                 }
@@ -1037,7 +1040,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolSwap(swap));
                 } else {
-                    let topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
+                    let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
                     msgbus::publish(topic, &swap as &dyn Any);
                 }
             }
@@ -1053,7 +1056,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolLiquidityUpdate(update));
                 } else {
-                    let topic = switchboard::get_defi_liquidity_topic(instrument_id);
+                    let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
                     msgbus::publish(topic, &update as &dyn Any);
                 }
             }
@@ -1069,7 +1072,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFeeCollect(collect));
                 } else {
-                    let topic = switchboard::get_defi_collect_topic(instrument_id);
+                    let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
                     msgbus::publish(topic, &collect as &dyn Any);
                 }
             }
@@ -1083,7 +1086,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFlash(flash));
                 } else {
-                    let topic = switchboard::get_defi_flash_topic(instrument_id);
+                    let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
                     msgbus::publish(topic, &flash as &dyn Any);
                 }
             }
@@ -1696,7 +1699,7 @@ impl DataEngine {
         let handler = ShareableMessageHandler(updater.clone());
 
         // Subscribe to all required pool data
-        let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
+        let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(*instrument_id);
         if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
                 swap_topic.into(),
@@ -1705,7 +1708,7 @@ impl DataEngine {
             );
         }
 
-        let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
+        let liquidity_topic = defi::switchboard::get_defi_liquidity_topic(*instrument_id);
         if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
                 liquidity_topic.into(),
@@ -1714,7 +1717,7 @@ impl DataEngine {
             );
         }
 
-        let collect_topic = switchboard::get_defi_collect_topic(*instrument_id);
+        let collect_topic = defi::switchboard::get_defi_collect_topic(*instrument_id);
         if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
                 collect_topic.into(),
@@ -1723,7 +1726,7 @@ impl DataEngine {
             );
         }
 
-        let flash_topic = switchboard::get_defi_flash_topic(*instrument_id);
+        let flash_topic = defi::switchboard::get_defi_flash_topic(*instrument_id);
         if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
             msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
         }

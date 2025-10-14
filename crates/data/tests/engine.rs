@@ -20,6 +20,8 @@ use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync
 use alloy_primitives::{Address, I256, U160, U256};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
+use nautilus_common::defi;
+#[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
     DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
     SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
@@ -1883,7 +1885,7 @@ fn test_process_block(data_engine: Rc<RefCell<DataEngine>>, data_client: DataCli
         Some(blockchain),
     );
     let handler = get_message_saving_handler::<Block>(None);
-    let topic = switchboard::get_defi_blocks_topic(blockchain);
+    let topic = defi::switchboard::get_defi_blocks_topic(blockchain);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -1987,7 +1989,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<PoolSwap>(None);
-    let topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
+    let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -2345,7 +2347,7 @@ fn test_process_pool_liquidity_update(
     msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<PoolLiquidityUpdate>(None);
-    let topic = switchboard::get_defi_liquidity_topic(instrument_id);
+    let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -2447,7 +2449,7 @@ fn test_process_pool_fee_collect(
     msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<PoolFeeCollect>(None);
-    let topic = switchboard::get_defi_collect_topic(instrument_id);
+    let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -2547,7 +2549,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<PoolFlash>(None);
-    let topic = switchboard::get_defi_flash_topic(instrument_id);
+    let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();

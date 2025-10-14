@@ -16,8 +16,6 @@
 use std::num::NonZeroUsize;
 
 use ahash::AHashMap;
-#[cfg(feature = "defi")]
-use nautilus_model::defi::Blockchain;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
@@ -183,60 +181,6 @@ pub fn get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic> {
         .get_event_positions_topic(strategy_id)
 }
 
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_blocks_topic(chain: Blockchain) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_blocks_topic(chain)
-}
-
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_pool_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_pool_topic(instrument_id)
-}
-
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_pool_swaps_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_pool_swaps_topic(instrument_id)
-}
-
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_liquidity_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_pool_liquidity_topic(instrument_id)
-}
-
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_collect_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_pool_collect_topic(instrument_id)
-}
-
-#[cfg(feature = "defi")]
-#[must_use]
-pub fn get_defi_flash_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_defi_pool_flash_topic(instrument_id)
-}
-
 /// Represents a switchboard of built-in messaging endpoint names.
 #[derive(Clone, Debug)]
 pub struct MessagingSwitchboard {
@@ -260,17 +204,7 @@ pub struct MessagingSwitchboard {
     order_snapshots_topics: AHashMap<ClientOrderId, MStr<Topic>>,
     positions_snapshots_topics: AHashMap<PositionId, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_block_topics: AHashMap<Blockchain, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    defi_pool_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    defi_pool_swap_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    defi_pool_liquidity_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    defi_pool_collect_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    defi_pool_flash_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    pub(crate) defi: crate::defi::switchboard::DefiSwitchboard,
 }
 
 impl Default for MessagingSwitchboard {
@@ -297,17 +231,7 @@ impl Default for MessagingSwitchboard {
             event_positions_topics: AHashMap::new(),
             positions_snapshots_topics: AHashMap::new(),
             #[cfg(feature = "defi")]
-            defi_block_topics: AHashMap::new(),
-            #[cfg(feature = "defi")]
-            defi_pool_topics: AHashMap::new(),
-            #[cfg(feature = "defi")]
-            defi_pool_swap_topics: AHashMap::new(),
-            #[cfg(feature = "defi")]
-            defi_pool_liquidity_topics: AHashMap::new(),
-            #[cfg(feature = "defi")]
-            defi_pool_collect_topics: AHashMap::new(),
-            #[cfg(feature = "defi")]
-            defi_pool_flash_topics: AHashMap::new(),
+            defi: crate::defi::switchboard::DefiSwitchboard::default(),
         }
     }
 }
@@ -556,60 +480,6 @@ impl MessagingSwitchboard {
             .event_positions_topics
             .entry(strategy_id)
             .or_insert_with(|| format!("events.position.{strategy_id}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_blocks_topic(&mut self, chain: Blockchain) -> MStr<Topic> {
-        *self
-            .defi_block_topics
-            .entry(chain)
-            .or_insert_with(|| format!("data.defi.blocks.{chain}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_pool_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .defi_pool_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("data.defi.pool.{instrument_id}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_pool_swaps_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .defi_pool_swap_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("data.defi.pool_swaps.{instrument_id}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_pool_liquidity_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .defi_pool_liquidity_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("data.defi.pool_liquidity.{instrument_id}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_pool_collect_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .defi_pool_collect_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("data.defi.pool_collect.{instrument_id}").into())
-    }
-
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn get_defi_pool_flash_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .defi_pool_flash_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("data.defi.pool_flash.{instrument_id}").into())
     }
 }
 
