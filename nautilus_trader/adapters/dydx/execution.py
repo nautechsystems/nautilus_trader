@@ -606,7 +606,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         Create an order fill report.
         """
         self._log.debug("Requesting FillReports...")
-        reports: list[FillReport] = []
+        reports_by_trade_id: dict[TradeId, list[FillReport]] = defaultdict(list)
 
         symbol = None
         start_dt = command.start.to_pydatetime() if command.start is not None else None
@@ -658,14 +658,54 @@ class DYDXExecutionClient(LiveExecutionClient):
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
                 )
-                reports.append(report)
+                reports_by_trade_id[report.trade_id].append(report)
         else:
             self._log.error("Failed to generate FillReports")
+
+        reports: list[FillReport] = self._combine_fill_reports(reports_by_trade_id)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
         self._log.info(f"Received {len(reports)} FillReport{plural}")
         return reports
+
+    def _combine_fill_reports(
+        self,
+        reports_by_trade_id: dict[TradeId, list[FillReport]],
+    ) -> list[FillReport]:
+        """
+        Combine fill reports with the same trade ID.
+        """
+        combined_reports: list[FillReport] = []
+        for trade_id, grouped_reports in reports_by_trade_id.items():
+            if len(grouped_reports) == 1:
+                combined_reports.append(grouped_reports[0])
+                continue
+
+            combined_last_qty: Decimal = sum(r.last_qty for r in grouped_reports)
+            combined_commission: Decimal = sum(r.commission for r in grouped_reports)
+            representative_report = grouped_reports[0]
+
+            # Assume price is the same across fills
+            combined_report = FillReport(
+                client_order_id=representative_report.client_order_id,
+                venue_order_id=representative_report.venue_order_id,
+                trade_id=trade_id,
+                account_id=representative_report.account_id,
+                instrument_id=representative_report.instrument_id,
+                order_side=representative_report.order_side,
+                last_qty=Quantity(combined_last_qty, representative_report.last_qty.precision),
+                last_px=representative_report.last_px,
+                commission=Money(combined_commission, representative_report.commission.currency),
+                liquidity_side=representative_report.liquidity_side,
+                report_id=representative_report.id,
+                ts_event=representative_report.ts_event,
+                ts_init=representative_report.ts_init,
+            )
+
+            combined_reports.append(combined_report)
+
+        return combined_reports
 
     async def generate_position_status_reports(
         self,
