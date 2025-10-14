@@ -39,6 +39,7 @@ This will be the final release with support for Python 3.11.
 ### Breaking Changes
 - Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
+- Removed OKX `vip_level` config option as now redundant with detection through account query
 - Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
@@ -130,6 +131,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
+- Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
 - Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
@@ -149,6 +151,7 @@ This will be the final release with support for Python 3.11.
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
 - Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
+- Refined Interactive Brokers account summary log to debug level (#3084), thanks @sunlei
 - Refined catalog `reset_data_file_names` method (#3071), thanks @adrianbeer and @faysou
 - Optimized `ExecutionEngine` hot path with topic caching and reduced cache lookups
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
@@ -158,6 +161,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded `datafusion` crate to v50.2.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
+- Upgraded `tokio` crate to v1.48.0
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International

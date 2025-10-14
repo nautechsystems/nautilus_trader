@@ -93,7 +93,7 @@ alloy = { version = "1.0.38", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-primitives = { version = "1.4.0", features = ["serde"] }
+alloy-primitives = { version = "1.4.1", features = ["serde"] }
 alloy-signer = { version = "1.0.37", default-features = false }
 alloy-signer-local = { version = "1.0.37", default-features = false, features = [
   "mnemonic",
@@ -262,7 +262,7 @@ time = { version = "0.3.44", default-features = false, features = [
   "serde",
   "std",
 ] }
-tokio = { version = "1.47.1", default-features = false, features = [
+tokio = { version = "1.48.0", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
