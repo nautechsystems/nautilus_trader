@@ -1849,8 +1849,10 @@ cdef class Component:
         pass
 
     cpdef void _dispose(self):
+        # Cancel all active timers to prevent post-disposal execution
+        if self._clock is not None:
+            self._clock.cancel_timers()
         # Optionally override in subclass
-        pass
 
     cpdef void _degrade(self):
         # Optionally override in subclass
