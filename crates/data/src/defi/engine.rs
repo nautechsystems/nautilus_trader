@@ -29,11 +29,46 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
-    defi::{Blockchain, DefiData, PoolProfiler, data::DexPoolData},
+    defi::{
+        Blockchain, DefiData, PoolProfiler,
+        data::{DexPoolData, block::BlockPosition},
+    },
     identifiers::{ClientId, InstrumentId},
 };
 
 use crate::engine::{DataEngine, pool::PoolUpdater};
+
+/// Extracts the block position tuple from a DexPoolData event.
+fn get_event_block_position(event: &DexPoolData) -> (u64, u32, u32) {
+    match event {
+        DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
+        DexPoolData::LiquidityUpdate(u) => (u.block, u.transaction_index, u.log_index),
+        DexPoolData::FeeCollect(c) => (c.block, c.transaction_index, c.log_index),
+        DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
+    }
+}
+
+/// Converts buffered DefiData events to DexPoolData and sorts by block position.
+fn convert_and_sort_buffered_events(buffered_events: Vec<DefiData>) -> Vec<DexPoolData> {
+    let mut events: Vec<DexPoolData> = buffered_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DefiData::PoolSwap(swap) => Some(DexPoolData::Swap(swap)),
+            DefiData::PoolLiquidityUpdate(update) => Some(DexPoolData::LiquidityUpdate(update)),
+            DefiData::PoolFeeCollect(collect) => Some(DexPoolData::FeeCollect(collect)),
+            DefiData::PoolFlash(flash) => Some(DexPoolData::Flash(flash)),
+            _ => None,
+        })
+        .collect();
+
+    events.sort_by(|a, b| {
+        let pos_a = get_event_block_position(a);
+        let pos_b = get_event_block_position(b);
+        pos_a.cmp(&pos_b)
+    });
+
+    events
+}
 
 impl DataEngine {
     /// Returns all blockchains for which blocks subscriptions exist.
@@ -210,7 +245,7 @@ impl DataEngine {
                     snapshot.ticks.len()
                 );
 
-                // Check if we're waiting for this snapshot
+                // Validate we're expecting this snapshot
                 if !self.pool_snapshot_pending.contains(&instrument_id) {
                     log::warn!(
                         "Received unexpected pool snapshot for {instrument_id} (not in pending set)"
@@ -230,17 +265,16 @@ impl DataEngine {
                 };
 
                 // Create profiler and restore from snapshot
-                let mut profiler = PoolProfiler::new(pool.clone());
+                let mut profiler = PoolProfiler::new(pool);
                 if let Err(e) = profiler.restore_from_snapshot(snapshot.clone()) {
                     log::error!(
                         "Failed to restore profiler from snapshot for {instrument_id}: {e}"
                     );
                     return;
                 }
-
                 log::debug!("Restored pool profiler for {instrument_id} from snapshot");
 
-                // Get buffered events for this pool and sort by block position
+                // Process buffered events
                 let buffered_events = self
                     .pool_event_buffers
                     .remove(&instrument_id)
@@ -252,85 +286,13 @@ impl DataEngine {
                         buffered_events.len()
                     );
 
-                    // Convert to DexPoolData and sort by block position
-                    let mut events_to_apply: Vec<DexPoolData> = Vec::new();
-
-                    for event in buffered_events {
-                        match event {
-                            DefiData::PoolSwap(swap) => {
-                                events_to_apply.push(DexPoolData::Swap(swap))
-                            }
-                            DefiData::PoolLiquidityUpdate(update) => {
-                                events_to_apply.push(DexPoolData::LiquidityUpdate(update))
-                            }
-                            DefiData::PoolFeeCollect(collect) => {
-                                events_to_apply.push(DexPoolData::FeeCollect(collect))
-                            }
-                            DefiData::PoolFlash(flash) => {
-                                events_to_apply.push(DexPoolData::Flash(flash))
-                            }
-                            _ => {} // Skip non-pool events
-                        }
-                    }
-
-                    // Sort events by block position
-                    events_to_apply.sort_by(|a, b| {
-                        let pos_a = match a {
-                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
-                            DexPoolData::LiquidityUpdate(u) => {
-                                (u.block, u.transaction_index, u.log_index)
-                            }
-                            DexPoolData::FeeCollect(c) => {
-                                (c.block, c.transaction_index, c.log_index)
-                            }
-                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
-                        };
-                        let pos_b = match b {
-                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
-                            DexPoolData::LiquidityUpdate(u) => {
-                                (u.block, u.transaction_index, u.log_index)
-                            }
-                            DexPoolData::FeeCollect(c) => {
-                                (c.block, c.transaction_index, c.log_index)
-                            }
-                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
-                        };
-                        pos_a.cmp(&pos_b)
-                    });
-
-                    // Apply events that occurred after the snapshot
-                    let snapshot_block = &snapshot.block_position;
-                    let mut applied_count = 0;
-
-                    for event in events_to_apply {
-                        let event_block = match &event {
-                            DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
-                            DexPoolData::LiquidityUpdate(u) => {
-                                (u.block, u.transaction_index, u.log_index)
-                            }
-                            DexPoolData::FeeCollect(c) => {
-                                (c.block, c.transaction_index, c.log_index)
-                            }
-                            DexPoolData::Flash(f) => (f.block, f.transaction_index, f.log_index),
-                        };
-
-                        // Only apply events that occurred after the snapshot
-                        if event_block.0 > snapshot_block.number
-                            || (event_block.0 == snapshot_block.number
-                                && event_block.1 > snapshot_block.transaction_index)
-                            || (event_block.0 == snapshot_block.number
-                                && event_block.1 == snapshot_block.transaction_index
-                                && event_block.2 > snapshot_block.log_index)
-                        {
-                            if let Err(e) = profiler.process(&event) {
-                                log::error!(
-                                    "Failed to apply buffered event to profiler for {instrument_id}: {e}"
-                                );
-                            } else {
-                                applied_count += 1;
-                            }
-                        }
-                    }
+                    let events_to_apply = convert_and_sort_buffered_events(buffered_events);
+                    let applied_count = Self::apply_buffered_events_to_profiler(
+                        &mut profiler,
+                        events_to_apply,
+                        &snapshot.block_position,
+                        instrument_id,
+                    );
 
                     log::info!(
                         "Applied {applied_count} buffered events to profiler for {instrument_id}"
@@ -343,46 +305,14 @@ impl DataEngine {
                     return;
                 }
 
-                // Remove from pending and create updater
+                // Create updater and subscribe to topics
                 self.pool_snapshot_pending.remove(&instrument_id);
-
                 let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache.clone()));
                 let handler = ShareableMessageHandler(updater.clone());
 
-                // Subscribe to all required pool data topics
-                let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
-                if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
-                    msgbus::subscribe(
-                        swap_topic.into(),
-                        handler.clone(),
-                        Some(self.msgbus_priority),
-                    );
-                }
-
-                let liquidity_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
-                if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-                    msgbus::subscribe(
-                        liquidity_topic.into(),
-                        handler.clone(),
-                        Some(self.msgbus_priority),
-                    );
-                }
-
-                let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
-                if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
-                    msgbus::subscribe(
-                        collect_topic.into(),
-                        handler.clone(),
-                        Some(self.msgbus_priority),
-                    );
-                }
-
-                let flash_topic = defi::switchboard::get_defi_flash_topic(instrument_id);
-                if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
-                    msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
-                }
-
+                self.subscribe_pool_updater_topics(instrument_id, handler);
                 self.pool_updaters.insert(instrument_id, updater);
+
                 log::info!(
                     "Pool profiler setup completed for {instrument_id}, now processing live events"
                 );
@@ -448,6 +378,62 @@ impl DataEngine {
                 }
             }
         }
+    }
+
+    /// Subscribes a pool updater handler to all relevant pool data topics.
+    fn subscribe_pool_updater_topics(
+        &self,
+        instrument_id: InstrumentId,
+        handler: ShareableMessageHandler,
+    ) {
+        let topics = [
+            defi::switchboard::get_defi_pool_swaps_topic(instrument_id),
+            defi::switchboard::get_defi_liquidity_topic(instrument_id),
+            defi::switchboard::get_defi_collect_topic(instrument_id),
+            defi::switchboard::get_defi_flash_topic(instrument_id),
+        ];
+
+        for topic in topics {
+            if !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus::subscribe(topic.into(), handler.clone(), Some(self.msgbus_priority));
+            }
+        }
+    }
+
+    /// Applies buffered events to a pool profiler, filtering to events after the snapshot.
+    ///
+    /// Returns the count of successfully applied events.
+    fn apply_buffered_events_to_profiler(
+        profiler: &mut PoolProfiler,
+        events: Vec<DexPoolData>,
+        snapshot_block: &BlockPosition,
+        instrument_id: InstrumentId,
+    ) -> usize {
+        let mut applied_count = 0;
+
+        for event in events {
+            let event_block = get_event_block_position(&event);
+
+            // Only apply events that occurred after the snapshot
+            let is_after_snapshot = event_block.0 > snapshot_block.number
+                || (event_block.0 == snapshot_block.number
+                    && event_block.1 > snapshot_block.transaction_index)
+                || (event_block.0 == snapshot_block.number
+                    && event_block.1 == snapshot_block.transaction_index
+                    && event_block.2 > snapshot_block.log_index);
+
+            if is_after_snapshot {
+                if let Err(e) = profiler.process(&event) {
+                    log::error!(
+                        "Failed to apply buffered event to profiler for {instrument_id}: {e}"
+                    );
+                } else {
+                    applied_count += 1;
+                }
+            }
+        }
+
+        applied_count
     }
 
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId, client_id: Option<&ClientId>) {
@@ -516,39 +502,463 @@ impl DataEngine {
         let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
         let handler = ShareableMessageHandler(updater.clone());
 
-        let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(*instrument_id);
-        if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(
-                swap_topic.into(),
-                handler.clone(),
-                Some(self.msgbus_priority),
-            );
-        }
-
-        let liquidity_topic = defi::switchboard::get_defi_liquidity_topic(*instrument_id);
-        if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(
-                liquidity_topic.into(),
-                handler.clone(),
-                Some(self.msgbus_priority),
-            );
-        }
-
-        let collect_topic = defi::switchboard::get_defi_collect_topic(*instrument_id);
-        if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(
-                collect_topic.into(),
-                handler.clone(),
-                Some(self.msgbus_priority),
-            );
-        }
-
-        let flash_topic = defi::switchboard::get_defi_flash_topic(*instrument_id);
-        if !msgbus::is_subscribed(flash_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(flash_topic.into(), handler, Some(self.msgbus_priority));
-        }
-
+        self.subscribe_pool_updater_topics(*instrument_id, handler);
         self.pool_updaters.insert(*instrument_id, updater);
+
         log::debug!("Created PoolUpdater for instrument ID {instrument_id}");
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alloy_primitives::{Address, I256, U160, U256};
+    use nautilus_model::{
+        defi::{
+            DefiData, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap,
+            chain::chains,
+            data::DexPoolData,
+            dex::{AmmType, Dex, DexType},
+        },
+        identifiers::{InstrumentId, Symbol, Venue},
+    };
+    use rstest::*;
+
+    use super::*;
+
+    // Test fixtures
+    #[fixture]
+    fn test_instrument_id() -> InstrumentId {
+        InstrumentId::new(Symbol::from("ETH/USDC"), Venue::from("UNISWAPV3"))
+    }
+
+    #[fixture]
+    fn test_chain() -> Arc<nautilus_model::defi::Chain> {
+        Arc::new(chains::ETHEREUM.clone())
+    }
+
+    #[fixture]
+    fn test_dex(test_chain: Arc<nautilus_model::defi::Chain>) -> Arc<Dex> {
+        Arc::new(Dex::new(
+            (*test_chain).clone(),
+            DexType::UniswapV3,
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            12369621,
+            AmmType::CLAMM,
+            "PoolCreated(address,address,uint24,int24,address)",
+            "Swap(address,address,int256,int256,uint160,uint128,int24)",
+            "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+            "Burn(address,int24,int24,uint128,uint256,uint256)",
+            "Collect(address,address,int24,int24,uint128,uint128)",
+        ))
+    }
+
+    fn create_test_swap(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+        block: u64,
+        tx_index: u32,
+        log_index: u32,
+    ) -> PoolSwap {
+        PoolSwap::new(
+            test_chain,
+            test_dex,
+            test_instrument_id,
+            Address::ZERO,
+            block,
+            format!("0x{:064x}", block),
+            tx_index,
+            log_index,
+            None,
+            Address::ZERO,
+            Address::ZERO,
+            I256::ZERO,
+            I256::ZERO,
+            U160::ZERO,
+            0,
+            0,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn create_test_liquidity_update(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+        block: u64,
+        tx_index: u32,
+        log_index: u32,
+    ) -> PoolLiquidityUpdate {
+        use nautilus_model::defi::PoolLiquidityUpdateType;
+
+        PoolLiquidityUpdate::new(
+            test_chain,
+            test_dex,
+            test_instrument_id,
+            Address::ZERO,
+            PoolLiquidityUpdateType::Mint,
+            block,
+            format!("0x{:064x}", block),
+            tx_index,
+            log_index,
+            None,
+            Address::ZERO,
+            0,
+            U256::ZERO,
+            U256::ZERO,
+            0,
+            0,
+            None,
+        )
+    }
+
+    fn create_test_fee_collect(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+        block: u64,
+        tx_index: u32,
+        log_index: u32,
+    ) -> PoolFeeCollect {
+        PoolFeeCollect::new(
+            test_chain,
+            test_dex,
+            test_instrument_id,
+            Address::ZERO,
+            block,
+            format!("0x{:064x}", block),
+            tx_index,
+            log_index,
+            Address::ZERO,
+            0,
+            0,
+            0,
+            0,
+            None,
+        )
+    }
+
+    fn create_test_flash(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+        block: u64,
+        tx_index: u32,
+        log_index: u32,
+    ) -> PoolFlash {
+        PoolFlash::new(
+            test_chain,
+            test_dex,
+            test_instrument_id,
+            Address::ZERO,
+            block,
+            format!("0x{:064x}", block),
+            tx_index,
+            log_index,
+            None,
+            Address::ZERO,
+            Address::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+        )
+    }
+
+    #[rstest]
+    fn test_get_event_block_position_swap(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let swap = create_test_swap(test_instrument_id, test_chain, test_dex, 100, 5, 3);
+        let pos = get_event_block_position(&DexPoolData::Swap(swap));
+        assert_eq!(pos, (100, 5, 3));
+    }
+
+    #[rstest]
+    fn test_get_event_block_position_liquidity_update(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let update =
+            create_test_liquidity_update(test_instrument_id, test_chain, test_dex, 200, 10, 7);
+        let pos = get_event_block_position(&DexPoolData::LiquidityUpdate(update));
+        assert_eq!(pos, (200, 10, 7));
+    }
+
+    #[rstest]
+    fn test_get_event_block_position_fee_collect(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let collect = create_test_fee_collect(test_instrument_id, test_chain, test_dex, 300, 15, 2);
+        let pos = get_event_block_position(&DexPoolData::FeeCollect(collect));
+        assert_eq!(pos, (300, 15, 2));
+    }
+
+    #[rstest]
+    fn test_get_event_block_position_flash(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let flash = create_test_flash(test_instrument_id, test_chain, test_dex, 400, 20, 8);
+        let pos = get_event_block_position(&DexPoolData::Flash(flash));
+        assert_eq!(pos, (400, 20, 8));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_empty_events() {
+        let events = convert_and_sort_buffered_events(vec![]);
+        assert!(events.is_empty());
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_filters_non_pool_events(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                0,
+                0,
+            )),
+            // Block events would be filtered out
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 1);
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_single_event(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let swap = create_test_swap(test_instrument_id, test_chain, test_dex, 100, 5, 3);
+        let events = vec![DefiData::PoolSwap(swap)];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 1);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 5, 3));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_already_sorted(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                0,
+                0,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                0,
+                1,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                1,
+                0,
+            )),
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 0, 0));
+        assert_eq!(get_event_block_position(&sorted[1]), (100, 0, 1));
+        assert_eq!(get_event_block_position(&sorted[2]), (100, 1, 0));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_reverse_order(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                2,
+                5,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                1,
+                3,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                0,
+                1,
+            )),
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 0, 1));
+        assert_eq!(get_event_block_position(&sorted[1]), (100, 1, 3));
+        assert_eq!(get_event_block_position(&sorted[2]), (100, 2, 5));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_mixed_blocks(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                102,
+                0,
+                0,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                5,
+                2,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                101,
+                3,
+                1,
+            )),
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 5, 2));
+        assert_eq!(get_event_block_position(&sorted[1]), (101, 3, 1));
+        assert_eq!(get_event_block_position(&sorted[2]), (102, 0, 0));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_mixed_event_types(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                2,
+                0,
+            )),
+            DefiData::PoolLiquidityUpdate(create_test_liquidity_update(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                0,
+                0,
+            )),
+            DefiData::PoolFeeCollect(create_test_fee_collect(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                1,
+                0,
+            )),
+            DefiData::PoolFlash(create_test_flash(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                3,
+                0,
+            )),
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 4);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 0, 0));
+        assert_eq!(get_event_block_position(&sorted[1]), (100, 1, 0));
+        assert_eq!(get_event_block_position(&sorted[2]), (100, 2, 0));
+        assert_eq!(get_event_block_position(&sorted[3]), (100, 3, 0));
+    }
+
+    #[rstest]
+    fn test_convert_and_sort_same_block_and_tx_different_log_index(
+        test_instrument_id: InstrumentId,
+        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_dex: Arc<Dex>,
+    ) {
+        let events = vec![
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                5,
+                10,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain.clone(),
+                test_dex.clone(),
+                100,
+                5,
+                5,
+            )),
+            DefiData::PoolSwap(create_test_swap(
+                test_instrument_id,
+                test_chain,
+                test_dex,
+                100,
+                5,
+                1,
+            )),
+        ];
+        let sorted = convert_and_sort_buffered_events(events);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(get_event_block_position(&sorted[0]), (100, 5, 1));
+        assert_eq!(get_event_block_position(&sorted[1]), (100, 5, 5));
+        assert_eq!(get_event_block_position(&sorted[2]), (100, 5, 10));
     }
 }

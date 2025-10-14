@@ -3325,7 +3325,6 @@ fn test_setup_pool_updater_requests_snapshot(
 
 #[cfg(feature = "defi")]
 #[rstest]
-#[ignore = "TODO: Cache-first optimization not working - pool in cache still triggers snapshot request"]
 fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -3389,8 +3388,9 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
-    // Add pool to cache - this should trigger cache-first optimization
-    cache.borrow_mut().add_pool(pool).unwrap();
+    // Add pool to the data_engine's cache (not the fixture cache!)
+    // This ensures setup_pool_updater finds the pool when it checks the cache
+    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
 
     let subscribe_pool = SubscribePool::new(
         instrument_id,
@@ -3403,15 +3403,10 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
     data_engine.execute(&cmd);
 
-    // TODO: This test currently fails because the cache-first optimization
-    // isn't working correctly. When a pool exists in cache, setup_pool_updater
-    // should skip the snapshot request and proceed directly to creating the
-    // profiler and updater. However, it's still requesting a snapshot.
-    //
-    // Expected behavior: Only 1 command (SubscribePool)
-    // Actual behavior: 2 commands (SubscribePool + RequestPoolSnapshot)
-    //
-    // This needs investigation in setup_pool_updater() at line 1628.
+    // Verify the cache-first optimization: when a pool exists in the data engine's
+    // cache, setup_pool_updater should skip the snapshot request and proceed
+    // directly to creating the profiler and updater from the cached pool.
+    // Only the SubscribePool command should be forwarded to the client.
     let recorded = recorder.borrow();
     assert_eq!(
         recorded.len(),
