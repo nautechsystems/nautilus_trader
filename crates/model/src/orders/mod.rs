@@ -471,8 +471,8 @@ pub trait Order: 'static + Send {
             self.time_in_force(),
             self.status(),
             self.ts_last(),
-            self.ts_submitted().unwrap_or_default(),
             self.ts_accepted().unwrap_or_default(),
+            self.ts_submitted().unwrap_or_default(),
             self.ts_init(),
         )
     }
@@ -699,6 +699,7 @@ impl OrderCore {
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
+        self.account_id = Some(event.account_id);
         self.venue_order_id = Some(event.venue_order_id);
         self.venue_order_ids.push(event.venue_order_id);
         self.ts_accepted = Some(event.ts_event);
@@ -1112,5 +1113,84 @@ mod tests {
 
         assert!(order.is_child_order());
         assert!(!order.is_parent_order());
+    }
+
+    #[rstest]
+    fn test_to_own_book_order_timestamp_ordering() {
+        use crate::orders::limit::LimitOrder;
+
+        // Create order with distinct timestamps to verify parameter ordering
+        let init = OrderInitializedBuilder::default()
+            .price(Some(Price::from("100.00")))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default()
+            .ts_event(UnixNanos::from(1_000_000))
+            .build()
+            .unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .ts_event(UnixNanos::from(2_000_000))
+            .build()
+            .unwrap();
+
+        let mut order: LimitOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        let own_book_order = order.to_own_book_order();
+
+        // Verify timestamps are in correct positions
+        assert_eq!(own_book_order.ts_submitted, UnixNanos::from(1_000_000));
+        assert_eq!(own_book_order.ts_accepted, UnixNanos::from(2_000_000));
+        assert_eq!(own_book_order.ts_last, UnixNanos::from(2_000_000));
+    }
+
+    #[rstest]
+    fn test_order_accepted_without_submitted_sets_account_id() {
+        // Test external order flow: Initialized -> Accepted (no Submitted)
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .account_id(AccountId::from("EXTERNAL-001"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+
+        // Verify account_id is initially None
+        assert_eq!(order.account_id(), None);
+
+        // Apply accepted event directly (external order case)
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        // Verify account_id is now set from the accepted event
+        assert_eq!(order.account_id(), Some(AccountId::from("EXTERNAL-001")));
+        assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_order_accepted_after_submitted_preserves_account_id() {
+        // Test normal order flow: Initialized -> Submitted -> Accepted
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedBuilder::default()
+            .account_id(AccountId::from("SUBMITTED-001"))
+            .build()
+            .unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .account_id(AccountId::from("ACCEPTED-001"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+        // After submitted, account_id should be set
+        assert_eq!(order.account_id(), Some(AccountId::from("SUBMITTED-001")));
+
+        // Apply accepted event
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        // account_id should now be updated to the accepted event's account_id
+        assert_eq!(order.account_id(), Some(AccountId::from("ACCEPTED-001")));
+        assert_eq!(order.status(), OrderStatus::Accepted);
     }
 }
