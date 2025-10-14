@@ -58,6 +58,7 @@ This will be the final release with support for Python 3.11.
 - Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks
 - Fixed crypto instruments PyO3 -> Cython conversion for `lot_size` where it was not being passed through
 - Fixed `serialization` crate bugs and improve error handling
+- Fixed PyO3 interpreter lifecycle for async shutdown preventing edge case `"interpreter not initialized"` panics during shutdown
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed handling of asyncio.CancelledError in execution reconciliation (#3073), thanks @dinana

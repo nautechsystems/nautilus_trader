@@ -15,11 +15,17 @@
 
 //! The centralized Tokio runtime for a running Nautilus system.
 
-use std::sync::OnceLock;
+#[cfg(feature = "python")]
+use std::sync::Once;
+use std::{sync::OnceLock, time::Duration};
 
-use tokio::runtime::Builder;
+#[cfg(feature = "python")]
+use pyo3::Python;
+use tokio::{runtime::Builder, task, time::timeout};
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+#[cfg(feature = "python")]
+static PYTHON_INIT: Once = Once::new();
 
 /// Environment variable name to configure the number of OS threads for the common runtime.
 /// If not set or if the value cannot be parsed as a positive integer, the default value is used.
@@ -40,6 +46,16 @@ const DEFAULT_OS_THREADS: usize = 0;
 /// Panics if the runtime could not be created, which typically indicates
 /// an inability to spawn threads or allocate necessary resources.
 fn initialize_runtime() -> tokio::runtime::Runtime {
+    #[cfg(feature = "python")]
+    {
+        // Python hosts the process when we build as an extension module. Initializing
+        // here keeps the interpreter alive for the lifetime of the shared Tokio runtime
+        // so every worker thread sees a prepared PyO3 environment before using it.
+        PYTHON_INIT.call_once(|| {
+            Python::initialize();
+        });
+    }
+
     let worker_threads = std::env::var(NAUTILUS_WORKER_THREADS)
         .ok()
         .and_then(|val| val.parse::<usize>().ok())
@@ -65,4 +81,20 @@ fn initialize_runtime() -> tokio::runtime::Runtime {
 /// Intended for use cases where passing a runtime around is impractical.
 pub fn get_runtime() -> &'static tokio::runtime::Runtime {
     RUNTIME.get_or_init(initialize_runtime)
+}
+
+/// Provides a best-effort flush for runtime tasks during shutdown.
+///
+/// The function yields once to the Tokio scheduler and gives outstanding tasks a chance
+/// to observe shutdown signals before Python finalizes the interpreter, which calls this via
+/// an `atexit` hook.
+pub fn shutdown_runtime(wait: Duration) {
+    if let Some(runtime) = RUNTIME.get() {
+        runtime.block_on(async {
+            let _ = timeout(wait, async {
+                task::yield_now().await;
+            })
+            .await;
+        });
+    }
 }

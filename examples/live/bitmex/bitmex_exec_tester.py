@@ -141,4 +141,5 @@ try:
     node.run()
 except KeyboardInterrupt:
     node.stop()
+finally:
     node.dispose()
