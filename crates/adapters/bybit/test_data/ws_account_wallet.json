@@ -4,9 +4,9 @@
   "creationTime": 1700034722104,
   "data": [
     {
-      "accountImRate": "0",
-      "accountMmRate": "0",
-      "accountLtv": "0",
+      "accountIMRate": "0",
+      "accountMMRate": "0",
+      "accountLTV": "0",
       "totalEquity": "10262.91335023",
       "totalWalletBalance": "9684.46297164",
       "totalMarginBalance": "9684.46297164",
@@ -23,9 +23,9 @@
           "availableToBorrow": "",
           "borrowAmount": "0",
           "accruedInterest": "0",
-          "totalOrderIm": "0.00010000",
-          "totalPositionIm": "0",
-          "totalPositionMm": "0"
+          "totalOrderIM": "0.00010000",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0"
         },
         {
           "coin": "USDT",
@@ -35,9 +35,9 @@
           "availableToBorrow": "",
           "borrowAmount": "0",
           "accruedInterest": "0",
-          "totalOrderIm": "0",
-          "totalPositionIm": "127.8573161",
-          "totalPositionMm": "12.78573161"
+          "totalOrderIM": "0",
+          "totalPositionIM": "127.8573161",
+          "totalPositionMM": "12.78573161"
         }
       ]
     }

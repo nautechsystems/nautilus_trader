@@ -22,7 +22,7 @@ use nautilus_core::{nanos::UnixNanos, python::to_pyruntime_err, time::get_atomic
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
     enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::Instrument,
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
@@ -30,6 +30,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::{
+        credential::Credential,
         enums::{BybitEnvironment, BybitProductType},
         parse::make_bybit_symbol,
     },
@@ -46,6 +47,13 @@ use crate::{
 
 #[pymethods]
 impl BybitWebSocketError {
+    fn __repr__(&self) -> String {
+        format!(
+            "BybitWebSocketError(code={}, message='{}', conn_id={:?}, topic={:?})",
+            self.code, self.message, self.conn_id, self.topic
+        )
+    }
+
     #[getter]
     pub fn code(&self) -> i64 {
         self.code
@@ -69,13 +77,6 @@ impl BybitWebSocketError {
     #[getter]
     pub fn req_id(&self) -> Option<&str> {
         self.req_id.as_deref()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "BybitWebSocketError(code={}, message='{}', conn_id={:?}, topic={:?})",
-            self.code, self.message, self.conn_id, self.topic
-        )
     }
 }
 
@@ -121,7 +122,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
-        let credential = crate::common::credential::Credential::new(api_key, api_secret);
+        let credential = Credential::new(api_key, api_secret);
         Self::new_trade(environment, credential, url, heartbeat)
     }
 
@@ -144,7 +145,7 @@ impl BybitWebSocketClient {
     }
 
     #[pyo3(name = "set_account_id")]
-    fn py_set_account_id(&mut self, account_id: nautilus_model::identifiers::AccountId) {
+    fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
@@ -334,7 +335,6 @@ impl BybitWebSocketClient {
                                 Ok(parts) => parts,
                                 Err(e) => {
                                     tracing::warn!("Failed to parse kline topic: {e}");
-                                    call_python_with_json(&callback, &msg);
                                     continue;
                                 }
                             };
@@ -358,7 +358,6 @@ impl BybitWebSocketClient {
                                             "Unsupported kline interval: {}",
                                             interval_str
                                         );
-                                        call_python_with_json(&callback, &msg);
                                         continue;
                                     }
                                 };
@@ -393,7 +392,6 @@ impl BybitWebSocketClient {
                                     }
                                 } else {
                                     tracing::error!("Invalid step value: {}", step);
-                                    call_python_with_json(&callback, &msg);
                                 }
                             } else {
                                 tracing::warn!(
@@ -401,7 +399,6 @@ impl BybitWebSocketClient {
                                     full_symbol = %symbol,
                                     "No instrument found for symbol"
                                 );
-                                call_python_with_json(&callback, &msg);
                             }
                         }
 
@@ -445,7 +442,9 @@ impl BybitWebSocketClient {
                                     }
                                 }
                             } else {
-                                call_python_with_json(&callback, &msg);
+                                tracing::error!(
+                                    "Received AccountOrder message but account_id is not set"
+                                );
                             }
                         }
                         BybitWebSocketMessage::AccountExecution(msg) => {
@@ -485,7 +484,9 @@ impl BybitWebSocketClient {
                                     }
                                 }
                             } else {
-                                call_python_with_json(&callback, &msg);
+                                tracing::error!(
+                                    "Received AccountExecution message but account_id is not set"
+                                );
                             }
                         }
                         BybitWebSocketMessage::AccountWallet(msg) => {
@@ -511,7 +512,9 @@ impl BybitWebSocketClient {
                                     }
                                 }
                             } else {
-                                call_python_with_json(&callback, &msg);
+                                tracing::error!(
+                                    "Received AccountWallet message but account_id is not set"
+                                );
                             }
                         }
                         BybitWebSocketMessage::AccountPosition(msg) => {
@@ -556,7 +559,9 @@ impl BybitWebSocketClient {
                                     }
                                 }
                             } else {
-                                call_python_with_json(&callback, &msg);
+                                tracing::error!(
+                                    "Received AccountPosition message but account_id is not set"
+                                );
                             }
                         }
                         BybitWebSocketMessage::Error(msg) => {
@@ -567,17 +572,16 @@ impl BybitWebSocketClient {
                         BybitWebSocketMessage::Reconnected => {}
                         BybitWebSocketMessage::Pong => {}
                         BybitWebSocketMessage::Response(msg) => {
-                            call_python_with_json(&callback, &msg);
+                            tracing::debug!("Received response message: {:?}", msg);
                         }
                         BybitWebSocketMessage::Auth(msg) => {
-                            call_python_with_json(&callback, &msg);
+                            tracing::debug!("Received auth message: {:?}", msg);
                         }
                         BybitWebSocketMessage::Subscription(msg) => {
-                            call_python_with_json(&callback, &msg);
+                            tracing::debug!("Received subscription message: {:?}", msg);
                         }
                         BybitWebSocketMessage::Raw(value) => {
-                            tracing::debug!("Received raw/unhandled message: {value}");
-                            call_python_with_json(&callback, &value);
+                            tracing::debug!("Received raw/unhandled message, skipping: {value}");
                         }
                     }
                 }
@@ -1018,19 +1022,6 @@ where
         }
         Err(e) => {
             tracing::error!("Error converting data to Python: {e}");
-        }
-    });
-}
-
-fn call_python_with_json<T: serde::Serialize>(callback: &Py<PyAny>, msg: &T) {
-    Python::attach(|py| match serde_json::to_string(msg) {
-        Ok(json_str) => {
-            if let Err(e) = callback.call1(py, (json_str,)) {
-                tracing::error!("Error calling Python callback: {e}");
-            }
-        }
-        Err(e) => {
-            tracing::error!("Error serializing message to JSON: {e}");
         }
     });
 }

@@ -173,6 +173,45 @@ impl BybitHttpClient {
         })
     }
 
+    #[pyo3(name = "modify_order")]
+    #[pyo3(signature = (
+        product_type,
+        instrument_id,
+        client_order_id=None,
+        venue_order_id=None,
+        quantity=None,
+        price=None
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_modify_order<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let report = client
+                .modify_order(
+                    product_type,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    quantity,
+                    price,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| report.into_py_any(py))
+        })
+    }
+
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -221,53 +260,14 @@ impl BybitHttpClient {
         })
     }
 
-    #[pyo3(name = "modify_order")]
-    #[pyo3(signature = (
-        product_type,
-        instrument_id,
-        client_order_id=None,
-        venue_order_id=None,
-        quantity=None,
-        price=None
-    ))]
-    #[allow(clippy::too_many_arguments)]
-    fn py_modify_order<'py>(
-        &self,
-        py: Python<'py>,
-        product_type: BybitProductType,
-        instrument_id: InstrumentId,
-        client_order_id: Option<ClientOrderId>,
-        venue_order_id: Option<VenueOrderId>,
-        quantity: Option<Quantity>,
-        price: Option<Price>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let report = client
-                .modify_order(
-                    product_type,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    quantity,
-                    price,
-                )
-                .await
-                .map_err(to_pyvalue_err)?;
-
-            Python::attach(|py| report.into_py_any(py))
-        })
-    }
-
     #[pyo3(name = "query_order")]
-    #[pyo3(signature = (product_type, instrument_id, account_id, client_order_id=None, venue_order_id=None))]
+    #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_query_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        account_id: AccountId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -276,9 +276,9 @@ impl BybitHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match client
                 .query_order(
+                    account_id,
                     product_type,
                     instrument_id,
-                    account_id,
                     client_order_id,
                     venue_order_id,
                 )
@@ -288,35 +288,6 @@ impl BybitHttpClient {
                 Ok(None) => Ok(Python::attach(|py| py.None())),
                 Err(e) => Err(to_pyvalue_err(e)),
             }
-        })
-    }
-
-    #[pyo3(name = "request_order_status_reports")]
-    #[pyo3(signature = (product_type, instrument_id=None, open_only=false, limit=None))]
-    fn py_request_order_status_reports<'py>(
-        &self,
-        py: Python<'py>,
-        product_type: BybitProductType,
-        instrument_id: Option<InstrumentId>,
-        open_only: bool,
-        limit: Option<u32>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_order_status_reports(product_type, instrument_id, open_only, limit)
-                .await
-                .map_err(to_pyvalue_err)?;
-
-            Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
-                    .into_iter()
-                    .map(|report| report.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
         })
     }
 
@@ -376,61 +347,29 @@ impl BybitHttpClient {
         })
     }
 
-    #[pyo3(name = "request_fill_reports")]
-    #[pyo3(signature = (product_type, account_id, instrument_id=None, start=None, end=None, limit=None))]
-    #[allow(clippy::too_many_arguments)]
-    fn py_request_fill_reports<'py>(
+    #[pyo3(name = "request_fee_rates")]
+    #[pyo3(signature = (product_type, symbol=None, base_coin=None))]
+    fn py_request_fee_rates<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
-        account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
-        start: Option<i64>,
-        end: Option<i64>,
-        limit: Option<u32>,
+        symbol: Option<String>,
+        base_coin: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_fill_reports(product_type, account_id, instrument_id, start, end, limit)
+            let fee_rates = client
+                .request_fee_rates(product_type, symbol, base_coin)
                 .await
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
+                let py_fee_rates: PyResult<Vec<_>> = fee_rates
                     .into_iter()
-                    .map(|report| report.into_py_any(py))
+                    .map(|rate| Py::new(py, rate))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    #[pyo3(name = "request_position_status_reports")]
-    #[pyo3(signature = (product_type, account_id, instrument_id=None))]
-    fn py_request_position_status_reports<'py>(
-        &self,
-        py: Python<'py>,
-        product_type: BybitProductType,
-        account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_position_status_reports(product_type, account_id, instrument_id)
-                .await
-                .map_err(to_pyvalue_err)?;
-
-            Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
-                    .into_iter()
-                    .map(|report| report.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_fee_rates?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -455,29 +394,97 @@ impl BybitHttpClient {
         })
     }
 
-    #[pyo3(name = "request_fee_rates")]
-    #[pyo3(signature = (product_type, symbol=None, base_coin=None))]
-    fn py_request_fee_rates<'py>(
+    #[pyo3(name = "request_order_status_reports")]
+    #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, limit=None))]
+    fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
-        symbol: Option<String>,
-        base_coin: Option<String>,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let fee_rates = client
-                .request_fee_rates(product_type, symbol, base_coin)
+            let reports = client
+                .request_order_status_reports(
+                    account_id,
+                    product_type,
+                    instrument_id,
+                    open_only,
+                    limit,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let py_fee_rates: PyResult<Vec<_>> = fee_rates
+                let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
-                    .map(|rate| Py::new(py, rate))
+                    .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_fee_rates?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "request_fill_reports")]
+    #[pyo3(signature = (account_id, product_type, instrument_id=None, start=None, end=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_request_fill_reports<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_fill_reports(account_id, product_type, instrument_id, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_reports: PyResult<Vec<_>> = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "request_position_status_reports")]
+    #[pyo3(signature = (account_id, product_type, instrument_id=None))]
+    fn py_request_position_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_position_status_reports(account_id, product_type, instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_reports: PyResult<Vec<_>> = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
         })

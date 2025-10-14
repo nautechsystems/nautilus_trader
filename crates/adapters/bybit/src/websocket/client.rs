@@ -55,6 +55,7 @@ use crate::{
             BybitTriggerType, BybitWsOrderRequestOp,
         },
         parse::extract_raw_symbol,
+        symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
     websocket::{
@@ -1064,6 +1065,10 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
     ) -> BybitWsResult<()> {
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
@@ -1111,7 +1116,7 @@ impl BybitWebSocketClient {
             // sl_trigger_price/tp_trigger_price are only for TP/SL attached to regular orders
             BybitWsPlaceOrderParams {
                 category: product_type,
-                symbol: Ustr::from(instrument_id.symbol.as_str()),
+                symbol: raw_symbol,
                 side: bybit_side,
                 order_type: bybit_order_type,
                 qty: quantity.to_string(),
@@ -1139,7 +1144,7 @@ impl BybitWebSocketClient {
             // Regular market/limit orders
             BybitWsPlaceOrderParams {
                 category: product_type,
-                symbol: Ustr::from(instrument_id.symbol.as_str()),
+                symbol: raw_symbol,
                 side: bybit_side,
                 order_type: bybit_order_type,
                 qty: quantity.to_string(),
@@ -1182,9 +1187,13 @@ impl BybitWebSocketClient {
         quantity: Option<Quantity>,
         price: Option<Price>,
     ) -> BybitWsResult<()> {
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
         let params = BybitWsAmendOrderParams {
             category: product_type,
-            symbol: Ustr::from(instrument_id.symbol.as_str()),
+            symbol: raw_symbol,
             order_id: venue_order_id.map(|id| id.to_string()),
             order_link_id: client_order_id.map(|id| id.to_string()),
             qty: quantity.map(|q| q.to_string()),
@@ -1211,9 +1220,13 @@ impl BybitWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
         client_order_id: Option<ClientOrderId>,
     ) -> BybitWsResult<()> {
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
         let params = BybitWsCancelOrderParams {
             category: product_type,
-            symbol: Ustr::from(instrument_id.symbol.as_str()),
+            symbol: raw_symbol,
             order_id: venue_order_id.map(|id| id.to_string()),
             order_link_id: client_order_id.map(|id| id.to_string()),
         };
@@ -1535,22 +1548,29 @@ impl BybitWebSocketClient {
                     return Some(BybitWebSocketMessage::TickerLinear(msg));
                 }
             } else if topic == "order" || topic.starts_with("order.") {
-                if let Ok(msg) = serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::AccountOrder(msg));
+                match serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
+                    Ok(msg) => return Some(BybitWebSocketMessage::AccountOrder(msg)),
+                    Err(e) => tracing::warn!("Failed to deserialize order message: {e}\n{value}"),
                 }
             } else if topic == "execution" || topic.starts_with("execution.") {
-                if let Ok(msg) = serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone())
-                {
-                    return Some(BybitWebSocketMessage::AccountExecution(msg));
+                match serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone()) {
+                    Ok(msg) => return Some(BybitWebSocketMessage::AccountExecution(msg)),
+                    Err(e) => {
+                        tracing::warn!("Failed to deserialize execution message: {e}\n{value}")
+                    }
                 }
-            } else if (topic == "wallet" || topic.starts_with("wallet."))
-                && let Ok(msg) = serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone())
-            {
-                return Some(BybitWebSocketMessage::AccountWallet(msg));
-            } else if (topic == "position" || topic.starts_with("position."))
-                && let Ok(msg) = serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone())
-            {
-                return Some(BybitWebSocketMessage::AccountPosition(msg));
+            } else if topic == "wallet" || topic.starts_with("wallet.") {
+                match serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone()) {
+                    Ok(msg) => return Some(BybitWebSocketMessage::AccountWallet(msg)),
+                    Err(e) => tracing::warn!("Failed to deserialize wallet message: {e}\n{value}"),
+                }
+            } else if topic == "position" || topic.starts_with("position.") {
+                match serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone()) {
+                    Ok(msg) => return Some(BybitWebSocketMessage::AccountPosition(msg)),
+                    Err(e) => {
+                        tracing::warn!("Failed to deserialize position message: {e}\n{value}")
+                    }
+                }
             }
         }
 
