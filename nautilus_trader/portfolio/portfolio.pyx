@@ -1556,10 +1556,8 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=instrument_id,
         )
 
-        cdef:
-            Order o
-
         # Initialize initial (order) margin
+        cdef Order o
         cdef bint result_init = self._accounts.update_orders(
             account=account,
             instrument=instrument,
