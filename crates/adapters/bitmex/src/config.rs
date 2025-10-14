@@ -42,7 +42,7 @@ pub struct BitmexDataClientConfig {
     pub retry_delay_max_ms: Option<u64>,
     /// Optional heartbeat interval (seconds) for the WebSocket client.
     pub heartbeat_interval_secs: Option<u64>,
-    /// Optional receive window in milliseconds for signed requests (default 10000).
+    /// Optional receive window in milliseconds for signed requests (default 10_000).
     ///
     /// This value determines how far in the future the `api-expires` timestamp will be set
     /// for signed REST requests. BitMEX uses seconds-granularity Unix timestamps in the
@@ -55,7 +55,7 @@ pub struct BitmexDataClientConfig {
     ///
     /// A larger window provides more tolerance for clock skew and network latency, but
     /// increases the replay attack window. The default of 10 seconds should be sufficient
-    /// for most deployments. Consider increasing this value (e.g., to 30000ms = 30s) if you
+    /// for most deployments. Consider increasing this value (e.g., to 30_000ms = 30s) if you
     /// experience request expiration errors due to clock drift or high network latency.
     pub recv_window_ms: Option<u64>,
     /// When `true`, only active instruments are requested during bootstrap.
