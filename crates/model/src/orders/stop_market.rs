@@ -791,12 +791,12 @@ mod tests {
         };
 
         assert_eq!(accepted_order.price(), None);
-        assert_eq!(accepted_order.has_price(), false);
+        assert!(!accepted_order.has_price());
 
         accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
 
         // Verify updates were applied correctly
         assert_eq!(accepted_order.price(), Some(calculated_protection_price));
-        assert_eq!(accepted_order.has_price(), true);
+        assert!(accepted_order.has_price());
     }
 }

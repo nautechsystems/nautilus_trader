@@ -2197,17 +2197,14 @@ impl OrderMatchingEngine {
             self.core.ask,
         );
 
-        match protection_price {
-            Ok(protection_price) => {
-                self.generate_order_updated(
-                    order,
-                    order.quantity(),
-                    None,
-                    None,
-                    Some(protection_price),
-                );
-            }
-            Err(_) => return,
+        if let Ok(protection_price) = protection_price {
+            self.generate_order_updated(
+                order,
+                order.quantity(),
+                None,
+                None,
+                Some(protection_price),
+            );
         }
     }
 

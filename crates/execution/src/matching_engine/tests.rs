@@ -2767,16 +2767,8 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let confing = OrderMatchingEngineConfig::new(
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        Some(dec!(600)),
-    );
+    let confing = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
+        .with_price_protection_points(Some(dec!(600)));
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);
@@ -2864,16 +2856,8 @@ fn test_process_stop_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let confing = OrderMatchingEngineConfig::new(
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        Some(dec!(600)),
-    );
+    let confing = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
+        .with_price_protection_points(Some(dec!(600)));
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);

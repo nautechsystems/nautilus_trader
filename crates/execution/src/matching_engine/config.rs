@@ -39,7 +39,6 @@ impl OrderMatchingEngineConfig {
         use_position_ids: bool,
         use_random_ids: bool,
         use_reduce_only: bool,
-        price_protection_points: Option<Decimal>,
     ) -> Self {
         Self {
             bar_execution,
@@ -49,8 +48,18 @@ impl OrderMatchingEngineConfig {
             use_position_ids,
             use_random_ids,
             use_reduce_only,
-            price_protection_points,
+            price_protection_points: None,
         }
+    }
+
+    /// Sets the price protection points for the matching engine.
+    #[must_use]
+    pub const fn with_price_protection_points(
+        mut self,
+        price_protection_points: Option<Decimal>,
+    ) -> Self {
+        self.price_protection_points = price_protection_points;
+        self
     }
 }
 

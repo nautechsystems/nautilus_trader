@@ -290,8 +290,8 @@ impl SimulatedExchange {
             self.use_position_ids,
             self.use_random_ids,
             self.use_reduce_only,
-            price_protection,
-        );
+        )
+        .with_price_protection_points(price_protection);
         let instrument_id = instrument.id();
         let matching_engine = OrderMatchingEngine::new(
             instrument,
