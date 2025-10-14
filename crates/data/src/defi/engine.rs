@@ -451,70 +451,26 @@ impl DataEngine {
     }
 
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId, client_id: Option<&ClientId>) {
+        // Early return if updater already exists
         if self.pool_updaters.contains_key(instrument_id) {
-            log::debug!("Pool updater for {instrument_id} already exists, nothing to do");
+            log::debug!("Pool updater for {instrument_id} already exists");
             return;
         }
 
         log::info!("Setting up pool updater for {instrument_id}");
 
-        // Check cache first - if pool and profiler exist, we can set up immediately
-        {
-            let cache = self.cache.borrow();
-
-            // If profiler already exists, we can proceed with setup
-            let has_profiler = cache.pool_profiler(instrument_id).is_some();
-            // If pool exists in cache, we can create profiler without snapshot
-            let has_pool = cache.pool(instrument_id).is_some();
-
-            if !has_profiler && !has_pool {
-                // Pool not in cache - need to request snapshot first
-                drop(cache); // Release borrow before requesting snapshot
-
-                let request_id = UUID4::new();
-                let ts_init = self.clock.borrow().timestamp_ns();
-                let request = RequestPoolSnapshot::new(
-                    *instrument_id,
-                    client_id.copied(),
-                    request_id,
-                    ts_init,
-                    None,
-                );
-                let cmd = DefiRequestCommand::PoolSnapshot(request);
-
-                if let Err(e) = self.execute_defi_request(&cmd) {
-                    log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
-                    // Defer profiler creation until pool loads
-                    self.pool_updaters_pending.insert(*instrument_id);
-                    return;
-                } else {
-                    log::debug!("Requested pool snapshot for {instrument_id}");
-                    // Mark as pending so events are buffered until snapshot arrives
-                    self.pool_snapshot_pending.insert(*instrument_id);
-                    self.pool_event_buffers.entry(*instrument_id).or_default();
-                    // Snapshot processing will complete the setup when it arrives
-                    return;
-                }
-            }
-        }
-
-        // Pool is in cache - proceed with immediate setup
+        // Check cache state and ensure profiler exists
         {
             let mut cache = self.cache.borrow_mut();
 
-            // Check if profiler already exists in cache
             if cache.pool_profiler(instrument_id).is_some() {
-                log::debug!("Pool profiler for {instrument_id} already exists in cache");
-            } else {
-                // Pool exists in cache, create profiler
-                let pool = cache
-                    .pool(instrument_id)
-                    .expect("Pool should exist in cache");
-
+                // Profiler already exists, proceed to create updater
+                log::debug!("Pool profiler already exists for {instrument_id}");
+            } else if let Some(pool) = cache.pool(instrument_id) {
+                // Pool exists but no profiler, create profiler from pool
                 let pool = Arc::new(pool.clone());
                 let mut pool_profiler = PoolProfiler::new(pool.clone());
 
-                // Initialize profiler if pool has initial price set
                 if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
                     pool_profiler.initialize(initial_sqrt_price_x96);
                     log::debug!(
@@ -525,16 +481,41 @@ impl DataEngine {
                 }
 
                 if let Err(e) = cache.add_pool_profiler(pool_profiler) {
-                    log::error!("Failed to add pool profiler {instrument_id}: {e}");
+                    log::error!("Failed to add pool profiler for {instrument_id}: {e}");
                     return;
                 }
+            } else {
+                // Neither profiler nor pool exists, request snapshot
+                drop(cache);
+
+                let request_id = UUID4::new();
+                let ts_init = self.clock.borrow().timestamp_ns();
+                let request = RequestPoolSnapshot::new(
+                    *instrument_id,
+                    client_id.copied(),
+                    request_id,
+                    ts_init,
+                    None,
+                );
+
+                if let Err(e) =
+                    self.execute_defi_request(&DefiRequestCommand::PoolSnapshot(request))
+                {
+                    log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
+                    self.pool_updaters_pending.insert(*instrument_id);
+                } else {
+                    log::debug!("Requested pool snapshot for {instrument_id}");
+                    self.pool_snapshot_pending.insert(*instrument_id);
+                    self.pool_event_buffers.entry(*instrument_id).or_default();
+                }
+                return;
             }
         }
 
+        // Profiler exists, create updater and subscribe to topics
         let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
         let handler = ShareableMessageHandler(updater.clone());
 
-        // Subscribe to all required pool data
         let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(*instrument_id);
         if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
