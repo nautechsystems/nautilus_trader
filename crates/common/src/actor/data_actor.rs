@@ -2076,7 +2076,7 @@ impl DataActorCore {
         ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
     }
 
-    /// Returns a UNIX nanoseconds timestamp from the actors internal clock.
+    /// Returns a UNIX nanoseconds timestamp from the actor's internal clock.
     pub fn timestamp_ns(&self) -> UnixNanos {
         self.clock_ref().timestamp_ns()
     }
