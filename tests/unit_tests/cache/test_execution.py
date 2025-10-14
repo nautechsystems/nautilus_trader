@@ -2017,6 +2017,68 @@ class TestCache:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
+    def test_purge_closed_positions_removes_empty_shell_after_purge_events(self):
+        """
+        Test that a position that becomes an empty shell via purge_events_for_order is
+        immediately eligible for cache purging (ts_closed = 0 bypasses buffer).
+
+        This verifies that the zeroed timestamps make empty shells eligible for cleanup.
+
+        """
+        # Arrange: Create position with a fill
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-SHELL-TEST")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        # Verify position exists and is open
+        assert self.cache.position_exists(position_id)
+        assert position.is_open
+        assert position.ts_opened > 0
+        assert position.event_count == 1
+
+        # Act: Purge all fills - creates empty shell with zeroed timestamps
+        position.purge_events_for_order(order.client_order_id)
+        self.cache.update_position(position)
+
+        # Verify empty shell state
+        assert position.side == PositionSide.FLAT
+        assert position.is_closed  # FLAT positions are considered closed
+        assert position.ts_closed == 0  # Zeroed out - key to immediate purge eligibility
+        assert position.ts_opened == 0
+        assert position.ts_last == 0
+        assert position.duration_ns == 0
+        assert position.event_count == 0
+        assert self.cache.is_position_closed(position_id)
+
+        # The key insight: ts_closed=0 makes condition (0 + buffer_ns <= ts_now) always true
+        # Use ts_now far in future (1 hour) so that even with a 1-hour buffer, 0 + buffer < ts_now
+        self.cache.purge_closed_positions(
+            ts_now=7_200_000_000_000,  # 2 hours in nanoseconds
+            buffer_secs=3600,  # 1 hour buffer
+        )
+
+        # Assert: Position should be removed immediately (0 + buffer << ts_now always true)
+        assert not self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is None
+        assert self.cache.positions_total_count() == 0
+        assert self.cache.positions_closed_count() == 0
+
     def test_purge_order_cleans_up_strategy_orders_index(self):
         # Arrange
         order = self.strategy.order_factory.market(

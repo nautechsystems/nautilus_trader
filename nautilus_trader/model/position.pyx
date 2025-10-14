@@ -115,7 +115,8 @@ cdef class Position:
         Purge all order events for the given client order ID.
 
         After purging, the position is rebuilt from remaining fills. If no fills
-        remain, the position state becomes inconsistent.
+        remain, the position is reset to an empty shell with all history cleared
+        (including timestamps), making it eligible for immediate cache cleanup.
 
         Parameters
         ----------
@@ -135,8 +136,21 @@ cdef class Position:
         self._events.clear()
         self._trade_ids.clear()
 
-        # If no fills remain, leave state inconsistent
+        # If no fills remain, reset to flat state clearing all history
         if not remaining_events:
+            self._buy_qty = Quantity.zero_c(precision=self.size_precision)
+            self._sell_qty = Quantity.zero_c(precision=self.size_precision)
+            self._commissions = {}
+            self.signed_qty = 0.0
+            self.quantity = Quantity.zero_c(precision=self.size_precision)
+            self.side = PositionSide.FLAT
+            self.avg_px_close = 0.0
+            self.realized_pnl = None
+            self.realized_return = 0.0
+            self.ts_opened = 0
+            self.ts_last = 0
+            self.ts_closed = 0
+            self.duration_ns = 0
             return
 
         # Force reset by setting to FLAT and resetting signed_qty

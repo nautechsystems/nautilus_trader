@@ -170,7 +170,7 @@ impl Position {
                 self.id,
                 client_order_id
             );
-            // Reset to flat state
+            // Reset to flat state, clearing all history
             self.events.clear();
             self.trade_ids.clear();
             self.buy_qty = Quantity::zero(self.size_precision);
@@ -182,6 +182,10 @@ impl Position {
             self.avg_px_close = None;
             self.realized_pnl = None;
             self.realized_return = 0.0;
+            self.ts_opened = UnixNanos::default();
+            self.ts_last = UnixNanos::default();
+            self.ts_closed = Some(UnixNanos::default());
+            self.duration_ns = 0;
             return;
         }
 
@@ -2269,7 +2273,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Some(UnixNanos::from(1_000_000_000)), // Explicit non-zero timestamp
             None,
         );
 
@@ -2279,12 +2283,201 @@ mod tests {
         assert!(position.last_event().is_some());
         assert!(position.last_trade_id().is_some());
 
+        // Store original timestamps (should be non-zero)
+        let original_ts_opened = position.ts_opened;
+        let original_ts_last = position.ts_last;
+        assert_ne!(original_ts_opened, UnixNanos::default());
+        assert_ne!(original_ts_last, UnixNanos::default());
+
         position.purge_events_for_order(order.client_order_id());
 
         assert_eq!(position.events.len(), 0);
         assert_eq!(position.trade_ids.len(), 0);
         assert!(position.last_event().is_none());
         assert!(position.last_trade_id().is_none());
+
+        // Verify timestamps are zeroed - empty shell has no meaningful history
+        // ts_closed is set to Some(0) so position reports as closed and is eligible for purge
+        assert_eq!(position.ts_opened, UnixNanos::default());
+        assert_eq!(position.ts_last, UnixNanos::default());
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
+        assert_eq!(position.duration_ns, 0);
+
+        // CRITICAL: Verify empty shell reports as closed (this was the bug we fixed!)
+        // is_closed() must return true so cache purge logic recognizes empty shells
+        assert!(position.is_closed());
+        assert!(!position.is_open());
+        assert_eq!(position.side, PositionSide::Flat);
+    }
+
+    #[rstest]
+    fn test_revive_from_empty_shell(audusd_sim: CurrencyPair) {
+        // Test adding a fill to an empty shell position
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        // Create and then purge position to get empty shell
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00000")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000_000_000)),
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill1.into());
+        position.purge_events_for_order(order1.client_order_id());
+
+        // Verify it's an empty shell
+        assert!(position.is_closed());
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
+        assert_eq!(position.event_count(), 0);
+
+        // Act: Add new fill to revive the position
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00020")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(3_000_000_000)),
+            None,
+        );
+
+        let fill2_typed: OrderFilled = fill2.clone().into();
+        position.apply(&fill2_typed);
+
+        // Assert: Position should be alive with new timestamps
+        assert!(position.is_long());
+        assert!(!position.is_closed());
+        assert!(position.ts_closed.is_none());
+        assert_eq!(position.ts_opened, fill2.ts_event());
+        assert_eq!(position.ts_last, fill2.ts_event());
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.quantity, Quantity::from(50_000));
+    }
+
+    #[rstest]
+    fn test_empty_shell_position_invariants(audusd_sim: CurrencyPair) {
+        // Property-based test: Any position with event_count == 0 must satisfy invariants
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00000")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000_000_000)),
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill.into());
+        position.purge_events_for_order(order.client_order_id());
+
+        // INVARIANTS: When event_count == 0, the following MUST be true
+        assert_eq!(
+            position.event_count(),
+            0,
+            "Precondition: event_count must be 0"
+        );
+
+        // Invariant 1: Position must report as closed
+        assert!(
+            position.is_closed(),
+            "INV1: Empty shell must report is_closed() == true"
+        );
+        assert!(
+            !position.is_open(),
+            "INV1: Empty shell must report is_open() == false"
+        );
+
+        // Invariant 2: Position must be FLAT
+        assert_eq!(
+            position.side,
+            PositionSide::Flat,
+            "INV2: Empty shell must be FLAT"
+        );
+
+        // Invariant 3: ts_closed must be Some (not None)
+        assert!(
+            position.ts_closed.is_some(),
+            "INV3: Empty shell must have ts_closed.is_some()"
+        );
+        assert_eq!(
+            position.ts_closed,
+            Some(UnixNanos::default()),
+            "INV3: Empty shell ts_closed must be 0"
+        );
+
+        // Invariant 4: All lifecycle timestamps must be zeroed
+        assert_eq!(
+            position.ts_opened,
+            UnixNanos::default(),
+            "INV4: Empty shell ts_opened must be 0"
+        );
+        assert_eq!(
+            position.ts_last,
+            UnixNanos::default(),
+            "INV4: Empty shell ts_last must be 0"
+        );
+        assert_eq!(
+            position.duration_ns, 0,
+            "INV4: Empty shell duration_ns must be 0"
+        );
+
+        // Invariant 5: Quantity must be zero
+        assert_eq!(
+            position.quantity,
+            Quantity::zero(audusd_sim.size_precision()),
+            "INV5: Empty shell quantity must be 0"
+        );
+
+        // Invariant 6: No events or trade IDs
+        assert!(
+            position.events.is_empty(),
+            "INV6: Empty shell must have no events"
+        );
+        assert!(
+            position.trade_ids.is_empty(),
+            "INV6: Empty shell must have no trade IDs"
+        );
+        assert!(
+            position.last_event().is_none(),
+            "INV6: Empty shell must have no last event"
+        );
+        assert!(
+            position.last_trade_id().is_none(),
+            "INV6: Empty shell must have no last trade ID"
+        );
     }
 
     #[rstest]
