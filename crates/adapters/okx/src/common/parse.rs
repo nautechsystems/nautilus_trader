@@ -140,10 +140,15 @@ where
     }
 }
 
-/// Deserializes an OKX VIP level string (e.g., "Lv4") into [`OKXVipLevel`].
+/// Deserializes an OKX VIP level string into [`OKXVipLevel`].
 ///
-/// OKX returns VIP levels as strings like "Lv0", "Lv1", ..., "Lv9".
-/// This function strips the "Lv" prefix and parses the numeric value.
+/// OKX returns VIP levels in multiple formats:
+/// - "VIP0", "VIP1", ..., "VIP9" (VIP tier format)
+/// - "Lv0", "Lv1", ..., "Lv9" (Level format)
+/// - "0", "1", ..., "9" (bare numeric)
+/// - "" (empty string, defaults to VIP0)
+///
+/// This function handles all formats by stripping any prefix and parsing the numeric value.
 ///
 /// # Errors
 ///
@@ -154,18 +159,20 @@ where
 {
     let s = String::deserialize(deserializer)?;
 
-    // Strip "Lv" prefix if present
-    let level_str = s
-        .strip_prefix("Lv")
-        .or_else(|| s.strip_prefix("lv"))
-        .unwrap_or(&s);
+    if s.is_empty() {
+        return Ok(OKXVipLevel::Vip0);
+    }
 
-    // Parse the numeric value
+    let s_lower = s.to_lowercase();
+    let level_str = s_lower
+        .strip_prefix("vip")
+        .or_else(|| s_lower.strip_prefix("lv"))
+        .unwrap_or(&s_lower);
+
     let level_num = level_str
         .parse::<u8>()
         .map_err(|e| serde::de::Error::custom(format!("Invalid VIP level '{s}': {e}")))?;
 
-    // Convert to enum
     Ok(OKXVipLevel::from(level_num))
 }
 
@@ -935,9 +942,14 @@ fn parse_common_instrument_data(
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
 
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("`tick_sz` is empty");
+    }
+
     let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
         anyhow::anyhow!(
-            "Failed to parse tick_sz '{}' into Price: {}",
+            "Failed to parse `tick_sz` '{}' into Price: {}",
             definition.tick_sz,
             e
         )
@@ -1087,6 +1099,12 @@ pub fn parse_swap_instrument(
             anyhow::bail!("Invalid contract type for swap: {}", definition.ct_type)
         }
     };
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
     let price_increment = match Price::from_str(&definition.tick_sz) {
         Ok(price) => price,
         Err(e) => {
@@ -1189,6 +1207,12 @@ pub fn parse_futures_instrument(
         .ok_or_else(|| anyhow::anyhow!("`expiry_time` is required to parse Swap instrument"))?;
     let activation_ns = UnixNanos::from(millis_to_nanos(listing_time as f64));
     let expiration_ns = UnixNanos::from(millis_to_nanos(expiry_time as f64));
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
     let price_increment = Price::from(definition.tick_sz.to_string());
     let size_increment = Quantity::from(&definition.lot_sz);
     let multiplier = Some(Quantity::from(&definition.ct_mult));
@@ -1270,6 +1294,12 @@ pub fn parse_option_instrument(
         .ok_or_else(|| anyhow::anyhow!("`expiry_time` is required to parse Option instrument"))?;
     let activation_ns = UnixNanos::from(millis_to_nanos(listing_time as f64));
     let expiration_ns = UnixNanos::from(millis_to_nanos(expiry_time as f64));
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
     let price_increment = Price::from(definition.tick_sz.to_string());
     let multiplier = Quantity::from(&definition.ct_mult);
     let lot_size = Quantity::from(&definition.lot_sz);
@@ -2448,7 +2478,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_vip_level_with_lv_prefix() {
+    fn test_deserialize_vip_level_all_formats() {
         use serde::Deserialize;
         use serde_json;
 
@@ -2458,9 +2488,19 @@ mod tests {
             level: OKXVipLevel,
         }
 
-        let json = r#"{"level":"Lv4"}"#;
+        // Test VIP prefix format
+        let json = r#"{"level":"VIP4"}"#;
         let result: TestFeeRate = serde_json::from_str(json).unwrap();
         assert_eq!(result.level, OKXVipLevel::Vip4);
+
+        let json = r#"{"level":"VIP5"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip5);
+
+        // Test Lv prefix format
+        let json = r#"{"level":"Lv1"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip1);
 
         let json = r#"{"level":"Lv0"}"#;
         let result: TestFeeRate = serde_json::from_str(json).unwrap();
@@ -2469,6 +2509,23 @@ mod tests {
         let json = r#"{"level":"Lv9"}"#;
         let result: TestFeeRate = serde_json::from_str(json).unwrap();
         assert_eq!(result.level, OKXVipLevel::Vip9);
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_empty_string() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        // Empty string should default to VIP0
+        let json = r#"{"level":""}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip0);
     }
 
     #[rstest]

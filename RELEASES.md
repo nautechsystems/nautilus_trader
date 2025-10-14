@@ -97,6 +97,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
 - Fixed OKX API credentials handling to allow passing explicitly
 - Fixed OKX fee calculations to account for negative fees
+- Fixed OKX parsing for `tick_sz` across instrument types
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq

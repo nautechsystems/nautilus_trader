@@ -1287,8 +1287,16 @@ impl OKXHttpClient {
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         for inst in &resp {
-            if let Some(instrument_any) = parse_instrument_any(inst, ts_init)? {
-                instruments.push(instrument_any);
+            match parse_instrument_any(inst, ts_init) {
+                Ok(Some(instrument_any)) => {
+                    instruments.push(instrument_any);
+                }
+                Ok(None) => {
+                    // Unsupported instrument type, skip silently
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse instrument {}: {e}", inst.inst_id);
+                }
             }
         }
 

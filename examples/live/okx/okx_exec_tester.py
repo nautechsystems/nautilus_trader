@@ -47,32 +47,34 @@ if instrument_type == OKXInstrumentType.SPOT:
     symbol = "ETH-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
     order_qty = Decimal("0.005")
+    enable_sells = False
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = "ETH-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
     order_qty = Decimal("0.01")
+    enable_sells = True
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
     symbol = "ETH-USD-251226"  # ETH-USD futures expiring 2025-12-26
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
+    enable_sells = True
 elif instrument_type == OKXInstrumentType.OPTION:
     symbol = "ETH-USD-251226-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-12-26
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
+    enable_sells = True
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 
 instrument_id = InstrumentId.from_str(f"{symbol}.{OKX}")
 
-instrument_types = (instrument_type,)
-
-# instrument_types = (
-#     OKXInstrumentType.SPOT,
-#     OKXInstrumentType.SWAP,
-#     OKXInstrumentType.FUTURES,
-#     OKXInstrumentType.OPTION,
-# )
+instrument_types = (
+    OKXInstrumentType.SPOT,
+    OKXInstrumentType.SWAP,
+    OKXInstrumentType.FUTURES,
+    # OKXInstrumentType.OPTION,
+)
 
 instrument_families = (
     # "BTC-USD",
@@ -176,7 +178,7 @@ config_tester = ExecTesterConfig(
     # subscribe_trades=False,
     # subscribe_book=True,
     enable_buys=True,
-    enable_sells=True,
+    enable_sells=enable_sells,
     # open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.FOK,
     tob_offset_ticks=100,
