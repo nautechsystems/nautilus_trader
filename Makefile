@@ -192,6 +192,19 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 	uv self update
 	uv lock --upgrade
 
+#== Security
+
+
+.PHONY: security-audit
+security-audit: check-audit-installed  #-- Run security audit for Rust and Python dependencies
+	$(info $(M) Running security audit for Rust dependencies...)
+	@printf "$(CYAN)Checking Rust dependencies for known vulnerabilities...$(RESET)\n"
+	cargo audit --color never || true
+	@printf "\n$(CYAN)Installed Python packages:$(RESET)\n"
+	@pip list --format=freeze 2>/dev/null | grep -E "^(aiohttp|requests|urllib3|cryptography|pyyaml|jinja2)" || echo "  (key security-relevant packages not found in pip list)"
+	@printf "\n$(YELLOW)Note: For comprehensive Python vulnerability scanning, install and run:$(RESET)\n"
+	@printf "  pip install pip-audit && pip-audit\n"
+
 #== Documentation
 
 .PHONY: docs
@@ -227,6 +240,13 @@ cargo-update:  #-- Update Rust dependencies and install test tools
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
+
+.PHONY: check-audit-installed
+check-audit-installed:  #-- Verify cargo-audit is installed
+	@if ! cargo audit --version >/dev/null 2>&1; then \
+		echo "cargo-audit is not installed. You can install it using 'cargo install cargo-audit'"; \
+		exit 1; \
+	fi
 
 .PHONY: check-nextest-installed
 check-nextest-installed:  #-- Verify cargo-nextest is installed
@@ -430,10 +450,10 @@ install-cli:  #-- Install Nautilus CLI tool from source
 .PHONY: help
 help:  #-- Show this help message and exit
 	@printf "NautilusTrader Makefile\n\n"
+	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
 	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"
-	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
