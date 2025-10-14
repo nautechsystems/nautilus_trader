@@ -171,15 +171,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 makerCommissionRate=fee_rates.maker,
                 takerCommissionRate=fee_rates.taker,
             )
-            # Fetch position risk
-            if symbol not in position_risk:
-                self._log.error(f"Position risk not found for {symbol}.")
-                continue
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
                 fee=fee,
                 ts_event=millis_to_nanos(exchange_info.serverTime),
-                position_risk=position_risk[symbol],
+                position_risk=position_risk.get(symbol),
             )
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
@@ -266,7 +262,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 min_notional = Money(min_notional_filter.notional, currency=quote_currency)
             max_notional = (
                 Money(position_risk.maxNotionalValue, currency=quote_currency)
-                if position_risk
+                if position_risk and position_risk.maxNotionalValue is not None
                 else None
             )
             max_price = Price(float(price_filter.maxPrice), precision=price_precision)
