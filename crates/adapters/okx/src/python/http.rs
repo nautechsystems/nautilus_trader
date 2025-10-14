@@ -539,4 +539,21 @@ impl OKXHttpClient {
             Python::attach(|py| timestamp.into_py_any(py))
         })
     }
+
+    /// Requests the VIP level from OKX fee rates endpoint.
+    ///
+    /// Returns the VIP level or None if not available.
+    #[pyo3(name = "request_vip_level")]
+    fn py_request_vip_level<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let vip_level = client.request_vip_level().await.map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| match vip_level {
+                Some(level) => Ok(level.into_py_any_unwrap(py)),
+                None => Ok(py.None()),
+            })
+        })
+    }
 }

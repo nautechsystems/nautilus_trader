@@ -66,7 +66,7 @@ pub struct OKXCandlestick(
 use crate::common::{
     enums::{
         OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderStatus,
-        OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+        OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -786,6 +786,37 @@ pub struct OKXCancelAlgoOrderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct OKXServerTime {
     /// Server timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
+/// Represents a fee rate entry from `GET /api/v5/account/trade-fee`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXFeeRate {
+    /// Fee level (VIP tier) - indicates the user's VIP tier (0-9).
+    #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+    pub level: OKXVipLevel,
+    /// Taker fee rate for crypto-margined contracts.
+    pub taker: String,
+    /// Maker fee rate for crypto-margined contracts.
+    pub maker: String,
+    /// Taker fee rate for USDT-margined contracts.
+    pub taker_u: String,
+    /// Maker fee rate for USDT-margined contracts.
+    pub maker_u: String,
+    /// Delivery fee rate.
+    #[serde(default)]
+    pub delivery: String,
+    /// Option exercise fee rate.
+    #[serde(default)]
+    pub exercise: String,
+    /// Instrument type (SPOT, MARGIN, SWAP, FUTURES, OPTION).
+    pub inst_type: OKXInstrumentType,
+    /// Fee schedule category (being deprecated).
+    #[serde(default)]
+    pub category: String,
+    /// Data return timestamp (Unix timestamp in milliseconds).
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
 }

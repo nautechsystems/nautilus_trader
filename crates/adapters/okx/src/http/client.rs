@@ -66,8 +66,8 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXIndexTicker,
-        OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
+        OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXFeeRate,
+        OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
         OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
         OKXTransactionDetail,
     },
@@ -77,9 +77,9 @@ use super::{
         GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
         GetMarkPriceParamsBuilder, GetOrderHistoryParams, GetOrderHistoryParamsBuilder,
         GetOrderListParams, GetOrderListParamsBuilder, GetPositionTiersParams,
-        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder, GetTradesParams,
-        GetTradesParamsBuilder, GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder,
-        SetPositionModeParams, SetPositionModeParamsBuilder,
+        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder,
+        GetTradeFeeParams, GetTradesParams, GetTradesParamsBuilder, GetTransactionDetailsParams,
+        GetTransactionDetailsParamsBuilder, SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -88,7 +88,7 @@ use crate::{
         credential::Credential,
         enums::{
             OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXSide,
-            OKXTradeMode, OKXTriggerType,
+            OKXTradeMode, OKXTriggerType, OKXVipLevel,
         },
         models::OKXInstrument,
         parse::{
@@ -744,6 +744,25 @@ impl OKXHttpInnerClient {
         self.send_request(Method::GET, path, None, true).await
     }
 
+    /// Requests fee rates for the account.
+    ///
+    /// Returns fee rates for the specified instrument type and the user's VIP level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-fee-rates>
+    pub async fn http_get_trade_fee(
+        &self,
+        params: GetTradeFeeParams,
+    ) -> Result<Vec<OKXFeeRate>, OKXHttpError> {
+        let path = Self::build_path("/api/v5/account/trade-fee", &params)?;
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
     /// Requests historical order records.
     ///
     /// # Errors
@@ -1126,6 +1145,81 @@ impl OKXHttpClient {
         let account_state = parse_account_state(raw, account_id, ts_init)?;
 
         Ok(account_state)
+    }
+
+    /// Requests the fee rates and VIP level from OKX.
+    ///
+    /// Returns the VIP level (0-9) from the fee rate response.
+    /// Returns `None` if the fee rates cannot be retrieved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn request_vip_level(&self) -> anyhow::Result<Option<OKXVipLevel>> {
+        // Try different instrument types (VIP level is the same across all)
+        // Try SPOT and MARGIN first (no inst_family required)
+        let simple_types = [OKXInstrumentType::Spot, OKXInstrumentType::Margin];
+
+        for inst_type in simple_types {
+            let params = GetTradeFeeParams {
+                inst_type,
+                inst_family: None,
+                uly: None,
+            };
+
+            match self.inner.http_get_trade_fee(params).await {
+                Ok(resp) => {
+                    if let Some(fee_rate) = resp.first() {
+                        tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
+                        return Ok(Some(fee_rate.level));
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "Failed to query fee rates for {inst_type:?}: {e}, trying next type"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        // Try derivatives types with common instrument families
+        let derivatives_types = [
+            OKXInstrumentType::Swap,
+            OKXInstrumentType::Futures,
+            OKXInstrumentType::Option,
+        ];
+
+        // Common instrument families to try
+        let inst_families = ["BTC-USD", "ETH-USD", "BTC-USDT", "ETH-USDT"];
+
+        for inst_type in derivatives_types {
+            for family in inst_families {
+                let params = GetTradeFeeParams {
+                    inst_type,
+                    inst_family: Some(family.to_string()),
+                    uly: None,
+                };
+
+                match self.inner.http_get_trade_fee(params).await {
+                    Ok(resp) => {
+                        if let Some(fee_rate) = resp.first() {
+                            tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
+                            return Ok(Some(fee_rate.level));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            "Failed to query fee rates for {inst_type:?} family {family}: {e}"
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+
+        tracing::warn!("Unable to query VIP level from any instrument type or family");
+        Ok(None)
     }
 
     /// Sets the position mode for the account.

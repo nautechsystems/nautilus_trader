@@ -59,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{
         consts::OKX_VENUE,
-        enums::{OKXBookChannel, OKXContractType, OKXInstrumentType},
+        enums::{OKXBookChannel, OKXContractType, OKXInstrumentType, OKXVipLevel},
     },
     config::OKXDataClientConfig,
     http::client::OKXHttpClient,
@@ -157,8 +157,8 @@ impl OKXDataClient {
         *OKX_VENUE
     }
 
-    fn vip_level(&self) -> Option<u8> {
-        self.config.vip_level.map(|vip| vip as u8)
+    fn vip_level(&self) -> Option<OKXVipLevel> {
+        self.ws_public.as_ref().map(|ws| ws.vip_level())
     }
 
     fn public_ws(&self) -> anyhow::Result<&OKXWebSocketClient> {
@@ -479,7 +479,13 @@ impl DataClient for OKXDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting OKX data client {id}", id = self.client_id);
+        tracing::info!(
+            client_id = %self.client_id,
+            vip_level = ?self.vip_level(),
+            instrument_types = ?self.config.instrument_types,
+            is_demo = self.config.is_demo,
+            "Starting OKX data client"
+        );
         Ok(())
     }
 
@@ -515,6 +521,18 @@ impl DataClient for OKXDataClient {
         }
 
         self.bootstrap_instruments().await?;
+
+        // Query VIP level and update websocket clients
+        if self.config.has_api_credentials()
+            && let Ok(Some(vip_level)) = self.http_client.request_vip_level().await
+        {
+            if let Some(ws) = self.ws_public.as_mut() {
+                ws.set_vip_level(vip_level);
+            }
+            if let Some(ws) = self.ws_business.as_mut() {
+                ws.set_vip_level(vip_level);
+            }
+        }
 
         {
             let ws_public = self.public_ws_mut()?;
@@ -623,10 +641,10 @@ impl DataClient for OKXDataClient {
             anyhow::bail!("invalid depth {depth}; valid values are 50 or 400");
         }
 
-        let vip = self.vip_level().unwrap_or(0);
+        let vip = self.vip_level().unwrap_or(OKXVipLevel::Vip0);
         let channel = match depth {
             50 => {
-                if vip < 4 {
+                if vip < OKXVipLevel::Vip4 {
                     anyhow::bail!(
                         "VIP level {vip} insufficient for 50 depth subscription (requires VIP4)"
                     );
@@ -634,7 +652,7 @@ impl DataClient for OKXDataClient {
                 OKXBookChannel::Books50L2Tbt
             }
             0 | 400 => {
-                if vip >= 5 {
+                if vip >= OKXVipLevel::Vip5 {
                     OKXBookChannel::BookL2Tbt
                 } else {
                     OKXBookChannel::Book
@@ -650,7 +668,7 @@ impl DataClient for OKXDataClient {
             async move {
                 match channel {
                     OKXBookChannel::Books50L2Tbt => ws
-                        .subscribe_books50_l2_tbt(instrument_id)
+                        .subscribe_book50_l2_tbt(instrument_id)
                         .await
                         .context("books50-l2-tbt subscription")?,
                     OKXBookChannel::BookL2Tbt => ws
@@ -658,7 +676,7 @@ impl DataClient for OKXDataClient {
                         .await
                         .context("books-l2-tbt subscription")?,
                     OKXBookChannel::Book => ws
-                        .subscribe_book(instrument_id)
+                        .subscribe_books_channel(instrument_id)
                         .await
                         .context("books subscription")?,
                 }

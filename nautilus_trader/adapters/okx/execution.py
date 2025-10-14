@@ -133,6 +133,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
+        self._log.info(f"config.is_demo={config.is_demo}", LogColor.BLUE)
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_margin=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)

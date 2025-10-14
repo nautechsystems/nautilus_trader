@@ -121,7 +121,8 @@ async def test_subscribe_order_book_deltas_depth_default_uses_standard_channel(
 
     await client._connect()
     try:
-        public_ws.subscribe_book.reset_mock()
+        public_ws.subscribe_book_with_depth.reset_mock()
+        public_ws.vip_level = nautilus_pyo3.OKXVipLevel.VIP0
 
         command = SimpleNamespace(
             book_type=BookType.L2_MBP,
@@ -133,7 +134,7 @@ async def test_subscribe_order_book_deltas_depth_default_uses_standard_channel(
         await client._subscribe_order_book_deltas(command)
 
         # Assert
-        public_ws.subscribe_book.assert_awaited_once()
+        public_ws.subscribe_book_with_depth.assert_awaited_once()
     finally:
         await client._disconnect()
 
@@ -143,12 +144,21 @@ async def test_subscribe_order_book_deltas_depth_50_requires_vip(data_client_bui
     # Arrange
     client, public_ws, business_ws, http_client, instrument_provider = data_client_builder(
         monkeypatch,
-        config_kwargs={"vip_level": nautilus_pyo3.OKXVipLevel.VIP3},
     )
 
     await client._connect()
     try:
-        public_ws.subscribe_book50_l2_tbt.reset_mock()
+        public_ws.subscribe_book_with_depth.reset_mock()
+        public_ws.vip_level = nautilus_pyo3.OKXVipLevel.VIP3
+
+        # Configure mock to raise for insufficient VIP level
+        async def mock_subscribe_with_vip_check(instrument_id, depth):
+            if depth == 50 and public_ws.vip_level.value < 4:
+                raise ValueError(
+                    f"VIP level {public_ws.vip_level} insufficient for 50 depth subscription (requires VIP4)",
+                )
+
+        public_ws.subscribe_book_with_depth.side_effect = mock_subscribe_with_vip_check
 
         command = SimpleNamespace(
             book_type=BookType.L2_MBP,
@@ -156,11 +166,9 @@ async def test_subscribe_order_book_deltas_depth_50_requires_vip(data_client_bui
             instrument_id=InstrumentId(Symbol("BTC-USD"), OKX_VENUE),
         )
 
-        # Act
-        await client._subscribe_order_book_deltas(command)
-
-        # Assert
-        public_ws.subscribe_book50_l2_tbt.assert_not_awaited()
+        # Act & Assert
+        with pytest.raises(ValueError, match="insufficient for 50 depth"):
+            await client._subscribe_order_book_deltas(command)
     finally:
         await client._disconnect()
 
@@ -173,12 +181,12 @@ async def test_subscribe_order_book_deltas_depth_50_with_vip_calls_compact(
     # Arrange
     client, public_ws, business_ws, http_client, instrument_provider = data_client_builder(
         monkeypatch,
-        config_kwargs={"vip_level": nautilus_pyo3.OKXVipLevel.VIP4},
     )
 
     await client._connect()
     try:
-        public_ws.subscribe_book50_l2_tbt.reset_mock()
+        public_ws.subscribe_book_with_depth.reset_mock()
+        public_ws.vip_level = nautilus_pyo3.OKXVipLevel.VIP4
 
         command = SimpleNamespace(
             book_type=BookType.L2_MBP,
@@ -190,7 +198,7 @@ async def test_subscribe_order_book_deltas_depth_50_with_vip_calls_compact(
         await client._subscribe_order_book_deltas(command)
 
         # Assert
-        public_ws.subscribe_book50_l2_tbt.assert_awaited_once()
+        public_ws.subscribe_book_with_depth.assert_awaited_once()
     finally:
         await client._disconnect()
 

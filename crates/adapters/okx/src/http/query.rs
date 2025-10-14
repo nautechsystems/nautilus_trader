@@ -502,6 +502,21 @@ pub struct GetOrderParams {
     pub pos_side: Option<OKXPositionSide>,
 }
 
+/// Parameters for the GET /api/v5/account/trade-fee endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetTradeFeeParams {
+    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
+    pub inst_type: OKXInstrumentType,
+    /// Underlying, required for SWAP/FUTURES/OPTION (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uly: Option<String>,
+    /// Instrument family, required for SWAP/FUTURES/OPTION (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_family: Option<String>,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

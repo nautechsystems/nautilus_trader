@@ -57,6 +57,7 @@ use crate::{
         consts::OKX_VENUE,
         enums::{
             OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -137,6 +138,35 @@ where
         Some(s) => s.parse().map(Some).map_err(serde::de::Error::custom),
         None => Ok(None),
     }
+}
+
+/// Deserializes an OKX VIP level string (e.g., "Lv4") into [`OKXVipLevel`].
+///
+/// OKX returns VIP levels as strings like "Lv0", "Lv1", ..., "Lv9".
+/// This function strips the "Lv" prefix and parses the numeric value.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a valid VIP level.
+pub fn deserialize_vip_level<'de, D>(deserializer: D) -> Result<OKXVipLevel, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+
+    // Strip "Lv" prefix if present
+    let level_str = s
+        .strip_prefix("Lv")
+        .or_else(|| s.strip_prefix("lv"))
+        .unwrap_or(&s);
+
+    // Parse the numeric value
+    let level_num = level_str
+        .parse::<u8>()
+        .map_err(|e| serde::de::Error::custom(format!("Invalid VIP level '{s}': {e}")))?;
+
+    // Convert to enum
+    Ok(OKXVipLevel::from(level_num))
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
@@ -1290,12 +1320,27 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     for b in &okx_account.details {
+        // Skip balances with empty currency codes
+        if b.ccy.is_empty() {
+            tracing::warn!("Skipping balance detail with empty currency code");
+            continue;
+        }
+
         let currency = Currency::from(b.ccy);
         let total = Money::new(b.cash_bal.parse::<f64>()?, currency);
         let free = Money::new(b.avail_bal.parse::<f64>()?, currency);
         let locked = total - free;
         let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);
+    }
+
+    // Ensure at least one balance exists (Nautilus requires non-empty balances)
+    // OKX may return empty details for certain account configurations
+    if balances.is_empty() {
+        let zero_currency = Currency::USD();
+        let zero_money = Money::new(0.0, zero_currency);
+        let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
+        balances.push(zero_balance);
     }
 
     let mut margins = Vec::new();
@@ -2400,5 +2445,45 @@ mod tests {
             bar.bar_type, bar_type,
             "BarType must be preserved exactly through parsing"
         );
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_with_lv_prefix() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        let json = r#"{"level":"Lv4"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip4);
+
+        let json = r#"{"level":"Lv0"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip0);
+
+        let json = r#"{"level":"Lv9"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip9);
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_without_prefix() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        let json = r#"{"level":"5"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip5);
     }
 }
