@@ -27,6 +27,7 @@ import pytz
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -1126,35 +1127,35 @@ def ensure_test_data_exists(filename: str, url: str) -> Path:
 
 
 def ensure_data_exists_tardis_deribit_book_l2() -> Path:
-    filename = "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Deribit incremental book L2 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "deribit_incremental_book_L2_BTC-PERPETUAL.csv"
 
 
 def ensure_data_exists_tardis_binance_snapshot5() -> Path:
-    filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Binance snapshot5 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "binance-futures_book_snapshot_5_BTCUSDT.csv"
 
 
 def ensure_data_exists_tardis_binance_snapshot25() -> Path:
-    filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Binance snapshot25 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "binance-futures_book_snapshot_25_BTCUSDT.csv"
 
 
 def ensure_data_exists_tardis_huobi_quotes() -> Path:
-    filename = "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/huobi-dm-swap/quotes/2020/05/01/BTC-USD.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Huobi quotes test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "huobi-dm-swap_quotes_BTC-USD.csv"
 
 
 def ensure_data_exists_tardis_bitmex_trades() -> Path:
-    filename = "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Bitmex trades test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "bitmex_trades_XBTUSD.csv"
