@@ -136,8 +136,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
-- Relaxed `Currency` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
-- Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
+- Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved order books error handling, state integrity, and pprint/display
