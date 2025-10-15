@@ -238,7 +238,7 @@ pub fn normalize_trade_bin_prices(
     if high < max_price || low > min_price {
         match bar_type {
             Some(bt) => {
-                tracing::warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes")
+                tracing::warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes");
             }
             None => tracing::warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
         }

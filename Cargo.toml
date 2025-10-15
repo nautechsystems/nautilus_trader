@@ -434,3 +434,11 @@ use_self = "warn"
 redundant_field_names = "warn"
 match_like_matches_macro = "warn"
 manual_map = "warn"
+
+# Pedantic (explicitness and clarity)
+semicolon_if_nothing_returned = "warn"
+unnested_or_patterns = "warn"
+filter_map_next = "warn"
+flat_map_option = "warn"
+map_unwrap_or = "warn"
+implicit_clone = "warn"

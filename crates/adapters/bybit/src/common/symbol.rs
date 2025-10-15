@@ -66,8 +66,7 @@ impl BybitSymbol {
     pub fn raw_symbol(&self) -> &str {
         self.value
             .rsplit_once('-')
-            .map(|(prefix, _)| prefix)
-            .unwrap_or(self.value.as_str())
+            .map_or(self.value.as_str(), |(prefix, _)| prefix)
     }
 
     /// Returns the product type identified by the suffix.

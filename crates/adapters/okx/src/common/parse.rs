@@ -1213,7 +1213,7 @@ pub fn parse_futures_instrument(
         anyhow::bail!("tick_sz is empty");
     }
 
-    let price_increment = Price::from(definition.tick_sz.to_string());
+    let price_increment = Price::from(definition.tick_sz.clone());
     let size_increment = Quantity::from(&definition.lot_sz);
     let multiplier = Some(Quantity::from(&definition.ct_mult));
     let lot_size = Some(Quantity::from(&definition.lot_sz));
@@ -1300,7 +1300,7 @@ pub fn parse_option_instrument(
         anyhow::bail!("tick_sz is empty");
     }
 
-    let price_increment = Price::from(definition.tick_sz.to_string());
+    let price_increment = Price::from(definition.tick_sz.clone());
     let multiplier = Quantity::from(&definition.ct_mult);
     let lot_size = Quantity::from(&definition.lot_sz);
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));

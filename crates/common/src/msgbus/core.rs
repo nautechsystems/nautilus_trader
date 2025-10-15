@@ -325,8 +325,7 @@ impl MessageBus {
         let topic = MStr::<Topic>::topic(topic).expect(FAILED);
         self.topics
             .get(&topic)
-            .map(|subs| subs.len())
-            .unwrap_or_else(|| self.find_topic_matches(topic).len())
+            .map_or_else(|| self.find_topic_matches(topic).len(), |subs| subs.len())
     }
 
     /// Returns active subscriptions.

@@ -177,9 +177,9 @@ impl BybitWebSocketClient {
                         BybitWebSocketMessage::Orderbook(msg) => {
                             let raw_symbol = msg.data.s;
 
-                            let symbol = product_type
-                                .map(|pt| make_bybit_symbol(raw_symbol.as_str(), pt))
-                                .unwrap_or(raw_symbol);
+                            let symbol = product_type.map_or(raw_symbol, |pt| {
+                                make_bybit_symbol(raw_symbol.as_str(), pt)
+                            });
 
                             if let Some(instrument_entry) = instruments
                                 .iter()
@@ -213,9 +213,9 @@ impl BybitWebSocketClient {
                         BybitWebSocketMessage::TickerLinear(msg) => {
                             let raw_symbol = msg.data.symbol;
 
-                            let symbol = product_type
-                                .map(|pt| make_bybit_symbol(raw_symbol.as_str(), pt))
-                                .unwrap_or(raw_symbol);
+                            let symbol = product_type.map_or(raw_symbol, |pt| {
+                                make_bybit_symbol(raw_symbol.as_str(), pt)
+                            });
 
                             if let Some(instrument_entry) = instruments
                                 .iter()
@@ -255,9 +255,10 @@ impl BybitWebSocketClient {
                         BybitWebSocketMessage::TickerOption(msg) => {
                             let raw_symbol = &msg.data.symbol;
 
-                            let symbol = product_type
-                                .map(|pt| make_bybit_symbol(raw_symbol, pt))
-                                .unwrap_or_else(|| raw_symbol.as_str().into());
+                            let symbol = product_type.map_or_else(
+                                || raw_symbol.as_str().into(),
+                                |pt| make_bybit_symbol(raw_symbol, pt),
+                            );
 
                             if let Some(instrument_entry) = instruments
                                 .iter()
@@ -298,9 +299,9 @@ impl BybitWebSocketClient {
                             for trade in &msg.data {
                                 let raw_symbol = trade.s;
 
-                                let symbol = product_type
-                                    .map(|pt| make_bybit_symbol(raw_symbol.as_str(), pt))
-                                    .unwrap_or(raw_symbol);
+                                let symbol = product_type.map_or(raw_symbol, |pt| {
+                                    make_bybit_symbol(raw_symbol.as_str(), pt)
+                                });
 
                                 if let Some(instrument_entry) = instruments
                                     .iter()
@@ -339,9 +340,10 @@ impl BybitWebSocketClient {
                                 }
                             };
 
-                            let symbol = product_type
-                                .map(|pt| make_bybit_symbol(raw_symbol, pt))
-                                .unwrap_or_else(|| raw_symbol.into());
+                            let symbol = product_type.map_or_else(
+                                || raw_symbol.into(),
+                                |pt| make_bybit_symbol(raw_symbol, pt),
+                            );
 
                             if let Some(instrument_entry) = instruments
                                 .iter()

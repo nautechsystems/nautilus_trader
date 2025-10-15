@@ -297,7 +297,7 @@ impl Serialize for LogLineWrapper {
         json_obj.insert("level".to_string(), self.line.level.to_string());
         json_obj.insert("color".to_string(), self.line.color.to_string());
         json_obj.insert("component".to_string(), self.line.component.to_string());
-        json_obj.insert("message".to_string(), self.line.message.to_string());
+        json_obj.insert("message".to_string(), self.line.message.clone());
 
         json_obj.serialize(serializer)
     }

@@ -1556,7 +1556,7 @@ impl BybitWebSocketClient {
                 match serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountExecution(msg)),
                     Err(e) => {
-                        tracing::warn!("Failed to deserialize execution message: {e}\n{value}")
+                        tracing::warn!("Failed to deserialize execution message: {e}\n{value}");
                     }
                 }
             } else if topic == "wallet" || topic.starts_with("wallet.") {
@@ -1568,7 +1568,7 @@ impl BybitWebSocketClient {
                 match serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountPosition(msg)),
                     Err(e) => {
-                        tracing::warn!("Failed to deserialize position message: {e}\n{value}")
+                        tracing::warn!("Failed to deserialize position message: {e}\n{value}");
                     }
                 }
             }

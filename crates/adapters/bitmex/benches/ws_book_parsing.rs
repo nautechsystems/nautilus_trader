@@ -78,12 +78,10 @@ fn bench_orderbook_l2(c: &mut Criterion) {
         b.iter_batched(
             || from_str::<BitmexWsMessage>(ORDERBOOK_L2).expect("orderbook l2 message"),
             |message| match message {
-                BitmexWsMessage::Table(BitmexTableMessage::OrderBookL2 {
-                    action, data, ..
-                })
-                | BitmexWsMessage::Table(BitmexTableMessage::OrderBookL2_25 {
-                    action, data, ..
-                }) => {
+                BitmexWsMessage::Table(
+                    BitmexTableMessage::OrderBookL2 { action, data, .. }
+                    | BitmexTableMessage::OrderBookL2_25 { action, data, .. },
+                ) => {
                     let payload =
                         parse_book_msg_vec(data, action, &instruments, UnixNanos::default());
                     black_box(payload);

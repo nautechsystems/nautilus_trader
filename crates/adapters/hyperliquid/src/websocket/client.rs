@@ -192,13 +192,13 @@ impl HyperliquidWebSocketInnerClient {
                         }
                     }
                     Message::Binary(data) => {
-                        tracing::debug!("Received binary message ({} bytes), ignoring", data.len())
+                        tracing::debug!("Received binary message ({} bytes), ignoring", data.len());
                     }
                     Message::Ping(data) => {
-                        tracing::debug!("Received ping frame ({} bytes)", data.len())
+                        tracing::debug!("Received ping frame ({} bytes)", data.len());
                     }
                     Message::Pong(data) => {
-                        tracing::debug!("Received pong frame ({} bytes)", data.len())
+                        tracing::debug!("Received pong frame ({} bytes)", data.len());
                     }
                     Message::Close(close_frame) => {
                         tracing::info!("Received close frame: {:?}", close_frame);

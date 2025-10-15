@@ -136,19 +136,19 @@ impl DataEngine {
 
         match cmd {
             DefiSubscribeCommand::Pool(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
             }
             DefiSubscribeCommand::PoolSwaps(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
             }
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
             }
             DefiSubscribeCommand::PoolFeeCollects(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
             }
             DefiSubscribeCommand::PoolFlashEvents(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref())
+                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
             }
             DefiSubscribeCommand::Blocks(_) => {} // No pool setup needed for blocks
         }

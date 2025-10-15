@@ -2196,13 +2196,13 @@ impl DataActorCore {
     /// Register an event type for warning log levels.
     pub fn register_warning_event(&mut self, event_type: &str) {
         self.warning_events.insert(event_type.to_string());
-        log::debug!("Registered event type '{event_type}' for warning logs")
+        log::debug!("Registered event type '{event_type}' for warning logs");
     }
 
     /// Deregister an event type from warning log levels.
     pub fn deregister_warning_event(&mut self, event_type: &str) {
         self.warning_events.remove(event_type);
-        log::debug!("Deregistered event type '{event_type}' from warning logs")
+        log::debug!("Deregistered event type '{event_type}' from warning logs");
     }
 
     pub fn is_registered(&self) -> bool {
@@ -2227,7 +2227,7 @@ impl DataActorCore {
         }
 
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send_any(endpoint, command.as_any())
+        msgbus::send_any(endpoint, command.as_any());
     }
 
     #[allow(dead_code, reason = "TODO: Under development")]
@@ -2239,7 +2239,7 @@ impl DataActorCore {
         // For now, simplified approach - data requests without dynamic handlers
         // TODO: Implement proper dynamic dispatch for response handlers
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send_any(endpoint, request.as_any())
+        msgbus::send_any(endpoint, request.as_any());
     }
 
     /// Sends a shutdown command to the system with an optional reason.
@@ -3237,14 +3237,14 @@ fn check_timestamps(
     end: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     if let Some(start) = start {
-        check_predicate_true(start <= now, "start was > now")?
+        check_predicate_true(start <= now, "start was > now")?;
     }
     if let Some(end) = end {
-        check_predicate_true(end <= now, "end was > now")?
+        check_predicate_true(end <= now, "end was > now")?;
     }
 
     if let (Some(start), Some(end)) = (start, end) {
-        check_predicate_true(start < end, "start was >= end")?
+        check_predicate_true(start < end, "start was >= end")?;
     }
 
     Ok(())

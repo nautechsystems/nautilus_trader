@@ -27,11 +27,14 @@ async fn main() {
         .init();
 
     // Retrieve the config path from first argument, or use a default example config
-    let config_filepath = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("bin")
-            .join("example_config.json")
-    });
+    let config_filepath = env::args().nth(1).map_or_else(
+        || {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("bin")
+                .join("example_config.json")
+        },
+        PathBuf::from,
+    );
 
     run_tardis_machine_replay_from_config(&config_filepath)
         .await

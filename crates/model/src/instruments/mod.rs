@@ -295,8 +295,7 @@ pub trait Instrument: 'static + Send {
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
         self.base_currency()
-            .map(|currency| currency != self.settlement_currency())
-            .unwrap_or(false)
+            .is_some_and(|currency| currency != self.settlement_currency())
     }
 
     fn price_precision(&self) -> u8;
@@ -527,8 +526,7 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
             stringify!(CurrencyPair),
             self.id,
             self.tick_scheme()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "None".into()),
+                .map_or_else(|| "None".into(), |s| s.to_string()),
             self.price_precision(),
             self.size_precision(),
             self.price_increment(),

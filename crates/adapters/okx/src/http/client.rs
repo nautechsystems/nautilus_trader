@@ -371,7 +371,7 @@ impl OKXHttpInnerClient {
         };
 
         let api_key = credential.api_key.to_string();
-        let api_passphrase = credential.api_passphrase.to_string();
+        let api_passphrase = credential.api_passphrase.clone();
 
         // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
         let now = Utc::now();
@@ -1639,8 +1639,7 @@ impl OKXHttpClient {
             let page_ceiling = if using_history { 100 } else { 300 };
             let remaining = limit
                 .filter(|&l| l > 0) // Treat limit=0 as no limit
-                .map(|l| (l as usize).saturating_sub(out.len()))
-                .unwrap_or(page_ceiling);
+                .map_or(page_ceiling, |l| (l as usize).saturating_sub(out.len()));
             let page_cap = remaining.min(page_ceiling);
 
             let mut p = GetCandlesticksParamsBuilder::default();
@@ -2443,7 +2442,7 @@ impl OKXHttpClient {
         let okx_side: OKXSide = order_side.into();
 
         // Map trigger type to OKX format
-        let trigger_px_type_enum = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
+        let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
 
         // Determine order price based on order type
         let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {

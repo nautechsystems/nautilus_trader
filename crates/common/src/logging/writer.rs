@@ -351,7 +351,7 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
                 match std::fs::remove_file(&path) {
                     Ok(_) => tracing::debug!("Removed old log file: {}", path.display()),
                     Err(e) => {
-                        tracing::error!("Failed to remove old log file {}: {e}", path.display())
+                        tracing::error!("Failed to remove old log file {}: {e}", path.display());
                     }
                 }
             }

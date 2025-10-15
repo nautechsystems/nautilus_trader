@@ -292,10 +292,10 @@ impl DataType {
 
     /// Returns a string representation of the metadata.
     pub fn metadata_str(&self) -> String {
-        self.metadata
-            .as_ref()
-            .map(|metadata| to_string(metadata).unwrap_or_default())
-            .unwrap_or_else(|| "null".to_string())
+        self.metadata.as_ref().map_or_else(
+            || "null".to_string(),
+            |metadata| to_string(metadata).unwrap_or_default(),
+        )
     }
 
     /// Returns the messaging topic for the data type.

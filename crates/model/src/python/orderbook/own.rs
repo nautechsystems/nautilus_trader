@@ -305,7 +305,7 @@ impl OwnOrderBook {
 
     #[pyo3(name = "audit_open_orders")]
     fn py_audit_open_orders(&mut self, open_order_ids: HashSet<ClientOrderId>) {
-        self.audit_open_orders(&open_order_ids)
+        self.audit_open_orders(&open_order_ids);
     }
 
     #[pyo3(name = "pprint")]

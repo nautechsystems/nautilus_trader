@@ -514,14 +514,16 @@ impl HyperliquidHttpClient {
                 }
                 let delay = self
                     .parse_retry_after_simple(&response.headers)
-                    .map(Duration::from_millis)
-                    .unwrap_or_else(|| {
-                        backoff_full_jitter(
-                            attempt,
-                            self.rate_limit_backoff_base,
-                            self.rate_limit_backoff_cap,
-                        )
-                    });
+                    .map_or_else(
+                        || {
+                            backoff_full_jitter(
+                                attempt,
+                                self.rate_limit_backoff_base,
+                                self.rate_limit_backoff_cap,
+                            )
+                        },
+                        Duration::from_millis,
+                    );
                 tracing::warn!(endpoint=?request, attempt, wait_ms=?delay.as_millis(), "429 Too Many Requests; backing off");
                 attempt += 1;
                 sleep(delay).await;

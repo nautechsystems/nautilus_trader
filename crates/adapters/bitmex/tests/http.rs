@@ -68,7 +68,7 @@ async fn handle_get_instrument(query: Query<HashMap<String, String>>) -> impl In
     let instrument = load_test_data("http_get_instrument_xbtusd.json");
     let requested_symbol = query.get("symbol");
 
-    if requested_symbol.map(|s| s == "XBTUSD").unwrap_or(false) {
+    if requested_symbol.is_some_and(|s| s == "XBTUSD") {
         Json(vec![instrument])
     } else {
         Json(Vec::<Value>::new())

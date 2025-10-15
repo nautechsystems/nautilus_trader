@@ -74,7 +74,7 @@ impl Credential {
         body: Option<&[u8]>,
     ) -> String {
         let mut message = Vec::with_capacity(
-            timestamp.len() + method.len() + endpoint.len() + body.map(|b| b.len()).unwrap_or(0),
+            timestamp.len() + method.len() + endpoint.len() + body.map_or(0, |b| b.len()),
         );
         message.extend_from_slice(timestamp.as_bytes());
         message.extend_from_slice(method.as_bytes());

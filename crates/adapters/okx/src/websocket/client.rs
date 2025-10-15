@@ -397,7 +397,7 @@ impl OKXWebSocketClient {
             instruments_cache.insert(inst.symbol().inner(), inst.clone());
         }
 
-        self.instruments_cache = Arc::new(instruments_cache)
+        self.instruments_cache = Arc::new(instruments_cache);
     }
 
     /// Sets the VIP level for this client.
@@ -960,7 +960,7 @@ impl OKXWebSocketClient {
                     Err(_) => {
                         log::warn!(
                             "Timeout waiting for websocket disconnect, continuing with cleanup"
-                        )
+                        );
                     }
                 }
             } else {
@@ -1131,7 +1131,7 @@ impl OKXWebSocketClient {
                     .send_text(json_txt, Some(vec!["subscription".to_string()]))
                     .await
                 {
-                    tracing::error!("Error sending message: {e:?}")
+                    tracing::error!("Error sending message: {e:?}");
                 }
             } else {
                 return Err(OKXWsError::ClientError(
@@ -1203,7 +1203,7 @@ impl OKXWebSocketClient {
                     .send_text(json_txt, Some(vec!["subscription".to_string()]))
                     .await
                 {
-                    tracing::error!("Error sending message: {e:?}")
+                    tracing::error!("Error sending message: {e:?}");
                 }
             } else {
                 log::error!("Cannot send message: not connected");
@@ -2909,7 +2909,7 @@ impl OKXWebSocketClient {
         builder.trigger_px(trigger_price.to_string());
 
         // Map Nautilus TriggerType to OKX trigger type
-        let okx_trigger_type = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
+        let okx_trigger_type = trigger_type.map_or(OKXTriggerType::Last, Into::into);
         builder.trigger_px_type(okx_trigger_type);
 
         // For stop-limit orders, set the limit price
@@ -3320,8 +3320,10 @@ impl OKXWsMessageHandler {
             .cancel_source_reason
             .as_ref()
             .filter(|reason| !reason.is_empty())
-            .map(|reason| Ustr::from(reason.as_str()))
-            .unwrap_or_else(|| Ustr::from(OKX_POST_ONLY_CANCEL_REASON));
+            .map_or_else(
+                || Ustr::from(OKX_POST_ONLY_CANCEL_REASON),
+                |reason| Ustr::from(reason.as_str()),
+            );
 
         let ts_event = parse_millisecond_timestamp(msg.u_time);
         let rejected = OrderRejected::new(
@@ -3365,8 +3367,7 @@ impl OKXWsMessageHandler {
 
         msg.acc_fill_sz
             .as_ref()
-            .map(|filled| filled == "0" || filled.is_empty())
-            .unwrap_or(true)
+            .is_none_or(|filled| filled == "0" || filled.is_empty())
     }
 
     fn register_client_order_aliases(
@@ -3948,7 +3949,7 @@ impl OKXWsMessageHandler {
                                         exec_reports.push(adjusted);
                                     }
                                     Err(e) => {
-                                        tracing::error!("Failed to parse algo order message: {e}")
+                                        tracing::error!("Failed to parse algo order message: {e}");
                                     }
                                 }
                             }
@@ -4020,7 +4021,7 @@ impl OKXWsMessageHandler {
                     ..
                 } => {
                     let topic = topic_from_websocket_arg(&arg);
-                    let success = code.as_deref().map(|c| c == "0").unwrap_or(true);
+                    let success = code.as_deref().is_none_or(|c| c == "0");
 
                     match event {
                         OKXSubscriptionEvent::Subscribe => {

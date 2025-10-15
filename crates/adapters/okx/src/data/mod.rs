@@ -636,7 +636,7 @@ impl DataClient for OKXDataClient {
             anyhow::bail!("OKX only supports L2_MBP order book deltas");
         }
 
-        let depth = cmd.depth.map(|d| d.get()).unwrap_or(0);
+        let depth = cmd.depth.map_or(0, |d| d.get());
         if !matches!(depth, 0 | 50 | 400) {
             anyhow::bail!("invalid depth {depth}; valid values are 50 or 400");
         }
@@ -696,7 +696,7 @@ impl DataClient for OKXDataClient {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("OKX only supports L2_MBP order book snapshots");
         }
-        let depth = cmd.depth.map(|d| d.get()).unwrap_or(5);
+        let depth = cmd.depth.map_or(5, |d| d.get());
         if depth != 5 {
             anyhow::bail!("OKX only supports depth=5 snapshots");
         }

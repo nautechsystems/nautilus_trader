@@ -250,13 +250,13 @@ impl OKXWebSocketClient {
                             }
                         }
                         NautilusWsMessage::OrderRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py))
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderCancelRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py))
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderModifyRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py))
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::ExecutionReports(msg) => {
                             for report in msg {
@@ -264,12 +264,12 @@ impl OKXWebSocketClient {
                                     ExecutionReport::Order(report) => {
                                         call_python_with_data(&callback, |py| {
                                             report.into_py_any(py)
-                                        })
+                                        });
                                     }
                                     ExecutionReport::Fill(report) => {
                                         call_python_with_data(&callback, |py| {
                                             report.into_py_any(py)
-                                        })
+                                        });
                                     }
                                 };
                             }

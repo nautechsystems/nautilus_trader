@@ -48,9 +48,10 @@ pub fn nautilus_order_type_to_hyperliquid(
     match order_type {
         // Regular limit order
         OrderType::Limit => {
-            let tif = time_in_force
-                .map(nautilus_time_in_force_to_hyperliquid)
-                .unwrap_or(HyperliquidTimeInForce::Gtc);
+            let tif = time_in_force.map_or(
+                HyperliquidTimeInForce::Gtc,
+                nautilus_time_in_force_to_hyperliquid,
+            );
             HyperliquidOrderType::Limit { tif }
         }
 

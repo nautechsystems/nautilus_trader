@@ -202,8 +202,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "[Message #{message_count}] BBO update: coin={}",
                             data.coin
                         );
-                        let bid = data.bbo[0].as_ref().map(|l| l.px.as_str()).unwrap_or("None");
-                        let ask = data.bbo[1].as_ref().map(|l| l.px.as_str()).unwrap_or("None");
+                        let bid = data.bbo[0].as_ref().map_or("None", |l| l.px.as_str());
+                        let ask = data.bbo[1].as_ref().map_or("None", |l| l.px.as_str());
                         tracing::debug!(
                             coin = %data.coin,
                             bid = bid,

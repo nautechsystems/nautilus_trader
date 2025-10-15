@@ -480,17 +480,17 @@ impl Cache {
 
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
-        self.quotes(&instrument_id).map(|deque| deque.to_vec())
+        self.quotes(&instrument_id)
     }
 
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
-        self.trades(&instrument_id).map(|deque| deque.to_vec())
+        self.trades(&instrument_id)
     }
 
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
-        self.bars(&bar_type).map(|deque| deque.to_vec())
+        self.bars(&bar_type)
     }
 
     #[pyo3(name = "has_quote_ticks")]

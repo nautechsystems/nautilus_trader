@@ -241,7 +241,7 @@ impl Secrets {
             None => None,
         };
 
-        let is_testnet = matches!(raw.network.as_deref(), Some("testnet") | Some("test"));
+        let is_testnet = matches!(raw.network.as_deref(), Some("testnet" | "test"));
 
         Ok(Self {
             private_key,

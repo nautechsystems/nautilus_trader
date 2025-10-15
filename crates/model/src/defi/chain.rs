@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(eth_chain.to_string(), "Chain(name=Ethereum, id=1)");
         assert_eq!(eth_chain.name, Blockchain::Ethereum);
         assert_eq!(eth_chain.chain_id, 1);
-        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz")
+        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz");
     }
 
     #[rstest]

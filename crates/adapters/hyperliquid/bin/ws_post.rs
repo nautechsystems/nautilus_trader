@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         Ok(resp) => tracing::info!(component = "ws_post", ?resp, "action response (success)"),
         Err(e) => {
-            tracing::warn!(component = "ws_post", error = %e, "action failed")
+            tracing::warn!(component = "ws_post", error = %e, "action failed");
         }
     }
 

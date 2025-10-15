@@ -395,10 +395,7 @@ async fn drain_buffer(
             if let Err(e) = result {
                 tracing::error!("Error trimming stream '{stream_key}': {e}");
             } else {
-                last_trim_index.insert(
-                    stream_key.to_string(),
-                    unix_duration_now.as_millis() as usize,
-                );
+                last_trim_index.insert(stream_key.clone(), unix_duration_now.as_millis() as usize);
             }
         }
     }

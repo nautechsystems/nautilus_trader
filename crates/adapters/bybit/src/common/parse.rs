@@ -63,10 +63,7 @@ const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
 /// ```
 #[must_use]
 pub fn extract_raw_symbol(symbol: &str) -> &str {
-    symbol
-        .rsplit_once('-')
-        .map(|(prefix, _)| prefix)
-        .unwrap_or(symbol)
+    symbol.rsplit_once('-').map_or(symbol, |(prefix, _)| prefix)
 }
 
 /// Constructs a full Bybit symbol from a raw symbol and product type.

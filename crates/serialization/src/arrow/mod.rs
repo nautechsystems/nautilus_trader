@@ -108,7 +108,7 @@ pub trait ArrowSchemaProvider {
         let schema = Self::get_schema(None);
         let mut map = HashMap::new();
         for field in schema.fields() {
-            let name = field.name().to_string();
+            let name = field.name().clone();
             let data_type = format!("{:?}", field.data_type());
             map.insert(name, data_type);
         }

@@ -1120,8 +1120,7 @@ async fn test_sends_pong_for_control_ping() {
             let guard = state.received_control_pong.lock().await;
             if guard
                 .as_ref()
-                .map(|payload| payload.as_slice() == CONTROL_PING_PAYLOAD)
-                .unwrap_or(false)
+                .is_some_and(|payload| payload.as_slice() == CONTROL_PING_PAYLOAD)
             {
                 break;
             }

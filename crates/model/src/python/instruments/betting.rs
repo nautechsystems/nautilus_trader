@@ -435,6 +435,6 @@ mod tests {
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_betting = BettingInstrument::py_from_dict(py, values).unwrap();
             assert_eq!(betting, new_betting);
-        })
+        });
     }
 }
