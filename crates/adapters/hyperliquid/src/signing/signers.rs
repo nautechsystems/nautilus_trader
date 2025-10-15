@@ -40,7 +40,8 @@ alloy_sol_types::sol! {
 /// Request to be signed by the Hyperliquid EIP-712 signer.
 #[derive(Debug, Clone)]
 pub struct SignRequest {
-    pub action: Value,
+    pub action: Value,                 // For UserSigned actions
+    pub action_bytes: Option<Vec<u8>>, // For L1 actions (pre-serialized MessagePack)
     pub time_nonce: TimeNonce,
     pub action_type: HyperliquidActionType,
     pub is_testnet: bool,
@@ -113,9 +114,14 @@ impl HyperliquidEip712Signer {
     }
 
     fn compute_connection_id(&self, request: &SignRequest) -> Result<B256> {
-        // Serialize action with MessagePack
-        let mut bytes = rmp_serde::to_vec_named(&request.action)
-            .map_err(|e| Error::transport(format!("Failed to serialize action: {}", e)))?;
+        // Use pre-serialized MessagePack bytes if provided, otherwise serialize the JSON action
+        let mut bytes = if let Some(action_bytes) = &request.action_bytes {
+            action_bytes.clone()
+        } else {
+            // Fallback: serialize JSON Value with MessagePack
+            rmp_serde::to_vec_named(&request.action)
+                .map_err(|e| Error::transport(format!("Failed to serialize action: {}", e)))?
+        };
 
         // Append timestamp as big-endian u64
         let timestamp = request.time_nonce.as_millis() as u64;
@@ -385,6 +391,7 @@ mod tests {
                 "destination": "0xABCDEF123456789",
                 "amount": "100.000"
             }),
+            action_bytes: None,
             time_nonce: TimeNonce::from_millis(1640995200000),
             action_type: HyperliquidActionType::L1,
             is_testnet: false,
@@ -412,6 +419,7 @@ mod tests {
                 "px": "50000.00",
                 "sz": "0.1"
             }),
+            action_bytes: None,
             time_nonce: TimeNonce::from_millis(1640995200000),
             action_type: HyperliquidActionType::UserSigned,
             is_testnet: false,

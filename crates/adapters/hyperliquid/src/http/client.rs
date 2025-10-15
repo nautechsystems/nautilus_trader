@@ -621,8 +621,16 @@ impl HyperliquidHttpClient {
             serde_json::to_string_pretty(&action_value).unwrap_or_default()
         );
 
+        // Serialize the original action struct with MessagePack for L1 signing
+        let action_bytes = rmp_serde::to_vec_named(action)
+            .context("serialize action with MessagePack")
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+
+        tracing::debug!("Action MessagePack bytes length: {}", action_bytes.len());
+
         let sign_request = SignRequest {
             action: action_value.clone(),
+            action_bytes: Some(action_bytes),
             time_nonce,
             action_type: HyperliquidActionType::L1,
             is_testnet: self.is_testnet,
@@ -735,9 +743,15 @@ impl HyperliquidHttpClient {
             .context("serialize exchange action")
             .map_err(|e| Error::bad_request(e.to_string()))?;
 
+        // Serialize the original action struct with MessagePack for L1 signing
+        let action_bytes = rmp_serde::to_vec_named(action)
+            .context("serialize action with MessagePack")
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+
         let sig = signer
             .sign(&SignRequest {
                 action: action_value.clone(),
+                action_bytes: Some(action_bytes),
                 time_nonce,
                 action_type: HyperliquidActionType::L1,
                 is_testnet: self.is_testnet,
