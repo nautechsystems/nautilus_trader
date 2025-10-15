@@ -45,50 +45,50 @@ impl AccountAny {
     #[must_use]
     pub fn id(&self) -> AccountId {
         match self {
-            AccountAny::Margin(margin) => margin.id,
-            AccountAny::Cash(cash) => cash.id,
+            Self::Margin(margin) => margin.id,
+            Self::Cash(cash) => cash.id,
         }
     }
 
     pub fn last_event(&self) -> Option<AccountState> {
         match self {
-            AccountAny::Margin(margin) => margin.last_event(),
-            AccountAny::Cash(cash) => cash.last_event(),
+            Self::Margin(margin) => margin.last_event(),
+            Self::Cash(cash) => cash.last_event(),
         }
     }
 
     pub fn events(&self) -> Vec<AccountState> {
         match self {
-            AccountAny::Margin(margin) => margin.events(),
-            AccountAny::Cash(cash) => cash.events(),
+            Self::Margin(margin) => margin.events(),
+            Self::Cash(cash) => cash.events(),
         }
     }
 
     pub fn apply(&mut self, event: AccountState) {
         match self {
-            AccountAny::Margin(margin) => margin.apply(event),
-            AccountAny::Cash(cash) => cash.apply(event),
+            Self::Margin(margin) => margin.apply(event),
+            Self::Cash(cash) => cash.apply(event),
         }
     }
 
     pub fn balances(&self) -> HashMap<Currency, AccountBalance> {
         match self {
-            AccountAny::Margin(margin) => margin.balances(),
-            AccountAny::Cash(cash) => cash.balances(),
+            Self::Margin(margin) => margin.balances(),
+            Self::Cash(cash) => cash.balances(),
         }
     }
 
     pub fn balances_locked(&self) -> HashMap<Currency, Money> {
         match self {
-            AccountAny::Margin(margin) => margin.balances_locked(),
-            AccountAny::Cash(cash) => cash.balances_locked(),
+            Self::Margin(margin) => margin.balances_locked(),
+            Self::Cash(cash) => cash.balances_locked(),
         }
     }
 
     pub fn base_currency(&self) -> Option<Currency> {
         match self {
-            AccountAny::Margin(margin) => margin.base_currency(),
-            AccountAny::Cash(cash) => cash.base_currency(),
+            Self::Margin(margin) => margin.base_currency(),
+            Self::Cash(cash) => cash.base_currency(),
         }
     }
 
@@ -122,8 +122,8 @@ impl AccountAny {
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         match self {
-            AccountAny::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
-            AccountAny::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
+            Self::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
+            Self::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
         }
     }
 
@@ -139,14 +139,14 @@ impl AccountAny {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         match self {
-            AccountAny::Margin(margin) => margin.calculate_commission(
+            Self::Margin(margin) => margin.calculate_commission(
                 instrument,
                 last_qty,
                 last_px,
                 liquidity_side,
                 use_quote_for_inverse,
             ),
-            AccountAny::Cash(cash) => cash.calculate_commission(
+            Self::Cash(cash) => cash.calculate_commission(
                 instrument,
                 last_qty,
                 last_px,
@@ -158,8 +158,8 @@ impl AccountAny {
 
     pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
         match self {
-            AccountAny::Margin(margin) => margin.balance(currency),
-            AccountAny::Cash(cash) => cash.balance(currency),
+            Self::Margin(margin) => margin.balance(currency),
+            Self::Cash(cash) => cash.balance(currency),
         }
     }
 }
@@ -167,9 +167,9 @@ impl AccountAny {
 impl From<AccountState> for AccountAny {
     fn from(event: AccountState) -> Self {
         match event.account_type {
-            AccountType::Margin => AccountAny::Margin(MarginAccount::new(event, false)),
-            AccountType::Cash => AccountAny::Cash(CashAccount::new(event, false, false)),
-            AccountType::Betting => todo!("Betting account not implemented"),
+            AccountType::Margin => Self::Margin(MarginAccount::new(event, false)),
+            AccountType::Cash => Self::Cash(CashAccount::new(event, false, false)),
+            AccountType::Betting => panic!("Betting account not implemented"),
         }
     }
 }

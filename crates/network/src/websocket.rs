@@ -243,7 +243,7 @@ struct WebSocketClientInner {
     connection_mode: Arc<AtomicU8>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
-    /// True if this is a stream-based client (created via connect_stream).
+    /// True if this is a stream-based client (created via `connect_stream`).
     /// Stream-based clients disable auto-reconnect because the reader is
     /// owned by the caller and cannot be replaced during reconnection.
     is_stream_mode: bool,
@@ -944,27 +944,26 @@ impl WebSocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
-            while !self.is_disconnected() {
-                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
-            }
+        if let Ok(()) =
+            tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+                while !self.is_disconnected() {
+                    tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS))
+                        .await;
+                }
 
-            if !self.controller_task.is_finished() {
-                self.controller_task.abort();
-                log_task_aborted("controller");
-            }
-        })
-        .await
-        {
-            Ok(()) => {
-                tracing::debug!("Controller task finished");
-            }
-            Err(_) => {
-                tracing::error!("Timeout waiting for controller task to finish");
                 if !self.controller_task.is_finished() {
                     self.controller_task.abort();
                     log_task_aborted("controller");
                 }
+            })
+            .await
+        {
+            tracing::debug!("Controller task finished");
+        } else {
+            tracing::error!("Timeout waiting for controller task to finish");
+            if !self.controller_task.is_finished() {
+                self.controller_task.abort();
+                log_task_aborted("controller");
             }
         }
     }

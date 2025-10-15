@@ -214,7 +214,7 @@ impl FullMath {
                 result = (result + a) % m;
             }
             a = (a * U256::from(2)) % m;
-            b >>= 1
+            b >>= 1;
         }
 
         result

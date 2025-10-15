@@ -57,6 +57,7 @@ use crate::{
         consts::OKX_VENUE,
         enums::{
             OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -137,6 +138,42 @@ where
         Some(s) => s.parse().map(Some).map_err(serde::de::Error::custom),
         None => Ok(None),
     }
+}
+
+/// Deserializes an OKX VIP level string into [`OKXVipLevel`].
+///
+/// OKX returns VIP levels in multiple formats:
+/// - "VIP0", "VIP1", ..., "VIP9" (VIP tier format)
+/// - "Lv0", "Lv1", ..., "Lv9" (Level format)
+/// - "0", "1", ..., "9" (bare numeric)
+/// - "" (empty string, defaults to VIP0)
+///
+/// This function handles all formats by stripping any prefix and parsing the numeric value.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a valid VIP level.
+pub fn deserialize_vip_level<'de, D>(deserializer: D) -> Result<OKXVipLevel, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+
+    if s.is_empty() {
+        return Ok(OKXVipLevel::Vip0);
+    }
+
+    let s_lower = s.to_lowercase();
+    let level_str = s_lower
+        .strip_prefix("vip")
+        .or_else(|| s_lower.strip_prefix("lv"))
+        .unwrap_or(&s_lower);
+
+    let level_num = level_str
+        .parse::<u8>()
+        .map_err(|e| serde::de::Error::custom(format!("Invalid VIP level '{s}': {e}")))?;
+
+    Ok(OKXVipLevel::from(level_num))
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
@@ -905,9 +942,14 @@ fn parse_common_instrument_data(
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
 
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("`tick_sz` is empty");
+    }
+
     let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
         anyhow::anyhow!(
-            "Failed to parse tick_sz '{}' into Price: {}",
+            "Failed to parse `tick_sz` '{}' into Price: {}",
             definition.tick_sz,
             e
         )
@@ -1057,6 +1099,12 @@ pub fn parse_swap_instrument(
             anyhow::bail!("Invalid contract type for swap: {}", definition.ct_type)
         }
     };
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
     let price_increment = match Price::from_str(&definition.tick_sz) {
         Ok(price) => price,
         Err(e) => {
@@ -1159,7 +1207,13 @@ pub fn parse_futures_instrument(
         .ok_or_else(|| anyhow::anyhow!("`expiry_time` is required to parse Swap instrument"))?;
     let activation_ns = UnixNanos::from(millis_to_nanos(listing_time as f64));
     let expiration_ns = UnixNanos::from(millis_to_nanos(expiry_time as f64));
-    let price_increment = Price::from(definition.tick_sz.to_string());
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
+    let price_increment = Price::from(definition.tick_sz.clone());
     let size_increment = Quantity::from(&definition.lot_sz);
     let multiplier = Some(Quantity::from(&definition.ct_mult));
     let lot_size = Some(Quantity::from(&definition.lot_sz));
@@ -1240,7 +1294,13 @@ pub fn parse_option_instrument(
         .ok_or_else(|| anyhow::anyhow!("`expiry_time` is required to parse Option instrument"))?;
     let activation_ns = UnixNanos::from(millis_to_nanos(listing_time as f64));
     let expiration_ns = UnixNanos::from(millis_to_nanos(expiry_time as f64));
-    let price_increment = Price::from(definition.tick_sz.to_string());
+
+    // Validate tick_sz is not empty before parsing
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("tick_sz is empty");
+    }
+
+    let price_increment = Price::from(definition.tick_sz.clone());
     let multiplier = Quantity::from(&definition.ct_mult);
     let lot_size = Quantity::from(&definition.lot_sz);
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
@@ -1290,12 +1350,27 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     for b in &okx_account.details {
+        // Skip balances with empty currency codes
+        if b.ccy.is_empty() {
+            tracing::warn!("Skipping balance detail with empty currency code");
+            continue;
+        }
+
         let currency = Currency::from(b.ccy);
         let total = Money::new(b.cash_bal.parse::<f64>()?, currency);
         let free = Money::new(b.avail_bal.parse::<f64>()?, currency);
         let locked = total - free;
         let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);
+    }
+
+    // Ensure at least one balance exists (Nautilus requires non-empty balances)
+    // OKX may return empty details for certain account configurations
+    if balances.is_empty() {
+        let zero_currency = Currency::USD();
+        let zero_money = Money::new(0.0, zero_currency);
+        let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
+        balances.push(zero_balance);
     }
 
     let mut margins = Vec::new();
@@ -2400,5 +2475,72 @@ mod tests {
             bar.bar_type, bar_type,
             "BarType must be preserved exactly through parsing"
         );
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_all_formats() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        // Test VIP prefix format
+        let json = r#"{"level":"VIP4"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip4);
+
+        let json = r#"{"level":"VIP5"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip5);
+
+        // Test Lv prefix format
+        let json = r#"{"level":"Lv1"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip1);
+
+        let json = r#"{"level":"Lv0"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip0);
+
+        let json = r#"{"level":"Lv9"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip9);
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_empty_string() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        // Empty string should default to VIP0
+        let json = r#"{"level":""}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip0);
+    }
+
+    #[rstest]
+    fn test_deserialize_vip_level_without_prefix() {
+        use serde::Deserialize;
+        use serde_json;
+
+        #[derive(Deserialize)]
+        struct TestFeeRate {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+            level: OKXVipLevel,
+        }
+
+        let json = r#"{"level":"5"}"#;
+        let result: TestFeeRate = serde_json::from_str(json).unwrap();
+        assert_eq!(result.level, OKXVipLevel::Vip5);
     }
 }

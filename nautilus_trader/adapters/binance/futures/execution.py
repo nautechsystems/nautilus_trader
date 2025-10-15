@@ -201,13 +201,19 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             for _, symbol, type_ in margin_tasks:
                 self._log.info(f"Set {symbol} margin type to {type_.value}")
 
+        # Initialize leverage for all symbols using symbolConfig endpoint
+        # This ensures leverage is set correctly even for symbols without active positions
         account: MarginAccount = self.get_account()
-        position_risks = await self._futures_http_account.query_futures_position_risk()
-        for position in position_risks:
-            instrument_id: InstrumentId = self._get_cached_instrument_id(position.symbol)
-            leverage = Decimal(position.leverage)
-            account.set_leverage(instrument_id, leverage)
-            self._log.debug(f"Set leverage {position.symbol} {leverage}X")
+        symbol_configs = await self._futures_http_account.query_futures_symbol_config()
+        for config in symbol_configs:
+            try:
+                instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
+                leverage = Decimal(config.leverage)
+                account.set_leverage(instrument_id, leverage)
+                self._log.debug(f"Set leverage {config.symbol} {leverage}X")
+            except KeyError:
+                # Symbol not loaded in instrument provider, skip
+                continue
 
     async def _init_dual_side_position(self) -> None:
         binance_futures_dual_side_position: BinanceFuturesDualSidePosition = (

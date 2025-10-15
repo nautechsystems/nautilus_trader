@@ -522,7 +522,7 @@ impl<'de> Deserialize<'de> for Money {
         D: Deserializer<'de>,
     {
         let money_str: String = Deserialize::deserialize(deserializer)?;
-        Ok(Money::from(money_str.as_str()))
+        Ok(Self::from(money_str.as_str()))
     }
 }
 

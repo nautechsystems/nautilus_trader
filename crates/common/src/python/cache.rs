@@ -77,17 +77,17 @@ impl PyCache {
 
     #[pyo3(name = "quote")]
     fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
-        self.0.borrow().quote(&instrument_id).cloned()
+        self.0.borrow().quote(&instrument_id).copied()
     }
 
     #[pyo3(name = "trade")]
     fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
-        self.0.borrow().trade(&instrument_id).cloned()
+        self.0.borrow().trade(&instrument_id).copied()
     }
 
     #[pyo3(name = "bar")]
     fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
-        self.0.borrow().bar(&bar_type).cloned()
+        self.0.borrow().bar(&bar_type).copied()
     }
 
     #[pyo3(name = "order_book")]
@@ -246,7 +246,7 @@ impl Cache {
     fn py_instrument_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
         self.instrument_ids(venue.as_ref())
             .into_iter()
-            .cloned()
+            .copied()
             .collect()
     }
 
@@ -465,32 +465,32 @@ impl Cache {
 
     #[pyo3(name = "quote")]
     fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
-        self.quote(&instrument_id).cloned()
+        self.quote(&instrument_id).copied()
     }
 
     #[pyo3(name = "trade")]
     fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
-        self.trade(&instrument_id).cloned()
+        self.trade(&instrument_id).copied()
     }
 
     #[pyo3(name = "bar")]
     fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
-        self.bar(&bar_type).cloned()
+        self.bar(&bar_type).copied()
     }
 
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
-        self.quotes(&instrument_id).map(|deque| deque.to_vec())
+        self.quotes(&instrument_id)
     }
 
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
-        self.trades(&instrument_id).map(|deque| deque.to_vec())
+        self.trades(&instrument_id)
     }
 
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
-        self.bars(&bar_type).map(|deque| deque.to_vec())
+        self.bars(&bar_type)
     }
 
     #[pyo3(name = "has_quote_ticks")]
@@ -525,7 +525,7 @@ impl Cache {
 
     #[pyo3(name = "mark_price")]
     fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
-        self.mark_price(&instrument_id).cloned()
+        self.mark_price(&instrument_id).copied()
     }
 
     #[pyo3(name = "mark_prices")]
@@ -535,7 +535,7 @@ impl Cache {
 
     #[pyo3(name = "index_price")]
     fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
-        self.index_price(&instrument_id).cloned()
+        self.index_price(&instrument_id).copied()
     }
 
     #[pyo3(name = "index_prices")]
@@ -545,7 +545,7 @@ impl Cache {
 
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
-        self.funding_rate(&instrument_id).cloned()
+        self.funding_rate(&instrument_id).copied()
     }
 
     #[pyo3(name = "order_book")]

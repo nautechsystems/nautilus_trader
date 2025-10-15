@@ -50,7 +50,7 @@ impl Default for QuoteTick {
 impl Default for TradeTick {
     /// Creates a new default [`TradeTick`] instance for testing.
     fn default() -> Self {
-        TradeTick {
+        Self {
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
             price: Price::from("1.00000"),
             size: Quantity::from(100_000),

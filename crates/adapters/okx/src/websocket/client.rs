@@ -28,7 +28,7 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime},
 };
@@ -93,7 +93,7 @@ use crate::{
         credential::Credential,
         enums::{
             OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXTradeMode,
-            OKXTriggerType, conditional_order_to_algo_type, is_conditional_order,
+            OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type, is_conditional_order,
         },
         parse::{
             bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
@@ -187,6 +187,7 @@ fn channel_requires_auth(channel: &OKXWsChannel) -> bool {
 pub struct OKXWebSocketClient {
     url: String,
     account_id: AccountId,
+    vip_level: Arc<AtomicU8>,
     credential: Option<Credential>,
     heartbeat: Option<u64>,
     inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
@@ -267,6 +268,7 @@ impl OKXWebSocketClient {
         Ok(Self {
             url,
             account_id,
+            vip_level: Arc::new(AtomicU8::new(0)), // Default to VIP 0
             credential,
             heartbeat,
             inner: Arc::new(tokio::sync::RwLock::new(None)),
@@ -395,7 +397,20 @@ impl OKXWebSocketClient {
             instruments_cache.insert(inst.symbol().inner(), inst.clone());
         }
 
-        self.instruments_cache = Arc::new(instruments_cache)
+        self.instruments_cache = Arc::new(instruments_cache);
+    }
+
+    /// Sets the VIP level for this client.
+    ///
+    /// The VIP level determines which WebSocket channels are available.
+    pub fn set_vip_level(&self, vip_level: OKXVipLevel) {
+        self.vip_level.store(vip_level as u8, Ordering::Relaxed);
+    }
+
+    /// Gets the current VIP level.
+    pub fn vip_level(&self) -> OKXVipLevel {
+        let level = self.vip_level.load(Ordering::Relaxed);
+        OKXVipLevel::from(level)
     }
 
     /// Connect to the OKX WebSocket server.
@@ -443,6 +458,7 @@ impl OKXWebSocketClient {
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
         };
+
         // Configure rate limits for different operation types
         let keyed_quotas = vec![
             ("subscription".to_string(), *OKX_WS_QUOTA),
@@ -944,7 +960,7 @@ impl OKXWebSocketClient {
                     Err(_) => {
                         log::warn!(
                             "Timeout waiting for websocket disconnect, continuing with cleanup"
-                        )
+                        );
                     }
                 }
             } else {
@@ -1043,9 +1059,20 @@ impl OKXWebSocketClient {
                     )));
                 }
             }
+            InstrumentAny::CryptoOption(_) => {
+                // For OPTIONS: "BTC-USD-241217-92000-C" -> "BTC-USD"
+                let parts: Vec<&str> = symbol.as_str().split('-').collect();
+                if parts.len() >= 2 {
+                    format!("{}-{}", parts[0], parts[1])
+                } else {
+                    return Err(OKXWsError::ClientError(format!(
+                        "Unable to parse option instrument family from symbol: {symbol}",
+                    )));
+                }
+            }
             _ => {
                 return Err(OKXWsError::ClientError(format!(
-                    "Unsupported instrument type for mass cancel: {instrument:?}",
+                    "Unsupported instrument type: {instrument:?}",
                 )));
             }
         };
@@ -1104,7 +1131,7 @@ impl OKXWebSocketClient {
                     .send_text(json_txt, Some(vec!["subscription".to_string()]))
                     .await
                 {
-                    tracing::error!("Error sending message: {e:?}")
+                    tracing::error!("Error sending message: {e:?}");
                 }
             } else {
                 return Err(OKXWsError::ClientError(
@@ -1176,7 +1203,7 @@ impl OKXWebSocketClient {
                     .send_text(json_txt, Some(vec!["subscription".to_string()]))
                     .await
                 {
-                    tracing::error!("Error sending message: {e:?}")
+                    tracing::error!("Error sending message: {e:?}");
                 }
             } else {
                 log::error!("Cannot send message: not connected");
@@ -1358,16 +1385,23 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribes to full order book data (400 depth levels) for an instrument.
+    /// Subscribes to order book data for an instrument.
+    ///
+    /// This is a convenience method that calls [`Self::subscribe_book_with_depth`] with depth 0,
+    /// which automatically selects the appropriate channel based on VIP level.
     ///
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    ///
-    /// # References
-    ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-channel>.
-    pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
+    pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_with_depth(instrument_id, 0).await
+    }
+
+    /// Subscribes to the standard books channel (internal method).
+    pub(crate) async fn subscribe_books_channel(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Books,
             inst_type: None,
@@ -1412,7 +1446,7 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-50-depth-tbt-channel>.
-    pub async fn subscribe_books50_l2_tbt(
+    pub async fn subscribe_book50_l2_tbt(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
@@ -1449,9 +1483,57 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
+    /// Subscribes to order book data with automatic channel selection based on VIP level and depth.
+    ///
+    /// Selects the optimal channel based on user's VIP tier and requested depth:
+    /// - depth 50: Requires VIP4+, subscribes to `books50-l2-tbt`
+    /// - depth 0 or 400:
+    ///   - VIP5+: subscribes to `books-l2-tbt` (400 depth, fastest)
+    ///   - Below VIP5: subscribes to `books` (standard depth)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Subscription request fails
+    /// - depth is 50 but VIP level is below 4
+    pub async fn subscribe_book_with_depth(
+        &self,
+        instrument_id: InstrumentId,
+        depth: u16,
+    ) -> anyhow::Result<()> {
+        let vip = self.vip_level();
+
+        match depth {
+            50 => {
+                if vip < OKXVipLevel::Vip4 {
+                    anyhow::bail!(
+                        "VIP level {vip} insufficient for 50 depth subscription (requires VIP4)"
+                    );
+                }
+                self.subscribe_book50_l2_tbt(instrument_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            }
+            0 | 400 => {
+                if vip >= OKXVipLevel::Vip5 {
+                    self.subscribe_book_l2_tbt(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                } else {
+                    self.subscribe_books_channel(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                }
+            }
+            _ => anyhow::bail!("Invalid depth {depth}, must be 0, 50, or 400"),
+        }
+    }
+
     /// Subscribes to best bid/ask quote data for an instrument.
     ///
     /// Provides tick-by-tick updates of the best bid and ask prices.
+    /// For derivatives (SWAP, FUTURES, OPTION), uses bbo-tbt channel.
+    /// For SPOT instruments, uses tickers channel as bbo-tbt is not supported.
     ///
     /// # Errors
     ///
@@ -1460,10 +1542,20 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-bbo-tbt-channel>.
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-tickers-channel>.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        // let (_, inst_type) = extract_okx_symbol_and_inst_type(&instrument_id);
+        let (inst_type, _) = self.get_instrument_type_and_family(instrument_id.symbol.inner())?;
+
+        // Use tickers channel for SPOT instruments (bbo-tbt not supported)
+        // Use bbo-tbt for derivatives (SWAP, FUTURES, OPTION)
+        let channel = if inst_type == OKXInstrumentType::Spot {
+            OKXWsChannel::Tickers
+        } else {
+            OKXWsChannel::BboTbt
+        };
+
         let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BboTbt,
+            channel,
             inst_type: None,
             inst_family: None,
             inst_id: Some(instrument_id.symbol.inner()),
@@ -1729,8 +1821,18 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
+        let (inst_type, _) = self.get_instrument_type_and_family(instrument_id.symbol.inner())?;
+
+        // Use tickers channel for SPOT instruments (bbo-tbt not supported)
+        // Use bbo-tbt for derivatives (SWAP, FUTURES, OPTION)
+        let channel = if inst_type == OKXInstrumentType::Spot {
+            OKXWsChannel::Tickers
+        } else {
+            OKXWsChannel::BboTbt
+        };
+
         let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BboTbt,
+            channel,
             inst_type: None,
             inst_family: None,
             inst_id: Some(instrument_id.symbol.inner()),
@@ -2807,7 +2909,7 @@ impl OKXWebSocketClient {
         builder.trigger_px(trigger_price.to_string());
 
         // Map Nautilus TriggerType to OKX trigger type
-        let okx_trigger_type = trigger_type.map(Into::into).unwrap_or(OKXTriggerType::Last);
+        let okx_trigger_type = trigger_type.map_or(OKXTriggerType::Last, Into::into);
         builder.trigger_px_type(okx_trigger_type);
 
         // For stop-limit orders, set the limit price
@@ -3218,8 +3320,10 @@ impl OKXWsMessageHandler {
             .cancel_source_reason
             .as_ref()
             .filter(|reason| !reason.is_empty())
-            .map(|reason| Ustr::from(reason.as_str()))
-            .unwrap_or_else(|| Ustr::from(OKX_POST_ONLY_CANCEL_REASON));
+            .map_or_else(
+                || Ustr::from(OKX_POST_ONLY_CANCEL_REASON),
+                |reason| Ustr::from(reason.as_str()),
+            );
 
         let ts_event = parse_millisecond_timestamp(msg.u_time);
         let rejected = OrderRejected::new(
@@ -3263,8 +3367,7 @@ impl OKXWsMessageHandler {
 
         msg.acc_fill_sz
             .as_ref()
-            .map(|filled| filled == "0" || filled.is_empty())
-            .unwrap_or(true)
+            .is_none_or(|filled| filled == "0" || filled.is_empty())
     }
 
     fn register_client_order_aliases(
@@ -3846,7 +3949,7 @@ impl OKXWsMessageHandler {
                                         exec_reports.push(adjusted);
                                     }
                                     Err(e) => {
-                                        tracing::error!("Failed to parse algo order message: {e}")
+                                        tracing::error!("Failed to parse algo order message: {e}");
                                     }
                                 }
                             }
@@ -3918,7 +4021,7 @@ impl OKXWsMessageHandler {
                     ..
                 } => {
                     let topic = topic_from_websocket_arg(&arg);
-                    let success = code.as_deref().map(|c| c == "0").unwrap_or(true);
+                    let success = code.as_deref().is_none_or(|c| c == "0");
 
                     match event {
                         OKXSubscriptionEvent::Subscribe => {

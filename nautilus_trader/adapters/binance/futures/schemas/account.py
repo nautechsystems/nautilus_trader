@@ -119,22 +119,45 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     """
-    HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
+    HTTP response from Binance Futures GET /fapi/v3/positionRisk (HMAC SHA256).
+
+    Supports both v2 and v3 schemas. v2 fields (marginType, isAutoAddMargin,
+    leverage, maxNotionalValue) are optional for backward compatibility.
+    v3 adds: breakEvenPrice, notional, marginAsset, isolatedWallet, initialMargin,
+    maintMargin, positionInitialMargin, openOrderInitialMargin, adl, bidNotional,
+    askNotional.
+
     """
 
-    entryPrice: str
-    marginType: str
-    isAutoAddMargin: str
-    isolatedMargin: str
-    leverage: str
-    liquidationPrice: str
-    markPrice: str
-    maxNotionalValue: str | None = None
-    positionAmt: str
+    # Core fields (present in both v2 and v3)
     symbol: str
-    unRealizedProfit: str
     positionSide: BinanceFuturesPositionSide
+    positionAmt: str
+    entryPrice: str
+    markPrice: str
+    unRealizedProfit: str
+    liquidationPrice: str
+    isolatedMargin: str
     updateTime: int
+
+    # v2 fields (may not be present in v3)
+    marginType: str | None = None
+    isAutoAddMargin: str | None = None
+    leverage: str | None = None
+    maxNotionalValue: str | None = None
+
+    # v3-specific fields
+    breakEvenPrice: str | None = None
+    notional: str | None = None
+    marginAsset: str | None = None
+    isolatedWallet: str | None = None
+    initialMargin: str | None = None
+    maintMargin: str | None = None
+    positionInitialMargin: str | None = None
+    openOrderInitialMargin: str | None = None
+    adl: int | None = None
+    bidNotional: str | None = None
+    askNotional: str | None = None
 
     def parse_to_position_status_report(
         self,
@@ -205,6 +228,23 @@ class BinanceFuturesLeverage(msgspec.Struct, frozen=True):
     leverage: int
     maxNotionalValue: str
     symbol: str
+
+
+class BinanceFuturesSymbolConfig(msgspec.Struct, frozen=True):
+    """
+    HTTP response from Binance Futures GET /fapi/v1/symbolConfig.
+
+    References
+    ----------
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Symbol-Config
+
+    """
+
+    symbol: str
+    marginType: str
+    isAutoAddMargin: bool
+    leverage: int
+    maxNotionalValue: str
 
 
 class BinanceFuturesMarginTypeResponse(msgspec.Struct, frozen=True):

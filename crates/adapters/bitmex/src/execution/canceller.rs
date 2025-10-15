@@ -111,14 +111,14 @@ trait CancelExecutor: Send + Sync {
 
 impl CancelExecutor for BitmexHttpClient {
     fn add_instrument(&self, instrument: InstrumentAny) {
-        BitmexHttpClient::add_instrument(self, instrument);
+        Self::add_instrument(self, instrument);
     }
 
     fn health_check(
         &self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
         Box::pin(async move {
-            BitmexHttpClient::http_get_server_time(self)
+            Self::http_get_server_time(self)
                 .await
                 .map(|_| ())
                 .map_err(|e| anyhow::anyhow!("{e}"))
@@ -134,8 +134,7 @@ impl CancelExecutor for BitmexHttpClient {
         Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
     > {
         Box::pin(async move {
-            BitmexHttpClient::cancel_order(self, instrument_id, client_order_id, venue_order_id)
-                .await
+            Self::cancel_order(self, instrument_id, client_order_id, venue_order_id).await
         })
     }
 
@@ -148,8 +147,7 @@ impl CancelExecutor for BitmexHttpClient {
         Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
     > {
         Box::pin(async move {
-            BitmexHttpClient::cancel_orders(self, instrument_id, client_order_ids, venue_order_ids)
-                .await
+            Self::cancel_orders(self, instrument_id, client_order_ids, venue_order_ids).await
         })
     }
 
@@ -160,9 +158,7 @@ impl CancelExecutor for BitmexHttpClient {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
     > {
-        Box::pin(async move {
-            BitmexHttpClient::cancel_all_orders(self, instrument_id, order_side).await
-        })
+        Box::pin(async move { Self::cancel_all_orders(self, instrument_id, order_side).await })
     }
 }
 

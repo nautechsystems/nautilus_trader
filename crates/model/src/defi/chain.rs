@@ -165,7 +165,7 @@ impl Chain {
     }
 
     /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
-    pub fn from_chain_id(chain_id: u32) -> Option<&'static Chain> {
+    pub fn from_chain_id(chain_id: u32) -> Option<&'static Self> {
         match chain_id {
             2741 => Some(&chains::ABSTRACT),
             42161 => Some(&chains::ARBITRUM),
@@ -254,7 +254,7 @@ impl Chain {
     /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
     ///
     /// String matching is case-insensitive.
-    pub fn from_chain_name(chain_name: &str) -> Option<&'static Chain> {
+    pub fn from_chain_name(chain_name: &str) -> Option<&'static Self> {
         let blockchain = Blockchain::from_str(chain_name).ok()?;
 
         match blockchain {
@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(eth_chain.to_string(), "Chain(name=Ethereum, id=1)");
         assert_eq!(eth_chain.name, Blockchain::Ethereum);
         assert_eq!(eth_chain.chain_id, 1);
-        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz")
+        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz");
     }
 
     #[rstest]

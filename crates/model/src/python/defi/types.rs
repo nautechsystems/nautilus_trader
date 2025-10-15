@@ -96,7 +96,7 @@ impl Chain {
 
     #[staticmethod]
     #[pyo3(name = "from_chain_name")]
-    fn py_from_chain_name(chain_name: &str) -> PyResult<Chain> {
+    fn py_from_chain_name(chain_name: &str) -> PyResult<Self> {
         Self::from_chain_name(chain_name).cloned().ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err(format!(
                 "`chain_name` '{chain_name}' is not recognized",
@@ -106,13 +106,13 @@ impl Chain {
 
     #[staticmethod]
     #[pyo3(name = "from_chain_id")]
-    fn py_from_chain_id(chain_id: u32) -> Option<Chain> {
+    fn py_from_chain_id(chain_id: u32) -> Option<Self> {
         Self::from_chain_id(chain_id).cloned()
     }
 
     #[staticmethod]
     #[pyo3(name = "ARBITRUM")]
-    fn py_arbitrum_chain() -> Chain {
+    fn py_arbitrum_chain() -> Self {
         chains::ARBITRUM.clone()
     }
 }

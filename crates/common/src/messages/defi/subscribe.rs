@@ -49,7 +49,7 @@ impl SubscribeBlocks {
     }
 }
 
-/// Represents a subscription command for pool definition updates from a specific AMM pool.
+/// Represents a command to subscribe to definition updates for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePool {
     pub instrument_id: InstrumentId,
@@ -109,7 +109,7 @@ impl SubscribePoolSwaps {
     }
 }
 
-/// Represents a subscription command for pool liquidity updates from a specific AMM pool.
+/// Represents a command to subscribe to liquidity updates for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePoolLiquidityUpdates {
     pub instrument_id: InstrumentId,
@@ -139,7 +139,7 @@ impl SubscribePoolLiquidityUpdates {
     }
 }
 
-/// Represents a subscription command for pool fee collect events from a specific AMM pool.
+/// Represents a command to subscribe to fee-collect events for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePoolFeeCollects {
     pub instrument_id: InstrumentId,
@@ -169,7 +169,7 @@ impl SubscribePoolFeeCollects {
     }
 }
 
-/// Represents a subscription command for pool flash loan events from a specific AMM pool.
+/// Represents a command to subscribe to flash-loan events for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePoolFlashEvents {
     pub instrument_id: InstrumentId,

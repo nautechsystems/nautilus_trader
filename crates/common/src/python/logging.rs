@@ -140,7 +140,7 @@ pub fn py_init_logging(
 #[pyfunction()]
 #[pyo3(name = "logger_flush")]
 pub fn py_logger_flush() {
-    log::logger().flush()
+    log::logger().flush();
 }
 
 fn parse_component_levels(

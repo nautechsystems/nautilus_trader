@@ -147,7 +147,7 @@ impl Block {
     }
 
     pub fn set_chain(&mut self, chain: Blockchain) {
-        self.chain = Some(chain)
+        self.chain = Some(chain);
     }
 
     /// Sets the EIP-1559 base fee and returns `self` for chaining.

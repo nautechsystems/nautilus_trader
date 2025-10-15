@@ -1100,7 +1100,7 @@ typedef struct OrderBookDeltas_API {
 } OrderBookDeltas_API;
 
 /**
- * Represents a aggregated order book update with a fixed depth of 10 levels per side.
+ * Represents an aggregated order book update with a fixed depth of 10 levels per side.
  *
  * This structure is specifically designed for scenarios where a snapshot of the top 10 bid and
  * ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`

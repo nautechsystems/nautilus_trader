@@ -23,7 +23,7 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
-/// An indicator which calculates a Average True Range (ATR) across a rolling window.
+/// An indicator which calculates a Relative Volatility Index (RVI) across a rolling window.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

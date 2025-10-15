@@ -169,6 +169,7 @@ def _create_ws_mock() -> MagicMock:
     mock.subscribe_book50_l2_tbt = AsyncMock()
     mock.subscribe_book_l2_tbt = AsyncMock()
     mock.subscribe_book_depth5 = AsyncMock()
+    mock.subscribe_book_with_depth = AsyncMock()
     mock.subscribe_quotes = AsyncMock()
     mock.subscribe_trades = AsyncMock()
     mock.subscribe_mark_prices = AsyncMock()

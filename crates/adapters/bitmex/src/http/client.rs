@@ -1467,8 +1467,7 @@ impl BitmexHttpClient {
         if let Some(BitmexOrderStatus::Rejected) = order.ord_status {
             let reason = order
                 .ord_rej_reason
-                .map(|r| r.to_string())
-                .unwrap_or_else(|| "No reason provided".to_string());
+                .map_or_else(|| "No reason provided".to_string(), |r| r.to_string());
             anyhow::bail!("Order rejected: {reason}");
         }
 
@@ -1682,8 +1681,7 @@ impl BitmexHttpClient {
         if let Some(BitmexOrderStatus::Rejected) = order.ord_status {
             let reason = order
                 .ord_rej_reason
-                .map(|r| r.to_string())
-                .unwrap_or_else(|| "No reason provided".to_string());
+                .map_or_else(|| "No reason provided".to_string(), |r| r.to_string());
             anyhow::bail!("Order modification rejected: {reason}");
         }
 

@@ -2,7 +2,7 @@
 name: RFC (Request for Comments)
 about: Propose a change or idea for discussion
 labels:
-- RFC
+  - RFC
 ---
 
 # RFC: [Title]

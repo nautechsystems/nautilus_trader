@@ -88,12 +88,15 @@ nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.51.0
 nautilus-okx = { path = "crates/adapters/okx", version = "0.51.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.51.0" }
 
+# -----------------------------------------------------------------------------
+# Dependencies
+# -----------------------------------------------------------------------------
 ahash = "0.8.12"
 alloy = { version = "1.0.38", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-primitives = { version = "1.4.0", features = ["serde"] }
+alloy-primitives = { version = "1.4.1", features = ["serde"] }
 alloy-signer = { version = "1.0.37", default-features = false }
 alloy-signer-local = { version = "1.0.37", default-features = false, features = [
   "mnemonic",
@@ -262,7 +265,7 @@ time = { version = "0.3.44", default-features = false, features = [
   "serde",
   "std",
 ] }
-tokio = { version = "1.47.1", default-features = false, features = [
+tokio = { version = "1.48.0", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
@@ -395,3 +398,47 @@ debug = "full"
 strip = false
 lto = false
 incremental = true
+
+# -----------------------------------------------------------------------------
+# Workspace lints
+# -----------------------------------------------------------------------------
+# Centralized lint configuration for all workspace crates.
+# Individual crates inherit these with: [lints] workspace = true
+#
+# These lints are auto-fixable and enforced in pre-commit hooks.
+# Run `make clippy-fix` to auto-fix most issues.
+#
+# Additional non-auto-fixable lints (todo, unwrap_used, expect_used) are
+# available via the `make clippy-fix-nightly` target.
+# -----------------------------------------------------------------------------
+
+[workspace.lints.clippy]
+# Debug markers
+dbg_macro = "warn"
+
+# Performance optimizations
+redundant_clone = "warn"
+unnecessary_to_owned = "warn"
+inefficient_to_string = "warn"
+needless_borrow = "warn"
+cloned_instead_of_copied = "warn"
+
+# Code simplification
+redundant_closure = "warn"
+needless_return = "warn"
+collapsible_if = "warn"
+useless_conversion = "warn"
+
+# Style/idioms
+use_self = "warn"
+redundant_field_names = "warn"
+match_like_matches_macro = "warn"
+manual_map = "warn"
+
+# Pedantic (explicitness and clarity)
+semicolon_if_nothing_returned = "warn"
+unnested_or_patterns = "warn"
+filter_map_next = "warn"
+flat_map_option = "warn"
+map_unwrap_or = "warn"
+implicit_clone = "warn"

@@ -400,8 +400,8 @@ impl From<OrderSide> for BetSide {
     /// Panics if `side` is [`OrderSide::NoOrderSide`].
     fn from(side: OrderSide) -> Self {
         match side {
-            OrderSide::Buy => BetSide::Back,
-            OrderSide::Sell => BetSide::Lay,
+            OrderSide::Buy => Self::Back,
+            OrderSide::Sell => Self::Lay,
             OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
         }
     }

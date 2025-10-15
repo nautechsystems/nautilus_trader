@@ -464,7 +464,7 @@ impl DataClient for BitmexDataClient {
         }
 
         let instrument_id = cmd.instrument_id;
-        let depth = cmd.depth.map(|d| d.get()).unwrap_or(0);
+        let depth = cmd.depth.map_or(0, |d| d.get());
         let channel = if depth > 0 && depth <= 25 {
             BitmexBookChannel::OrderBookL2_25
         } else {
@@ -523,7 +523,7 @@ impl DataClient for BitmexDataClient {
             anyhow::bail!("BitMEX only supports L2_MBP order book snapshots");
         }
 
-        let depth = cmd.depth.map(|d| d.get()).unwrap_or(10);
+        let depth = cmd.depth.map_or(10, |d| d.get());
         if depth != 10 {
             tracing::warn!("BitMEX orderBook10 provides 10 levels; requested depth={depth}");
         }

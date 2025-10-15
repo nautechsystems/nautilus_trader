@@ -1685,7 +1685,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.error(f"Cannot find {report.client_order_id!r}")
                     return
 
-                if bybit_order.orderStatus == BybitOrderStatus.REJECTED:
+                # Use parsed status from report (parser handles Rejected+fills -> Canceled remapping)
+                if report.order_status == OrderStatus.REJECTED:
                     if order.status == OrderStatus.PENDING_UPDATE:
                         self.generate_order_modify_rejected(
                             strategy_id=strategy_id,
@@ -1725,10 +1726,7 @@ class BybitExecutionClient(LiveExecutionClient):
                             venue_order_id=report.venue_order_id,
                             ts_event=report.ts_last,
                         )
-                elif bybit_order.orderStatus in (
-                    BybitOrderStatus.CANCELED,
-                    BybitOrderStatus.DEACTIVATED,
-                ):
+                elif report.order_status == OrderStatus.CANCELED:
                     self.generate_order_canceled(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,

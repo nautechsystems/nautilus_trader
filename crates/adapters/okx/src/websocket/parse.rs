@@ -334,7 +334,7 @@ pub fn parse_book_msg(
             ts_event,
             ts_init,
         );
-        deltas.push(delta)
+        deltas.push(delta);
     }
 
     for ask in &msg.asks {
@@ -358,7 +358,7 @@ pub fn parse_book_msg(
             ts_event,
             ts_init,
         );
-        deltas.push(delta)
+        deltas.push(delta);
     }
 
     OrderBookDeltas::new_checked(instrument_id, deltas)

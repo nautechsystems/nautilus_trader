@@ -325,8 +325,7 @@ impl MessageBus {
         let topic = MStr::<Topic>::topic(topic).expect(FAILED);
         self.topics
             .get(&topic)
-            .map(|subs| subs.len())
-            .unwrap_or_else(|| self.find_topic_matches(topic).len())
+            .map_or_else(|| self.find_topic_matches(topic).len(), |subs| subs.len())
     }
 
     /// Returns active subscriptions.
@@ -458,7 +457,7 @@ impl MessageBus {
     // }
 
     /// Registers message bus for the current thread.
-    pub fn register_message_bus(self) -> Rc<RefCell<MessageBus>> {
+    pub fn register_message_bus(self) -> Rc<RefCell<Self>> {
         let msgbus = Rc::new(RefCell::new(self));
         set_message_bus(msgbus.clone());
         msgbus

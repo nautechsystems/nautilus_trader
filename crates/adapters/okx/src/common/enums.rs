@@ -336,8 +336,8 @@ pub enum OKXOptionType {
 impl From<OKXOptionType> for OptionKind {
     fn from(option_type: OKXOptionType) -> Self {
         match option_type {
-            OKXOptionType::Call => OptionKind::Call,
-            OKXOptionType::Put => OptionKind::Put,
+            OKXOptionType::Call => Self::Call,
+            OKXOptionType::Put => Self::Put,
             _ => panic!("Invalid `option_type`, was None"),
         }
     }
@@ -658,6 +658,27 @@ pub enum OKXVipLevel {
     #[serde(rename = "9")]
     #[strum(serialize = "9")]
     Vip9 = 9,
+}
+
+impl From<u8> for OKXVipLevel {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Vip0,
+            1 => Self::Vip1,
+            2 => Self::Vip2,
+            3 => Self::Vip3,
+            4 => Self::Vip4,
+            5 => Self::Vip5,
+            6 => Self::Vip6,
+            7 => Self::Vip7,
+            8 => Self::Vip8,
+            9 => Self::Vip9,
+            _ => {
+                tracing::warn!("Invalid VIP level {value}, defaulting to Vip0");
+                Self::Vip0
+            }
+        }
+    }
 }
 
 impl From<OKXSide> for OrderSide {

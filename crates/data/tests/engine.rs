@@ -3097,7 +3097,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect.clone()));
+    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect));
 
     // Verify profiler state - the collect should be processed without error
     // The main verification is that PoolUpdater called PoolProfiler.process_collect()
@@ -3207,7 +3207,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_defi_data(DefiData::PoolFlash(flash.clone()));
+    data_engine.process_defi_data(DefiData::PoolFlash(flash));
 
     // Verify profiler state - the flash should be processed without error
     // The main verification is that PoolUpdater called PoolProfiler.process_flash()
@@ -3254,7 +3254,7 @@ fn test_execute_defi_request_pool_snapshot(
         None,
     );
 
-    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request));
     data_engine.execute(&cmd);
 
     // Verify command was forwarded to the client
@@ -3294,7 +3294,7 @@ fn test_setup_pool_updater_requests_snapshot(
         None,
     );
 
-    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
     data_engine.execute(&cmd);
 
     // Verify two commands were recorded:
@@ -3325,7 +3325,6 @@ fn test_setup_pool_updater_requests_snapshot(
 
 #[cfg(feature = "defi")]
 #[rstest]
-#[ignore = "TODO: Cache-first optimization not working - pool in cache still triggers snapshot request"]
 fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -3337,7 +3336,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        cache,
         client_id,
         venue,
         None,
@@ -3389,8 +3388,9 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     pool.initialize(initial_price);
     let instrument_id = pool.instrument_id;
 
-    // Add pool to cache - this should trigger cache-first optimization
-    cache.borrow_mut().add_pool(pool).unwrap();
+    // Add pool to the data_engine's cache (not the fixture cache!)
+    // This ensures setup_pool_updater finds the pool when it checks the cache
+    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
 
     let subscribe_pool = SubscribePool::new(
         instrument_id,
@@ -3400,18 +3400,13 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         None,
     );
 
-    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
     data_engine.execute(&cmd);
 
-    // TODO: This test currently fails because the cache-first optimization
-    // isn't working correctly. When a pool exists in cache, setup_pool_updater
-    // should skip the snapshot request and proceed directly to creating the
-    // profiler and updater. However, it's still requesting a snapshot.
-    //
-    // Expected behavior: Only 1 command (SubscribePool)
-    // Actual behavior: 2 commands (SubscribePool + RequestPoolSnapshot)
-    //
-    // This needs investigation in setup_pool_updater() at line 1628.
+    // Verify the cache-first optimization: when a pool exists in the data engine's
+    // cache, setup_pool_updater should skip the snapshot request and proceed
+    // directly to creating the profiler and updater from the cached pool.
+    // Only the SubscribePool command should be forwarded to the client.
     let recorded = recorder.borrow();
     assert_eq!(
         recorded.len(),
@@ -3473,7 +3468,7 @@ fn test_pool_snapshot_request_routing_by_client_id(
         None,
     );
 
-    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request));
     data_engine.execute(&cmd);
 
     // Verify request was routed to CLIENT1 only

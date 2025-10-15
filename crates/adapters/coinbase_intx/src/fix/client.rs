@@ -96,7 +96,7 @@ impl CoinbaseIntxFixClient {
         let api_secret = get_or_env_var(api_secret, "COINBASE_INTX_API_SECRET")?;
         let api_passphrase = get_or_env_var(api_passphrase, "COINBASE_INTX_API_PASSPHRASE")?;
         let portfolio_id = get_or_env_var(portfolio_id, "COINBASE_INTX_PORTFOLIO_ID")?;
-        let sender_comp_id = api_key.to_string();
+        let sender_comp_id = api_key.clone();
         let target_comp_id = "CBINTLDC".to_string(); // Drop Copy endpoint
 
         Ok(Self {

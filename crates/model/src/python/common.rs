@@ -171,7 +171,7 @@ pub fn commissions_from_indexmap(
     py: Python<'_>,
     commissions: IndexMap<Currency, Money>,
 ) -> PyResult<Bound<'_, PyAny>> {
-    commissions_from_vec(py, commissions.values().cloned().collect())
+    commissions_from_vec(py, commissions.values().copied().collect())
 }
 
 #[cfg(test)]

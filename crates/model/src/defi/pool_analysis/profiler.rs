@@ -174,7 +174,7 @@ impl PoolProfiler {
                     swap.transaction_hash.clone(),
                     swap.transaction_index,
                     swap.log_index,
-                ))
+                ));
             }
             DexPoolData::LiquidityUpdate(update) => match update.kind {
                 PoolLiquidityUpdateType::Mint => {
@@ -194,7 +194,7 @@ impl PoolProfiler {
                         update.transaction_hash.clone(),
                         update.transaction_index,
                         update.log_index,
-                    ))
+                    ));
                 }
                 PoolLiquidityUpdateType::Burn => {
                     #[cfg(debug_assertions)]
@@ -213,7 +213,7 @@ impl PoolProfiler {
                         update.transaction_hash.clone(),
                         update.transaction_index,
                         update.log_index,
-                    ))
+                    ));
                 }
             },
             DexPoolData::FeeCollect(collect) => {
@@ -233,7 +233,7 @@ impl PoolProfiler {
                     collect.transaction_hash.clone(),
                     collect.transaction_index,
                     collect.log_index,
-                ))
+                ));
             }
             DexPoolData::Flash(flash) => {
                 self.process_flash(flash)?;
@@ -243,7 +243,7 @@ impl PoolProfiler {
                     flash.transaction_hash.clone(),
                     flash.transaction_index,
                     flash.log_index,
-                ))
+                ));
             }
         }
         Ok(())
@@ -1156,10 +1156,10 @@ impl PoolProfiler {
 
         // Clear the ticks if they are flipped and burned
         if liquidity_delta < 0 && flipped_lower {
-            self.tick_map.clear(tick_lower)
+            self.tick_map.clear(tick_lower);
         }
         if liquidity_delta < 0 && flipped_upper {
-            self.tick_map.clear(tick_upper)
+            self.tick_map.clear(tick_upper);
         }
 
         Ok(())
@@ -1396,7 +1396,7 @@ impl PoolProfiler {
     /// Panics if no events have been processed yet.
     pub fn extract_snapshot(&self) -> PoolSnapshot {
         let positions: Vec<_> = self.positions.values().cloned().collect();
-        let ticks: Vec<_> = self.tick_map.get_all_ticks().values().cloned().collect();
+        let ticks: Vec<_> = self.tick_map.get_all_ticks().values().copied().collect();
 
         let mut state = self.state.clone();
         state.liquidity = self.tick_map.liquidity;

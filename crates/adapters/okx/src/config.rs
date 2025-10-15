@@ -16,7 +16,7 @@
 //! Configuration structures for the OKX adapter.
 
 use crate::common::{
-    enums::{OKXContractType, OKXInstrumentType, OKXVipLevel},
+    enums::{OKXContractType, OKXInstrumentType},
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
         get_ws_base_url_public,
@@ -51,8 +51,6 @@ pub struct OKXDataClientConfig {
     pub http_timeout_secs: Option<u64>,
     /// Optional interval for refreshing instruments.
     pub update_instruments_interval_mins: Option<u64>,
-    /// Optional VIP level that unlocks additional subscriptions.
-    pub vip_level: Option<OKXVipLevel>,
 }
 
 impl Default for OKXDataClientConfig {
@@ -70,7 +68,6 @@ impl Default for OKXDataClientConfig {
             is_demo: false,
             http_timeout_secs: Some(60),
             update_instruments_interval_mins: Some(60),
-            vip_level: None,
         }
     }
 }

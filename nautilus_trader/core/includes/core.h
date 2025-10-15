@@ -27,7 +27,7 @@
 
 /**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
- * memory, it's length and the capacity of the vector it was allocated from.
+ * memory, its length and the capacity of the vector it was allocated from.
  *
  * # Safety
  *

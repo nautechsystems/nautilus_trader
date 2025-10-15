@@ -259,7 +259,6 @@ impl SubscriptionState {
         let topic_ustr = Ustr::from(topic);
         self.reference_counts
             .get(&topic_ustr)
-            .map(|count| count.get())
-            .unwrap_or(0)
+            .map_or(0, |count| count.get())
     }
 }

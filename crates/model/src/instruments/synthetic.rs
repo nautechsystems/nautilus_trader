@@ -97,7 +97,7 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
         let operator_tree =
             evalexpr::build_operator_tree(&fields.formula).map_err(serde::de::Error::custom)?;
 
-        Ok(SyntheticInstrument {
+        Ok(Self {
             id: fields.id,
             price_precision: fields.price_precision,
             price_increment: fields.price_increment,

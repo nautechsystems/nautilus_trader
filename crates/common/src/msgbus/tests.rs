@@ -79,7 +79,7 @@ fn test_get_response_handler_when_already_registered() {
         .register_response_handler(&request_id, handler.clone())
         .unwrap();
 
-    let result = msgbus_ref.register_response_handler(&request_id, handler.clone());
+    let result = msgbus_ref.register_response_handler(&request_id, handler);
     assert!(result.is_err());
 }
 
@@ -91,7 +91,7 @@ fn test_get_response_handler_when_registered() {
 
     let request_id = UUID4::new();
     msgbus_ref
-        .register_response_handler(&request_id, handler.clone())
+        .register_response_handler(&request_id, handler)
         .unwrap();
 
     let handler = msgbus_ref.get_response_handler(&request_id).unwrap();

@@ -96,8 +96,8 @@ pub enum DexType {
 
 impl DexType {
     /// Returns a reference to the `DexType` corresponding to the given dex name, or `None` if it is not found.
-    pub fn from_dex_name(dex_name: &str) -> Option<DexType> {
-        DexType::from_str(dex_name).ok()
+    pub fn from_dex_name(dex_name: &str) -> Option<Self> {
+        Self::from_str(dex_name).ok()
     }
 }
 
@@ -244,7 +244,7 @@ impl From<Pool> for CurrencyPair {
         let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
         let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
 
-        CurrencyPair::new(
+        Self::new(
             id,
             symbol,
             Currency::from(p.token0.symbol.as_str()),

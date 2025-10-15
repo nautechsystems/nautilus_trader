@@ -2,7 +2,7 @@
 name: Feature Request
 about: Request a new feature to be added here
 labels:
-- enhancement
+  - enhancement
 ---
 
 # Feature Request

@@ -173,21 +173,21 @@ pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
     let batch_size = match action.action_type.as_str() {
         "order" => {
             if let Some(orders) = action.params.get("orders") {
-                orders.as_array().map(|a| a.len()).unwrap_or(0)
+                orders.as_array().map_or(0, |a| a.len())
             } else {
                 0
             }
         }
         "cancel" => {
             if let Some(cancels) = action.params.get("cancels") {
-                cancels.as_array().map(|a| a.len()).unwrap_or(0)
+                cancels.as_array().map_or(0, |a| a.len())
             } else {
                 0
             }
         }
         "batchModify" => {
             if let Some(modifies) = action.params.get("modifies") {
-                modifies.as_array().map(|a| a.len()).unwrap_or(0)
+                modifies.as_array().map_or(0, |a| a.len())
             } else {
                 0
             }

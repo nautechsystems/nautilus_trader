@@ -85,7 +85,7 @@ pub fn pool_definition(
         18,
     );
     let coin_anime = Token::new(
-        arbitrum.clone(),
+        arbitrum,
         address!("0x37a645648dF29205C6261289983FB04ECD70b4B3"),
         "Animecoin".to_string(),
         "ANIME".to_string(),
@@ -591,13 +591,11 @@ fn test_execute_swap_equivalence() {
 
     // Method 1: Use execute_swap to create and apply the swap
     let swap_event = profiler1
-        .swap_exact0_for_1(sender, recipient, block.clone(), amount0_in, None)
+        .swap_exact0_for_1(sender, recipient, block, amount0_in, None)
         .unwrap();
 
     // Method 2: Use process_swap with the created swap event
-    profiler2
-        .process(&DexPoolData::Swap(swap_event.clone()))
-        .unwrap();
+    profiler2.process(&DexPoolData::Swap(swap_event)).unwrap();
 
     // Verify profiler states are equivalent
     assert_eq!(profiler1.state.current_tick, profiler2.state.current_tick);
@@ -2284,7 +2282,7 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
                 );
             }
             Err(_) => {
-                todo!("Add error testing for failed swap")
+                panic!("Add error testing for failed swap")
             }
         }
     }

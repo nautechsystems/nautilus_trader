@@ -69,7 +69,7 @@ impl UUID4 {
             to_pyvalue_err("Invalid state for deserializing, bytes must be valid UTF-8")
         })?;
 
-        let parsed = UUID4::from_str(value).map_err(|e| {
+        let parsed = Self::from_str(value).map_err(|e| {
             to_pyvalue_err(format!(
                 "Invalid state for deserializing, unable to parse UUID: {e}"
             ))

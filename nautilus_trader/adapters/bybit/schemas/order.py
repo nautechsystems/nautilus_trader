@@ -109,6 +109,13 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         )
         order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
 
+        # Special case: if Bybit reports "Rejected" but the order has fills, treat it as Canceled.
+        # This handles the case where the exchange partially fills an order then rejects the
+        # remaining quantity (e.g., due to margin, risk limits, or liquidity constraints).
+        # The state machine does not allow PARTIALLY_FILLED -> REJECTED transitions.
+        if self.orderStatus == BybitOrderStatus.REJECTED and Decimal(self.cumExecQty) > 0:
+            order_status = OrderStatus.CANCELED
+
         if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             trigger_price = Decimal(self.triggerPrice)
             last_price = Decimal(self.lastPriceOnCreated)

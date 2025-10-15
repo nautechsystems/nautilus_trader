@@ -61,7 +61,7 @@ impl LongRatio {
             }
         }
 
-        let value = longs as f64 / positions.len() as f64;
+        let value = f64::from(longs) / positions.len() as f64;
         let scale = 10f64.powi(self.precision as i32);
         Ok(Some((value * scale).round() / scale))
     }

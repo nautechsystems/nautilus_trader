@@ -432,6 +432,39 @@ class TestStrategy:
         assert "on_dispose" in strategy.calls
         assert strategy.is_disposed
 
+    def test_dispose_cancels_all_timers(self) -> None:
+        # Arrange
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
+        strategy.clock.set_timer(
+            "test_timer1",
+            timedelta(milliseconds=100),
+            start_time,
+            stop_time=None,
+        )
+        strategy.clock.set_timer(
+            "test_timer2",
+            timedelta(milliseconds=200),
+            start_time,
+            stop_time=None,
+        )
+
+        # Act
+        strategy.dispose()
+
+        # Assert
+        assert strategy.clock.timer_count == 0
+        assert strategy.is_disposed
+
     def test_save_load(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()

@@ -1204,6 +1204,7 @@ cdef class Actor(Component):
         self._indicators_for_bars.clear()
 
     cpdef void _dispose(self):
+        Component._dispose(self)  # Call base cleanup (cancels timers)
         self.on_dispose()
 
     cpdef void _degrade(self):

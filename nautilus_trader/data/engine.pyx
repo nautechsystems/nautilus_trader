@@ -1604,7 +1604,7 @@ cdef class DataEngine(Component):
 
                 data = catalog.bars(
                     instrument_ids=[str(bar_type.instrument_id)],
-                    bar_type=str(bar_type),
+                    bar_types=[str(bar_type)],
                     start=ts_start,
                     end=ts_end,
                 )

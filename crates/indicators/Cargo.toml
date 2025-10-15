@@ -13,6 +13,9 @@ documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "nautilus_indicators"
 crate-type = ["rlib", "cdylib"]

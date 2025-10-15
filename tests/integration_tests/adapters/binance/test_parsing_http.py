@@ -18,6 +18,7 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -53,3 +54,28 @@ class TestBinanceHttpParsing:
         assert result.deltas[11].order.size == Quantity.from_str("0.61982")  # <-- Top ask
         assert result.sequence == 14527958487
         assert result.ts_init == 2
+
+    def test_parse_futures_symbol_config(self):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_futures_account_symbol_config.json",
+        )
+        assert raw
+        decoder = msgspec.json.Decoder(list[BinanceFuturesSymbolConfig])
+
+        # Act
+        data = decoder.decode(raw)
+
+        # Assert
+        assert len(data) == 2
+        assert data[0].symbol == "ETHUSDT"
+        assert data[0].marginType == "CROSSED"
+        assert data[0].isAutoAddMargin is False
+        assert data[0].leverage == 20
+        assert data[0].maxNotionalValue == "1000000"
+        assert data[1].symbol == "BTCUSDT"
+        assert data[1].marginType == "ISOLATED"
+        assert data[1].isAutoAddMargin is True
+        assert data[1].leverage == 25
+        assert data[1].maxNotionalValue == "2000000"

@@ -26,6 +26,7 @@
 //! ```
 
 pub mod cache;
+pub mod data_actor;
 pub mod switchboard;
 
 // Re-exports

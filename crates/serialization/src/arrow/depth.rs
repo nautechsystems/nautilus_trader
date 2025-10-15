@@ -210,7 +210,7 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        OrderBookDepth10::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.bids[0].price.precision,
             self.bids[0].size.precision,
@@ -409,7 +409,7 @@ mod tests {
     fn test_get_schema() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
-        let schema = OrderBookDepth10::get_schema(Some(metadata.clone()));
+        let schema = OrderBookDepth10::get_schema(Some(metadata));
 
         let mut group_count = 0;
         let field_data = get_field_data();

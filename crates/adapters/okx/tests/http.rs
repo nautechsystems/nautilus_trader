@@ -90,7 +90,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let history_state = state.clone();
     let pending_state = state.clone();
     let order_history_state = state.clone();
-    let order_detail_state = state.clone();
+    let order_detail_state = state;
     Router::new()
         .route(
             "/api/v5/public/instruments",

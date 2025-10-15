@@ -151,9 +151,9 @@ impl TickMap {
             // By convention, we assume that all growth before a tick was initialized happened _below_ the tick
             if tick.value <= tick_current {
                 tick.fee_growth_outside_0 = fee_growth_global_0;
-                tick.fee_growth_outside_1 = fee_growth_global_1
+                tick.fee_growth_outside_1 = fee_growth_global_1;
             }
-            tick.initialized = true
+            tick.initialized = true;
         }
 
         // Check if tick was flipped from inactive to active or vice versa

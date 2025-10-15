@@ -39,6 +39,7 @@ This will be the final release with support for Python 3.11.
 ### Breaking Changes
 - Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
+- Removed OKX `vip_level` config option as now redundant with detection through account query
 - Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
@@ -57,6 +58,7 @@ This will be the final release with support for Python 3.11.
 - Fixed order book depth snapshot processing to avoid padding levels and metadata tracking for L1 top-of-book ticks
 - Fixed crypto instruments PyO3 -> Cython conversion for `lot_size` where it was not being passed through
 - Fixed `serialization` crate bugs and improve error handling
+- Fixed PyO3 interpreter lifecycle for async shutdown preventing edge case `"interpreter not initialized"` panics during shutdown
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed handling of asyncio.CancelledError in execution reconciliation (#3073), thanks @dinana
@@ -77,6 +79,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
 - Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
 - Fixed Binance futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
+- Fixed Binance futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks for reporting @woung717
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
@@ -94,10 +97,12 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
 - Fixed OKX API credentials handling to allow passing explicitly
 - Fixed OKX fee calculations to account for negative fees
+- Fixed OKX parsing for `tick_sz` across instrument types
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
 - Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
+- Fixed Polymarket maker fill order side inversion (#3077), thanks for reporting @DarioHett
 - Fixed Tardis instruments `lot_size` mapping
 - Fixed Tardis adapter error handling and connection robustness
 - Fixed Tardis replay to use catalog-compatible filenames
@@ -130,6 +135,8 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
+- Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
+- Relaxed `Currency` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
@@ -149,6 +156,7 @@ This will be the final release with support for Python 3.11.
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Refined Interactive Brokers execution flows (#2993), thanks @faysou
 - Refined Interactive Brokers filtering of bars in IB adapter after disconnection (#3011), thanks @faysou and @Johnkhk
+- Refined Interactive Brokers account summary log to debug level (#3084), thanks @sunlei
 - Refined catalog `reset_data_file_names` method (#3071), thanks @adrianbeer and @faysou
 - Optimized `ExecutionEngine` hot path with topic caching and reduced cache lookups
 - Optimized rate limiter quota keys with string interning to avoid repeated allocations
@@ -158,6 +166,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded `datafusion` crate to v50.2.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
+- Upgraded `tokio` crate to v1.48.0
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International

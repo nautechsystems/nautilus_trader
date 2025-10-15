@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string_ascii};
+use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string_utf8};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -75,7 +75,7 @@ impl Currency {
     ) -> anyhow::Result<Self> {
         let code = code.as_ref();
         let name = name.as_ref();
-        check_valid_string_ascii(code, "code")?;
+        check_valid_string_utf8(code, "code")?;
         check_nonempty_string(name, "name")?;
         check_fixed_precision(precision)?;
         Ok(Self {

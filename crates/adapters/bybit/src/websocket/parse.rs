@@ -405,11 +405,31 @@ pub fn parse_ws_order_status_report(
         BybitTimeInForce::PostOnly => TimeInForce::Gtc,
     };
 
+    let quantity =
+        parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty")?;
+
+    let filled_qty = parse_quantity_with_precision(
+        &order.cum_exec_qty,
+        instrument.size_precision(),
+        "order.cumExecQty",
+    )?;
+
+    // Map Bybit order status to Nautilus order status
+    // Special case: if Bybit reports "Rejected" but the order has fills, treat it as Canceled.
+    // This handles the case where the exchange partially fills an order then rejects the
+    // remaining quantity (e.g., due to margin, risk limits, or liquidity constraints).
+    // The state machine does not allow PARTIALLY_FILLED -> REJECTED transitions.
     let order_status: OrderStatus = match order.order_status {
         BybitOrderStatus::Created | BybitOrderStatus::New | BybitOrderStatus::Untriggered => {
             OrderStatus::Accepted
         }
-        BybitOrderStatus::Rejected => OrderStatus::Rejected,
+        BybitOrderStatus::Rejected => {
+            if filled_qty.is_positive() {
+                OrderStatus::Canceled
+            } else {
+                OrderStatus::Rejected
+            }
+        }
         BybitOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BybitOrderStatus::Filled => OrderStatus::Filled,
         BybitOrderStatus::Canceled | BybitOrderStatus::PartiallyFilledCanceled => {
@@ -418,14 +438,6 @@ pub fn parse_ws_order_status_report(
         BybitOrderStatus::Triggered => OrderStatus::Triggered,
         BybitOrderStatus::Deactivated => OrderStatus::Canceled,
     };
-
-    let quantity =
-        parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty")?;
-    let filled_qty = parse_quantity_with_precision(
-        &order.cum_exec_qty,
-        instrument.size_precision(),
-        "order.cumExecQty",
-    )?;
 
     let ts_accepted = parse_millis_timestamp(&order.created_time, "order.createdTime")?;
     let ts_last = parse_millis_timestamp(&order.updated_time, "order.updatedTime")?;
@@ -951,6 +963,27 @@ mod tests {
             UnixNanos::new(1_672_364_262_444_000_000)
         );
         assert_eq!(report.ts_last, UnixNanos::new(1_672_364_262_457_000_000));
+    }
+
+    #[rstest]
+    fn parse_ws_order_partially_filled_rejected_maps_to_canceled() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order_partially_filled_rejected.json");
+        let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+        let order = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_order_status_report(order, &instrument, account_id, TS).unwrap();
+
+        // Verify that Bybit "Rejected" status with fills is mapped to Canceled, not Rejected
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.filled_qty, instrument.make_qty(50.0, None));
+        assert_eq!(
+            report.client_order_id.as_ref().unwrap().to_string(),
+            "O-20251001-164609-APEX-000-49"
+        );
+        assert_eq!(report.cancel_reason, Some("UNKNOWN".to_string()));
     }
 
     #[rstest]

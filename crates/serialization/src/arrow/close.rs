@@ -104,7 +104,7 @@ impl EncodeToRecordBatch for InstrumentClose {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        InstrumentClose::get_metadata(&self.instrument_id, self.close_price.precision)
+        Self::get_metadata(&self.instrument_id, self.close_price.precision)
     }
 }
 

@@ -345,11 +345,7 @@ impl From<bool> for HyperliquidLiquidityFlag {
     ///
     /// `true` (crossed) -> Taker, `false` -> Maker
     fn from(crossed: bool) -> Self {
-        if crossed {
-            HyperliquidLiquidityFlag::Taker
-        } else {
-            HyperliquidLiquidityFlag::Maker
-        }
+        if crossed { Self::Taker } else { Self::Maker }
     }
 }
 
@@ -406,66 +402,62 @@ impl HyperliquidRejectCode {
 
         match normalized.as_str() {
             // Tick size validation errors
-            s if s.contains("tick size") => HyperliquidRejectCode::Tick,
+            s if s.contains("tick size") => Self::Tick,
 
             // Minimum notional value errors (perp: $10, spot: 10 USDC)
-            s if s.contains("minimum value of $10") => HyperliquidRejectCode::MinTradeNtl,
-            s if s.contains("minimum value of 10") => HyperliquidRejectCode::MinTradeSpotNtl,
+            s if s.contains("minimum value of $10") => Self::MinTradeNtl,
+            s if s.contains("minimum value of 10") => Self::MinTradeSpotNtl,
 
             // Margin errors
-            s if s.contains("insufficient margin") => HyperliquidRejectCode::PerpMargin,
+            s if s.contains("insufficient margin") => Self::PerpMargin,
 
             // Reduce-only order violations
             s if s.contains("reduce only order would increase")
                 || s.contains("reduce-only order would increase") =>
             {
-                HyperliquidRejectCode::ReduceOnly
+                Self::ReduceOnly
             }
 
             // Post-only order matching errors
             s if s.contains("post only order would have immediately matched")
                 || s.contains("post-only order would have immediately matched") =>
             {
-                HyperliquidRejectCode::BadAloPx
+                Self::BadAloPx
             }
 
             // IOC (Immediate-or-Cancel) order errors
-            s if s.contains("could not immediately match") => HyperliquidRejectCode::IocCancel,
+            s if s.contains("could not immediately match") => Self::IocCancel,
 
             // TP/SL trigger price errors
-            s if s.contains("invalid tp/sl price") => HyperliquidRejectCode::BadTriggerPx,
+            s if s.contains("invalid tp/sl price") => Self::BadTriggerPx,
 
             // Market order liquidity errors
             s if s.contains("no liquidity available for market order") => {
-                HyperliquidRejectCode::MarketOrderNoLiquidity
+                Self::MarketOrderNoLiquidity
             }
 
             // Open interest cap errors (various types)
             // Note: These patterns are case-insensitive due to normalization
             s if s.contains("positionincreaseatopeninterestcap") => {
-                HyperliquidRejectCode::PositionIncreaseAtOpenInterestCap
+                Self::PositionIncreaseAtOpenInterestCap
             }
-            s if s.contains("positionflipatopeninterestcap") => {
-                HyperliquidRejectCode::PositionFlipAtOpenInterestCap
-            }
+            s if s.contains("positionflipatopeninterestcap") => Self::PositionFlipAtOpenInterestCap,
             s if s.contains("tooaggressiveatopeninterestcap") => {
-                HyperliquidRejectCode::TooAggressiveAtOpenInterestCap
+                Self::TooAggressiveAtOpenInterestCap
             }
-            s if s.contains("openinterestincrease") => HyperliquidRejectCode::OpenInterestIncrease,
+            s if s.contains("openinterestincrease") => Self::OpenInterestIncrease,
 
             // Spot balance errors
-            s if s.contains("insufficient spot balance") => {
-                HyperliquidRejectCode::InsufficientSpotBalance
-            }
+            s if s.contains("insufficient spot balance") => Self::InsufficientSpotBalance,
 
             // Oracle errors
-            s if s.contains("oracle") => HyperliquidRejectCode::Oracle,
+            s if s.contains("oracle") => Self::Oracle,
 
             // Position size limit errors
-            s if s.contains("max position") => HyperliquidRejectCode::PerpMaxPosition,
+            s if s.contains("max position") => Self::PerpMaxPosition,
 
             // Missing order errors (cancel/modify non-existent order)
-            s if s.contains("missingorder") => HyperliquidRejectCode::MissingOrder,
+            s if s.contains("missingorder") => Self::MissingOrder,
 
             // Unknown error - log for monitoring and return with original message
             _ => {
@@ -473,7 +465,7 @@ impl HyperliquidRejectCode {
                     "Unknown Hyperliquid error pattern (consider updating error parsing): {}",
                     error // Use original error, not normalized
                 );
-                HyperliquidRejectCode::Unknown(error.to_string())
+                Self::Unknown(error.to_string())
             }
         }
     }

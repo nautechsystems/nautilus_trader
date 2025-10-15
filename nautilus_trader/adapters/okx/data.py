@@ -119,6 +119,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
+        self._log.info(f"config.is_demo={config.is_demo}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
 
         # HTTP API
@@ -153,6 +154,17 @@ class OKXDataClient(LiveMarketDataClient):
         await self._instrument_provider.initialize()
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
+
+        # Query VIP level if credentials are available
+        if self._http_client.api_key:
+            try:
+                vip_level_result = await self._http_client.request_vip_level()
+                if vip_level_result is not None:
+                    self._ws_client.set_vip_level(vip_level_result)
+                    self._ws_business_client.set_vip_level(vip_level_result)
+                    self._log.info(f"Detected OKX VIP level: {vip_level_result}", LogColor.BLUE)
+            except Exception as e:
+                self._log.warning(f"Failed to query VIP level: {e}")
 
         instruments = self.instrument_provider.instruments_pyo3()
 
@@ -260,18 +272,7 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        vip_level = self._config.vip_level.value if self._config.vip_level else 0
-
-        if command.depth == 50:
-            if vip_level >= 4:
-                await self._ws_client.subscribe_book50_l2_tbt(pyo3_instrument_id)
-            else:
-                self._log.error(f"Insufficient VIP level {vip_level} for depth {command.depth}")
-        else:
-            if vip_level >= 5:
-                await self._ws_client.subscribe_book_l2_tbt(pyo3_instrument_id)
-            else:
-                await self._ws_client.subscribe_book(pyo3_instrument_id)
+        await self._ws_client.subscribe_book_with_depth(pyo3_instrument_id, command.depth)
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:

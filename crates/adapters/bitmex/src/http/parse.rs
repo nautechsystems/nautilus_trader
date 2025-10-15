@@ -396,8 +396,7 @@ pub fn parse_futures_instrument(
     let activation_ns = definition
         .listing
         .as_ref()
-        .map(|dt| UnixNanos::from(*dt))
-        .unwrap_or(ts_event);
+        .map_or(ts_event, |dt| UnixNanos::from(*dt));
     let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
     let price_increment = Price::from(definition.tick_size.to_string());
 
@@ -592,7 +591,7 @@ pub fn parse_order_status_report(
 
     // BitMEX may not include ord_type in cancel responses,
     // for robustness default to LIMIT if not provided.
-    let order_type: OrderType = order.ord_type.map(|t| t.into()).unwrap_or(OrderType::Limit);
+    let order_type: OrderType = order.ord_type.map_or(OrderType::Limit, |t| t.into());
 
     // BitMEX may not include time_in_force in cancel responses,
     // for robustness default to GTC if not provided.
@@ -1168,7 +1167,7 @@ mod tests {
             foreign_notional: None,
         };
 
-        let bar = parse_trade_bin(bin.clone(), &instrument_any, &bar_type, ts_init).unwrap();
+        let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
         let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)

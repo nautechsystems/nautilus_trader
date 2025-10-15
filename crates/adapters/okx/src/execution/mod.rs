@@ -366,7 +366,16 @@ impl ExecutionClient for OKXExecutionClient {
 
         self.ensure_instruments_initialized()?;
         self.started = true;
-        tracing::info!("OKX execution client {} started", self.core.client_id);
+        tracing::info!(
+            client_id = %self.core.client_id,
+            account_id = %self.core.account_id,
+            account_type = ?self.core.account_type,
+            trade_mode = ?self.trade_mode,
+            instrument_types = ?self.config.instrument_types,
+            use_fills_channel = self.config.use_fills_channel,
+            is_demo = self.config.is_demo,
+            "OKX execution client started"
+        );
         Ok(())
     }
 
@@ -525,6 +534,11 @@ impl LiveExecutionClient for OKXExecutionClient {
         }
 
         self.ensure_instruments_initialized_async().await?;
+
+        // Query VIP level and update websocket client
+        if let Ok(Some(vip_level)) = self.http_client.request_vip_level().await {
+            self.ws_client.set_vip_level(vip_level);
+        }
 
         self.ws_client.connect().await?;
         self.ws_client.wait_until_active(10.0).await?;

@@ -700,13 +700,10 @@ pub fn parse_execution_msg(
     let instrument_id = parse_instrument_id(msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
-    let order_side: OrderSide = msg
-        .side
-        .map(|s| {
-            let side: BitmexSide = s.into();
-            side.into()
-        })
-        .unwrap_or(OrderSide::NoOrderSide);
+    let order_side: OrderSide = msg.side.map_or(OrderSide::NoOrderSide, |s| {
+        let side: BitmexSide = s.into();
+        side.into()
+    });
     let last_qty = parse_signed_contracts_quantity(msg.last_qty?, instrument);
     let last_px = Price::new(msg.last_px?, instrument.price_precision());
     let settlement_currency_str = msg.settl_currency.unwrap_or(Ustr::from("XBT"));

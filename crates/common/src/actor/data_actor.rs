@@ -51,10 +51,10 @@ use super::{
     registry::{get_actor_unchecked, try_get_actor_unchecked},
 };
 #[cfg(feature = "defi")]
-use crate::defi::switchboard::{
-    get_defi_blocks_topic, get_defi_collect_topic, get_defi_flash_topic, get_defi_liquidity_topic,
-    get_defi_pool_swaps_topic, get_defi_pool_topic,
-};
+use crate::defi;
+#[cfg(feature = "defi")]
+#[allow(unused_imports)]
+use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 use crate::{
     cache::Cache,
     clock::Clock,
@@ -1265,7 +1265,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_blocks_topic(chain);
+        let topic = defi::switchboard::get_defi_blocks_topic(chain);
 
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |block: &Block| {
@@ -1286,7 +1286,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_pool_topic(instrument_id);
+        let topic = defi::switchboard::get_defi_pool_topic(instrument_id);
 
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |pool: &Pool| {
@@ -1307,7 +1307,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_pool_swaps_topic(instrument_id);
+        let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |swap: &PoolSwap| {
@@ -1329,7 +1329,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_liquidity_topic(instrument_id);
+        let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |update: &PoolLiquidityUpdate| {
@@ -1358,7 +1358,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_collect_topic(instrument_id);
+        let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |collect: &PoolFeeCollect| {
@@ -1387,7 +1387,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_flash_topic(instrument_id);
+        let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |flash: &PoolFlash| {
@@ -1997,7 +1997,11 @@ impl DataActorCore {
     /// Adds a subscription handler for the `topic`.
     ///
     //// Logs a warning if the actor is already subscribed to the topic.
-    fn add_subscription(&mut self, topic: MStr<Topic>, handler: ShareableMessageHandler) {
+    pub(crate) fn add_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+    ) {
         if self.topic_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate subscription to topic '{topic}'",
@@ -2013,9 +2017,9 @@ impl DataActorCore {
     /// Removes a subscription handler for the `topic` if present.
     ///
     /// Logs a warning if the actor is not currently subscribed to the topic.
-    fn remove_subscription(&mut self, topic: MStr<Topic>) {
+    pub(crate) fn remove_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler);
         } else {
             log::warn!(
                 "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
@@ -2072,7 +2076,7 @@ impl DataActorCore {
         ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
     }
 
-    /// Returns a UNIX nanoseconds timestamp from the actors internal clock.
+    /// Returns a UNIX nanoseconds timestamp from the actor's internal clock.
     pub fn timestamp_ns(&self) -> UnixNanos {
         self.clock_ref().timestamp_ns()
     }
@@ -2192,20 +2196,20 @@ impl DataActorCore {
     /// Register an event type for warning log levels.
     pub fn register_warning_event(&mut self, event_type: &str) {
         self.warning_events.insert(event_type.to_string());
-        log::debug!("Registered event type '{event_type}' for warning logs")
+        log::debug!("Registered event type '{event_type}' for warning logs");
     }
 
     /// Deregister an event type from warning log levels.
     pub fn deregister_warning_event(&mut self, event_type: &str) {
         self.warning_events.remove(event_type);
-        log::debug!("Deregistered event type '{event_type}' from warning logs")
+        log::debug!("Deregistered event type '{event_type}' from warning logs");
     }
 
     pub fn is_registered(&self) -> bool {
         self.trader_id.is_some()
     }
 
-    fn check_registered(&self) {
+    pub(crate) fn check_registered(&self) {
         assert!(
             self.is_registered(),
             "Actor has not been registered with a Trader"
@@ -2217,13 +2221,13 @@ impl DataActorCore {
         self.trader_id.is_some() && self.clock.is_some() && self.cache.is_some()
     }
 
-    fn send_data_cmd(&self, command: DataCommand) {
+    pub(crate) fn send_data_cmd(&self, command: DataCommand) {
         if self.config.log_commands {
             log::info!("{CMD}{SEND} {command:?}");
         }
 
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send_any(endpoint, command.as_any())
+        msgbus::send_any(endpoint, command.as_any());
     }
 
     #[allow(dead_code, reason = "TODO: Under development")]
@@ -2235,7 +2239,7 @@ impl DataActorCore {
         // For now, simplified approach - data requests without dynamic handlers
         // TODO: Implement proper dynamic dispatch for response handlers
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send_any(endpoint, request.as_any())
+        msgbus::send_any(endpoint, request.as_any());
     }
 
     /// Sends a shutdown command to the system with an optional reason.
@@ -2622,168 +2626,6 @@ impl DataActorCore {
         self.add_subscription(topic, handler);
     }
 
-    #[cfg(feature = "defi")]
-    /// Helper method for registering block subscriptions from the trait.
-    pub fn subscribe_blocks(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        chain: Blockchain,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribeBlocks};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
-            chain,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for registering pool subscriptions from the trait.
-    pub fn subscribe_pool(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribePool};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::Pool(SubscribePool {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for registering pool swap subscriptions from the trait.
-    pub fn subscribe_pool_swaps(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribePoolSwaps};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for registering pool liquidity update subscriptions from the trait.
-    pub fn subscribe_pool_liquidity_updates(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribePoolLiquidityUpdates};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for registering pool fee collect subscriptions from the trait.
-    pub fn subscribe_pool_fee_collects(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribePoolFeeCollects};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for registering pool flash event subscriptions from the trait.
-    pub fn subscribe_pool_flash_events(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiSubscribeCommand, SubscribePoolFlashEvents};
-
-        self.check_registered();
-
-        self.add_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
-    }
-
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
         &mut self,
@@ -3108,163 +2950,6 @@ impl DataActorCore {
         self.remove_subscription(topic);
     }
 
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from blocks.
-    pub fn unsubscribe_blocks(
-        &mut self,
-        chain: Blockchain,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribeBlocks};
-
-        self.check_registered();
-
-        let topic = get_defi_blocks_topic(chain);
-        self.remove_subscription(topic);
-
-        let command = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
-            chain,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from pool definition updates.
-    pub fn unsubscribe_pool(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePool};
-
-        self.check_registered();
-
-        let topic = get_defi_pool_topic(instrument_id);
-        self.remove_subscription(topic);
-
-        let command = DefiUnsubscribeCommand::Pool(UnsubscribePool {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from pool swaps.
-    pub fn unsubscribe_pool_swaps(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolSwaps};
-
-        self.check_registered();
-
-        let topic = get_defi_pool_swaps_topic(instrument_id);
-        self.remove_subscription(topic);
-
-        let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from pool liquidity updates.
-    pub fn unsubscribe_pool_liquidity_updates(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolLiquidityUpdates};
-
-        self.check_registered();
-
-        let topic = get_defi_liquidity_topic(instrument_id);
-        self.remove_subscription(topic);
-
-        let command =
-            DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates {
-                instrument_id,
-                client_id,
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                params,
-            });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from pool fee collects.
-    pub fn unsubscribe_pool_fee_collects(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolFeeCollects};
-
-        self.check_registered();
-
-        let topic = get_defi_collect_topic(instrument_id);
-        self.remove_subscription(topic);
-
-        let command = DefiUnsubscribeCommand::PoolFeeCollects(UnsubscribePoolFeeCollects {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
-    #[cfg(feature = "defi")]
-    /// Helper method for unsubscribing from pool flash events.
-    pub fn unsubscribe_pool_flash_events(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolFlashEvents};
-
-        self.check_registered();
-
-        let topic = get_defi_flash_topic(instrument_id);
-        self.remove_subscription(topic);
-
-        let command = DefiUnsubscribeCommand::PoolFlashEvents(UnsubscribePoolFlashEvents {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
-    }
-
     /// Helper method for requesting data.
     ///
     /// # Errors
@@ -3552,14 +3237,14 @@ fn check_timestamps(
     end: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     if let Some(start) = start {
-        check_predicate_true(start <= now, "start was > now")?
+        check_predicate_true(start <= now, "start was > now")?;
     }
     if let Some(end) = end {
-        check_predicate_true(end <= now, "end was > now")?
+        check_predicate_true(end <= now, "end was > now")?;
     }
 
     if let (Some(start), Some(end)) = (start, end) {
-        check_predicate_true(start < end, "start was >= end")?
+        check_predicate_true(start < end, "start was >= end")?;
     }
 
     Ok(())

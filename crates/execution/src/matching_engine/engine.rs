@@ -726,13 +726,13 @@ impl OrderMatchingEngine {
 
         match order.order_type() {
             OrderType::Market if self.config.price_protection_points.is_some() => {
-                self.process_market_order_with_protection(order)
+                self.process_market_order_with_protection(order);
             }
             OrderType::Market => self.process_market_order(order),
             OrderType::Limit => self.process_limit_order(order),
             OrderType::MarketToLimit => self.process_market_to_limit_order(order),
             OrderType::StopMarket if self.config.price_protection_points.is_some() => {
-                self.process_stop_market_order_with_protection(order)
+                self.process_stop_market_order_with_protection(order);
             }
             OrderType::StopMarket => self.process_stop_market_order(order),
             OrderType::StopLimit => self.process_stop_limit_order(order),

@@ -402,7 +402,7 @@ mod tests {
         );
 
         account.base_apply(event1);
-        account.base_apply(event2.clone());
+        account.base_apply(event2);
         account.base_apply(event3.clone());
 
         assert_eq!(account.events.len(), 4);

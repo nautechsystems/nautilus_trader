@@ -356,7 +356,7 @@ finally:
 ## Execution reconciliation
 
 Execution reconciliation is the process of aligning the external state of reality for orders and positions
-(both closed and open) with the systems internal state built from events.
+(both closed and open) with the system's internal state built from events.
 This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` has reconciliation capability.
 
 There are two main scenarios for reconciliation:

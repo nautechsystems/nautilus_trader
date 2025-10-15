@@ -1019,7 +1019,7 @@ mod tests {
 
     impl From<TestCallback> for TimeEventCallback {
         fn from(callback: TestCallback) -> Self {
-            TimeEventCallback::from(move |_event: TimeEvent| {
+            Self::from(move |_event: TimeEvent| {
                 if let Ok(mut called) = callback.called.lock() {
                     *called = true;
                 }

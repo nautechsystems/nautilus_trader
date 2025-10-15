@@ -57,7 +57,7 @@ macro_rules! approx_eq {
 /// # Panics
 ///
 /// Panics if `x1` and `x2` are too close (within machine epsilon), which would
-/// cause division by zero or numerical instability. Uses f64::EPSILON * 2.0 to
+/// cause division by zero or numerical instability. Uses `f64::EPSILON` * 2.0 to
 /// account for floating-point rounding in the difference computation.
 #[inline]
 #[must_use]
@@ -66,11 +66,7 @@ pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
     let diff = (x2 - x1).abs();
     assert!(
         diff >= EPSILON,
-        "`x1` ({}) and `x2` ({}) are too close for stable interpolation (diff: {}, min: {})",
-        x1,
-        x2,
-        diff,
-        EPSILON
+        "`x1` ({x1}) and `x2` ({x2}) are too close for stable interpolation (diff: {diff}, min: {EPSILON})"
     );
     (x - x1) / (x2 - x1)
 }
@@ -143,14 +139,7 @@ pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: 
 
     assert!(
         diff_01 >= EPSILON && diff_02 >= EPSILON && diff_12 >= EPSILON,
-        "Abscissas are too close for stable interpolation: x0={}, x1={}, x2={} (diffs: {:.2e}, {:.2e}, {:.2e}, min: {})",
-        x0,
-        x1,
-        x2,
-        diff_01,
-        diff_02,
-        diff_12,
-        EPSILON
+        "Abscissas are too close for stable interpolation: x0={x0}, x1={x1}, x2={x2} (diffs: {diff_01:.2e}, {diff_02:.2e}, {diff_12:.2e}, min: {EPSILON})"
     );
 
     y0 * (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))

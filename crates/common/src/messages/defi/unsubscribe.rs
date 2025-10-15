@@ -49,7 +49,7 @@ impl UnsubscribeBlocks {
     }
 }
 
-/// Represents an unsubscription command for pool definition updates from a specific AMM pool.
+/// Represents a command to unsubscribe from definition updates for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePool {
     pub instrument_id: InstrumentId,
@@ -108,7 +108,7 @@ impl UnsubscribePoolSwaps {
     }
 }
 
-/// Represents an unsubscription command for pool liquidity updates from a specific AMM pool.
+/// Represents a command to unsubscribe from liquidity updates for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePoolLiquidityUpdates {
     pub instrument_id: InstrumentId,
@@ -138,7 +138,7 @@ impl UnsubscribePoolLiquidityUpdates {
     }
 }
 
-/// Represents an unsubscription command for pool fee collect events from a specific AMM pool.
+/// Represents a command to unsubscribe from fee-collect events for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePoolFeeCollects {
     pub instrument_id: InstrumentId,
@@ -168,7 +168,7 @@ impl UnsubscribePoolFeeCollects {
     }
 }
 
-/// Represents an unsubscription command for pool flash loan events from a specific AMM pool.
+/// Represents a command to unsubscribe from flash-loan events for a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePoolFlashEvents {
     pub instrument_id: InstrumentId,

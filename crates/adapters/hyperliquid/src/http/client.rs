@@ -514,14 +514,16 @@ impl HyperliquidHttpClient {
                 }
                 let delay = self
                     .parse_retry_after_simple(&response.headers)
-                    .map(Duration::from_millis)
-                    .unwrap_or_else(|| {
-                        backoff_full_jitter(
-                            attempt,
-                            self.rate_limit_backoff_base,
-                            self.rate_limit_backoff_cap,
-                        )
-                    });
+                    .map_or_else(
+                        || {
+                            backoff_full_jitter(
+                                attempt,
+                                self.rate_limit_backoff_base,
+                                self.rate_limit_backoff_cap,
+                            )
+                        },
+                        Duration::from_millis,
+                    );
                 tracing::warn!(endpoint=?request, attempt, wait_ms=?delay.as_millis(), "429 Too Many Requests; backing off");
                 attempt += 1;
                 sleep(delay).await;
@@ -681,7 +683,7 @@ impl HyperliquidHttpClient {
             } if status == "ok" => {
                 // Parse the response data to extract order status
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data.clone()).map_err(|e| {
+                    serde_json::from_value(response_data).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -859,7 +861,7 @@ impl HyperliquidHttpClient {
             } if status == "ok" => {
                 // Parse the response data to extract order statuses
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data.clone()).map_err(|e| {
+                    serde_json::from_value(response_data).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -1272,7 +1274,7 @@ mod tests {
         ));
 
         // Add the instrument
-        client.add_instrument(instrument.clone());
+        client.add_instrument(instrument);
 
         // Verify it can be looked up by Nautilus symbol
         let instruments = client.instruments.read().unwrap();
