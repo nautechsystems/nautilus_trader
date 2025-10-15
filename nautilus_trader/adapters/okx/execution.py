@@ -62,6 +62,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.orders import Order
 
 
@@ -647,13 +648,15 @@ class OKXExecutionClient(LiveExecutionClient):
 
         try:
             if command.instrument_id:
-                # SPOT instruments in CASH account don't have positions - return FLAT
-                if self.account_type == AccountType.CASH:
-                    instrument = self._cache.instrument(command.instrument_id)
-                    if instrument is None:
-                        raise RuntimeError(
-                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found in cache",
-                        )
+                # Check if this is a SPOT instrument (SPOT instruments don't have positions)
+                instrument = self._cache.instrument(command.instrument_id)
+                if instrument is None:
+                    raise RuntimeError(
+                        f"Cannot create position report - instrument {command.instrument_id} not found in cache",
+                    )
+
+                # SPOT instruments (CurrencyPair) don't have positions - return FLAT
+                if isinstance(instrument, CurrencyPair):
                     report = PositionStatusReport.create_flat(
                         account_id=self.account_id,
                         instrument_id=command.instrument_id,

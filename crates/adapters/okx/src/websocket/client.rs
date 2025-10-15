@@ -2372,13 +2372,15 @@ impl OKXWebSocketClient {
             }
         };
 
+        // For SPOT market orders, handle tgtCcy parameter
+        // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
+        // OKX API default behavior for SPOT market orders:
+        // - BUY orders default to tgtCcy=quote_ccy (sz represents quote currency amount)
+        // - SELL orders default to tgtCcy=base_ccy (sz represents base currency amount)
         if instrument_type == OKXInstrumentType::Spot && order_type == OrderType::Market {
-            // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
-            // OKX API default behavior for SPOT:
-            // - BUY orders default to tgtCcy=quote_ccy
-            // - SELL orders default to tgtCcy=base_ccy
             match quote_quantity {
                 Some(true) => {
+                    // Explicitly request quote currency sizing
                     builder.tgt_ccy(OKX_TARGET_CCY_QUOTE.to_string());
                 }
                 Some(false) => {
