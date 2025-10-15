@@ -279,7 +279,6 @@ impl HyperliquidExecutionClient {
             .get_user_address()
             .context("Failed to get user address from HTTP client")?;
 
-        tracing::debug!("Derived Ethereum address: {}", address);
         Ok(address)
     }
 

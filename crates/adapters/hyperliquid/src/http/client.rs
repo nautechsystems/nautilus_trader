@@ -609,24 +609,14 @@ impl HyperliquidHttpClient {
         let signer_id = self.signer_id()?;
         let time_nonce = nonce_manager.next(signer_id)?;
 
-        tracing::debug!("Generated nonce: {}", time_nonce);
-        tracing::debug!("Nonce as u64: {}", time_nonce.as_millis() as u64);
-
         let action_value = serde_json::to_value(action)
             .context("serialize exchange action")
             .map_err(|e| Error::bad_request(e.to_string()))?;
-
-        tracing::debug!(
-            "Action value: {}",
-            serde_json::to_string_pretty(&action_value).unwrap_or_default()
-        );
 
         // Serialize the original action struct with MessagePack for L1 signing
         let action_bytes = rmp_serde::to_vec_named(action)
             .context("serialize action with MessagePack")
             .map_err(|e| Error::bad_request(e.to_string()))?;
-
-        tracing::debug!("Action MessagePack bytes length: {}", action_bytes.len());
 
         let sign_request = SignRequest {
             action: action_value.clone(),
@@ -637,15 +627,11 @@ impl HyperliquidHttpClient {
             vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
         };
 
-        tracing::debug!("Signing request...");
         let sig = signer.sign(&sign_request)?.signature;
-        tracing::debug!("Signature: {}", sig);
 
         let nonce_u64 = time_nonce.as_millis() as u64;
-        tracing::debug!("Building final request with nonce: {}", nonce_u64);
 
         let request = if let Some(vault) = self.vault_address {
-            tracing::debug!("Using vault address: {}", vault);
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 nonce_u64,
@@ -654,15 +640,9 @@ impl HyperliquidHttpClient {
             )
             .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
         } else {
-            tracing::debug!("No vault address - using direct signing");
             HyperliquidExchangeRequest::new(action.clone(), nonce_u64, sig)
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
         };
-
-        // Debug: Log the request being sent
-        if let Ok(req_json) = serde_json::to_string_pretty(&request) {
-            tracing::debug!("Final exchange request structure:\n{}", req_json);
-        }
 
         let response = self.http_roundtrip_exchange(&request).await?;
 
@@ -678,8 +658,7 @@ impl HyperliquidHttpClient {
                 } if status == "err" => {
                     let error_msg = response_data
                         .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| response_data.to_string());
+                        .map_or_else(|| response_data.to_string(), |s| s.to_string());
                     tracing::error!("Hyperliquid API returned error: {}", error_msg);
                     Err(Error::bad_request(format!("API error: {}", error_msg)))
                 }
@@ -772,13 +751,6 @@ impl HyperliquidHttpClient {
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
         };
 
-        // Debug: Log the complete request
-        tracing::debug!(
-            "Complete request JSON: {}",
-            serde_json::to_string_pretty(&request)
-                .unwrap_or_else(|_| "Failed to serialize".to_string())
-        );
-
         let response = self.http_roundtrip_exchange(&request).await?;
 
         if response.status.is_success() {
@@ -793,8 +765,7 @@ impl HyperliquidHttpClient {
                 } if status == "err" => {
                     let error_msg = response_data
                         .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| response_data.to_string());
+                        .map_or_else(|| response_data.to_string(), |s| s.to_string());
                     tracing::error!("Hyperliquid API returned error: {}", error_msg);
                     Err(Error::bad_request(format!("API error: {}", error_msg)))
                 }
@@ -1141,12 +1112,7 @@ impl HyperliquidHttpClient {
     {
         let url = &self.base_exchange;
         let body = serde_json::to_string(&request).map_err(Error::Serde)?;
-
-        tracing::debug!("Exchange endpoint: {}", url);
-        tracing::debug!("Request body (raw): {}", body);
-
         let body_bytes = body.into_bytes();
-        tracing::debug!("Request body length: {} bytes", body_bytes.len());
 
         let response = self
             .client
@@ -1160,9 +1126,6 @@ impl HyperliquidHttpClient {
             )
             .await
             .map_err(Error::from_http_client)?;
-
-        tracing::debug!("Response status: {:?}", response.status);
-        tracing::debug!("Response body: {}", String::from_utf8_lossy(&response.body));
 
         Ok(response)
     }
