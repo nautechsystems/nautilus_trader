@@ -53,7 +53,7 @@ impl Default for CashAccount {
 impl Default for AccountAny {
     /// Creates a new default [`AccountAny`] instance.
     fn default() -> Self {
-        AccountAny::Cash(CashAccount::default())
+        Self::Cash(CashAccount::default())
     }
 }
 

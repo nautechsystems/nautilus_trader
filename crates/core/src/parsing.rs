@@ -39,23 +39,20 @@ fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
 #[inline]
 #[must_use]
 fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
-    match exponent_str.parse::<u64>() {
-        Ok(exp) => Some(exp.min(u8::MAX as u64) as u8),
-        Err(_) => {
-            if exponent_str.is_empty() && strict {
-                panic!("Invalid scientific notation format: missing exponent after 'e-'");
-            }
-            // If it's all digits but overflows u64, clamp to u8::MAX
-            if exponent_str.chars().all(|c| c.is_ascii_digit()) {
-                Some(u8::MAX)
-            } else if strict {
-                panic!(
-                    "Invalid scientific notation exponent '{}': must be a valid number",
-                    exponent_str
-                )
-            } else {
-                None // Return None for lenient parsing
-            }
+    if let Ok(exp) = exponent_str.parse::<u64>() {
+        Some(exp.min(u64::from(u8::MAX)) as u8)
+    } else {
+        assert!(
+            !(exponent_str.is_empty() && strict),
+            "Invalid scientific notation format: missing exponent after 'e-'"
+        );
+        // If it's all digits but overflows u64, clamp to u8::MAX
+        if exponent_str.chars().all(|c| c.is_ascii_digit()) {
+            Some(u8::MAX)
+        } else if strict {
+            panic!("Invalid scientific notation exponent '{exponent_str}': must be a valid number")
+        } else {
+            None // Return None for lenient parsing
         }
     }
 }

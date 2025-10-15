@@ -160,8 +160,7 @@ impl PortfolioAnalyzer {
             }
             _ => {
                 return Err(PyValueError::new_err(format!(
-                    "Unknown statistic type: {}",
-                    type_name
+                    "Unknown statistic type: {type_name}"
                 )));
             }
         }
@@ -247,8 +246,7 @@ impl PortfolioAnalyzer {
             }
             _ => {
                 return Err(PyValueError::new_err(format!(
-                    "Unknown statistic type: {}",
-                    type_name
+                    "Unknown statistic type: {type_name}"
                 )));
             }
         }
@@ -342,7 +340,7 @@ impl PortfolioAnalyzer {
         unrealized_pnl: Option<&Money>,
     ) -> PyResult<Vec<String>> {
         self.get_stats_pnls_formatted(currency, unrealized_pnl)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+            .map_err(PyValueError::new_err)
     }
 
     #[pyo3(name = "get_stats_returns_formatted")]

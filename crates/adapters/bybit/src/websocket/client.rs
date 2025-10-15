@@ -362,7 +362,7 @@ impl BybitWebSocketClient {
                     break;
                 }
 
-                match BybitWebSocketClient::handle_message(
+                match Self::handle_message(
                     &inner,
                     &subscriptions,
                     &auth_tracker,
@@ -386,7 +386,7 @@ impl BybitWebSocketClient {
                         get_runtime().spawn(async move {
                             // Authenticate if required
                             let auth_succeeded = if requires_auth {
-                                match BybitWebSocketClient::authenticate_inner(
+                                match Self::authenticate_inner(
                                     &inner_for_task,
                                     requires_auth,
                                     credential_for_task,
@@ -420,7 +420,7 @@ impl BybitWebSocketClient {
                             quote_cache_for_task.write().await.clear();
 
                             // Resubscribe to all topics
-                            if let Err(err) = BybitWebSocketClient::resubscribe_all_inner(
+                            if let Err(err) = Self::resubscribe_all_inner(
                                 &inner_for_task,
                                 &subscriptions_for_task,
                             )
@@ -1480,7 +1480,7 @@ impl BybitWebSocketClient {
                     conn_id: auth.conn_id.clone(),
                     req_id: None,
                     ret_code: auth.ret_code,
-                    ret_msg: auth.ret_msg.clone(),
+                    ret_msg: auth.ret_msg,
                 };
                 let error = BybitWebSocketError::from_response(&resp);
                 return Some(BybitWebSocketMessage::Error(error));
@@ -1521,7 +1521,7 @@ impl BybitWebSocketClient {
                 conn_id: auth.conn_id.clone(),
                 req_id: None,
                 ret_code: auth.ret_code,
-                ret_msg: auth.ret_msg.clone(),
+                ret_msg: auth.ret_msg,
             };
             let error = BybitWebSocketError::from_response(&resp);
             return Some(BybitWebSocketMessage::Error(error));

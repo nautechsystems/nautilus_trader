@@ -790,7 +790,7 @@ mod tests {
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
 
-        let manager = AccountsManager::new(clock.clone(), cache.clone());
+        let manager = AccountsManager::new(clock, cache);
 
         // Create instrument
         let instrument = audusd_sim();
@@ -907,7 +907,7 @@ mod tests {
 
         // Act
         let result = manager.update_orders(
-            &AccountAny::Cash(account.clone()),
+            &AccountAny::Cash(account),
             InstrumentAny::CurrencyPair(instrument),
             orders,
             UnixNanos::default(),

@@ -336,8 +336,8 @@ pub enum OKXOptionType {
 impl From<OKXOptionType> for OptionKind {
     fn from(option_type: OKXOptionType) -> Self {
         match option_type {
-            OKXOptionType::Call => OptionKind::Call,
-            OKXOptionType::Put => OptionKind::Put,
+            OKXOptionType::Call => Self::Call,
+            OKXOptionType::Put => Self::Put,
             _ => panic!("Invalid `option_type`, was None"),
         }
     }

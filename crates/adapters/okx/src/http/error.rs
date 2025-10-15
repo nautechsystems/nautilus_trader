@@ -91,7 +91,7 @@ pub enum OKXHttpError {
 
 impl From<String> for OKXHttpError {
     fn from(error: String) -> Self {
-        OKXHttpError::ValidationError(error)
+        Self::ValidationError(error)
     }
 }
 
@@ -99,6 +99,6 @@ impl From<String> for OKXHttpError {
 // client implementation by converting them into our typed error.
 impl From<serde_json::Error> for OKXHttpError {
     fn from(error: serde_json::Error) -> Self {
-        OKXHttpError::JsonError(error.to_string())
+        Self::JsonError(error.to_string())
     }
 }

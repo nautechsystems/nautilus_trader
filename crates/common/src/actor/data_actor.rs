@@ -2019,7 +2019,7 @@ impl DataActorCore {
     /// Logs a warning if the actor is not currently subscribed to the topic.
     pub(crate) fn remove_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler);
         } else {
             log::warn!(
                 "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",

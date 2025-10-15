@@ -134,7 +134,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
                     }
                 }
 
-                TimeEventHandler {
+                Self {
                     event: value.event,
                     callback_ptr: raw_ptr,
                 }

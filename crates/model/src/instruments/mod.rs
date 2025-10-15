@@ -198,8 +198,8 @@ impl TickSchemeRule for TickScheme {
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
-            TickScheme::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
-            TickScheme::Crypto => {
+            Self::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
+            Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).floor() * increment;
                 Some(Price::new(base - (n as f64) * increment, precision))
@@ -210,8 +210,8 @@ impl TickSchemeRule for TickScheme {
     #[inline(always)]
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
-            TickScheme::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
-            TickScheme::Crypto => {
+            Self::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
+            Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).ceil() * increment;
                 Some(Price::new(base + (n as f64) * increment, precision))
@@ -223,8 +223,8 @@ impl TickSchemeRule for TickScheme {
 impl Display for TickScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TickScheme::Fixed(_) => write!(f, "FIXED"),
-            TickScheme::Crypto => write!(f, "CRYPTO_0_01"),
+            Self::Fixed(_) => write!(f, "FIXED"),
+            Self::Crypto => write!(f, "CRYPTO_0_01"),
         }
     }
 }
@@ -234,8 +234,8 @@ impl FromStr for TickScheme {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
-            "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
-            "CRYPTO_0_01" => Ok(TickScheme::Crypto),
+            "FIXED" => Ok(Self::Fixed(FixedTickScheme::new(1.0)?)),
+            "CRYPTO_0_01" => Ok(Self::Crypto),
             _ => anyhow::bail!("unknown tick scheme {s}"),
         }
     }

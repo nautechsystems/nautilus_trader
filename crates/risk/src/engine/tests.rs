@@ -1126,7 +1126,7 @@ fn test_check_orders_risk_allows_reduce_only_sell_with_cash_base_currency(
         .reduce_only(true)
         .build();
 
-    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
     assert!(allowed);
 
     let messages = get_process_order_event_handler_messages(process_order_event_handler);
@@ -1177,7 +1177,7 @@ fn test_check_orders_risk_allows_reduce_only_sell_with_multi_currency_cash_accou
         .reduce_only(true)
         .build();
 
-    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
     assert!(allowed);
 
     let messages = get_process_order_event_handler_messages(process_order_event_handler);
@@ -1212,7 +1212,7 @@ fn test_check_orders_risk_non_reduce_sell_denies_on_free_balance(
         .quantity(Quantity::from("100000"))
         .build();
 
-    let allowed = risk_engine.check_orders_risk(instrument_audusd.clone(), vec![order]);
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
     assert!(!allowed);
 
     let messages = get_process_order_event_handler_messages(process_order_event_handler);

@@ -1168,7 +1168,7 @@ mod tests {
             foreign_notional: None,
         };
 
-        let bar = parse_trade_bin(bin.clone(), &instrument_any, &bar_type, ts_init).unwrap();
+        let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
         let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)

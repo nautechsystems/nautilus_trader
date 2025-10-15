@@ -741,7 +741,7 @@ pub mod execution_cloid {
                     .map_err(|_| "Invalid hex character in CLOID".to_string())?;
             }
 
-            Ok(Cloid(bytes))
+            Ok(Self(bytes))
         }
 
         /// Converts the CLOID to a hex string with `0x` prefix.
@@ -776,7 +776,7 @@ pub mod execution_cloid {
             D: Deserializer<'de>,
         {
             let s = String::deserialize(deserializer)?;
-            Cloid::from_hex(&s).map_err(D::Error::custom)
+            Self::from_hex(&s).map_err(D::Error::custom)
         }
     }
 }

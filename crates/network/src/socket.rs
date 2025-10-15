@@ -289,8 +289,8 @@ impl SocketClientInner {
             let port = parsed
                 .port_u16()
                 .unwrap_or_else(|| match parsed.scheme_str() {
-                    Some("wss") | Some("https") => 443,
-                    Some("ws") | Some("http") => 80,
+                    Some("wss" | "https") => 443,
+                    Some("ws" | "http") => 80,
                     _ => match mode {
                         Mode::Tls => 443,
                         Mode::Plain => 80,
@@ -791,27 +791,26 @@ impl SocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
-            while !self.is_closed() {
-                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
-            }
+        if let Ok(()) =
+            tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+                while !self.is_closed() {
+                    tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS))
+                        .await;
+                }
 
-            if !self.controller_task.is_finished() {
-                self.controller_task.abort();
-                log_task_aborted("controller");
-            }
-        })
-        .await
-        {
-            Ok(()) => {
-                log_task_stopped("controller");
-            }
-            Err(_) => {
-                tracing::error!("Timeout waiting for controller task to finish");
                 if !self.controller_task.is_finished() {
                     self.controller_task.abort();
                     log_task_aborted("controller");
                 }
+            })
+            .await
+        {
+            log_task_stopped("controller");
+        } else {
+            tracing::error!("Timeout waiting for controller task to finish");
+            if !self.controller_task.is_finished() {
+                self.controller_task.abort();
+                log_task_aborted("controller");
             }
         }
     }

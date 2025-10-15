@@ -163,20 +163,20 @@ impl Error {
     /// Check if error is retryable
     pub fn is_retryable(&self) -> bool {
         match self {
-            Error::Transport(_) | Error::Timeout | Error::RateLimit { .. } => true,
-            Error::Http { status, .. } => *status >= 500,
+            Self::Transport(_) | Self::Timeout | Self::RateLimit { .. } => true,
+            Self::Http { status, .. } => *status >= 500,
             _ => false,
         }
     }
 
     /// Check if error is due to rate limiting
     pub fn is_rate_limited(&self) -> bool {
-        matches!(self, Error::RateLimit { .. })
+        matches!(self, Self::RateLimit { .. })
     }
 
     /// Check if error is due to authentication issues
     pub fn is_auth_error(&self) -> bool {
-        matches!(self, Error::Auth(_))
+        matches!(self, Self::Auth(_))
     }
 }
 

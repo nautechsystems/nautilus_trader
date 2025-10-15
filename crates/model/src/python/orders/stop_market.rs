@@ -100,7 +100,7 @@ impl StopMarketOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(StopMarketOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]

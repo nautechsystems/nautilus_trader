@@ -869,7 +869,7 @@ impl OrderCore {
 
     #[must_use]
     pub fn commissions_vec(&self) -> Vec<Money> {
-        self.commissions.values().cloned().collect()
+        self.commissions.values().copied().collect()
     }
 
     #[must_use]

@@ -304,7 +304,7 @@ struct DummyActor {
 }
 impl DummyActor {
     fn new<S: AsRef<str>>(s: S) -> Self {
-        DummyActor {
+        Self {
             id_str: Ustr::from_str(s.as_ref()).unwrap(),
             count: 0,
         }
@@ -1566,7 +1566,7 @@ fn test_subscribe_and_receive_pools(
         18,
     );
     let pool = Pool::new(
-        chain.clone(),
+        chain,
         Arc::new(dex),
         Address::from([0x12; 20]),
         1000000,
@@ -1624,7 +1624,7 @@ fn test_subscribe_and_receive_pool_swaps(
         InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3");
 
     let swap = PoolSwap::new(
-        chain.clone(),
+        chain,
         Arc::new(dex),
         instrument_id,
         pool_address,
@@ -1716,7 +1716,7 @@ fn test_unsubscribe_pool_swaps(
     actor.unsubscribe_pool_swaps(instrument_id, None, None);
 
     let swap2 = PoolSwap::new(
-        chain.clone(),
+        chain,
         Arc::new(dex),
         instrument_id,
         pool_address,

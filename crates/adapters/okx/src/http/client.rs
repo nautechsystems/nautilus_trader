@@ -380,9 +380,9 @@ impl OKXHttpInnerClient {
         let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
         let mut headers = HashMap::new();
-        headers.insert("OK-ACCESS-KEY".to_string(), api_key.clone());
+        headers.insert("OK-ACCESS-KEY".to_string(), api_key);
         headers.insert("OK-ACCESS-PASSPHRASE".to_string(), api_passphrase);
-        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp.clone());
+        headers.insert("OK-ACCESS-TIMESTAMP".to_string(), timestamp);
         headers.insert("OK-ACCESS-SIGN".to_string(), signature);
 
         Ok(headers)

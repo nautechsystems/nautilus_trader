@@ -520,8 +520,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
             {
                 if !value.is_finite() {
                     return Err(E::custom(format!(
-                        "Unix timestamp must be finite, got {}",
-                        value
+                        "Unix timestamp must be finite, got {value}"
                     )));
                 }
                 if value < 0.0 {
@@ -532,8 +531,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
                 let nanos_f64 = value * 1_000_000_000.0;
                 if nanos_f64 > MAX_NS_F64 {
                     return Err(E::custom(format!(
-                        "Unix timestamp {} seconds is out of range",
-                        value
+                        "Unix timestamp {value} seconds is out of range"
                     )));
                 }
                 let nanos = nanos_f64.round() as u64;

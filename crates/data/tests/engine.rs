@@ -3097,7 +3097,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect.clone()));
+    data_engine.process_defi_data(DefiData::PoolFeeCollect(collect));
 
     // Verify profiler state - the collect should be processed without error
     // The main verification is that PoolUpdater called PoolProfiler.process_collect()
@@ -3207,7 +3207,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_defi_data(DefiData::PoolFlash(flash.clone()));
+    data_engine.process_defi_data(DefiData::PoolFlash(flash));
 
     // Verify profiler state - the flash should be processed without error
     // The main verification is that PoolUpdater called PoolProfiler.process_flash()
@@ -3254,7 +3254,7 @@ fn test_execute_defi_request_pool_snapshot(
         None,
     );
 
-    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request));
     data_engine.execute(&cmd);
 
     // Verify command was forwarded to the client
@@ -3294,7 +3294,7 @@ fn test_setup_pool_updater_requests_snapshot(
         None,
     );
 
-    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
     data_engine.execute(&cmd);
 
     // Verify two commands were recorded:
@@ -3336,7 +3336,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        cache,
         client_id,
         venue,
         None,
@@ -3400,7 +3400,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         None,
     );
 
-    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool.clone()));
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
     data_engine.execute(&cmd);
 
     // Verify the cache-first optimization: when a pool exists in the data engine's
@@ -3468,7 +3468,7 @@ fn test_pool_snapshot_request_routing_by_client_id(
         None,
     );
 
-    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request.clone()));
+    let cmd = DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request));
     data_engine.execute(&cmd);
 
     // Verify request was routed to CLIENT1 only

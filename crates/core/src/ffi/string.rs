@@ -168,7 +168,7 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
         assert!(!ptr.is_null(), "`ptr` was NULL");
         let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };
         drop(cstring);
-    })
+    });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -1396,7 +1396,7 @@ impl PoolProfiler {
     /// Panics if no events have been processed yet.
     pub fn extract_snapshot(&self) -> PoolSnapshot {
         let positions: Vec<_> = self.positions.values().cloned().collect();
-        let ticks: Vec<_> = self.tick_map.get_all_ticks().values().cloned().collect();
+        let ticks: Vec<_> = self.tick_map.get_all_ticks().values().copied().collect();
 
         let mut state = self.state.clone();
         state.liquidity = self.tick_map.liquidity;

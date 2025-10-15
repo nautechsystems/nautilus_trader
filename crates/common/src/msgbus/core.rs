@@ -458,7 +458,7 @@ impl MessageBus {
     // }
 
     /// Registers message bus for the current thread.
-    pub fn register_message_bus(self) -> Rc<RefCell<MessageBus>> {
+    pub fn register_message_bus(self) -> Rc<RefCell<Self>> {
         let msgbus = Rc::new(RefCell::new(self));
         set_message_bus(msgbus.clone());
         msgbus

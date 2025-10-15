@@ -169,16 +169,23 @@ ruff:  #-- Run ruff linter with automatic fixes
 	uv run --active --no-sync ruff check . --fix
 
 .PHONY: clippy
-clippy:  #-- Run Rust clippy linter with fixes
-	cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
+clippy:  #-- Run clippy linter (check only, workspace lints)
+	cargo clippy --all-targets --all-features -- -D warnings
 
-.PHONY: clippy-nightly
-clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
-	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::unwrap_used -W clippy::expect_used
+.PHONY: clippy-fix
+clippy-fix:  #-- Run clippy linter with automatic fixes (workspace lints)
+	cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
 
-.PHONY: clippy-crate-%
-clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)
-	cargo clippy --all-targets --all-features -p $* -- -D warnings
+.PHONY: clippy-fix-nightly
+clippy-fix-nightly:  #-- Run clippy linter with nightly toolchain and automatic fixes (workspace lints + additional strictness)
+	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
+
+.PHONY: clippy-pedantic-crate-%
+clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage: make clippy-crate-<crate_name>)
+	cargo clippy --all-targets --all-features -p $* -- -D warnings \
+		-W clippy::todo \
+		-W clippy::unwrap_used \
+		-W clippy::expect_used
 
 #== Dependencies
 
@@ -193,7 +200,6 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 	uv lock --upgrade
 
 #== Security
-
 
 .PHONY: security-audit
 security-audit: check-audit-installed  #-- Run security audit for Rust and Python dependencies

@@ -401,7 +401,7 @@ impl Logger {
         set_boxed_logger(Box::new(logger))?;
 
         // Store the sender globally so additional guards can be created
-        if LOGGER_TX.set(tx.clone()).is_err() {
+        if LOGGER_TX.set(tx).is_err() {
             debug_assert!(
                 false,
                 "LOGGER_TX already set - re-initialization not supported"
@@ -472,12 +472,7 @@ impl Logger {
         let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
         } else {
-            FileWriter::new(
-                trader_id.clone(),
-                instance_id.clone(),
-                file_config.clone(),
-                fileout_level,
-            )
+            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         };
 
         let process_event = |event: LogEvent,
@@ -897,7 +892,6 @@ mod tests {
                         .find(|entry| entry.path().is_file())
                         .expect("No files found in directory")
                         .path();
-                    dbg!(&log_file_path);
                     log_contents = std::fs::read_to_string(log_file_path)
                         .expect("Error while reading log file");
                     !log_contents.is_empty()

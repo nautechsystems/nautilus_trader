@@ -330,12 +330,12 @@ impl OwnOrderBook {
 
     /// Returns the client order IDs currently on the bid side.
     pub fn bid_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.bids.cache.keys().cloned().collect()
+        self.bids.cache.keys().copied().collect()
     }
 
     /// Returns the client order IDs currently on the ask side.
     pub fn ask_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.asks.cache.keys().cloned().collect()
+        self.asks.cache.keys().copied().collect()
     }
 
     /// Return whether the given client order ID is in the own book.
@@ -450,7 +450,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         // Audit asks
@@ -459,7 +459,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         for client_order_id in bids_to_remove {
@@ -507,7 +507,7 @@ fn filter_orders<'a>(
                 .values()
                 .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
                 .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
-                .cloned()
+                .copied()
                 .collect::<Vec<OwnBookOrder>>();
 
             (level.price.value.as_decimal(), orders)

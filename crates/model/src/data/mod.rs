@@ -529,7 +529,7 @@ mod tests {
         );
 
         let data_type1 = DataType::new("ExampleType", metadata.clone());
-        let data_type2 = DataType::new("ExampleType", metadata.clone());
+        let data_type2 = DataType::new("ExampleType", metadata);
 
         let mut hasher1 = DefaultHasher::new();
         data_type1.hash(&mut hasher1);

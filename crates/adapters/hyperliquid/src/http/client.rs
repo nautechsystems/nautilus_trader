@@ -681,7 +681,7 @@ impl HyperliquidHttpClient {
             } if status == "ok" => {
                 // Parse the response data to extract order status
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data.clone()).map_err(|e| {
+                    serde_json::from_value(response_data).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -859,7 +859,7 @@ impl HyperliquidHttpClient {
             } if status == "ok" => {
                 // Parse the response data to extract order statuses
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data.clone()).map_err(|e| {
+                    serde_json::from_value(response_data).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -1272,7 +1272,7 @@ mod tests {
         ));
 
         // Add the instrument
-        client.add_instrument(instrument.clone());
+        client.add_instrument(instrument);
 
         // Verify it can be looked up by Nautilus symbol
         let instruments = client.instruments.read().unwrap();

@@ -290,7 +290,7 @@ impl BitmexWebSocketClient {
                         topics_to_restore.sort();
 
                         let auth_rx_opt = if let Some(cred) = &credential {
-                            match BitmexWebSocketClient::issue_authentication_request(
+                            match Self::issue_authentication_request(
                                 &inner_client,
                                 cred,
                                 &auth_tracker,
@@ -338,7 +338,7 @@ impl BitmexWebSocketClient {
                                 state_for_task.mark_subscribe(topic.as_str());
                             }
 
-                            if let Err(e) = BitmexWebSocketClient::send_topics(
+                            if let Err(e) = Self::send_topics(
                                 &inner_for_task,
                                 BitmexWsOperation::Subscribe,
                                 all_topics.clone(),

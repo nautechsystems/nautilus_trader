@@ -151,7 +151,7 @@ impl From<OrderAny> for OrderSnapshot {
             liquidity_side: order.liquidity_side(),
             avg_px: order.avg_px(),
             slippage: order.slippage(),
-            commissions: order.commissions().values().cloned().collect(),
+            commissions: order.commissions().values().copied().collect(),
             status: order.status(),
             is_post_only: order.is_post_only(),
             is_reduce_only: order.is_reduce_only(),

@@ -563,16 +563,16 @@ pub enum ConversionError {
 
 impl From<anyhow::Error> for ConversionError {
     fn from(err: anyhow::Error) -> Self {
-        ConversionError::OrderBookDeltasError(err.to_string())
+        Self::OrderBookDeltasError(err.to_string())
     }
 }
 
 impl Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConversionError::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
-            ConversionError::InvalidSize { value } => write!(f, "Invalid size: {}", value),
-            ConversionError::OrderBookDeltasError(msg) => {
+            Self::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
+            Self::InvalidSize { value } => write!(f, "Invalid size: {}", value),
+            Self::OrderBookDeltasError(msg) => {
                 write!(f, "OrderBookDeltas error: {}", msg)
             }
         }

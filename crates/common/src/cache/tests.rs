@@ -417,10 +417,8 @@ fn test_position_ids_filtering(mut cache: Cache) {
 
     // Insert into cache
     cache.add_position(pos_a.clone(), OmsType::Netting).unwrap();
-    cache.add_position(pos_b.clone(), OmsType::Netting).unwrap();
-    cache
-        .add_position(pos_closed.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(pos_b, OmsType::Netting).unwrap();
+    cache.add_position(pos_closed, OmsType::Netting).unwrap();
 
     // Assertions
     assert_eq!(cache.position_ids(None, None, None).len(), 3);
@@ -820,7 +818,7 @@ fn test_pool_mut_when_empty(mut cache: Cache, test_pool: Pool) {
 #[rstest]
 fn test_pool_mut_when_some(mut cache: Cache, test_pool: Pool) {
     let instrument_id = test_pool.instrument_id;
-    cache.add_pool(test_pool.clone()).unwrap();
+    cache.add_pool(test_pool).unwrap();
     let result = cache.pool_mut(&instrument_id);
 
     assert!(result.is_some());
@@ -897,7 +895,7 @@ fn test_pool_profiler_when_empty(cache: Cache, test_pool_profiler: PoolProfiler)
 #[rstest]
 fn test_pool_profiler_when_some(mut cache: Cache, test_pool_profiler: PoolProfiler) {
     let instrument_id = test_pool_profiler.pool.instrument_id;
-    cache.add_pool_profiler(test_pool_profiler.clone()).unwrap();
+    cache.add_pool_profiler(test_pool_profiler).unwrap();
     let result = cache.pool_profiler(&instrument_id);
     assert!(result.is_some());
 }
@@ -914,7 +912,7 @@ fn test_pool_profiler_mut_when_empty(mut cache: Cache, test_pool_profiler: PoolP
 #[rstest]
 fn test_pool_profiler_mut_when_some(mut cache: Cache, test_pool_profiler: PoolProfiler) {
     let instrument_id = test_pool_profiler.pool.instrument_id;
-    cache.add_pool_profiler(test_pool_profiler.clone()).unwrap();
+    cache.add_pool_profiler(test_pool_profiler).unwrap();
     let result = cache.pool_profiler_mut(&instrument_id);
     assert!(result.is_some());
 }
@@ -924,7 +922,7 @@ fn test_pool_profiler_mut_when_some(mut cache: Cache, test_pool_profiler: PoolPr
 fn test_add_pool_profiler(mut cache: Cache, test_pool_profiler: PoolProfiler) {
     let instrument_id = test_pool_profiler.pool.instrument_id;
 
-    cache.add_pool_profiler(test_pool_profiler.clone()).unwrap();
+    cache.add_pool_profiler(test_pool_profiler).unwrap();
 
     let cached_profiler = cache.pool_profiler(&instrument_id);
     assert!(cached_profiler.is_some());
@@ -960,7 +958,7 @@ fn test_pool_profilers_when_empty(cache: Cache, test_pool_profiler: PoolProfiler
 #[rstest]
 fn test_pool_profilers_when_some(mut cache: Cache, test_pool_profiler: PoolProfiler) {
     let venue = test_pool_profiler.pool.instrument_id.venue;
-    cache.add_pool_profiler(test_pool_profiler.clone()).unwrap();
+    cache.add_pool_profiler(test_pool_profiler).unwrap();
 
     let result1 = cache.pool_profilers(None);
     let result2 = cache.pool_profilers(Some(&venue));

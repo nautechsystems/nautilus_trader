@@ -613,7 +613,7 @@ mod tests {
             inflight_max_retries: 2,
             ..ReconciliationConfig::default()
         };
-        let mut manager = ReconciliationManager::new(clock.clone(), cache.clone(), config);
+        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
 
         let client_order_id = ClientOrderId::from("O-123456");
         manager.register_inflight(client_order_id);
