@@ -166,10 +166,14 @@ impl Erc20Contract {
 
     /// Fetches token information for multiple tokens in a single multicall.
     ///
+    /// If the multicall fails (typically due to expired/broken contracts causing RPC "out of gas"),
+    /// automatically falls back to individual token fetches to isolate problematic contracts.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the multicall itself fails. Individual token failures
-    /// are captured in the Result values of the returned `HashMap`.
+    /// Returns an error only if the operation cannot proceed. Multicall failures trigger
+    /// automatic fallback to individual fetches. Individual token failures are captured
+    /// in the Result values of the returned `HashMap`.
     pub async fn batch_fetch_token_info(
         &self,
         token_addresses: &[Address],
@@ -197,7 +201,38 @@ impl Erc20Contract {
             ]);
         }
 
-        let results = self.base.execute_multicall(calls, None).await?;
+        // Try batch multicall first
+        let results = match self.base.execute_multicall(calls, None).await {
+            Ok(results) => results,
+            Err(e) => {
+                // Multicall failed (likely expired/broken contract causing RPC failure)
+                tracing::warn!(
+                    "Batch multicall failed: {}. Falling back to individual fetches for {} tokens",
+                    e,
+                    token_addresses.len()
+                );
+
+                // Fallback: fetch each token individually to isolate problematic contracts
+                let mut token_infos = HashMap::with_capacity(token_addresses.len());
+                for token_address in token_addresses {
+                    match self.fetch_token_info(token_address).await {
+                        Ok(info) => {
+                            token_infos.insert(*token_address, Ok(info));
+                        }
+                        Err(err) => {
+                            tracing::debug!(
+                                "Token {} failed individual fetch (likely expired/broken): {}",
+                                token_address,
+                                err
+                            );
+                            token_infos.insert(*token_address, Err(err));
+                        }
+                    }
+                }
+
+                return Ok(token_infos);
+            }
+        };
 
         let mut token_infos = HashMap::with_capacity(token_addresses.len());
         for (i, token_address) in token_addresses.iter().enumerate() {
