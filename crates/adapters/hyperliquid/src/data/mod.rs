@@ -145,53 +145,11 @@ impl HyperliquidDataClient {
             .await
             .context("Failed to connect to Hyperliquid WebSocket")?;
 
-        tracing::info!("Spawning WebSocket message processing task");
-
-        // Spawn message processing task
-        let ws_client = self.ws_client.clone();
-        let data_sender = self.data_sender.clone();
-        let instruments = Arc::clone(&self.instruments);
-        let cancellation = self.cancellation_token.clone();
-        let venue = self.venue();
-        let clock = self.clock;
-
-        let handle = tokio::spawn(async move {
-            tracing::info!("WebSocket message processing task started");
-
-            loop {
-                tokio::select! {
-                    maybe_msg = ws_client.next_event() => {
-                        match maybe_msg {
-                            Some(msg) => {
-                                tracing::debug!("Received WebSocket message: {:?}", msg);
-                                Self::handle_ws_message(
-                                    msg,
-                                    &data_sender,
-                                    &instruments,
-                                    venue,
-                                    clock,
-                                );
-                            }
-                            None => {
-                                tracing::warn!("WebSocket next_event returned None, stream may have ended");
-                            }
-                        }
-                    }
-                    _ = cancellation.cancelled() => {
-                        tracing::info!("WebSocket message processing task cancelled");
-                        break;
-                    }
-                }
-            }
-        });
-
-        self.tasks.push(handle);
-
-        tracing::info!("WebSocket message processing task spawned successfully");
-
+        // No message processing loop needed - the WebSocket client handles it internally
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn handle_ws_message(
         msg: HyperliquidWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,

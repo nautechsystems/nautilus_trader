@@ -17,7 +17,6 @@
 
 use std::{cell::Ref, str::FromStr, sync::Mutex};
 
-use alloy_signer_local::PrivateKeySigner;
 use anyhow::Context;
 use nautilus_common::{
     clock::Clock,
@@ -273,20 +272,12 @@ impl HyperliquidExecutionClient {
     }
 
     fn get_user_address(&self) -> anyhow::Result<String> {
-        // Derive Ethereum address from private key using alloy-signer
-        // Strip "0x" prefix if present
-        let key_str = self
-            .config
-            .private_key
-            .strip_prefix("0x")
-            .unwrap_or(&self.config.private_key);
-
-        // Create signer from hex private key
-        let signer = PrivateKeySigner::from_str(key_str)
-            .context("Failed to create signer from private key")?;
-
-        // Get address directly from signer
-        let address = format!("{:?}", signer.address());
+        // Use the HTTP client's get_user_address() method which properly derives
+        // the address from the private key using the signer's address() method
+        let address = self
+            .http_client
+            .get_user_address()
+            .context("Failed to get user address from HTTP client")?;
 
         tracing::debug!("Derived Ethereum address: {}", address);
         Ok(address)

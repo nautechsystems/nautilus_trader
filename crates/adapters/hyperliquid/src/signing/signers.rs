@@ -15,9 +15,11 @@
 
 use std::str::FromStr;
 
-use alloy_primitives::{B256, keccak256};
+use alloy_primitives::{Address, B256, keccak256};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
+use alloy_sol_types::{SolStruct, eip712_domain};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{nonce::TimeNonce, types::HyperliquidActionType};
@@ -26,12 +28,23 @@ use crate::{
     http::error::{Error, Result},
 };
 
+// Define the Agent struct for L1 signing using alloy_sol_types
+alloy_sol_types::sol! {
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Agent {
+        string source;
+        bytes32 connectionId;
+    }
+}
+
 /// Request to be signed by the Hyperliquid EIP-712 signer.
 #[derive(Debug, Clone)]
 pub struct SignRequest {
     pub action: Value,
     pub time_nonce: TimeNonce,
     pub action_type: HyperliquidActionType,
+    pub is_testnet: bool,
+    pub vault_address: Option<String>,
 }
 
 /// Bundle containing signature for Hyperliquid requests.
@@ -53,9 +66,7 @@ impl HyperliquidEip712Signer {
 
     pub fn sign(&self, request: &SignRequest) -> Result<SignatureBundle> {
         let signature = match request.action_type {
-            HyperliquidActionType::L1 => {
-                self.sign_l1_action(&request.action, request.time_nonce)?
-            }
+            HyperliquidActionType::L1 => self.sign_l1_action(request)?,
             HyperliquidActionType::UserSigned => {
                 self.sign_user_signed_action(&request.action, request.time_nonce)?
             }
@@ -64,20 +75,66 @@ impl HyperliquidEip712Signer {
         Ok(SignatureBundle { signature })
     }
 
-    pub fn sign_l1_action(&self, action: &Value, _nonce: TimeNonce) -> Result<String> {
-        let canonicalized = Self::canonicalize_action(action)?;
+    pub fn sign_l1_action(&self, request: &SignRequest) -> Result<String> {
+        // L1 signing for Hyperliquid follows this pattern:
+        // 1. Serialize action with MessagePack (rmp_serde)
+        // 2. Append timestamp + vault info
+        // 3. Hash with keccak256 to get connection_id
+        // 4. Create Agent struct with source + connection_id
+        // 5. Sign Agent with EIP-712
 
-        // EIP-712 domain separator for Hyperliquid
-        let domain_hash = self.get_domain_hash()?;
+        // Step 1-3: Create connection_id
+        let connection_id = self.compute_connection_id(request)?;
 
-        // Create the structured data hash
-        let action_hash = self.hash_typed_data(&canonicalized)?;
+        // Step 4: Create Agent struct
+        let source = if request.is_testnet {
+            "b".to_string()
+        } else {
+            "a".to_string()
+        };
 
-        // Combine with EIP-712 prefix
-        let message_hash = self.create_eip712_hash(&domain_hash, &action_hash)?;
+        let agent = Agent {
+            source,
+            connectionId: connection_id,
+        };
 
-        // Sign with private key
-        self.sign_hash(&message_hash)
+        // Step 5: Sign Agent with EIP-712
+        let domain = eip712_domain! {
+            name: "Exchange",
+            version: "1",
+            chain_id: 1337,
+            verifying_contract: Address::ZERO,
+        };
+
+        let signing_hash = agent.eip712_signing_hash(&domain);
+
+        // Sign the hash
+        self.sign_hash(&signing_hash.0)
+    }
+
+    fn compute_connection_id(&self, request: &SignRequest) -> Result<B256> {
+        // Serialize action with MessagePack
+        let mut bytes = rmp_serde::to_vec_named(&request.action)
+            .map_err(|e| Error::transport(format!("Failed to serialize action: {}", e)))?;
+
+        // Append timestamp as big-endian u64
+        let timestamp = request.time_nonce.as_millis() as u64;
+        bytes.extend_from_slice(&timestamp.to_be_bytes());
+
+        // Append vault address if present
+        if let Some(vault_addr) = &request.vault_address {
+            bytes.push(1); // vault flag
+            // Parse vault address and append bytes
+            let vault_hex = vault_addr.trim_start_matches("0x");
+            let vault_bytes = hex::decode(vault_hex)
+                .map_err(|e| Error::transport(format!("Invalid vault address: {}", e)))?;
+            bytes.extend_from_slice(&vault_bytes);
+        } else {
+            bytes.push(0); // no vault
+        }
+
+        // Hash with keccak256
+        Ok(keccak256(&bytes))
     }
 
     pub fn sign_user_signed_action(&self, action: &Value, _nonce: TimeNonce) -> Result<String> {
@@ -237,11 +294,17 @@ impl HyperliquidEip712Signer {
     }
 
     pub fn address(&self) -> Result<String> {
-        // NOTE: Address derivation from private key is implemented in
-        // HyperliquidExecutionClient::get_user_address() using k256 and sha3
-        // This placeholder method exists for API compatibility during refactoring
-        let _key = self.private_key.as_hex(); // Use private_key to avoid dead_code warning
-        Ok("0x0000000000000000000000000000000000000000".to_string())
+        // Derive Ethereum address from private key using alloy-signer
+        let key_hex = self.private_key.as_hex();
+        let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
+
+        // Create PrivateKeySigner from hex string
+        let signer = PrivateKeySigner::from_str(key_hex)
+            .map_err(|e| Error::transport(format!("Failed to create signer: {}", e)))?;
+
+        // Get address from signer and format it properly (not Debug format)
+        let address = format!("{:#x}", signer.address());
+        Ok(address)
     }
 }
 
@@ -324,6 +387,8 @@ mod tests {
             }),
             time_nonce: TimeNonce::from_millis(1640995200000),
             action_type: HyperliquidActionType::L1,
+            is_testnet: false,
+            vault_address: None,
         };
 
         let result = signer.sign(&request).unwrap();
@@ -349,6 +414,8 @@ mod tests {
             }),
             time_nonce: TimeNonce::from_millis(1640995200000),
             action_type: HyperliquidActionType::UserSigned,
+            is_testnet: false,
+            vault_address: None,
         };
 
         let result = signer.sign(&request).unwrap();
