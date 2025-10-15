@@ -49,7 +49,7 @@ use {
 
 use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
 #[cfg(feature = "defi")]
-use crate::msgbus::switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topic};
+use crate::defi::switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topic};
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
@@ -1536,7 +1536,7 @@ fn test_subscribe_and_receive_pools(
 
     use nautilus_model::defi::{Dex, DexType, Pool, Token, chain::chains, dex::AmmType};
 
-    use crate::msgbus::switchboard::get_defi_pool_topic;
+    use crate::defi::switchboard::get_defi_pool_topic;
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
@@ -1626,6 +1626,7 @@ fn test_subscribe_and_receive_pool_swaps(
     let swap = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
+        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1691,6 +1692,7 @@ fn test_unsubscribe_pool_swaps(
     let swap1 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex.clone()),
+        instrument_id,
         pool_address,
         1000u64,
         "0x123".to_string(),
@@ -1716,6 +1718,7 @@ fn test_unsubscribe_pool_swaps(
     let swap2 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
+        instrument_id,
         pool_address,
         2000u64,
         "0x456".to_string(),

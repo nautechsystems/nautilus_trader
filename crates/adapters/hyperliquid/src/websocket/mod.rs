@@ -22,3 +22,4 @@ pub mod parse;
 pub mod post;
 
 pub use client::{HyperliquidWebSocketClient, HyperliquidWebSocketInnerClient};
+pub use messages::{ExecutionReport, NautilusWsMessage};

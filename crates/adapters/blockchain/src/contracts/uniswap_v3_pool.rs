@@ -20,13 +20,16 @@ use alloy::{
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
-use nautilus_model::defi::{
-    data::block::BlockPosition,
-    pool_analysis::{
-        position::PoolPosition,
-        snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+use nautilus_model::{
+    defi::{
+        data::block::BlockPosition,
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        tick_map::tick::PoolTick,
     },
-    tick_map::tick::Tick,
+    identifiers::InstrumentId,
 };
 use thiserror::Error;
 
@@ -242,7 +245,7 @@ impl UniswapV3PoolContract {
         pool_address: &Address,
         tick: i32,
         block: Option<u64>,
-    ) -> Result<Tick, UniswapV3PoolError> {
+    ) -> Result<PoolTick, UniswapV3PoolError> {
         let tick_i24 = I24::try_from(tick).map_err(|_| UniswapV3PoolError::CallFailed {
             field: "tick".to_string(),
             pool: *pool_address,
@@ -265,7 +268,7 @@ impl UniswapV3PoolContract {
                 }
             })?;
 
-        Ok(Tick::new(
+        Ok(PoolTick::new(
             tick,
             tick_info.liquidityGross,
             tick_info.liquidityNet,
@@ -287,7 +290,7 @@ impl UniswapV3PoolContract {
         pool_address: &Address,
         ticks: &[i32],
         block: Option<u64>,
-    ) -> Result<HashMap<i32, Tick>, UniswapV3PoolError> {
+    ) -> Result<HashMap<i32, PoolTick>, UniswapV3PoolError> {
         let calls: Vec<ContractCall> = ticks
             .iter()
             .filter_map(|&tick| {
@@ -323,7 +326,7 @@ impl UniswapV3PoolContract {
 
             tick_infos.insert(
                 tick_value,
-                Tick::new(
+                PoolTick::new(
                     tick_value,
                     tick_info.liquidityGross,
                     tick_info.liquidityNet,
@@ -436,6 +439,7 @@ impl UniswapV3PoolContract {
     pub async fn fetch_snapshot(
         &self,
         pool_address: &Address,
+        instrument_id: InstrumentId,
         tick_values: &[i32],
         position_keys: &[(Address, i32, i32)],
         block: Option<u64>,
@@ -450,7 +454,7 @@ impl UniswapV3PoolContract {
             .await?;
 
         // Convert HashMap<i32, Tick> to Vec<Tick>
-        let ticks: Vec<Tick> = ticks_map.into_values().collect();
+        let ticks: Vec<PoolTick> = ticks_map.into_values().collect();
 
         // Construct PoolState from on-chain global state
         let pool_state = PoolState {
@@ -474,6 +478,7 @@ impl UniswapV3PoolContract {
         };
 
         Ok(PoolSnapshot::new(
+            instrument_id,
             pool_state,
             positions,
             ticks,

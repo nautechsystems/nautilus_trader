@@ -654,8 +654,11 @@ pub struct BybitWsAccountWallet {
     pub total_margin_balance: String,
     pub total_initial_margin: String,
     pub total_maintenance_margin: String,
+    #[serde(rename = "accountIMRate")]
     pub account_im_rate: String,
+    #[serde(rename = "accountMMRate")]
     pub account_mm_rate: String,
+    #[serde(rename = "accountLTV")]
     pub account_ltv: String,
     pub coin: Vec<BybitWsAccountWalletCoin>,
 }
@@ -680,7 +683,8 @@ pub struct BybitWsAccountPosition {
     pub symbol: Ustr,
     pub side: String,
     pub size: String,
-    pub avg_price: String,
+    #[serde(default)]
+    pub avg_price: Option<String>,
     pub position_value: String,
     pub trade_mode: i32,
     pub position_status: String,
@@ -691,7 +695,9 @@ pub struct BybitWsAccountPosition {
     pub mark_price: String,
     pub liq_price: String,
     pub bust_price: String,
+    #[serde(rename = "positionMM")]
     pub position_mm: String,
+    #[serde(rename = "positionIM")]
     pub position_im: String,
     pub tpsl_mode: String,
     pub take_profit: String,

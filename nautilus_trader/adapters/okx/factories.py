@@ -93,6 +93,7 @@ def get_cached_okx_instrument_provider(
     client: nautilus_pyo3.OKXHttpClient,
     instrument_types: tuple[OKXInstrumentType, ...],
     contract_types: tuple[OKXContractType, ...] | None = None,
+    instrument_families: tuple[str, ...] | None = None,
     config: InstrumentProviderConfig | None = None,
 ) -> OKXInstrumentProvider:
     """
@@ -108,6 +109,9 @@ def get_cached_okx_instrument_provider(
         The product types to load.
     contract_types : tuple[OKXInstrumentType, ...], optional
         The contract types of instruments to load.
+    instrument_families : tuple[str, ...], optional
+        The instrument families to load (e.g., "BTC-USD", "ETH-USD").
+        Required for OPTIONS. Optional for FUTURES/SWAP.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -120,6 +124,7 @@ def get_cached_okx_instrument_provider(
         client=client,
         instrument_types=instrument_types,
         contract_types=contract_types,
+        instrument_families=instrument_families,
         config=config,
     )
 
@@ -176,6 +181,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
             client=client,
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
+            instrument_families=config.instrument_families,
             config=config.instrument_provider,
         )
         return OKXDataClient(
@@ -242,6 +248,7 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
             client=client,
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
+            instrument_families=config.instrument_families,
             config=config.instrument_provider,
         )
         return OKXExecutionClient(

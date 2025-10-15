@@ -16,7 +16,7 @@
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
 use ahash::AHashMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -644,8 +644,12 @@ pub fn parse_order_msg(
 
     let previous_fee = fee_cache.get(&msg.ord_id).copied();
 
+    // Only generate fill reports when there's actual new fill data
+    // Check if fillSz is non-zero/non-empty OR trade_id is present
+    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0") || !msg.trade_id.is_empty();
+
     match msg.state {
-        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
             parse_fill_report(msg, instrument, account_id, previous_fee, ts_init)
                 .map(ExecutionReport::Fill)
         }
@@ -804,7 +808,6 @@ pub fn parse_order_status_report(
     let size_precision = instrument.size_precision();
     let quantity = parse_quantity(&msg.sz, size_precision)?;
     let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
-
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
     let ts_last = parse_millisecond_timestamp(msg.u_time);
 
@@ -904,18 +907,98 @@ pub fn parse_fill_report(
 ) -> anyhow::Result<FillReport> {
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
-    let trade_id = TradeId::from(msg.trade_id.as_str());
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide a trade_id, so generate a UUID4 as fallback
+    let trade_id = if msg.trade_id.is_empty() {
+        TradeId::from(UUID4::new().to_string().as_str())
+    } else {
+        TradeId::from(msg.trade_id.as_str())
+    };
+
     let order_side: OrderSide = msg.side.into();
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let last_px = parse_price(&msg.fill_px, price_precision)?;
-    let last_qty = parse_quantity(&msg.fill_sz, size_precision)?;
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide fillPx for some orders, fall back to avgPx or lastPx
+    let price_str = if !msg.fill_px.is_empty() {
+        &msg.fill_px
+    } else if !msg.avg_px.is_empty() {
+        &msg.avg_px
+    } else {
+        &msg.px // Last resort, use order price
+    };
+    let last_px = parse_price(price_str, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse price (fill_px='{}', avg_px='{}', px='{}'): {}",
+            msg.fill_px,
+            msg.avg_px,
+            msg.px,
+            e
+        )
+    })?;
+
+    // TODO: Extract to dedicated function:
+    // OKX may not provide fillSz for some orders, fall back to accFillSz (accumulated fill size)
+    let qty_str = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        &msg.fill_sz
+    } else if let Some(ref acc_fill_sz) = msg.acc_fill_sz {
+        if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
+            acc_fill_sz
+        } else {
+            &msg.sz // Last resort, use order size
+        }
+    } else {
+        &msg.sz // Last resort, use order size
+    };
+    let last_qty = parse_quantity(qty_str, size_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse quantity (fill_sz='{}', acc_fill_sz={:?}, sz='{}'): {}",
+            msg.fill_sz,
+            msg.acc_fill_sz,
+            msg.sz,
+            e
+        )
+    })?;
 
     let fee_currency = Currency::from(&msg.fee_ccy);
-    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)?;
+    // OKX sends fees as negative numbers (e.g., "-2.5" for a $2.5 charge), parse_fee negates to positive
+    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {}", msg.fee, e))?;
+
+    // OKX sends cumulative fees, so we subtract the previous total to get this fill's fee
     let commission = if let Some(previous_fee) = previous_fee {
-        total_fee - previous_fee
+        let incremental = total_fee - previous_fee;
+
+        if incremental < Money::zero(fee_currency) {
+            tracing::debug!(
+                order_id = msg.ord_id.as_str(),
+                total_fee = %total_fee,
+                previous_fee = %previous_fee,
+                incremental = %incremental,
+                "Negative incremental fee detected - likely a maker rebate or fee refund"
+            );
+        }
+
+        // Skip corruption check when previous is negative (rebate), as transitions from
+        // rebate to charge legitimately have incremental > total (e.g., -1 → +2 gives +3)
+        if previous_fee >= Money::zero(fee_currency)
+            && total_fee > Money::zero(fee_currency)
+            && incremental > total_fee
+        {
+            tracing::error!(
+                order_id = msg.ord_id.as_str(),
+                total_fee = %total_fee,
+                previous_fee = %previous_fee,
+                incremental = %incremental,
+                "Incremental fee exceeds total fee - likely fee cache corruption, using total fee as fallback"
+            );
+            total_fee
+        } else {
+            incremental
+        }
     } else {
         total_fee
     };
@@ -1863,6 +1946,387 @@ mod tests {
         assert_eq!(fill_report_2.commission, Money::new(2.0, Currency::USDT()));
 
         // Test passed - fee was correctly split proportionally
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_with_maker_rebates() {
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // First fill: maker rebate of $0.5 (OKX sends as "0.5", parse_fee makes it -0.5)
+        let order_msg_1 = OKXOrderMsg {
+            acc_fill_sz: Some("0.01".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_rebate".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("0.5".to_string()), // Rebate: positive value from OKX
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("rebate_order_123"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_rebate_1".to_string(),
+            u_time: 1746947317402,
+        };
+
+        let fill_report_1 = parse_fill_report(
+            &order_msg_1,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        // First fill gets the full rebate (negative commission)
+        assert_eq!(fill_report_1.commission, Money::new(-0.5, Currency::USDT()));
+
+        // Second fill: another maker rebate of $0.3, cumulative now $0.8
+        let order_msg_2 = OKXOrderMsg {
+            acc_fill_sz: Some("0.02".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_rebate".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("0.8".to_string()), // Cumulative rebate
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317403,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("rebate_order_123"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::Filled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_rebate_2".to_string(),
+            u_time: 1746947317403,
+        };
+
+        let fill_report_2 = parse_fill_report(
+            &order_msg_2,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(fill_report_1.commission),
+            ts_init,
+        )
+        .unwrap();
+
+        // Second fill: incremental = -0.8 - (-0.5) = -0.3
+        assert_eq!(fill_report_2.commission, Money::new(-0.3, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rebate_to_charge_transition() {
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // First fill: maker rebate of $1.0
+        let order_msg_1 = OKXOrderMsg {
+            acc_fill_sz: Some("0.01".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_transition".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("1.0".to_string()), // Rebate from OKX
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("transition_order_456"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_transition_1".to_string(),
+            u_time: 1746947317402,
+        };
+
+        let fill_report_1 = parse_fill_report(
+            &order_msg_1,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        // First fill gets rebate (negative)
+        assert_eq!(fill_report_1.commission, Money::new(-1.0, Currency::USDT()));
+
+        // Second fill: taker charge of $5.0, net cumulative is now $2.0 charge
+        // This is the edge case: incremental = 2.0 - (-1.0) = 3.0, which exceeds total (2.0)
+        // But it's legitimate, not corruption
+        let order_msg_2 = OKXOrderMsg {
+            acc_fill_sz: Some("0.02".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_transition".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("-2.0".to_string()), // Now a charge (negative from OKX)
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317403,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("transition_order_456"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::Filled,
+            exec_type: crate::common::enums::OKXExecType::Taker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_transition_2".to_string(),
+            u_time: 1746947317403,
+        };
+
+        let fill_report_2 = parse_fill_report(
+            &order_msg_2,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(fill_report_1.commission),
+            ts_init,
+        )
+        .unwrap();
+
+        // Second fill: incremental = 2.0 - (-1.0) = 3.0
+        // This should NOT trigger corruption detection because previous was negative
+        assert_eq!(fill_report_2.commission, Money::new(3.0, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_negative_incremental() {
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // First fill: charge of $2.0
+        let order_msg_1 = OKXOrderMsg {
+            acc_fill_sz: Some("0.01".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_neg_inc".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("-2.0".to_string()),
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("neg_inc_order_789"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            exec_type: crate::common::enums::OKXExecType::Taker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_neg_inc_1".to_string(),
+            u_time: 1746947317402,
+        };
+
+        let fill_report_1 = parse_fill_report(
+            &order_msg_1,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(fill_report_1.commission, Money::new(2.0, Currency::USDT()));
+
+        // Second fill: charge reduced to $1.5 total (refund or maker rebate on this fill)
+        // Incremental = 1.5 - 2.0 = -0.5 (negative incremental triggers debug log)
+        let order_msg_2 = OKXOrderMsg {
+            acc_fill_sz: Some("0.02".to_string()),
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_neg_inc".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("-1.5".to_string()), // Total reduced
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317403,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("neg_inc_order_789"),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::Filled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.02".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "trade_neg_inc_2".to_string(),
+            u_time: 1746947317403,
+        };
+
+        let fill_report_2 = parse_fill_report(
+            &order_msg_2,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(fill_report_1.commission),
+            ts_init,
+        )
+        .unwrap();
+
+        // Incremental is negative: 1.5 - 2.0 = -0.5
+        assert_eq!(fill_report_2.commission, Money::new(-0.5, Currency::USDT()));
     }
 
     #[rstest]

@@ -3976,7 +3976,7 @@ cdef class Actor(Component):
         if length > 0:
             self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
         else:
-            self._log.warning(f"Received <Bar[{length}]> data for unknown bar type")
+            self._log.warning("Received empty bars response (no data returned)")
             return
 
         if length > 0 and first.ts_init > last.ts_init:

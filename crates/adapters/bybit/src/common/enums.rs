@@ -494,6 +494,8 @@ pub enum BybitTriggerDirection {
 pub enum BybitTpSlMode {
     Full,
     Partial,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Time-in-force enumeration.

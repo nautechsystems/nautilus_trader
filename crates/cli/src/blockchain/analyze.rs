@@ -120,9 +120,8 @@ pub async fn run_analyze_pool(
 
     // Profile pool events from database
     log::info!("Profiling pool events from database...");
-    // Get pool details from data client
-    let pool = data_client.get_pool(&pool_address)?;
 
+    let pool = data_client.get_pool(&pool_address)?;
     let mut profiler = PoolProfiler::new(pool.clone());
 
     // Try to restore from latest valid snapshot
@@ -184,6 +183,7 @@ pub async fn run_analyze_pool(
         let mut stream = cache_database.stream_pool_events(
             pool.chain.clone(),
             pool.dex.clone(),
+            pool.instrument_id,
             &pool_address,
             from_position.clone(),
         );
@@ -243,7 +243,13 @@ pub async fn run_analyze_pool(
             snapshot.block_position.number
         );
         let on_chain_snapshot = pool_contract
-            .fetch_snapshot(&pool_address, &tick_values, &position_keys, snapshot_block)
+            .fetch_snapshot(
+                &pool_address,
+                pool.instrument_id,
+                &tick_values,
+                &position_keys,
+                snapshot_block,
+            )
             .await?;
         let result = compare_pool_profiler(&profiler, &on_chain_snapshot);
 

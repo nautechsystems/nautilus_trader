@@ -298,6 +298,7 @@ pub struct BybitBatchPlaceOrderEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub take_profit: Option<String>,
@@ -363,8 +364,10 @@ pub struct BybitPlaceOrderParams {
 pub struct BybitBatchAmendOrderEntry {
     pub symbol: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
@@ -424,8 +427,10 @@ pub struct BybitAmendOrderParams {
 pub struct BybitBatchCancelOrderEntry {
     pub symbol: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_filter: Option<String>,
@@ -463,6 +468,7 @@ pub struct BybitCancelOrderParams {
 pub struct BybitCancelAllOrdersParams {
     pub category: BybitProductType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_coin: Option<String>,
@@ -483,14 +489,17 @@ pub struct BybitCancelAllOrdersParams {
 pub struct BybitOpenOrdersParams {
     pub category: BybitProductType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_coin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub settle_coin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
 }
 
@@ -503,6 +512,7 @@ pub struct BybitOpenOrdersParams {
 pub struct BybitOrderHistoryParams {
     pub category: BybitProductType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_coin: Option<String>,
@@ -524,6 +534,7 @@ pub struct BybitOrderHistoryParams {
     #[serde(rename = "endTime")]
     pub end_time: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,

@@ -587,11 +587,14 @@ pub fn parse_ws_position_status_report(
         PositionSideSpecified::Flat
     };
 
-    let avg_px_open = if !position.avg_price.is_empty() && position.avg_price != "0" {
-        position
-            .avg_price
-            .parse::<f64>()
-            .with_context(|| format!("Failed to parse avgPrice='{}' as f64", position.avg_price))?
+    let avg_px_open = if let Some(ref avg_price) = position.avg_price {
+        if !avg_price.is_empty() && avg_price != "0" {
+            avg_price
+                .parse::<f64>()
+                .with_context(|| format!("Failed to parse avgPrice='{}' as f64", avg_price))?
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -654,15 +657,19 @@ pub fn parse_ws_account_state(
             )
         })?;
 
-        let free_amount = coin_data
-            .available_to_withdraw
-            .parse::<f64>()
-            .with_context(|| {
-                format!(
-                    "Failed to parse availableToWithdraw='{}' as f64",
-                    coin_data.available_to_withdraw
-                )
-            })?;
+        let free_amount = if coin_data.available_to_withdraw.is_empty() {
+            0.0
+        } else {
+            coin_data
+                .available_to_withdraw
+                .parse::<f64>()
+                .with_context(|| {
+                    format!(
+                        "Failed to parse availableToWithdraw='{}' as f64",
+                        coin_data.available_to_withdraw
+                    )
+                })?
+        };
 
         let locked_amount = total_amount - free_amount;
 

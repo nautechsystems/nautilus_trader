@@ -20,8 +20,14 @@ use alloy_primitives::U256;
 use crate::defi::tick_map::liquidity_math::liquidity_math_add;
 
 /// Represents a tick in a Uniswap V3-style AMM with liquidity tracking and fee accounting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tick {
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub struct PoolTick {
     /// The referenced tick,
     pub value: i32,
     /// Total liquidity referencing this tick.
@@ -40,13 +46,13 @@ pub struct Tick {
     pub updates_count: usize,
 }
 
-impl Tick {
+impl PoolTick {
     /// Minimum valid tick value for Uniswap V3 pools.
     pub const MIN_TICK: i32 = -887272;
     /// Maximum valid tick value for Uniswap V3 pools.
     pub const MAX_TICK: i32 = -Self::MIN_TICK;
 
-    /// Creates a new [`Tick`] with all specified parameters.
+    /// Creates a new [`PoolTick`] with all specified parameters.
     #[must_use]
     pub fn new(
         value: i32,
@@ -136,7 +142,7 @@ mod tests {
 
     #[rstest]
     fn test_update_liquidity_add_remove() {
-        let mut tick = Tick::from_tick(100);
+        let mut tick = PoolTick::from_tick(100);
         tick.initialized = true;
 
         // Add liquidity
@@ -166,7 +172,7 @@ mod tests {
 
     #[rstest]
     fn test_update_liquidity_upper_tick() {
-        let mut tick = Tick::from_tick(200);
+        let mut tick = PoolTick::from_tick(200);
         tick.initialized = true;
 
         // Add liquidity (upper tick)
@@ -187,26 +193,26 @@ mod tests {
         // Test with common Uniswap V3 tick spacings
 
         // Tick spacing 1 (0.01% fee tier)
-        let max_tick_1 = Tick::get_max_tick(1);
+        let max_tick_1 = PoolTick::get_max_tick(1);
         assert_eq!(max_tick_1, 887272); // Should be exactly MAX_TICK since it's divisible by 1
 
         // Tick spacing 10 (0.05% fee tier)
-        let max_tick_10 = Tick::get_max_tick(10);
+        let max_tick_10 = PoolTick::get_max_tick(10);
         assert_eq!(max_tick_10, 887270); // 887272 / 10 * 10 = 887270
         assert_eq!(max_tick_10 % 10, 0);
-        assert!(max_tick_10 <= Tick::MAX_TICK);
+        assert!(max_tick_10 <= PoolTick::MAX_TICK);
 
         // Tick spacing 60 (0.3% fee tier)
-        let max_tick_60 = Tick::get_max_tick(60);
+        let max_tick_60 = PoolTick::get_max_tick(60);
         assert_eq!(max_tick_60, 887220); // 887272 / 60 * 60 = 887220
         assert_eq!(max_tick_60 % 60, 0);
-        assert!(max_tick_60 <= Tick::MAX_TICK);
+        assert!(max_tick_60 <= PoolTick::MAX_TICK);
 
         // Tick spacing 200 (1% fee tier)
-        let max_tick_200 = Tick::get_max_tick(200);
+        let max_tick_200 = PoolTick::get_max_tick(200);
         assert_eq!(max_tick_200, 887200); // 887272 / 200 * 200 = 887200
         assert_eq!(max_tick_200 % 200, 0);
-        assert!(max_tick_200 <= Tick::MAX_TICK);
+        assert!(max_tick_200 <= PoolTick::MAX_TICK);
     }
 
     #[rstest]
@@ -214,26 +220,26 @@ mod tests {
         // Test with common Uniswap V3 tick spacings
 
         // Tick spacing 1 (0.01% fee tier)
-        let min_tick_1 = Tick::get_min_tick(1);
+        let min_tick_1 = PoolTick::get_min_tick(1);
         assert_eq!(min_tick_1, -887272); // Should be exactly MIN_TICK since it's divisible by 1
 
         // Tick spacing 10 (0.05% fee tier)
-        let min_tick_10 = Tick::get_min_tick(10);
+        let min_tick_10 = PoolTick::get_min_tick(10);
         assert_eq!(min_tick_10, -887270); // -887272 / 10 * 10 = -887270
         assert_eq!(min_tick_10 % 10, 0);
-        assert!(min_tick_10 >= Tick::MIN_TICK);
+        assert!(min_tick_10 >= PoolTick::MIN_TICK);
 
         // Tick spacing 60 (0.3% fee tier)
-        let min_tick_60 = Tick::get_min_tick(60);
+        let min_tick_60 = PoolTick::get_min_tick(60);
         assert_eq!(min_tick_60, -887220); // -887272 / 60 * 60 = -887220
         assert_eq!(min_tick_60 % 60, 0);
-        assert!(min_tick_60 >= Tick::MIN_TICK);
+        assert!(min_tick_60 >= PoolTick::MIN_TICK);
 
         // Tick spacing 200 (1% fee tier)
-        let min_tick_200 = Tick::get_min_tick(200);
+        let min_tick_200 = PoolTick::get_min_tick(200);
         assert_eq!(min_tick_200, -887200); // -887272 / 200 * 200 = -887200
         assert_eq!(min_tick_200 % 200, 0);
-        assert!(min_tick_200 >= Tick::MIN_TICK);
+        assert!(min_tick_200 >= PoolTick::MIN_TICK);
     }
 
     #[rstest]
@@ -242,8 +248,8 @@ mod tests {
         let spacings = [1, 10, 60, 200];
 
         for spacing in spacings {
-            let max_tick = Tick::get_max_tick(spacing);
-            let min_tick = Tick::get_min_tick(spacing);
+            let max_tick = PoolTick::get_max_tick(spacing);
+            let min_tick = PoolTick::get_min_tick(spacing);
 
             // Should be symmetric (max = -min)
             assert_eq!(max_tick, -min_tick, "Asymmetry for spacing {}", spacing);
@@ -253,8 +259,8 @@ mod tests {
             assert_eq!(min_tick % spacing, 0);
 
             // Should be within bounds
-            assert!(max_tick <= Tick::MAX_TICK);
-            assert!(min_tick >= Tick::MIN_TICK);
+            assert!(max_tick <= PoolTick::MAX_TICK);
+            assert!(min_tick >= PoolTick::MIN_TICK);
         }
     }
 }

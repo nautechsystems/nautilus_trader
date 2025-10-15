@@ -73,7 +73,6 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use heck::ToSnakeCase;
 use itertools::Itertools;
-use log::info;
 use nautilus_core::{
     UnixNanos,
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
@@ -473,7 +472,7 @@ impl ParquetDataCatalog {
         let path = PathBuf::from(format!("{directory}/{filename}"));
 
         // Write all batches to parquet file
-        info!(
+        log::info!(
             "Writing {} batches of {type_name} data to {path:?}",
             batches.len()
         );
@@ -574,7 +573,7 @@ impl ParquetDataCatalog {
         let filename = timestamps_to_filename(start_ts, end_ts).replace(".parquet", ".json");
         let json_path = directory.join(&filename);
 
-        info!(
+        log::info!(
             "Writing {} records of {type_name} data to {json_path:?}",
             data.len()
         );
@@ -582,7 +581,7 @@ impl ParquetDataCatalog {
         if write_metadata {
             let metadata = T::chunk_metadata(&data);
             let metadata_path = json_path.with_extension("metadata.json");
-            info!("Writing metadata to {metadata_path:?}");
+            log::info!("Writing metadata to {metadata_path:?}");
 
             // Use object store for metadata file
             let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());

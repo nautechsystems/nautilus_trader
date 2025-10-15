@@ -50,6 +50,7 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
     # Assert
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.OKXInstrumentType.SPOT,
+        None,
     )
     assert provider.instruments_pyo3() == pyo3_instruments
     assert provider.get_all().get(instrument.id) is instrument
@@ -93,6 +94,7 @@ async def test_load_ids_async_filters_results(monkeypatch, instrument):
     # Assert
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.OKXInstrumentType.SPOT,
+        None,
     )
     assert provider.get_all().get(instrument.id) is instrument
     assert provider.get_all().get(other_instrument.id) is None

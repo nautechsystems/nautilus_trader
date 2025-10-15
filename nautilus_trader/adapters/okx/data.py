@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
@@ -34,6 +35,8 @@ from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
@@ -120,7 +123,9 @@ class OKXDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        if self._http_client.api_key:
+            masked_key = mask_api_key(self._http_client.api_key)
+            self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API (using public endpoint for market data - no auth needed)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
@@ -230,6 +235,14 @@ class OKXDataClient(LiveMarketDataClient):
 
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
+
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:

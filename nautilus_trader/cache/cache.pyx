@@ -876,7 +876,7 @@ cdef class Cache(CacheFacade):
         """
         Purge the order for the given client order ID from the cache (if found).
 
-        All `OrderFilled` events for the order will also be purged from any associated position.
+        For safety, an order is prevented from being purged if it's open.
 
         Parameters
         ----------
@@ -888,16 +888,18 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Position position = self.position_for_order(client_order_id)
+        # Check if order exists and is safe to purge before popping
+        cdef Order order = self._orders.get(client_order_id)
 
-        if position is not None:
-            position.purge_events_for_order(client_order_id)
-
-        cdef Order order = self._orders.pop(client_order_id, None)
+        if order is not None and order.is_open_c():
+            self._log.warning(f"Order {client_order_id} found open when purging, skipping purge")
+            return
 
         if order is None:
             self._log.warning(f"Order {client_order_id} not found when purging")
         else:
+            # Safe to purge
+            self._orders.pop(client_order_id, None)
             self._index_venue_orders[order.instrument_id.venue].discard(client_order_id)
             self._index_venue_order_ids.pop(order.venue_order_id, None)
             self._index_instrument_orders[order.instrument_id].discard(client_order_id)
@@ -908,14 +910,40 @@ cdef class Cache(CacheFacade):
             if order.exec_algorithm_id is not None:
                 self._index_exec_algorithm_orders[order.exec_algorithm_id].discard(client_order_id)
 
+            # Clean up strategy orders reverse index
+            strategy_orders = self._index_strategy_orders.get(order.strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(order.strategy_id, None)
+
+            # Clean up exec spawn reverse index (if this order is a spawned child)
+            if order.exec_spawn_id is not None:
+                spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+                if spawn_orders is not None:
+                    spawn_orders.discard(client_order_id)
+                    if not spawn_orders:
+                        self._index_exec_spawn_orders.pop(order.exec_spawn_id, None)
+
             self._log.info(f"Purged order {client_order_id}", LogColor.BLUE)
 
+        # Always clean up order indices (even if order was not in cache)
         self._index_order_position.pop(client_order_id, None)
-        self._index_order_strategy.pop(client_order_id, None)
         self._index_order_client.pop(client_order_id, None)
         self._index_client_order_ids.pop(client_order_id, None)
-        self._index_strategy_orders.pop(client_order_id, None)
+        strategy_id = self._index_order_strategy.pop(client_order_id, None)
+
+        # Clean up reverse index when order not in cache (using forward index)
+        if strategy_id is not None:
+            strategy_orders = self._index_strategy_orders.get(strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(strategy_id, None)
+
+        # Remove spawn parent entry if this order was a spawn root
         self._index_exec_spawn_orders.pop(client_order_id, None)
+
         self._index_orders.discard(client_order_id)
         self._index_orders_closed.discard(client_order_id)
         self._index_orders_emulated.discard(client_order_id)
@@ -930,6 +958,8 @@ cdef class Cache(CacheFacade):
         """
         Purge the position for the given position ID from the cache (if found).
 
+        For safety, a position is prevented from being purged if it's open.
+
         Parameters
         ----------
         position_id : PositionId
@@ -940,11 +970,18 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef Position position = self._positions.pop(position_id, None)
+        # Check if position exists and is safe to purge before popping
+        cdef Position position = self._positions.get(position_id)
+
+        if position is not None and position.is_open_c():
+            self._log.warning(f"Position {position_id} found open when purging, skipping purge")
+            return
 
         if position is None:
             self._log.warning(f"Position {position_id} not found when purging")
         else:
+            # Safe to purge
+            self._positions.pop(position_id, None)
             self._index_venue_positions[position.instrument_id.venue].discard(position_id)
             self._index_instrument_positions[position.instrument_id].discard(position_id)
             self._index_strategy_positions[position.strategy_id].discard(position_id)
@@ -954,6 +991,7 @@ cdef class Cache(CacheFacade):
 
             self._log.info(f"Purged position {position_id}", LogColor.BLUE)
 
+        # Always clean up position indices (even if position not in cache)
         self._index_position_strategy.pop(position_id, None)
         self._index_position_orders.pop(position_id, None)
         self._index_positions.discard(position_id)

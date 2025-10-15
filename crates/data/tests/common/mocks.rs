@@ -24,10 +24,11 @@ use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
-    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
-    SubscribePoolFeeCollects, SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates,
-    SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
-    UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+    DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+    UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
+    UnsubscribePoolSwaps,
 };
 use nautilus_common::{
     cache::Cache,
@@ -635,6 +636,17 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Request(RequestCommand::BookDepth(
+                    request.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn request_pool_snapshot(&self, request: &RequestPoolSnapshot) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(
                     request.clone(),
                 )));
         }

@@ -1782,9 +1782,9 @@ impl OrderMatchingEngine {
         if order.is_passive() && order.is_closed() {
             // Check if order exists in OrderMatching core, and delete it if it does
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self
-                    .core
-                    .delete_order(&PassiveOrderAny::from(order.clone()));
+                let _ = self.core.delete_order(
+                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                );
             }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
@@ -2228,7 +2228,9 @@ impl OrderMatchingEngine {
             }
         }
 
-        let _ = self.core.add_order(order.to_owned().into());
+        let _ = self.core.add_order(
+            PassiveOrderAny::try_from(order.to_owned()).expect("passive order conversion"),
+        );
     }
 
     fn expire_order(&mut self, order: &PassiveOrderAny) {
@@ -2255,9 +2257,9 @@ impl OrderMatchingEngine {
 
         // Check if order exists in OrderMatching core, and delete it if it does
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self
-                .core
-                .delete_order(&PassiveOrderAny::from(order.clone()));
+            let _ = self.core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            );
         }
         self.cached_filled_qty.remove(&order.client_order_id());
 

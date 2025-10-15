@@ -117,3 +117,9 @@ pub const OKX_POST_ONLY_CANCEL_SOURCE: &str = "31";
 
 /// Human-readable reason used when a post-only order is auto-cancelled for taking liquidity.
 pub const OKX_POST_ONLY_CANCEL_REASON: &str = "POST_ONLY would take liquidity";
+
+/// Target currency literal for base currency.
+pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
+
+/// Target currency literal for quote currency.
+pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";

@@ -15,28 +15,39 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use futures_util::future::BoxFuture;
+use dashmap::DashMap;
+use futures_util::{Stream, future::BoxFuture};
 #[cfg(feature = "python")]
 use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::time::get_atomic_clock_realtime;
 #[cfg(feature = "python")]
 use nautilus_model::{
-    data::BarType, identifiers::InstrumentId, python::instruments::pyobject_to_instrument_any,
+    data::{BarType, Data, OrderBookDeltas_API},
+    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+};
+use nautilus_model::{
+    identifiers::{AccountId, InstrumentId},
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use tokio::sync::{RwLock, mpsc};
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, error, info, warn};
 use ustr::Ustr;
 
+#[cfg(feature = "python")]
+use crate::websocket::parse::{
+    parse_ws_candle, parse_ws_order_book_deltas, parse_ws_quote_tick, parse_ws_trade_tick,
+};
 use crate::{
     http::error::{Error, Result as HyperliquidResult},
     websocket::{
         messages::{
-            ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, PostRequest,
-            PostResponsePayload, SubscriptionRequest,
+            ActionPayload, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest,
+            NautilusWsMessage, PostRequest, PostResponsePayload, SubscriptionRequest,
         },
+        parse::{parse_ws_fill_report, parse_ws_order_status_report},
         post::{
             PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
         },
@@ -144,7 +155,7 @@ impl HyperliquidWebSocketInnerClient {
         };
 
         let client = Arc::new(WebSocketClient::connect(cfg, None, vec![], None).await?);
-        info!("Hyperliquid WebSocket connected: {}", url);
+        tracing::info!("Hyperliquid WebSocket connected: {}", url);
 
         let post_router = PostRouter::new();
         let post_ids = PostIds::new(1);
@@ -159,7 +170,7 @@ impl HyperliquidWebSocketInnerClient {
             while let Some(msg) = raw_rx.recv().await {
                 match msg {
                     Message::Text(txt) => {
-                        debug!("Received WS text: {}", txt);
+                        tracing::debug!("Received WS text: {}", txt);
                         match serde_json::from_str::<HyperliquidWsMessage>(&txt) {
                             Ok(hl_msg) => {
                                 if let HyperliquidWsMessage::Post { data } = &hl_msg {
@@ -167,31 +178,36 @@ impl HyperliquidWebSocketInnerClient {
                                     post_router_for_reader.complete(data.clone()).await;
                                 }
                                 if let Err(e) = tx_inbound.send(hl_msg).await {
-                                    error!("Failed to send decoded message: {}", e);
+                                    tracing::error!("Failed to send decoded message: {}", e);
                                     break;
                                 }
                             }
                             Err(err) => {
-                                error!(
+                                tracing::error!(
                                     "Failed to decode Hyperliquid message: {} | text: {}",
-                                    err, txt
+                                    err,
+                                    txt
                                 );
                             }
                         }
                     }
                     Message::Binary(data) => {
-                        debug!("Received binary message ({} bytes), ignoring", data.len())
+                        tracing::debug!("Received binary message ({} bytes), ignoring", data.len())
                     }
-                    Message::Ping(data) => debug!("Received ping frame ({} bytes)", data.len()),
-                    Message::Pong(data) => debug!("Received pong frame ({} bytes)", data.len()),
+                    Message::Ping(data) => {
+                        tracing::debug!("Received ping frame ({} bytes)", data.len())
+                    }
+                    Message::Pong(data) => {
+                        tracing::debug!("Received pong frame ({} bytes)", data.len())
+                    }
                     Message::Close(close_frame) => {
-                        info!("Received close frame: {:?}", close_frame);
+                        tracing::info!("Received close frame: {:?}", close_frame);
                         break;
                     }
-                    Message::Frame(_) => warn!("Received raw frame (unexpected)"),
+                    Message::Frame(_) => tracing::warn!("Received raw frame (unexpected)"),
                 }
             }
-            info!("Hyperliquid WebSocket reader finished");
+            tracing::info!("Hyperliquid WebSocket reader finished");
         });
 
         // Spawn task to handle outbound messages
@@ -201,17 +217,17 @@ impl HyperliquidWebSocketInnerClient {
                 let json = match serde_json::to_string(&req) {
                     Ok(json) => json,
                     Err(e) => {
-                        error!("Failed to serialize WS request: {}", e);
+                        tracing::error!("Failed to serialize WS request: {}", e);
                         continue;
                     }
                 };
-                debug!("Sending WS message: {}", json);
+                tracing::debug!("Sending WS message: {}", json);
                 if let Err(e) = client_for_sender.send_text(json, None).await {
-                    error!("Failed to send WS message: {}", e);
+                    tracing::error!("Failed to send WS message: {}", e);
                     break;
                 }
             }
-            info!("WebSocket sender task finished");
+            tracing::info!("WebSocket sender task finished");
         });
 
         // Create send function for batcher using a proper async closure
@@ -242,7 +258,7 @@ impl HyperliquidWebSocketInnerClient {
     /// Low-level method to send a Hyperliquid WebSocket request.
     pub async fn ws_send(&self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
-        debug!("Sending WS message: {}", json);
+        tracing::debug!("Sending WS message: {}", json);
         self.inner
             .send_text(json, None)
             .await
@@ -253,11 +269,11 @@ impl HyperliquidWebSocketInnerClient {
     pub async fn ws_send_once(&mut self, request: &HyperliquidWsRequest) -> anyhow::Result<()> {
         let json = serde_json::to_string(request)?;
         if self.sent_subscriptions.contains(&json) {
-            debug!("Skipping duplicate request: {}", json);
+            tracing::debug!("Skipping duplicate request: {}", json);
             return Ok(());
         }
 
-        debug!("Sending WS message: {}", json);
+        tracing::debug!("Sending WS message: {}", json);
         self.inner
             .send_text(json.clone(), None)
             .await
@@ -387,6 +403,7 @@ impl HyperliquidWebSocketInnerClient {
 pub struct HyperliquidWebSocketClient {
     inner: Arc<RwLock<Option<HyperliquidWebSocketInnerClient>>>,
     url: String,
+    instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
 }
 
 impl HyperliquidWebSocketClient {
@@ -396,7 +413,26 @@ impl HyperliquidWebSocketClient {
         Self {
             inner: Arc::new(RwLock::new(None)),
             url,
+            instruments: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Adds an instrument to the cache for parsing WebSocket messages.
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
+        self.instruments.insert(instrument.id(), instrument);
+    }
+
+    /// Gets an instrument from the cache by ID.
+    pub fn get_instrument(&self, id: &InstrumentId) -> Option<InstrumentAny> {
+        self.instruments.get(id).map(|e| e.value().clone())
+    }
+
+    /// Gets an instrument from the cache by symbol.
+    pub fn get_instrument_by_symbol(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+        self.instruments
+            .iter()
+            .find(|e| e.key().symbol == (*symbol).into())
+            .map(|e| e.value().clone())
     }
 
     /// Creates a new Hyperliquid WebSocket client and establishes connection.
@@ -405,6 +441,7 @@ impl HyperliquidWebSocketClient {
         Ok(Self {
             inner: Arc::new(RwLock::new(Some(inner_client))),
             url: url.to_string(),
+            instruments: Arc::new(DashMap::new()),
         })
     }
 
@@ -718,6 +755,169 @@ impl HyperliquidWebSocketClient {
             .post_action_raw(action, timeout)
             .await
     }
+
+    /// Creates a stream of execution messages (order updates and fills).
+    ///
+    /// This method spawns a background task that listens for WebSocket messages
+    /// and processes OrderUpdates and UserEvents (fills) into ExecutionReports.
+    /// The execution reports are sent through the returned stream for processing
+    /// by the execution client.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_id` - Account ID for report generation
+    /// * `user_address` - User address to subscribe to order updates and user events
+    ///
+    /// # Returns
+    ///
+    /// A stream of `NautilusWsMessage` containing execution reports
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or connection cannot be established
+    pub async fn stream_execution_messages(
+        &self,
+        account_id: AccountId,
+        user_address: String,
+    ) -> anyhow::Result<impl Stream<Item = NautilusWsMessage>> {
+        // Ensure connection
+        self.ensure_connected().await?;
+
+        // Subscribe to order updates and user events
+        self.subscribe_order_updates(&user_address).await?;
+        self.subscribe_user_events(&user_address).await?;
+
+        let client = self.clone();
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Spawn background task to process WebSocket messages
+        tokio::spawn(async move {
+            let clock = get_atomic_clock_realtime();
+
+            loop {
+                let event = client.next_event().await;
+
+                match event {
+                    Some(msg) => {
+                        match &msg {
+                            HyperliquidWsMessage::OrderUpdates { data } => {
+                                let mut exec_reports = Vec::new();
+
+                                // Process each order update in the array
+                                for order_update in data {
+                                    if let Some(instrument) =
+                                        client.get_instrument_by_symbol(&order_update.order.coin)
+                                    {
+                                        let ts_init = clock.get_time_ns();
+
+                                        match parse_ws_order_status_report(
+                                            order_update,
+                                            &instrument,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                exec_reports.push(ExecutionReport::Order(report));
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Error parsing order update: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "No instrument found for symbol: {}",
+                                            order_update.order.coin
+                                        );
+                                    }
+                                }
+
+                                // Send reports if any
+                                if !exec_reports.is_empty()
+                                    && let Err(e) =
+                                        tx.send(NautilusWsMessage::ExecutionReports(exec_reports))
+                                {
+                                    tracing::error!("Failed to send execution reports: {}", e);
+                                    break;
+                                }
+                            }
+                            HyperliquidWsMessage::UserEvents { data } => {
+                                use crate::websocket::messages::WsUserEventData;
+
+                                let ts_init = clock.get_time_ns();
+
+                                match data {
+                                    WsUserEventData::Fills { fills } => {
+                                        let mut exec_reports = Vec::new();
+
+                                        // Process each fill
+                                        for fill in fills {
+                                            if let Some(instrument) =
+                                                client.get_instrument_by_symbol(&fill.coin)
+                                            {
+                                                match parse_ws_fill_report(
+                                                    fill,
+                                                    &instrument,
+                                                    account_id,
+                                                    ts_init,
+                                                ) {
+                                                    Ok(report) => {
+                                                        exec_reports
+                                                            .push(ExecutionReport::Fill(report));
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!(
+                                                            "Error parsing fill: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                tracing::warn!(
+                                                    "No instrument found for symbol: {}",
+                                                    fill.coin
+                                                );
+                                            }
+                                        }
+
+                                        // Send reports if any
+                                        if !exec_reports.is_empty()
+                                            && let Err(e) = tx.send(
+                                                NautilusWsMessage::ExecutionReports(exec_reports),
+                                            )
+                                        {
+                                            tracing::error!("Failed to send fill reports: {}", e);
+                                            break;
+                                        }
+                                    }
+                                    _ => {
+                                        // Other user events (funding, liquidation, etc.) not handled yet
+                                    }
+                                }
+                            }
+                            _ => {
+                                // Ignore other message types in execution stream
+                            }
+                        }
+                    }
+                    None => {
+                        // Connection closed
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Return the stream
+        Ok(async_stream::stream! {
+            let mut rx = rx;
+            while let Some(msg) = rx.recv().await {
+                yield msg;
+            }
+        })
+    }
 }
 
 // Python bindings
@@ -754,13 +954,12 @@ impl HyperliquidWebSocketClient {
         &self,
         py: Python<'py>,
         instruments: Vec<Py<PyAny>>,
-        _callback: Py<PyAny>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        // Parse instruments from Python objects
-        let mut instruments_any = Vec::new();
+        // Parse instruments from Python objects and store in cache
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-            instruments_any.push(inst_any);
+            self.add_instrument(inst_any);
         }
 
         let client = self.clone();
@@ -770,14 +969,321 @@ impl HyperliquidWebSocketClient {
 
             // Spawn background task to handle incoming messages
             tokio::spawn(async move {
+                let clock = get_atomic_clock_realtime();
+
                 loop {
                     let event = client.next_event().await;
 
                     match event {
                         Some(msg) => {
                             tracing::debug!("Received WebSocket message: {:?}", msg);
-                            // TODO: Convert HyperliquidWsMessage to Nautilus data types
-                            // and call the callback with the data
+
+                            // Parse and send to Python callback
+                            match msg {
+                                HyperliquidWsMessage::Trades { data } => {
+                                    for trade in data {
+                                        if let Some(instrument) =
+                                            client.get_instrument_by_symbol(&trade.coin)
+                                        {
+                                            let ts_init = clock.get_time_ns();
+                                            match parse_ws_trade_tick(&trade, &instrument, ts_init)
+                                            {
+                                                Ok(tick) => {
+                                                    Python::attach(|py| {
+                                                        let py_obj = data_to_pycapsule(
+                                                            py,
+                                                            Data::Trade(tick),
+                                                        );
+                                                        if let Err(e) =
+                                                            callback.bind(py).call1((py_obj,))
+                                                        {
+                                                            tracing::error!(
+                                                                "Error calling Python callback: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    });
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!(
+                                                        "Error parsing trade tick: {}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            tracing::warn!(
+                                                "No instrument found for symbol: {}",
+                                                trade.coin
+                                            );
+                                        }
+                                    }
+                                }
+                                HyperliquidWsMessage::L2Book { data } => {
+                                    if let Some(instrument) =
+                                        client.get_instrument_by_symbol(&data.coin)
+                                    {
+                                        let ts_init = clock.get_time_ns();
+                                        match parse_ws_order_book_deltas(
+                                            &data,
+                                            &instrument,
+                                            ts_init,
+                                        ) {
+                                            Ok(deltas) => {
+                                                Python::attach(|py| {
+                                                    let py_obj = data_to_pycapsule(
+                                                        py,
+                                                        Data::Deltas(OrderBookDeltas_API::new(
+                                                            deltas,
+                                                        )),
+                                                    );
+                                                    if let Err(e) =
+                                                        callback.bind(py).call1((py_obj,))
+                                                    {
+                                                        tracing::error!(
+                                                            "Error calling Python callback: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Error parsing order book deltas: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "No instrument found for symbol: {}",
+                                            data.coin
+                                        );
+                                    }
+                                }
+                                HyperliquidWsMessage::Bbo { data } => {
+                                    if let Some(instrument) =
+                                        client.get_instrument_by_symbol(&data.coin)
+                                    {
+                                        let ts_init = clock.get_time_ns();
+                                        match parse_ws_quote_tick(&data, &instrument, ts_init) {
+                                            Ok(quote) => {
+                                                Python::attach(|py| {
+                                                    let py_obj =
+                                                        data_to_pycapsule(py, Data::Quote(quote));
+                                                    if let Err(e) =
+                                                        callback.bind(py).call1((py_obj,))
+                                                    {
+                                                        tracing::error!(
+                                                            "Error calling Python callback: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Error parsing quote tick: {}", e);
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "No instrument found for symbol: {}",
+                                            data.coin
+                                        );
+                                    }
+                                }
+                                HyperliquidWsMessage::Candle { data } => {
+                                    if let Some(instrument) =
+                                        client.get_instrument_by_symbol(&data.s)
+                                    {
+                                        let ts_init = clock.get_time_ns();
+                                        // Create a bar type from the instrument and interval
+                                        // The actual bar type construction should be done based on the interval
+                                        let bar_type_str =
+                                            format!("{}-{}-LAST-EXTERNAL", instrument.id(), data.i);
+                                        match bar_type_str.parse::<BarType>() {
+                                            Ok(bar_type) => {
+                                                match parse_ws_candle(
+                                                    &data,
+                                                    &instrument,
+                                                    &bar_type,
+                                                    ts_init,
+                                                ) {
+                                                    Ok(bar) => {
+                                                        Python::attach(|py| {
+                                                            let py_obj = data_to_pycapsule(
+                                                                py,
+                                                                Data::Bar(bar),
+                                                            );
+                                                            if let Err(e) =
+                                                                callback.bind(py).call1((py_obj,))
+                                                            {
+                                                                tracing::error!(
+                                                                    "Error calling Python callback: {}",
+                                                                    e
+                                                                );
+                                                            }
+                                                        });
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!(
+                                                            "Error parsing candle: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Error creating bar type: {}", e);
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "No instrument found for symbol: {}",
+                                            data.s
+                                        );
+                                    }
+                                }
+                                HyperliquidWsMessage::OrderUpdates { data } => {
+                                    // Process each order update in the array
+                                    for order_update in data {
+                                        if let Some(instrument) = client
+                                            .get_instrument_by_symbol(&order_update.order.coin)
+                                        {
+                                            let ts_init = clock.get_time_ns();
+                                            // We need an account_id - this should come from the client config
+                                            // For now, use a default account ID
+                                            let account_id =
+                                                nautilus_model::identifiers::AccountId::new(
+                                                    "HYPERLIQUID-001",
+                                                );
+
+                                            match parse_ws_order_status_report(
+                                                &order_update,
+                                                &instrument,
+                                                account_id,
+                                                ts_init,
+                                            ) {
+                                                Ok(report) => {
+                                                    // Note: Execution reports should be handled via
+                                                    // stream_execution_messages() for execution clients,
+                                                    // not through data callbacks
+                                                    tracing::info!(
+                                                        "Parsed order status report: order_id={}, status={:?}",
+                                                        report.venue_order_id,
+                                                        report.order_status
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!(
+                                                        "Error parsing order update: {}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            tracing::warn!(
+                                                "No instrument found for symbol: {}",
+                                                order_update.order.coin
+                                            );
+                                        }
+                                    }
+                                }
+                                HyperliquidWsMessage::UserEvents { data } => {
+                                    use crate::websocket::messages::WsUserEventData;
+
+                                    // We need an account_id - this should come from the client config
+                                    let account_id = nautilus_model::identifiers::AccountId::new(
+                                        "HYPERLIQUID-001",
+                                    );
+                                    let ts_init = clock.get_time_ns();
+
+                                    match data {
+                                        WsUserEventData::Fills { fills } => {
+                                            // Process each fill
+                                            for fill in fills {
+                                                if let Some(instrument) =
+                                                    client.get_instrument_by_symbol(&fill.coin)
+                                                {
+                                                    match parse_ws_fill_report(
+                                                        &fill,
+                                                        &instrument,
+                                                        account_id,
+                                                        ts_init,
+                                                    ) {
+                                                        Ok(report) => {
+                                                            // Note: Execution reports should be handled via
+                                                            // stream_execution_messages() for execution clients,
+                                                            // not through data callbacks
+                                                            tracing::info!(
+                                                                "Parsed fill report: trade_id={}, side={:?}, qty={}, price={}",
+                                                                report.trade_id,
+                                                                report.order_side,
+                                                                report.last_qty,
+                                                                report.last_px
+                                                            );
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::error!(
+                                                                "Error parsing fill: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    }
+                                                } else {
+                                                    tracing::warn!(
+                                                        "No instrument found for symbol: {}",
+                                                        fill.coin
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        WsUserEventData::Funding { funding } => {
+                                            tracing::debug!(
+                                                "Received funding update: {:?}",
+                                                funding
+                                            );
+                                            // Funding updates would need to be converted to appropriate Nautilus events
+                                            // This could be implemented if funding rate updates are needed
+                                        }
+                                        WsUserEventData::Liquidation { liquidation } => {
+                                            tracing::warn!(
+                                                "Received liquidation event: {:?}",
+                                                liquidation
+                                            );
+                                            // Liquidation events would need special handling
+                                            // This could be implemented based on requirements
+                                        }
+                                        WsUserEventData::NonUserCancel { non_user_cancel } => {
+                                            tracing::info!(
+                                                "Received non-user cancel events: {:?}",
+                                                non_user_cancel
+                                            );
+                                            // These are system-initiated cancels (e.g., post-only rejected)
+                                            // Could be converted to order status updates if needed
+                                        }
+                                        WsUserEventData::TriggerActivated { trigger_activated } => {
+                                            tracing::debug!(
+                                                "Trigger order activated: {:?}",
+                                                trigger_activated
+                                            );
+                                            // Trigger activation events indicate a conditional order moved to active
+                                            // Could be converted to order status updates if needed
+                                        }
+                                        WsUserEventData::TriggerTriggered { trigger_triggered } => {
+                                            tracing::debug!(
+                                                "Trigger order triggered: {:?}",
+                                                trigger_triggered
+                                            );
+                                            // Trigger execution events indicate a conditional order was triggered
+                                            // Could be converted to order status updates if needed
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    tracing::debug!("Unhandled message type: {:?}", msg);
+                                }
+                            }
                         }
                         None => {
                             tracing::info!("WebSocket connection closed");

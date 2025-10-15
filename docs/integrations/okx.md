@@ -23,7 +23,7 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 | Margin            | -         | -       | *Not yet supported*.                           |
 | Options           | ✓         | -       | *Data feed supported, trading coming soon*.    |
 
-:::info
+:::note
 **Options support**: While you can subscribe to options market data and receive price updates, order execution for options is not yet implemented. You can use the symbology format shown above to subscribe to options data feeds.
 :::
 
@@ -100,9 +100,9 @@ Format: `{BaseCurrency}-{QuoteCurrency}-{YYMMDD}-{Strike}-{Type}`
 
 Examples:
 
-- `BTC-USD-250328-100000-C` - Bitcoin call option, $100,000 strike, expiring March 28, 2025
-- `BTC-USD-250328-100000-P` - Bitcoin put option, $100,000 strike, expiring March 28, 2025
-- `ETH-USD-250328-4000-C` - Ethereum call option, $4,000 strike, expiring March 28, 2025
+- `BTC-USD-251226-100000-C` - Bitcoin call option, $100,000 strike, expiring December 26, 2025
+- `BTC-USD-251226-100000-P` - Bitcoin put option, $100,000 strike, expiring December 26, 2025
+- `ETH-USD-251226-4000-C` - Ethereum call option, $4,000 strike, expiring December 26, 2025
 
 Where:
 
@@ -130,7 +130,7 @@ for linear perpetual swap products on OKX.
 
 ### Client order ID requirements
 
-:::warning
+:::note
 OKX has specific requirements for client order IDs:
 
 - **No hyphens allowed**: OKX does not accept hyphens (`-`) in client order IDs.
@@ -177,7 +177,7 @@ use_hyphens_in_client_order_ids=False
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
 | `GTD`         | ✗                     | *Not supported by OKX API.* |
 
-:::info
+:::note
 **GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
 
 If you need GTD functionality, you must use Nautilus's strategy-managed GTD feature, which will handle the order expiration by canceling the order at the specified expiry time.
@@ -200,9 +200,9 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
 | Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
 
-### Margin modes
+### Trade modes and margin configuration
 
-OKX's unified account system allows trading with different margin modes on a per-order basis. The adapter supports specifying the trade mode (`td_mode`) when submitting orders.
+OKX's unified account system supports different trade modes for spot and derivatives trading. The adapter automatically determines the correct trade mode based on your configuration and instrument type.
 
 :::note
 **Important**: Account modes must be initially configured via the OKX Web/App interface. The API cannot set the account mode for the first time.
@@ -210,41 +210,81 @@ OKX's unified account system allows trading with different margin modes on a per
 
 For more details on OKX's account modes and margin system, see the [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
 
-#### Available margin modes
+#### Trade modes overview
 
-- **`cash`**: Spot trading without margin (default for spot trading).
-- **`isolated`**: Isolated margin mode where risk is confined to specific positions.
-- **`cross`**: Cross margin mode where all positions share the same margin pool.
-- **`spot_isolated`**: Isolated margin for spot trading.
+OKX supports four trade modes, which the adapter selects automatically based on your configuration:
 
-#### Setting margin mode per order
+| Mode                | Used For                                   | Leverage | Borrowing | Configuration |
+|---------------------|--------------------------------------------|----------|-----------|---------------|
+| **`cash`**          | Simple spot trading                        | -        | -         | `use_spot_margin=False` (default for SPOT) |
+| **`spot_isolated`** | Spot trading with margin/leverage          | ✓        | ✓         | `use_spot_margin=True` |
+| **`isolated`**      | Derivatives trading (SWAP/FUTURES/OPTIONS) | ✓        | ✓         | `margin_mode=ISOLATED` or unset (default for derivatives) |
+| **`cross`**         | Derivatives with shared margin pool        | ✓        | ✓         | `margin_mode=CROSS` |
 
-You can specify the margin mode for individual orders using the `params` parameter:
+#### Configuration-based trade mode selection
+
+**The adapter automatically selects the correct trade mode** based on:
+
+1. **Instrument type** (SPOT vs derivatives)
+2. **Configuration settings** (`use_spot_margin` for SPOT, `margin_mode` for derivatives)
+
+##### For SPOT trading
 
 ```python
-# Submit an order with isolated margin mode
-strategy.submit_order(
-    order=order,
-    params={"td_mode": "isolated"}
-)
+# Simple SPOT trading without leverage (uses 'cash' mode)
+exec_clients={
+    OKX: OKXExecClientConfig(
+        instrument_types=(OKXInstrumentType.SPOT,),
+        use_spot_margin=False,  # Default - simple SPOT
+        # ... other config
+    ),
+}
 
-# Submit an order with cross margin mode
-strategy.submit_order(
-    order=order,
-    params={"td_mode": "cross"}
-)
+# SPOT trading WITH margin/leverage (uses 'spot_isolated' mode)
+exec_clients={
+    OKX: OKXExecClientConfig(
+        instrument_types=(OKXInstrumentType.SPOT,),
+        use_spot_margin=True,  # Enable margin trading for SPOT
+        # ... other config
+    ),
+}
 ```
 
-If no `td_mode` is specified in params, the adapter will use the default mode configured for your account type:
+##### For derivatives trading (SWAP/FUTURES/OPTIONS)
 
-- Cash accounts default to `cash` mode.
-- Margin accounts default to `isolated` mode.
+```python
+# Derivatives with isolated margin (default - uses 'isolated' mode)
+exec_clients={
+    OKX: OKXExecClientConfig(
+        instrument_types=(OKXInstrumentType.SWAP,),
+        margin_mode=OKXMarginMode.ISOLATED,  # Or omit - ISOLATED is default
+        # ... other config
+    ),
+}
 
-This flexibility allows you to:
+# Derivatives with cross margin (uses 'cross' mode)
+exec_clients={
+    OKX: OKXExecClientConfig(
+        instrument_types=(OKXInstrumentType.SWAP,),
+        margin_mode=OKXMarginMode.CROSS,  # Share margin across all positions
+        # ... other config
+    ),
+}
+```
 
-- Run multiple strategies with different risk profiles simultaneously.
-- Isolate high-risk trades while using cross margin for capital-efficient positions.
-- Mix spot and margin trades within the same account.
+:::warning
+**Manual trade mode override**: While you can still manually override the trade mode per order using `params={"td_mode": "..."}`, this is **not recommended** as it bypasses automatic mode selection and can lead to order rejection if the wrong mode is specified for the instrument type (e.g., using `isolated` for SPOT instruments).
+
+Only use manual override if you have specific requirements that cannot be met through configuration.
+:::
+
+#### Benefits of configuration-based approach
+
+- **Type-safe**: Configuration is validated at startup before placing any orders.
+- **Automatic**: System chooses correct mode based on instrument type and intent.
+- **Clear**: Field names explain purpose (`use_spot_margin` vs obscure `td_mode` parameter).
+- **Safe**: Impossible to use incompatible combinations (e.g., `isolated` mode for SPOT).
+- **Backwards compatible**: Default values maintain existing behavior.
 
 ### Order querying
 
@@ -426,7 +466,8 @@ The OKX execution client provides the following configuration options:
 | `base_url_http`            | `None`      | Override for the OKX trading REST endpoint. |
 | `base_url_ws`              | `None`      | Override for the private WebSocket endpoint. |
 | `api_key` / `api_secret` / `api_passphrase` | `None` | Fall back to `OKX_API_KEY`, `OKX_API_SECRET`, and `OKX_PASSPHRASE` environment variables when unset. |
-| `margin_mode`              | `None`      | Forces the OKX account margin mode (cross or isolated) when specified. |
+| `margin_mode`              | `None`      | Margin mode for derivatives trading (`ISOLATED` or `CROSS`). Only applies to SWAP/FUTURES/OPTIONS. Defaults to `ISOLATED` if not specified. |
+| `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `spot_isolated` trade mode. When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
 | `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
 | `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
 | `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower-latency fill reports. |
@@ -444,6 +485,7 @@ from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory, OKX
 from nautilus_trader.config import InstrumentProviderConfig, LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(

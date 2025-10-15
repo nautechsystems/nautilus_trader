@@ -70,7 +70,6 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -986,12 +985,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if order.trigger_price is not None:
                 return "INVALID_TRIGGER_PRICE: use activation_price for trailing stop orders"
 
-            if not order.activation_price:
-                quote = self._cache.quote_tick(order.instrument_id)
-                trade = self._cache.trade_tick(order.instrument_id)
-                if not quote and not trade:
-                    return "MISSING_ACTIVATION_PRICE: no quotes or trades available"
-
         return None  # Valid
 
     async def _submit_market_order(
@@ -1160,26 +1153,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 "should have been validated in _validate_order_pre_submit",
             )
 
+        time_in_force = self._determine_time_in_force(order)
+
         # Convert basis points to percentage, preserving precision
         # Binance supports up to 1 decimal place precision for callback rates
         callback_rate = Decimal(order.trailing_offset) / Decimal("100")
         # Round to 1 decimal place only if necessary to meet Binance requirements
         callback_rate = callback_rate.quantize(Decimal("0.1"))
 
-        # Derive activation price from market data if not provided
         activation_price: Price | None = order.activation_price
-        if not activation_price:
-            quote = self._cache.quote_tick(order.instrument_id)
-            trade = self._cache.trade_tick(order.instrument_id)
-            if quote:
-                if order.side == OrderSide.BUY:
-                    activation_price = quote.bid_price
-                elif order.side == OrderSide.SELL:
-                    activation_price = quote.ask_price
-            elif trade:
-                activation_price = trade.price
-
-        time_in_force = self._determine_time_in_force(order)
 
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
@@ -1188,7 +1170,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             time_in_force=time_in_force,
             good_till_date=self._determine_good_till_date(order, time_in_force),
             quantity=str(order.quantity),
-            activation_price=str(activation_price),
+            activation_price=str(activation_price) if activation_price is not None else None,
             callback_rate=str(callback_rate),
             working_type=working_type,
             reduce_only=self._determine_reduce_only_str(order),

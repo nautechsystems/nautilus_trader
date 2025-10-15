@@ -720,7 +720,9 @@ pub struct BybitPosition {
     pub mark_price: String,
     pub liq_price: String,
     pub bust_price: String,
+    #[serde(rename = "positionMM")]
     pub position_mm: String,
+    #[serde(rename = "positionIM")]
     pub position_im: String,
     pub tpsl_mode: String,
     pub take_profit: String,
@@ -731,7 +733,7 @@ pub struct BybitPosition {
     pub cum_realised_pnl: String,
     pub seq: i64,
     pub is_reduce_only: bool,
-    pub mmr_sys_update_time: String,
+    pub mmr_sys_updated_time: String,
     pub leverage_sys_updated_time: String,
     pub created_time: String,
     pub updated_time: String,

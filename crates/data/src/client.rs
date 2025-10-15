@@ -39,10 +39,11 @@ use nautilus_common::messages::data::{
 };
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
-    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
-    SubscribePoolFeeCollects, SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates,
-    SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
-    UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+    DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+    UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
+    UnsubscribePoolSwaps,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
@@ -626,6 +627,17 @@ pub trait DataClient: Any + Sync + Send {
         log_not_implemented(&request);
         Ok(())
     }
+
+    #[cfg(feature = "defi")]
+    /// Requests a snapshot of a specific AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pool snapshot request fails.
+    fn request_pool_snapshot(&self, request: &RequestPoolSnapshot) -> anyhow::Result<()> {
+        log_not_implemented(&request);
+        Ok(())
+    }
 }
 
 /// Wraps a [`DataClient`], managing subscription state and forwarding commands.
@@ -828,6 +840,19 @@ impl DataClientAdapter {
             DefiUnsubscribeCommand::PoolFlashEvents(cmd) => self.unsubscribe_pool_flash_events(cmd),
         } {
             log_command_error(&cmd, &e);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    /// Executes a DeFi data request command by dispatching to the appropriate handler.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client request fails.
+    #[inline]
+    pub fn execute_defi_request(&self, cmd: &DefiRequestCommand) -> anyhow::Result<()> {
+        match cmd {
+            DefiRequestCommand::PoolSnapshot(cmd) => self.request_pool_snapshot(cmd),
         }
     }
 
@@ -1509,6 +1534,16 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the order book depths request.
     pub fn request_book_depth(&self, req: &RequestBookDepth) -> anyhow::Result<()> {
         self.client.request_book_depth(req)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Sends a pool snapshot request for a given AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the pool snapshot request.
+    pub fn request_pool_snapshot(&self, req: &RequestPoolSnapshot) -> anyhow::Result<()> {
+        self.client.request_pool_snapshot(req)
     }
 }
 

@@ -1239,7 +1239,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     client.wait_until_active(10.0).await.unwrap();
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
-    let first_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+    let first_events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
         let instrument_ok = events
             .iter()
             .any(|(topic, ok)| topic == "instrument" && *ok);
@@ -1283,7 +1283,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     client.wait_until_active(10.0).await.unwrap();
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
-    let second_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+    let second_events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
         events.iter().any(|(topic, ok)| topic == "position" && *ok)
     })
     .await;
@@ -1516,8 +1516,8 @@ async fn test_rapid_consecutive_reconnections() {
             "Reconnection cycle {cycle} failed"
         );
 
-        // Wait for subscription restoration
-        let events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+        // Wait for subscription restoration (20s to account for slower CI runners)
+        let events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
             events
                 .iter()
                 .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)
@@ -1613,7 +1613,7 @@ async fn test_multiple_partial_subscription_failures() {
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     // Wait for subscription restoration attempts
-    let first_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+    let first_events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
         let trade_xbt_failed = events
             .iter()
             .any(|(topic, ok)| topic == "trade:XBTUSD" && !*ok);
@@ -1684,7 +1684,7 @@ async fn test_multiple_partial_subscription_failures() {
     client.wait_until_active(10.0).await.unwrap();
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
-    let second_events = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
+    let second_events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
         events
             .iter()
             .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)

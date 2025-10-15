@@ -29,7 +29,6 @@ use nautilus_model::{
     },
 };
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
-use tracing::warn;
 use ustr::Ustr;
 
 use crate::{
@@ -238,8 +237,10 @@ pub fn normalize_trade_bin_prices(
 
     if high < max_price || low > min_price {
         match bar_type {
-            Some(bt) => warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes"),
-            None => warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
+            Some(bt) => {
+                tracing::warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes")
+            }
+            None => tracing::warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
         }
         high = max_price;
         low = min_price;
@@ -255,11 +256,11 @@ pub fn normalize_trade_bin_volume(volume: Option<i64>, symbol: &Ustr) -> u64 {
     match volume {
         Some(v) if v >= 0 => v as u64,
         Some(v) => {
-            warn!(symbol = %symbol, volume = v, "Received negative volume in BitMEX trade bin");
+            tracing::warn!(symbol = %symbol, volume = v, "Received negative volume in BitMEX trade bin");
             0
         }
         None => {
-            warn!(symbol = %symbol, "Trade bin missing volume, defaulting to 0");
+            tracing::warn!(symbol = %symbol, "Trade bin missing volume, defaulting to 0");
             0
         }
     }

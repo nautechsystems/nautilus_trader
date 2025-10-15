@@ -30,7 +30,7 @@ use nautilus_model::defi::{
     Block, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, SharedPool, Token,
     data::{PoolFeeCollect, PoolFlash},
     pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
-    tick_map::tick::Tick,
+    tick_map::tick::PoolTick,
 };
 use sqlx::postgres::PgConnectOptions;
 
@@ -609,7 +609,7 @@ impl BlockchainCache {
                     .await?;
             }
 
-            let ticks: Vec<(Address, &Tick)> = snapshot
+            let ticks: Vec<(Address, &PoolTick)> = snapshot
                 .ticks
                 .iter()
                 .map(|tick| (*pool_address, tick))

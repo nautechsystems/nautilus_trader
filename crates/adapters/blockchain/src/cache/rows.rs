@@ -17,10 +17,13 @@ use std::str::FromStr;
 
 use alloy::primitives::{Address, I256, U160, U256};
 use nautilus_core::UnixNanos;
-use nautilus_model::defi::{
-    PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
-    data::{DexPoolData, PoolFeeCollect, PoolFlash},
-    validation::validate_address,
+use nautilus_model::{
+    defi::{
+        PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+        data::{DexPoolData, PoolFeeCollect, PoolFlash},
+        validation::validate_address,
+    },
+    identifiers::InstrumentId,
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
@@ -128,6 +131,7 @@ pub fn transform_row_to_dex_pool_data(
     row: &PgRow,
     chain: nautilus_model::defi::SharedChain,
     dex: nautilus_model::defi::SharedDex,
+    instrument_id: InstrumentId,
 ) -> Result<DexPoolData, sqlx::Error> {
     let event_type = row.try_get::<String, _>("event_type")?;
     let pool_address_str = row.try_get::<String, _>("pool_address")?;
@@ -191,6 +195,7 @@ pub fn transform_row_to_dex_pool_data(
             let pool_swap = PoolSwap::new(
                 chain,
                 dex,
+                instrument_id,
                 pool_address,
                 block,
                 transaction_hash,
@@ -278,6 +283,7 @@ pub fn transform_row_to_dex_pool_data(
             let pool_liquidity_update = PoolLiquidityUpdate::new(
                 chain,
                 dex,
+                instrument_id,
                 pool_address,
                 kind,
                 block,
@@ -329,6 +335,7 @@ pub fn transform_row_to_dex_pool_data(
             let pool_fee_collect = PoolFeeCollect::new(
                 chain,
                 dex,
+                instrument_id,
                 pool_address,
                 block,
                 transaction_hash,
@@ -389,6 +396,7 @@ pub fn transform_row_to_dex_pool_data(
             let pool_flash = PoolFlash::new(
                 chain,
                 dex,
+                instrument_id,
                 pool_address,
                 block,
                 transaction_hash,

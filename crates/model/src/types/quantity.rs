@@ -367,13 +367,33 @@ impl From<&Quantity> for f64 {
 }
 
 impl From<i32> for Quantity {
+    /// Creates a `Quantity` from an `i32` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is negative. Use `u32` for guaranteed non-negative values.
     fn from(value: i32) -> Self {
+        assert!(
+            value >= 0,
+            "Cannot create Quantity from negative i32: {}. Use u32 or check value is non-negative.",
+            value
+        );
         Self::new(value as f64, 0)
     }
 }
 
 impl From<i64> for Quantity {
+    /// Creates a `Quantity` from an `i64` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is negative. Use `u64` for guaranteed non-negative values.
     fn from(value: i64) -> Self {
+        assert!(
+            value >= 0,
+            "Cannot create Quantity from negative i64: {}. Use u64 or check value is non-negative.",
+            value
+        );
         Self::new(value as f64, 0)
     }
 }

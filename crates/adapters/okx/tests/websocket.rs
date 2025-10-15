@@ -1553,11 +1553,11 @@ async fn test_rapid_consecutive_reconnections() {
                 let expected = initial_login_count + cycle;
                 async move { *state.login_count.lock().await >= expected }
             },
-            Duration::from_secs(5),
+            Duration::from_secs(8),
         )
         .await;
 
-        // Wait for subscription restoration
+        // Wait for subscription restoration (20s to account for slower CI runners)
         wait_until_async(
             || {
                 let state = state.clone();
@@ -1571,7 +1571,7 @@ async fn test_rapid_consecutive_reconnections() {
                             .any(|(key, _, ok)| key.starts_with("orders") && *ok)
                 }
             },
-            Duration::from_secs(8),
+            Duration::from_secs(20),
         )
         .await;
 

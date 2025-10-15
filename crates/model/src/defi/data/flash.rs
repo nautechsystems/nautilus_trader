@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    defi::{Pool, SharedChain, SharedDex},
+    defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -39,6 +39,8 @@ pub struct PoolFlash {
     pub chain: SharedChain,
     /// The decentralized exchange where the flash loan was executed.
     pub dex: SharedDex,
+    /// The instrument ID for this pool's trading pair.
+    pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
     /// The blockchain block number at which the flash loan was executed.
@@ -72,6 +74,7 @@ impl PoolFlash {
     pub fn new(
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: Address,
         block_number: u64,
         transaction_hash: String,
@@ -88,6 +91,7 @@ impl PoolFlash {
         Self {
             chain,
             dex,
+            instrument_id,
             pool_address,
             block: block_number,
             transaction_hash,
@@ -104,8 +108,9 @@ impl PoolFlash {
     }
 
     /// Returns the instrument ID for this pool's trading pair.
-    pub fn instrument_id(&self) -> InstrumentId {
-        Pool::create_instrument_id(self.chain.name, &self.dex, &self.pool_address)
+    #[must_use]
+    pub const fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
     }
 }
 
@@ -114,12 +119,7 @@ impl Display for PoolFlash {
         write!(
             f,
             "PoolFlash(instrument={}, recipient={}, amount0={}, amount1={}, paid0={}, paid1={})",
-            self.instrument_id(),
-            self.recipient,
-            self.amount0,
-            self.amount1,
-            self.paid0,
-            self.paid1,
+            self.instrument_id, self.recipient, self.amount0, self.amount1, self.paid0, self.paid1,
         )
     }
 }

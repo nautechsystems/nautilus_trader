@@ -234,9 +234,11 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::Triggered(_)) => Self::Triggered,
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PendingCancel, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingCancel, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
+            (Self::PendingCancel, OrderEventAny::CancelRejected(_)) => Self::PendingCancel,  // Handled by cancel_rejected to restore previous_status
             (Self::PendingCancel, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PendingCancel, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PendingCancel, OrderEventAny::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
@@ -371,15 +373,17 @@ pub trait Order: 'static + Send {
     }
 
     fn is_primary(&self) -> bool {
-        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
         self.exec_algorithm_id().is_some()
-            && self.client_order_id() == self.exec_spawn_id().unwrap()
+            && self
+                .exec_spawn_id()
+                .is_some_and(|spawn_id| self.client_order_id() == spawn_id)
     }
 
     fn is_secondary(&self) -> bool {
-        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
         self.exec_algorithm_id().is_some()
-            && self.client_order_id() != self.exec_spawn_id().unwrap()
+            && self
+                .exec_spawn_id()
+                .is_some_and(|spawn_id| self.client_order_id() != spawn_id)
     }
 
     fn is_contingency(&self) -> bool {
@@ -467,8 +471,8 @@ pub trait Order: 'static + Send {
             self.time_in_force(),
             self.status(),
             self.ts_last(),
-            self.ts_submitted().unwrap_or_default(),
             self.ts_accepted().unwrap_or_default(),
+            self.ts_submitted().unwrap_or_default(),
             self.ts_init(),
         )
     }
@@ -634,8 +638,23 @@ impl OrderCore {
         assert_eq!(self.client_order_id, event.client_order_id());
         assert_eq!(self.strategy_id, event.strategy_id());
 
+        // Save current status as previous_status for ALL transitions except:
+        // - Initialized (no prior state exists)
+        // - ModifyRejected/CancelRejected (need to preserve the pre-Pending state)
+        // - When already in Pending* state (avoid overwriting the pre-pending state when receiving multiple pending requests)
+        if !matches!(
+            event,
+            OrderEventAny::Initialized(_)
+                | OrderEventAny::ModifyRejected(_)
+                | OrderEventAny::CancelRejected(_)
+        ) && !matches!(
+            self.status,
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+        ) {
+            self.previous_status = Some(self.status);
+        }
+
         let new_status = self.status.transition(&event)?;
-        self.previous_status = Some(self.status);
         self.status = new_status;
 
         match &event {
@@ -680,7 +699,9 @@ impl OrderCore {
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
+        self.account_id = Some(event.account_id);
         self.venue_order_id = Some(event.venue_order_id);
+        self.venue_order_ids.push(event.venue_order_id);
         self.ts_accepted = Some(event.ts_event);
     }
 
@@ -729,7 +750,13 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled) {
-        if self.filled_qty + event.last_qty < self.quantity {
+        // Use saturating arithmetic to prevent overflow
+        let new_filled_qty = Quantity::from_raw(
+            self.filled_qty.raw.saturating_add(event.last_qty.raw),
+            self.filled_qty.precision,
+        );
+
+        if new_filled_qty < self.quantity {
             self.status = OrderStatus::PartiallyFilled;
         } else {
             self.status = OrderStatus::Filled;
@@ -741,7 +768,7 @@ impl OrderCore {
         self.trade_ids.push(event.trade_id);
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
-        self.filled_qty += event.last_qty;
+        self.filled_qty = new_filled_qty;
         self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
         if self.ts_accepted.is_none() {
@@ -1086,5 +1113,84 @@ mod tests {
 
         assert!(order.is_child_order());
         assert!(!order.is_parent_order());
+    }
+
+    #[rstest]
+    fn test_to_own_book_order_timestamp_ordering() {
+        use crate::orders::limit::LimitOrder;
+
+        // Create order with distinct timestamps to verify parameter ordering
+        let init = OrderInitializedBuilder::default()
+            .price(Some(Price::from("100.00")))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default()
+            .ts_event(UnixNanos::from(1_000_000))
+            .build()
+            .unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .ts_event(UnixNanos::from(2_000_000))
+            .build()
+            .unwrap();
+
+        let mut order: LimitOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        let own_book_order = order.to_own_book_order();
+
+        // Verify timestamps are in correct positions
+        assert_eq!(own_book_order.ts_submitted, UnixNanos::from(1_000_000));
+        assert_eq!(own_book_order.ts_accepted, UnixNanos::from(2_000_000));
+        assert_eq!(own_book_order.ts_last, UnixNanos::from(2_000_000));
+    }
+
+    #[rstest]
+    fn test_order_accepted_without_submitted_sets_account_id() {
+        // Test external order flow: Initialized -> Accepted (no Submitted)
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .account_id(AccountId::from("EXTERNAL-001"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+
+        // Verify account_id is initially None
+        assert_eq!(order.account_id(), None);
+
+        // Apply accepted event directly (external order case)
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        // Verify account_id is now set from the accepted event
+        assert_eq!(order.account_id(), Some(AccountId::from("EXTERNAL-001")));
+        assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_order_accepted_after_submitted_preserves_account_id() {
+        // Test normal order flow: Initialized -> Submitted -> Accepted
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedBuilder::default()
+            .account_id(AccountId::from("SUBMITTED-001"))
+            .build()
+            .unwrap();
+        let accepted = OrderAcceptedBuilder::default()
+            .account_id(AccountId::from("ACCEPTED-001"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+        // After submitted, account_id should be set
+        assert_eq!(order.account_id(), Some(AccountId::from("SUBMITTED-001")));
+
+        // Apply accepted event
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        // account_id should now be updated to the accepted event's account_id
+        assert_eq!(order.account_id(), Some(AccountId::from("ACCEPTED-001")));
+        assert_eq!(order.status(), OrderStatus::Accepted);
     }
 }

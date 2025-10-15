@@ -70,8 +70,8 @@ use crate::{
         consts::BYBIT_NAUTILUS_BROKER_ID,
         credential::Credential,
         enums::{
-            BybitEnvironment, BybitKlineInterval, BybitOrderSide, BybitOrderType, BybitProductType,
-            BybitTimeInForce,
+            BybitAccountType, BybitEnvironment, BybitKlineInterval, BybitOrderSide, BybitOrderType,
+            BybitProductType, BybitTimeInForce,
         },
         models::BybitResponse,
         parse::{
@@ -762,7 +762,7 @@ impl BybitHttpInnerClient {
         order_entry.order_type(bybit_order_type);
         order_entry.qty(quantity.to_string());
         order_entry.time_in_force(Some(bybit_tif));
-        order_entry.order_link_id(Some(client_order_id.to_string()));
+        order_entry.order_link_id(client_order_id.to_string());
 
         if let Some(price) = price {
             order_entry.price(Some(price.to_string()));
@@ -791,7 +791,7 @@ impl BybitHttpInnerClient {
         // Query the order to get full details
         let mut query_params = BybitOpenOrdersParamsBuilder::default();
         query_params.category(product_type);
-        query_params.order_id(Some(order_id.as_str().to_string()));
+        query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
         let path = Self::build_path("/v5/order/realtime", &query_params)?;
@@ -838,9 +838,9 @@ impl BybitHttpInnerClient {
         cancel_entry.symbol(bybit_symbol.raw_symbol().to_string());
 
         if let Some(venue_order_id) = venue_order_id {
-            cancel_entry.order_id(Some(venue_order_id.to_string()));
+            cancel_entry.order_id(venue_order_id.to_string());
         } else if let Some(client_order_id) = client_order_id {
-            cancel_entry.order_link_id(Some(client_order_id.to_string()));
+            cancel_entry.order_link_id(client_order_id.to_string());
         } else {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         }
@@ -866,7 +866,7 @@ impl BybitHttpInnerClient {
         // Query the order to get full details after cancellation
         let mut query_params = BybitOpenOrdersParamsBuilder::default();
         query_params.category(product_type);
-        query_params.order_id(Some(order_id.as_str().to_string()));
+        query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
         let path = Self::build_path("/v5/order/history", &query_params)?;
@@ -904,7 +904,7 @@ impl BybitHttpInnerClient {
 
         let mut params = BybitCancelAllOrdersParamsBuilder::default();
         params.category(product_type);
-        params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
+        params.symbol(bybit_symbol.raw_symbol().to_string());
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
         let body = serde_json::to_vec(&params)?;
@@ -916,8 +916,8 @@ impl BybitHttpInnerClient {
         // Query the order history to get all canceled orders
         let mut query_params = BybitOrderHistoryParamsBuilder::default();
         query_params.category(product_type);
-        query_params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
-        query_params.limit(Some(50));
+        query_params.symbol(bybit_symbol.raw_symbol().to_string());
+        query_params.limit(50);
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
         let path = Self::build_path("/v5/order/history", &query_params)?;
@@ -964,9 +964,9 @@ impl BybitHttpInnerClient {
         amend_entry.symbol(bybit_symbol.raw_symbol().to_string());
 
         if let Some(venue_order_id) = venue_order_id {
-            amend_entry.order_id(Some(venue_order_id.to_string()));
+            amend_entry.order_id(venue_order_id.to_string());
         } else if let Some(client_order_id) = client_order_id {
-            amend_entry.order_link_id(Some(client_order_id.to_string()));
+            amend_entry.order_link_id(client_order_id.to_string());
         } else {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         }
@@ -1000,7 +1000,7 @@ impl BybitHttpInnerClient {
         // Query the order to get full details after amendment
         let mut query_params = BybitOpenOrdersParamsBuilder::default();
         query_params.category(product_type);
-        query_params.order_id(Some(order_id.as_str().to_string()));
+        query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
         let path = Self::build_path("/v5/order/realtime", &query_params)?;
@@ -1030,24 +1030,30 @@ impl BybitHttpInnerClient {
     /// - The API returns an error.
     pub async fn query_order(
         &self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        account_id: AccountId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        tracing::info!(
+            "query_order called: instrument_id={}, client_order_id={:?}, venue_order_id={:?}",
+            instrument_id,
+            client_order_id,
+            venue_order_id
+        );
+
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut params = BybitOpenOrdersParamsBuilder::default();
         params.category(product_type);
         // Use the raw Bybit symbol (e.g., "ETHUSDT") not the full instrument symbol
-        params.symbol(Some(bybit_symbol.raw_symbol().to_string()));
+        params.symbol(bybit_symbol.raw_symbol().to_string());
 
         if let Some(venue_order_id) = venue_order_id {
-            params.order_id(Some(venue_order_id.to_string()));
+            params.order_id(venue_order_id.to_string());
         } else if let Some(client_order_id) = client_order_id {
-            params.order_link_id(Some(client_order_id.to_string()));
+            params.order_link_id(client_order_id.to_string());
         } else {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
         }
@@ -1065,84 +1071,51 @@ impl BybitHttpInnerClient {
         let order = &response.result.list[0];
         let ts_init = self.generate_ts_init();
 
-        let report = parse_order_status_report(order, &instrument, account_id, ts_init)?;
+        tracing::debug!(
+            "Query order response: symbol={}, order_id={}, order_link_id={}",
+            order.symbol.as_str(),
+            order.order_id.as_str(),
+            order.order_link_id.as_str()
+        );
+
+        // Get instrument from cache with better error context
+        let instrument = self
+            .instrument_from_cache(&instrument_id.symbol)
+            .map_err(|e| {
+                tracing::error!(
+                    "Instrument cache miss for symbol '{}': {}",
+                    instrument_id.symbol.as_str(),
+                    e
+                );
+                anyhow::anyhow!(
+                    "Failed to query order {}: {}",
+                    client_order_id
+                        .as_ref()
+                        .map(|id| id.to_string())
+                        .or_else(|| venue_order_id.as_ref().map(|id| id.to_string()))
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    e
+                )
+            })?;
+
+        tracing::debug!("Retrieved instrument from cache: id={}", instrument.id());
+
+        let report =
+            parse_order_status_report(order, &instrument, account_id, ts_init).map_err(|e| {
+                tracing::error!(
+                    "Failed to parse order status report for {}: {}",
+                    order.order_link_id.as_str(),
+                    e
+                );
+                e
+            })?;
+
+        tracing::debug!(
+            "Successfully created OrderStatusReport for {}",
+            order.order_link_id.as_str()
+        );
+
         Ok(Some(report))
-    }
-
-    /// Request multiple order status reports.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Credentials are missing.
-    /// - The request fails.
-    /// - The API returns an error.
-    pub async fn request_order_status_reports(
-        &self,
-        product_type: BybitProductType,
-        instrument_id: Option<InstrumentId>,
-        open_only: bool,
-        limit: Option<u32>,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let params = if open_only {
-            let mut p = BybitOpenOrdersParamsBuilder::default();
-            p.category(product_type);
-            if let Some(instrument_id) = &instrument_id {
-                let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
-                p.symbol(Some(bybit_symbol.raw_symbol().to_string()));
-            }
-            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
-            let path = Self::build_path("/v5/order/realtime", &params)?;
-            let response: BybitOpenOrdersResponse =
-                self.send_request(Method::GET, &path, None, true).await?;
-            response.result.list
-        } else {
-            let mut p = BybitOrderHistoryParamsBuilder::default();
-            p.category(product_type);
-            if let Some(instrument_id) = &instrument_id {
-                let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
-                p.symbol(Some(bybit_symbol.raw_symbol().to_string()));
-            }
-            if let Some(limit) = limit {
-                p.limit(Some(limit));
-            }
-            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
-            let path = Self::build_path("/v5/order/history", &params)?;
-            let response: BybitOrderHistoryResponse =
-                self.send_request(Method::GET, &path, None, true).await?;
-            response.result.list
-        };
-
-        let account_id = AccountId::new("BYBIT");
-        let ts_init = self.generate_ts_init();
-
-        let mut reports = Vec::new();
-        for order in params {
-            if let Some(ref instrument_id) = instrument_id {
-                let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
-                if let Ok(report) =
-                    parse_order_status_report(&order, &instrument, account_id, ts_init)
-                {
-                    reports.push(report);
-                }
-            } else {
-                // Try to get instrument from symbol
-                // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
-                let symbol_with_product = Symbol::new(format!(
-                    "{}{}",
-                    order.symbol.as_str(),
-                    product_type.suffix()
-                ));
-                if let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
-                    && let Ok(report) =
-                        parse_order_status_report(&order, &instrument, account_id, ts_init)
-                {
-                    reports.push(report);
-                }
-            }
-        }
-
-        Ok(reports)
     }
 
     /// Request instruments for a given product type.
@@ -1422,6 +1395,155 @@ impl BybitHttpInnerClient {
         Ok(bars)
     }
 
+    /// Requests trading fee rates for the specified product type and optional filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
+    pub async fn request_fee_rates(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+    ) -> anyhow::Result<Vec<BybitFeeRate>> {
+        let params = BybitFeeRateParams {
+            category: product_type,
+            symbol,
+            base_coin,
+        };
+
+        let response = self.http_get_fee_rate(&params).await?;
+        Ok(response.result.list)
+    }
+
+    /// Requests the current account state for the specified account type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
+    pub async fn request_account_state(
+        &self,
+        account_type: BybitAccountType,
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
+        let params = BybitWalletBalanceParams {
+            account_type,
+            coin: None,
+        };
+
+        let response = self.http_get_wallet_balance(&params).await?;
+        let ts_init = self.generate_ts_init();
+
+        // Take the first wallet balance from the list
+        let wallet_balance = response
+            .result
+            .list
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No wallet balance found in response"))?;
+
+        parse_account_state(wallet_balance, account_id, ts_init)
+    }
+
+    /// Request multiple order status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    pub async fn request_order_status_reports(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        // Extract symbol parameter from instrument_id if provided
+        let symbol_param = if let Some(id) = instrument_id.as_ref() {
+            let symbol_str = id.symbol.as_str();
+            if symbol_str.is_empty() {
+                None
+            } else {
+                Some(BybitSymbol::new(symbol_str)?.raw_symbol().to_string())
+            }
+        } else {
+            None
+        };
+
+        let params = if open_only {
+            let mut p = BybitOpenOrdersParamsBuilder::default();
+            p.category(product_type);
+            if let Some(symbol) = symbol_param.clone() {
+                p.symbol(symbol);
+            }
+            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
+            let path = Self::build_path("/v5/order/realtime", &params)?;
+            let response: BybitOpenOrdersResponse =
+                self.send_request(Method::GET, &path, None, true).await?;
+            response.result.list
+        } else {
+            let mut p = BybitOrderHistoryParamsBuilder::default();
+            p.category(product_type);
+            if let Some(symbol) = symbol_param {
+                p.symbol(symbol);
+            }
+            if let Some(limit) = limit {
+                p.limit(limit);
+            }
+            let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
+            let path = Self::build_path("/v5/order/history", &params)?;
+            let response: BybitOrderHistoryResponse =
+                self.send_request(Method::GET, &path, None, true).await?;
+            response.result.list
+        };
+
+        let ts_init = self.generate_ts_init();
+
+        let mut reports = Vec::new();
+        for order in params {
+            if let Some(ref instrument_id) = instrument_id {
+                let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+                if let Ok(report) =
+                    parse_order_status_report(&order, &instrument, account_id, ts_init)
+                {
+                    reports.push(report);
+                }
+            } else {
+                // Try to get instrument from symbol
+                // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
+                if !order.symbol.is_empty() {
+                    let symbol_with_product = Symbol::new(format!(
+                        "{}{}",
+                        order.symbol.as_str(),
+                        product_type.suffix()
+                    ));
+                    if let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
+                        && let Ok(report) =
+                            parse_order_status_report(&order, &instrument, account_id, ts_init)
+                    {
+                        reports.push(report);
+                    }
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
     /// Fetches execution history (fills) for the account and returns a list of [`FillReport`]s.
     ///
     /// # Errors
@@ -1437,8 +1559,8 @@ impl BybitHttpInnerClient {
     /// <https://bybit-exchange.github.io/docs/v5/order/execution>
     pub async fn request_fill_reports(
         &self,
-        product_type: BybitProductType,
         account_id: AccountId,
+        product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         start: Option<i64>,
         end: Option<i64>,
@@ -1502,109 +1624,98 @@ impl BybitHttpInnerClient {
     /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
     pub async fn request_position_status_reports(
         &self,
-        product_type: BybitProductType,
         account_id: AccountId,
+        product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        // Build query parameters
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        // Build query parameters based on whether a specific instrument is requested
         let symbol = if let Some(id) = instrument_id {
-            let bybit_symbol = BybitSymbol::new(id.symbol.as_str())?;
+            let symbol_str = id.symbol.as_str();
+            if symbol_str.is_empty() {
+                anyhow::bail!("InstrumentId symbol is empty");
+            }
+            let bybit_symbol = BybitSymbol::new(symbol_str)?;
             Some(bybit_symbol.raw_symbol().to_string())
         } else {
             None
         };
-        let params = BybitPositionListParams {
-            category: product_type,
-            symbol,
-            base_coin: None,
-            settle_coin: None,
-            limit: None,
-            cursor: None,
-        };
 
-        let response = self.http_get_positions(&params).await?;
-        let ts_init = self.generate_ts_init();
-        let mut reports = Vec::new();
+        // For LINEAR category, the API requires either symbol OR settleCoin
+        // When querying all positions (no symbol), we must iterate through settle coins
+        if product_type == BybitProductType::Linear && symbol.is_none() {
+            // Query positions for each known settle coin
+            for settle_coin in ["USDT", "USDC"] {
+                let params = BybitPositionListParams {
+                    category: product_type,
+                    symbol: None,
+                    base_coin: None,
+                    settle_coin: Some(settle_coin.to_string()),
+                    limit: None,
+                    cursor: None,
+                };
 
-        for position in response.result.list {
-            // Get instrument for this position
-            // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
-            let symbol_with_product = Symbol::new(format!(
-                "{}{}",
-                position.symbol.as_str(),
-                product_type.suffix()
-            ));
-            let instrument = self.instrument_from_cache(&symbol_with_product)?;
+                let response = self.http_get_positions(&params).await?;
 
-            if let Ok(report) =
-                parse_position_status_report(&position, account_id, &instrument, ts_init)
-            {
-                reports.push(report);
+                for position in response.result.list {
+                    if position.symbol.is_empty() {
+                        continue;
+                    }
+
+                    let symbol_with_product = Symbol::new(format!(
+                        "{}{}",
+                        position.symbol.as_str(),
+                        product_type.suffix()
+                    ));
+
+                    if let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
+                        && let Ok(report) = parse_position_status_report(
+                            &position,
+                            account_id,
+                            &instrument,
+                            ts_init,
+                        )
+                    {
+                        reports.push(report);
+                    }
+                }
+            }
+        } else {
+            // For other product types or when a specific symbol is requested
+            let params = BybitPositionListParams {
+                category: product_type,
+                symbol,
+                base_coin: None,
+                settle_coin: None,
+                limit: None,
+                cursor: None,
+            };
+
+            let response = self.http_get_positions(&params).await?;
+
+            for position in response.result.list {
+                if position.symbol.is_empty() {
+                    continue;
+                }
+
+                let symbol_with_product = Symbol::new(format!(
+                    "{}{}",
+                    position.symbol.as_str(),
+                    product_type.suffix()
+                ));
+
+                if let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
+                    && let Ok(report) =
+                        parse_position_status_report(&position, account_id, &instrument, ts_init)
+                {
+                    reports.push(report);
+                }
             }
         }
 
         Ok(reports)
-    }
-
-    /// Requests the current account state for the specified account type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The request fails.
-    /// - Parsing fails.
-    ///
-    /// # References
-    ///
-    /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
-    pub async fn request_account_state(
-        &self,
-        account_type: crate::common::enums::BybitAccountType,
-        account_id: AccountId,
-    ) -> anyhow::Result<AccountState> {
-        let params = BybitWalletBalanceParams {
-            account_type,
-            coin: None,
-        };
-
-        let response = self.http_get_wallet_balance(&params).await?;
-        let ts_init = self.generate_ts_init();
-
-        // Take the first wallet balance from the list
-        let wallet_balance = response
-            .result
-            .list
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("No wallet balance found in response"))?;
-
-        parse_account_state(wallet_balance, account_id, ts_init)
-    }
-
-    /// Requests trading fee rates for the specified product type and optional filters.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The request fails.
-    /// - Parsing fails.
-    ///
-    /// # References
-    ///
-    /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
-    pub async fn request_fee_rates(
-        &self,
-        product_type: BybitProductType,
-        symbol: Option<String>,
-        base_coin: Option<String>,
-    ) -> anyhow::Result<Vec<BybitFeeRate>> {
-        let params = BybitFeeRateParams {
-            category: product_type,
-            symbol,
-            base_coin,
-        };
-
-        let response = self.http_get_fee_rate(&params).await?;
-        Ok(response.result.list)
     }
 }
 
@@ -1947,6 +2058,37 @@ impl BybitHttpClient {
             .await
     }
 
+    /// Modify an existing order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The order is already closed.
+    /// - The API returns an error.
+    pub async fn modify_order(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        self.inner
+            .modify_order(
+                product_type,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                quantity,
+                price,
+            )
+            .await
+    }
+
     /// Cancel an order.
     ///
     /// # Errors
@@ -1986,37 +2128,6 @@ impl BybitHttpClient {
             .await
     }
 
-    /// Modify an existing order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Credentials are missing.
-    /// - The request fails.
-    /// - The order doesn't exist.
-    /// - The order is already closed.
-    /// - The API returns an error.
-    pub async fn modify_order(
-        &self,
-        product_type: BybitProductType,
-        instrument_id: InstrumentId,
-        client_order_id: Option<ClientOrderId>,
-        venue_order_id: Option<VenueOrderId>,
-        quantity: Option<Quantity>,
-        price: Option<Price>,
-    ) -> anyhow::Result<OrderStatusReport> {
-        self.inner
-            .modify_order(
-                product_type,
-                instrument_id,
-                client_order_id,
-                venue_order_id,
-                quantity,
-                price,
-            )
-            .await
-    }
-
     /// Query a single order by client order ID or venue order ID.
     ///
     /// # Errors
@@ -2027,17 +2138,17 @@ impl BybitHttpClient {
     /// - The API returns an error.
     pub async fn query_order(
         &self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        account_id: AccountId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         self.inner
             .query_order(
+                account_id,
                 product_type,
                 instrument_id,
-                account_id,
                 client_order_id,
                 venue_order_id,
             )
@@ -2054,13 +2165,14 @@ impl BybitHttpClient {
     /// - The API returns an error.
     pub async fn request_order_status_reports(
         &self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.inner
-            .request_order_status_reports(product_type, instrument_id, open_only, limit)
+            .request_order_status_reports(account_id, product_type, instrument_id, open_only, limit)
             .await
     }
 
@@ -2142,15 +2254,15 @@ impl BybitHttpClient {
     /// <https://bybit-exchange.github.io/docs/v5/order/execution>
     pub async fn request_fill_reports(
         &self,
-        product_type: BybitProductType,
         account_id: AccountId,
+        product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         self.inner
-            .request_fill_reports(product_type, account_id, instrument_id, start, end, limit)
+            .request_fill_reports(account_id, product_type, instrument_id, start, end, limit)
             .await
     }
 
@@ -2169,12 +2281,12 @@ impl BybitHttpClient {
     /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
     pub async fn request_position_status_reports(
         &self,
-        product_type: BybitProductType,
         account_id: AccountId,
+        product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         self.inner
-            .request_position_status_reports(product_type, account_id, instrument_id)
+            .request_position_status_reports(account_id, product_type, instrument_id)
             .await
     }
 

@@ -88,7 +88,7 @@ use crate::{
         consts::{
             OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_WS_PUBLIC_URL, should_retry_error_code,
+            OKX_TARGET_CCY_BASE, OKX_TARGET_CCY_QUOTE, OKX_WS_PUBLIC_URL, should_retry_error_code,
         },
         credential::Credential,
         enums::{
@@ -2239,7 +2239,8 @@ impl OKXWebSocketClient {
 
         match instrument_type {
             OKXInstrumentType::Spot => {
-                // Defaults
+                // SPOT: ccy parameter is required by OKX for spot trading
+                builder.ccy(quote_currency.to_string());
             }
             OKXInstrumentType::Margin => {
                 // MARGIN: use quote currency for margin
@@ -2259,7 +2260,6 @@ impl OKXWebSocketClient {
             _ => {
                 // For other instrument types (OPTIONS, etc.), use quote currency as fallback
                 builder.ccy(quote_currency.to_string());
-                builder.tgt_ccy(quote_currency.to_string());
 
                 // TODO: Consider position mode (only applicable for NET)
                 if let Some(ro) = reduce_only
@@ -2270,12 +2270,27 @@ impl OKXWebSocketClient {
             }
         };
 
-        if let Some(is_quote_quantity) = quote_quantity
-            && is_quote_quantity
-        {
-            builder.tgt_ccy(quote_currency.to_string());
+        if instrument_type == OKXInstrumentType::Spot && order_type == OrderType::Market {
+            // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
+            // OKX API default behavior for SPOT:
+            // - BUY orders default to tgtCcy=quote_ccy
+            // - SELL orders default to tgtCcy=base_ccy
+            match quote_quantity {
+                Some(true) => {
+                    builder.tgt_ccy(OKX_TARGET_CCY_QUOTE.to_string());
+                }
+                Some(false) => {
+                    if order_side == OrderSide::Buy {
+                        // For BUY orders, must explicitly set to base_ccy to override OKX default
+                        builder.tgt_ccy(OKX_TARGET_CCY_BASE.to_string());
+                    }
+                    // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
+                }
+                None => {
+                    // No preference specified, use OKX defaults
+                }
+            }
         }
-        // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
 
         builder.side(order_side);
 
@@ -3718,10 +3733,23 @@ impl OKXWsMessageHandler {
                                 }
                             };
 
+                            tracing::debug!(
+                                "Received {} order message(s) from orders channel",
+                                orders.len()
+                            );
+
                             let mut exec_reports: Vec<ExecutionReport> =
                                 Vec::with_capacity(orders.len());
 
                             for msg in orders {
+                                tracing::debug!(
+                                    "Processing order message: inst_id={}, cl_ord_id={}, state={:?}, exec_type={:?}",
+                                    msg.inst_id,
+                                    msg.cl_ord_id,
+                                    msg.state,
+                                    msg.exec_type
+                                );
+
                                 if self.try_handle_post_only_auto_cancel(
                                     &msg,
                                     ts_init,
@@ -3747,6 +3775,10 @@ impl OKXWsMessageHandler {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
+                                        tracing::debug!(
+                                            "Successfully parsed execution report: {:?}",
+                                            report
+                                        );
                                         let adjusted = self.adjust_execution_report(
                                             report,
                                             &effective_client_id,
@@ -3760,8 +3792,16 @@ impl OKXWsMessageHandler {
                             }
 
                             if !exec_reports.is_empty() {
+                                tracing::debug!(
+                                    "Pushing {} execution report(s) to message queue",
+                                    exec_reports.len()
+                                );
                                 self.pending_messages
                                     .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
+                            } else {
+                                tracing::debug!(
+                                    "No execution reports generated from order messages"
+                                );
                             }
 
                             if let Some(message) = self.pending_messages.pop_front() {

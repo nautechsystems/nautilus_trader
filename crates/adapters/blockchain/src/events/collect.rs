@@ -15,7 +15,10 @@
 
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
-use nautilus_model::defi::{SharedChain, SharedDex, data::PoolFeeCollect};
+use nautilus_model::{
+    defi::{SharedChain, SharedDex, data::PoolFeeCollect},
+    identifiers::InstrumentId,
+};
 
 /// Represents a collect event that occurs when fees are collected from a position in a liquidity pool.
 #[derive(Debug, Clone)]
@@ -86,12 +89,14 @@ impl CollectEvent {
         &self,
         chain: SharedChain,
         dex: SharedDex,
+        instrument_id: InstrumentId,
         pool_address: Address,
         timestamp: Option<UnixNanos>,
     ) -> PoolFeeCollect {
         PoolFeeCollect::new(
             chain,
             dex,
+            instrument_id,
             pool_address,
             self.block_number,
             self.transaction_hash.clone(),
