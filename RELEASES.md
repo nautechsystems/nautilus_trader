@@ -83,6 +83,7 @@ This will be the final release with support for Python 3.11.
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
+- Fixed Blockchain adapter out of gas RPC error in Multicall for problematic contracts (#3086), thanks @filipmacek
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Bybit account endpoint pagination handling

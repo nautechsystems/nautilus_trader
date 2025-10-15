@@ -241,7 +241,7 @@ serde_json = { version = "1.0.145", default-features = false, features = [
 ] }
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
-simple_logger = "5.0.0"
+simple_logger = "5.1.0"
 static_assertions = "1.1.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
   "postgres",
