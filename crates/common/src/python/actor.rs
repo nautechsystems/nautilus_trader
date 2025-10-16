@@ -1718,10 +1718,27 @@ mod tests {
     ) {
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
-        let _ = actor.py_subscribe_data(data_type.clone(), Some(client_id), None);
-        let _ = actor.py_subscribe_quotes(audusd_sim.id, Some(client_id), None);
-        let _ = actor.py_unsubscribe_data(data_type, Some(client_id), None);
-        let _ = actor.py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
+        // Verify subscription methods execute without error
+        assert!(
+            actor
+                .py_subscribe_data(data_type.clone(), Some(client_id), None)
+                .is_ok()
+        );
+        assert!(
+            actor
+                .py_subscribe_quotes(audusd_sim.id, Some(client_id), None)
+                .is_ok()
+        );
+        assert!(
+            actor
+                .py_unsubscribe_data(data_type, Some(client_id), None)
+                .is_ok()
+        );
+        assert!(
+            actor
+                .py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None)
+                .is_ok()
+        );
     }
 
     #[ignore = "TODO: Under development"]
