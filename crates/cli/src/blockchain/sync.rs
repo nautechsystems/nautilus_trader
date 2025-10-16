@@ -77,7 +77,8 @@ pub async fn run_sync_dex(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
 
     data_client.cache.initialize_chain().await;
@@ -124,7 +125,8 @@ pub async fn run_sync_blocks(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
 
     data_client.cache.initialize_chain().await;

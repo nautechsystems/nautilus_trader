@@ -145,6 +145,7 @@ This will be the final release with support for Python 3.11.
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved socket client URL parsing
 - Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
+- Improved Blockchain adapter shutdown with cancellation token
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration

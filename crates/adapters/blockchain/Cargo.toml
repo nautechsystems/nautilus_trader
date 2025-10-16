@@ -74,6 +74,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
 

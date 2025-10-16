@@ -67,8 +67,8 @@ pub struct BlockchainDataClient {
     command_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DefiDataCommand>>,
     /// Background task for processing messages.
     process_task: Option<tokio::task::JoinHandle<()>>,
-    /// Oneshot channel sender for graceful shutdown signal.
-    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Cancellation token for graceful shutdown of background tasks.
+    cancellation_token: tokio_util::sync::CancellationToken,
 }
 
 impl BlockchainDataClient {
@@ -87,7 +87,7 @@ impl BlockchainDataClient {
             command_tx,
             command_rx: Some(command_rx),
             process_task: None,
-            shutdown_tx: None,
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
         }
     }
 
@@ -106,33 +106,41 @@ impl BlockchainDataClient {
             return;
         };
 
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        self.shutdown_tx = Some(shutdown_tx);
+        let cancellation_token = self.cancellation_token.clone();
 
         let data_tx = nautilus_common::runner::get_data_event_sender();
 
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
         let hypersync_tx = self.hypersync_tx.take();
 
-        let mut core_client =
-            BlockchainDataClientCore::new(self.config.clone(), hypersync_tx, Some(data_tx));
+        let mut core_client = BlockchainDataClientCore::new(
+            self.config.clone(),
+            hypersync_tx,
+            Some(data_tx),
+            cancellation_token.clone(),
+        );
 
         let handle = get_runtime().spawn(async move {
             tracing::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
-                tracing::error!("Failed to connect blockchain core client: {e}");
+                // TODO: connect() could return more granular error types to distinguish
+                // cancellation from actual failures without string matching
+                if e.to_string().contains("cancelled") || e.to_string().contains("Sync cancelled") {
+                    tracing::warn!("Blockchain core client connection interrupted: {e}");
+                } else {
+                    tracing::error!("Failed to connect blockchain core client: {e}");
+                }
                 return;
             }
 
             let mut command_rx = command_rx;
-            let mut shutdown_rx = shutdown_rx;
 
             loop {
                 tokio::select! {
-                    _ = &mut shutdown_rx => {
-                        tracing::debug!("Received shutdown signal in Blockchain data client process task");
-                        core_client.disconnect();
+                    () = cancellation_token.cancelled() => {
+                        tracing::debug!("Received cancellation signal in Blockchain data client process task");
+                        core_client.disconnect().await;
                         break;
                     }
                     command = command_rx.recv() => {
@@ -186,7 +194,7 @@ impl BlockchainDataClient {
                                                 core_client.subscription_manager.get_dex_pool_swap_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_mint_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_burn_event_signature(&dex).unwrap(),
-                                            ).await;
+                                            );
                                         }
                                     }
 
@@ -576,7 +584,7 @@ impl BlockchainDataClient {
                 }
 
                 // Use HyperSync client for unsubscription
-                core_client.hypersync_client.unsubscribe_blocks();
+                core_client.hypersync_client.unsubscribe_blocks().await;
                 tracing::info!("Unsubscribed from blocks via HyperSync");
 
                 Ok(())
@@ -832,6 +840,10 @@ impl DataClient for BlockchainDataClient {
             "Stopping blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.cancellation_token.cancel();
+
+        // Create fresh token for next start cycle
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
         Ok(())
     }
 
@@ -840,6 +852,7 @@ impl DataClient for BlockchainDataClient {
             "Resetting blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
         Ok(())
     }
 
@@ -870,10 +883,17 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
-        }
+        self.cancellation_token.cancel();
         self.await_process_task_close().await;
+
+        // Create fresh token and channels for next connect cycle
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.hypersync_tx = Some(hypersync_tx);
+        self.hypersync_rx = Some(hypersync_rx);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.command_tx = command_tx;
+        self.command_rx = Some(command_rx);
 
         Ok(())
     }

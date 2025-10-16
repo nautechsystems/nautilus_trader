@@ -102,7 +102,8 @@ pub async fn run_analyze_pool(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
         data_client.config.http_rpc_url.clone(),
         data_client.config.rpc_requests_per_second,

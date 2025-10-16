@@ -75,6 +75,8 @@ pub struct BlockchainDataClientCore {
     pub subscription_manager: DefiDataSubscriptionManager,
     /// Channel sender for data events.
     data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+    /// Cancellation token for graceful shutdown of long-running operations.
+    cancellation_token: tokio_util::sync::CancellationToken,
 }
 
 impl BlockchainDataClientCore {
@@ -88,6 +90,7 @@ impl BlockchainDataClientCore {
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
         data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
         let chain = config.chain.clone();
         let cache = BlockchainCache::new(chain.clone());
@@ -106,7 +109,8 @@ impl BlockchainDataClientCore {
             config.pool_filters.remove_pools_with_empty_erc20fields,
         );
 
-        let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
+        let hypersync_client =
+            HyperSyncClient::new(chain.clone(), hypersync_tx, cancellation_token.clone());
         Self {
             chain,
             config,
@@ -116,6 +120,7 @@ impl BlockchainDataClientCore {
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),
             data_tx,
+            cancellation_token,
         }
     }
 
@@ -290,38 +295,50 @@ impl BlockchainDataClientCore {
         const BATCH_SIZE: usize = 1000;
         let mut batch: Vec<Block> = Vec::with_capacity(BATCH_SIZE);
 
-        while let Some(block) = blocks_stream.next().await {
-            let block_number = block.number;
-            if self.cache.get_block_timestamp(block_number).is_some() {
-                continue;
+        let cancellation_token = self.cancellation_token.clone();
+        let sync_result = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                tracing::info!("Block sync cancelled");
+                Err(anyhow::anyhow!("Sync cancelled"))
             }
-            batch.push(block);
+            result = async {
+                while let Some(block) = blocks_stream.next().await {
+                    let block_number = block.number;
+                    if self.cache.get_block_timestamp(block_number).is_some() {
+                        continue;
+                    }
+                    batch.push(block);
 
-            // Process batch when full or last block
-            if batch.len() >= BATCH_SIZE || block_number >= to_block {
-                let batch_size = batch.len();
+                    // Process batch when full or last block
+                    if batch.len() >= BATCH_SIZE || block_number >= to_block {
+                        let batch_size = batch.len();
 
-                self.cache.add_blocks_batch(batch, use_copy_command).await?;
-                metrics.update(batch_size);
+                        self.cache.add_blocks_batch(batch, use_copy_command).await?;
+                        metrics.update(batch_size);
 
-                // Re-initialize batch vector
-                batch = Vec::with_capacity(BATCH_SIZE);
-            }
+                        // Re-initialize batch vector
+                        batch = Vec::with_capacity(BATCH_SIZE);
+                    }
 
-            // Log progress if needed
-            if metrics.should_log_progress(block_number, to_block) {
-                metrics.log_progress(block_number);
-            }
-        }
+                    // Log progress if needed
+                    if metrics.should_log_progress(block_number, to_block) {
+                        metrics.log_progress(block_number);
+                    }
+                }
 
-        // Process any remaining blocks
-        if !batch.is_empty() {
-            let batch_size = batch.len();
-            self.cache.add_blocks_batch(batch, use_copy_command).await?;
-            metrics.update(batch_size);
-        }
+                // Process any remaining blocks
+                if !batch.is_empty() {
+                    let batch_size = batch.len();
+                    self.cache.add_blocks_batch(batch, use_copy_command).await?;
+                    metrics.update(batch_size);
+                }
 
-        metrics.log_final_stats();
+                metrics.log_final_stats();
+                Ok(())
+            } => result
+        };
+
+        sync_result?;
 
         // Restore default safe settings after sync completion
         if let Err(e) = self.cache.toggle_performance_settings(false).await {
@@ -473,12 +490,20 @@ impl BlockchainDataClientCore {
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
             .map_or(true, |tables_max| effective_from_block > tables_max);
-        while let Some(log) = pool_events_stream.next().await {
-            let block_number = extract_block_number(&log)?;
-            blocks_processed += block_number - last_block_saved;
-            last_block_saved = block_number;
 
-            let event_sig_bytes = extract_event_signature_bytes(&log)?;
+        let cancellation_token = self.cancellation_token.clone();
+        let sync_result = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                tracing::info!("Pool event sync cancelled");
+                Err(anyhow::anyhow!("Sync cancelled"))
+            }
+            result = async {
+                while let Some(log) = pool_events_stream.next().await {
+                    let block_number = extract_block_number(&log)?;
+                    blocks_processed += block_number - last_block_saved;
+                    last_block_saved = block_number;
+
+                    let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
                 let swap_event = dex_extended.parse_swap_event(log)?;
                 match self.process_pool_swap_event(&swap_event, &pool, &dex_extended) {
@@ -605,7 +630,11 @@ impl BlockchainDataClientCore {
             pool_display,
             to_block
         );
-        Ok(())
+                Ok(())
+            } => result
+        };
+
+        sync_result
     }
 
     async fn flush_event_batches(
@@ -880,8 +909,15 @@ impl BlockchainDataClientCore {
         let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
         let mut last_block_saved = effective_from_block;
 
-        while let Some(log) = pools_stream.next().await {
-            let block_number = extract_block_number(&log)?;
+        let cancellation_token = self.cancellation_token.clone();
+        let sync_result = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                tracing::info!("Exchange pool sync cancelled");
+                Err(anyhow::anyhow!("Sync cancelled"))
+            }
+            result = async {
+                while let Some(log) = pools_stream.next().await {
+                    let block_number = extract_block_number(&log)?;
             let blocks_progress = block_number - last_block_saved;
             last_block_saved = block_number;
 
@@ -945,7 +981,11 @@ impl BlockchainDataClientCore {
             to_block
         );
 
-        Ok(())
+                Ok(())
+            } => result
+        };
+
+        sync_result
     }
 
     /// Processes buffered tokens and their associated pools in batch.
@@ -1217,7 +1257,7 @@ impl BlockchainDataClientCore {
     ///
     /// This method should be called when shutting down the client to ensure
     /// proper cleanup of network connections and background tasks.
-    pub fn disconnect(&mut self) {
-        self.hypersync_client.disconnect();
+    pub async fn disconnect(&mut self) {
+        self.hypersync_client.disconnect().await;
     }
 }
