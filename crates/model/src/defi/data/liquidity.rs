@@ -142,12 +142,6 @@ impl PoolLiquidityUpdate {
             ts_init: timestamp,
         }
     }
-
-    /// Returns the instrument ID for this pool's trading pair.
-    #[must_use]
-    pub const fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
 }
 
 impl Display for PoolLiquidityUpdate {

@@ -84,12 +84,12 @@ impl DefiData {
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Block(_) => panic!("`InstrumentId` not applicable to `Block`"), // TBD?
-            Self::PoolSnapshot(_) => panic!("`InstrumentId` not applicable to `PoolSnapshot`"), // TBD?
-            Self::PoolSwap(swap) => swap.instrument_id(),
-            Self::PoolLiquidityUpdate(update) => update.instrument_id(),
-            Self::PoolFeeCollect(collect) => collect.instrument_id(),
+            Self::PoolSnapshot(snapshot) => snapshot.instrument_id,
+            Self::PoolSwap(swap) => swap.instrument_id,
+            Self::PoolLiquidityUpdate(update) => update.instrument_id,
+            Self::PoolFeeCollect(collect) => collect.instrument_id,
             Self::Pool(pool) => pool.instrument_id,
-            Self::PoolFlash(flash) => flash.instrument_id(),
+            Self::PoolFlash(flash) => flash.instrument_id,
         }
     }
 }

@@ -123,12 +123,6 @@ impl PoolSwap {
             ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
         }
     }
-
-    /// Returns the instrument ID for this pool's trading pair.
-    #[must_use]
-    pub const fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
 }
 
 impl Display for PoolSwap {

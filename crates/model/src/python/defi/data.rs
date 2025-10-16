@@ -233,7 +233,7 @@ impl PoolSwap {
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     #[getter]
@@ -393,8 +393,8 @@ impl PoolLiquidityUpdate {
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> crate::identifiers::InstrumentId {
-        self.instrument_id()
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
     }
 
     #[getter]
@@ -568,7 +568,7 @@ impl PoolFeeCollect {
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     #[getter]
@@ -729,7 +729,7 @@ impl PoolFlash {
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     #[getter]
