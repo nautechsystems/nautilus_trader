@@ -3894,9 +3894,9 @@ dependencies = [
 
 [[package]]
 name = "hypersync-format"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd2d2a2c69b61c53054812eb3c422ccab208889927e6b36a39bc299d5e9a0d9b"
+checksum = "75d28ebb16565f11e80bde62b0dfa4adeb37f63ab1ca812bde60dbf1115044d0"
 dependencies = [
  "alloy-primitives",
  "arrayvec",
