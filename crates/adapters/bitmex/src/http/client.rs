@@ -1161,10 +1161,30 @@ impl BitmexHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut parsed_instruments = Vec::new();
+        let mut failed_count = 0;
+        let total_count = instruments.len();
+
         for inst in instruments {
             if let Some(instrument_any) = parse_instrument_any(&inst, ts_init) {
                 parsed_instruments.push(instrument_any);
+            } else {
+                failed_count += 1;
+                tracing::error!(
+                    "Failed to parse instrument: symbol={}, type={:?}, state={:?} - instrument will not be cached",
+                    inst.symbol,
+                    inst.instrument_type,
+                    inst.state
+                );
             }
+        }
+
+        if failed_count > 0 {
+            tracing::error!(
+                "Instrument parse failures: {} failed out of {} total ({}  successfully parsed)",
+                failed_count,
+                total_count,
+                parsed_instruments.len()
+            );
         }
 
         Ok(parsed_instruments)

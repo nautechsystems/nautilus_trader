@@ -200,11 +200,20 @@ impl BitmexWebSocketClient {
     /// Initialize the instruments cache with the given `instruments`.
     pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        let mut count = 0;
+
+        log::info!("Initializing BitMEX instrument cache...");
+
         for inst in instruments {
-            instruments_cache.insert(inst.symbol().inner(), inst.clone());
+            let symbol = inst.symbol().inner();
+            instruments_cache.insert(symbol, inst.clone());
+            log::debug!("Cached instrument: {symbol}");
+            count += 1;
         }
 
         self.instruments_cache = Arc::new(instruments_cache);
+
+        log::info!("BitMEX instrument cache initialized with {count} instruments");
     }
 
     /// Connect to the BitMEX WebSocket server.
@@ -1425,8 +1434,8 @@ impl BitmexWsMessageHandler {
                             let msg = data.remove(0);
                             let Some(instrument) = self.get_instrument(&msg.symbol) else {
                                 tracing::error!(
-                                    symbol = %msg.symbol,
-                                    "Instrument not found for quote message"
+                                    "Instrument cache miss: quote message dropped for symbol={}",
+                                    msg.symbol
                                 );
                                 continue;
                             };
@@ -1514,8 +1523,9 @@ impl BitmexWsMessageHandler {
                                             self.get_instrument(&order_msg.symbol)
                                         else {
                                             tracing::error!(
-                                                symbol = %order_msg.symbol,
-                                                "Instrument not found for order message"
+                                                "Instrument cache miss: order message dropped for symbol={}, order_id={}",
+                                                order_msg.symbol,
+                                                order_msg.order_id
                                             );
                                             continue;
                                         };
@@ -1570,8 +1580,9 @@ impl BitmexWsMessageHandler {
                                         let Some(instrument) = self.get_instrument(&msg.symbol)
                                         else {
                                             tracing::error!(
-                                                symbol = %msg.symbol,
-                                                "Instrument not found for order update"
+                                                "Instrument cache miss: order update dropped for symbol={}, order_id={}",
+                                                msg.symbol,
+                                                msg.order_id
                                             );
                                             continue;
                                         };
@@ -1671,9 +1682,10 @@ impl BitmexWsMessageHandler {
 
                                 let Some(instrument) = self.get_instrument(&symbol) else {
                                     tracing::error!(
-                                        symbol = %symbol,
-                                        exec_id = ?exec_msg.exec_id,
-                                        "Instrument not found for execution message"
+                                        "Instrument cache miss: execution message dropped for symbol={}, exec_id={:?}, exec_type={:?}. CRITICAL: Liquidation/ADL fills may be lost",
+                                        symbol,
+                                        exec_msg.exec_id,
+                                        exec_msg.exec_type
                                     );
                                     continue;
                                 };
@@ -1692,8 +1704,9 @@ impl BitmexWsMessageHandler {
                             if let Some(pos_msg) = data.into_iter().next() {
                                 let Some(instrument) = self.get_instrument(&pos_msg.symbol) else {
                                     tracing::error!(
-                                        symbol = %pos_msg.symbol,
-                                        "Instrument not found for position message"
+                                        "Instrument cache miss: position message dropped for symbol={}, account={}",
+                                        pos_msg.symbol,
+                                        pos_msg.account
                                     );
                                     continue;
                                 };

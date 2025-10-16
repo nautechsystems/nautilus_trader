@@ -148,6 +148,7 @@ This will be the final release with support for Python 3.11.
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
+- Improved BitMEX instrument cache error logging
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
 - Improved OKX trade mode detection and fee currency parsing

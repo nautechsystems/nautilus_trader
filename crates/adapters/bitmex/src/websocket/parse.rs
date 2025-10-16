@@ -122,7 +122,10 @@ pub fn parse_book_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for book delta");
+            tracing::error!(
+                "Instrument cache miss: book delta dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     deltas
@@ -149,7 +152,10 @@ pub fn parse_book10_msg_vec(
                 ts_init,
             ))));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for depth10");
+            tracing::error!(
+                "Instrument cache miss: depth10 message dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     depths
@@ -176,7 +182,10 @@ pub fn parse_trade_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade");
+            tracing::error!(
+                "Instrument cache miss: trade message dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     trades
@@ -205,7 +214,10 @@ pub fn parse_trade_bin_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade bin");
+            tracing::error!(
+                "Instrument cache miss: trade bin (bar) dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     trades
@@ -711,13 +723,13 @@ pub fn parse_execution_msg(
             );
         }
 
-        // Non-obvious cases that may need investigation
+        // Settlement executions are mark-to-market events, not fills
         BitmexExecType::Settlement => {
-            tracing::warn!(
+            tracing::debug!(
                 exec_type = ?exec_type,
                 order_id = ?msg.order_id,
                 symbol = ?msg.symbol,
-                "Settlement execution received but not processed as fill, verify if this is correct"
+                "Settlement execution skipped (not a fill): applies quanto conversion/PnL transfer on contract settlement"
             );
             return None;
         }
