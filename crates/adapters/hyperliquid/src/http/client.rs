@@ -178,6 +178,29 @@ impl HyperliquidHttpClient {
         Ok(Self::with_credentials(&secrets, None))
     }
 
+    /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
+    ///
+    /// # Arguments
+    ///
+    /// * `private_key` - The private key hex string (with or without 0x prefix)
+    /// * `vault_address` - Optional vault address for vault trading
+    /// * `is_testnet` - Whether to use testnet
+    /// * `timeout_secs` - Optional request timeout in seconds
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    pub fn from_credentials(
+        private_key: &str,
+        vault_address: Option<&str>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+    ) -> Result<Self> {
+        let secrets = Secrets::from_private_key(private_key, vault_address, is_testnet)
+            .map_err(|e| Error::auth(format!("invalid credentials: {e}")))?;
+        Ok(Self::with_credentials(&secrets, timeout_secs))
+    }
+
     /// Configure rate limiting parameters (chainable).
     pub fn with_rate_limits(mut self) -> Self {
         self.rest_limiter = Arc::new(WeightedLimiter::per_minute(1200));
@@ -804,14 +827,15 @@ impl HyperliquidHttpClient {
         let hyperliquid_order = order_to_hyperliquid_request(order)
             .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
 
-        // Convert single order to JSON array format for the exchange action
-        let orders_value = serde_json::json!([hyperliquid_order]);
+        // Create typed action using HyperliquidExecAction (same as working Rust binary)
+        let action = crate::http::models::HyperliquidExecAction::Order {
+            orders: vec![hyperliquid_order],
+            grouping: crate::http::models::HyperliquidExecGrouping::Na,
+            builder: None,
+        };
 
-        // Create exchange action
-        let action = ExchangeAction::order(orders_value);
-
-        // Submit to exchange
-        let response = self.post_action(&action).await?;
+        // Submit to exchange using the typed exec endpoint
+        let response = self.post_action_exec(&action).await?;
 
         // Parse the response to extract order status
         match response {
@@ -819,9 +843,17 @@ impl HyperliquidHttpClient {
                 status,
                 response: response_data,
             } if status == "ok" => {
+                // Extract the 'data' field from the response if it exists (new format)
+                // Otherwise use response_data directly (old format)
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
                 // Parse the response data to extract order status
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data).map_err(|e| {
+                    serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -981,15 +1013,15 @@ impl HyperliquidHttpClient {
         let hyperliquid_orders = orders_to_hyperliquid_requests(orders)
             .map_err(|e| Error::bad_request(format!("Failed to convert orders: {e}")))?;
 
-        // Convert orders to JSON value for the exchange action
-        let orders_value = serde_json::to_value(hyperliquid_orders)
-            .map_err(|e| Error::bad_request(format!("Failed to serialize orders: {e}")))?;
+        // Create typed action using HyperliquidExecAction (same as working Rust binary)
+        let action = crate::http::models::HyperliquidExecAction::Order {
+            orders: hyperliquid_orders,
+            grouping: crate::http::models::HyperliquidExecGrouping::Na,
+            builder: None,
+        };
 
-        // Create exchange action
-        let action = ExchangeAction::order(orders_value);
-
-        // Submit to exchange
-        let response = self.post_action(&action).await?;
+        // Submit to exchange using the typed exec endpoint
+        let response = self.post_action_exec(&action).await?;
 
         // Parse the response to extract order statuses
         match response {
@@ -997,9 +1029,17 @@ impl HyperliquidHttpClient {
                 status,
                 response: response_data,
             } if status == "ok" => {
+                // Extract the 'data' field from the response if it exists (new format)
+                // Otherwise use response_data directly (old format)
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
                 // Parse the response data to extract order statuses
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data).map_err(|e| {
+                    serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 

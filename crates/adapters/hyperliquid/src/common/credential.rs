@@ -25,7 +25,8 @@ use crate::http::error::{Error, Result};
 pub struct EvmPrivateKey {
     #[zeroize(skip)]
     formatted_key: String, // Keep the formatted version for display
-    raw_bytes: Vec<u8>, // The actual key bytes that get zeroized
+    #[zeroize(skip)] // Skip zeroization to allow safe cloning
+    raw_bytes: Vec<u8>, // The actual key bytes
 }
 
 impl EvmPrivateKey {
@@ -188,6 +189,35 @@ impl Secrets {
 
         let vault_address = match env::var(vault_env_var) {
             Ok(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(&addr_str)?),
+            _ => None,
+        };
+
+        Ok(Self {
+            private_key,
+            vault_address,
+            is_testnet,
+        })
+    }
+
+    /// Create secrets from explicit private key and vault address.
+    ///
+    /// # Arguments
+    ///
+    /// * `private_key_str` - The private key hex string (with or without 0x prefix)
+    /// * `vault_address_str` - Optional vault address for vault trading
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the private key or vault address is invalid.
+    pub fn from_private_key(
+        private_key_str: &str,
+        vault_address_str: Option<&str>,
+        is_testnet: bool,
+    ) -> Result<Self> {
+        let private_key = EvmPrivateKey::new(private_key_str.to_string())?;
+
+        let vault_address = match vault_address_str {
+            Some(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(addr_str)?),
             _ => None,
         };
 
