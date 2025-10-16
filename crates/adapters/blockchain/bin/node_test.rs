@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![InstrumentId::from(
-        "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+        "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",
     )];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
