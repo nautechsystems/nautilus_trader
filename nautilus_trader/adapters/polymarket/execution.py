@@ -645,6 +645,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _get_neg_risk_for_instrument(self, instrument) -> bool:
+        if instrument is None or instrument.info is None:
+            return False
+        return instrument.info.get("neg_risk", False)
+
     async def _query_account(self, _command: QueryAccount) -> None:
         # Specific account ID (sub account) not yet supported
         await self._update_account_state()
@@ -814,10 +819,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             return  # TODO: Change to deny after next release
 
+        instrument = self._cache.instrument(order.instrument_id)
+
         if order.order_type == OrderType.MARKET:
-            await self._submit_market_order(command)
+            await self._submit_market_order(command, instrument)
         elif order.order_type == OrderType.LIMIT:
-            await self._submit_limit_order(command)
+            await self._submit_limit_order(command, instrument)
         else:
             self._log.error(
                 f"Order type {order.type_string()} not supported on Polymarket, "
@@ -837,7 +844,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-    async def _submit_market_order(self, command: SubmitOrder) -> None:
+    async def _submit_market_order(self, command: SubmitOrder, instrument) -> None:
         self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
 
         order = command.order
@@ -869,7 +876,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             order_type=order_type,
         )
 
-        options = PartialCreateOrderOptions(neg_risk=False)
+        neg_risk = self._get_neg_risk_for_instrument(instrument)
+        options = PartialCreateOrderOptions(neg_risk=neg_risk)
         signing_start = self._clock.timestamp()
         signed_order = await asyncio.to_thread(
             self._http_client.create_market_order,
@@ -888,7 +896,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         await self._post_signed_order(order, signed_order)
 
-    async def _submit_limit_order(self, command: SubmitOrder) -> None:
+    async def _submit_limit_order(self, command: SubmitOrder, instrument) -> None:
         self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
 
         order = command.order
@@ -901,7 +909,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
             side=order_side_to_str(order.side),
             expiration=int(nanos_to_secs(order.expire_time_ns)),
         )
-        options = PartialCreateOrderOptions(neg_risk=False)
+
+        neg_risk = self._get_neg_risk_for_instrument(instrument)
+        options = PartialCreateOrderOptions(neg_risk=neg_risk)
         signing_start = self._clock.timestamp()
         signed_order = await asyncio.to_thread(
             self._http_client.create_order,

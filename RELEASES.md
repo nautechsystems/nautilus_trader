@@ -104,6 +104,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Polymarket maker fill order side inversion (#3077), thanks for reporting @DarioHett
+- Fixed Polymarket `neg_risk` order parameter handling
 - Fixed Tardis instruments `lot_size` mapping
 - Fixed Tardis adapter error handling and connection robustness
 - Fixed Tardis replay to use catalog-compatible filenames
