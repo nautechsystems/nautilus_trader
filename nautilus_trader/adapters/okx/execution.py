@@ -180,7 +180,12 @@ class OKXExecutionClient(LiveExecutionClient):
         if account_type == AccountType.CASH:
             # SPOT trading
             if config.use_spot_margin:
-                self._trade_mode = OKXTradeMode.SPOT_ISOLATED
+                # Use CROSS margin mode for spot margin trading
+                # Note: SPOT_ISOLATED is only available for copy traders
+                if config.margin_mode == OKXMarginMode.CROSS:
+                    self._trade_mode = OKXTradeMode.CROSS
+                else:
+                    self._trade_mode = OKXTradeMode.ISOLATED
             else:
                 self._trade_mode = OKXTradeMode.CASH
         else:
@@ -745,8 +750,19 @@ class OKXExecutionClient(LiveExecutionClient):
             return self._trade_mode
 
         if isinstance(instrument, CurrencyPair):
-            return OKXTradeMode.SPOT_ISOLATED if self._config.use_spot_margin else OKXTradeMode.CASH
+            # SPOT trading
+            if self._config.use_spot_margin:
+                # Use CROSS or ISOLATED margin mode for spot margin trading
+                # Note: SPOT_ISOLATED is only available for copy traders
+                return (
+                    OKXTradeMode.CROSS
+                    if self._config.margin_mode == OKXMarginMode.CROSS
+                    else OKXTradeMode.ISOLATED
+                )
+            else:
+                return OKXTradeMode.CASH
         else:
+            # Derivatives trading
             return (
                 OKXTradeMode.CROSS
                 if self._config.margin_mode == OKXMarginMode.CROSS

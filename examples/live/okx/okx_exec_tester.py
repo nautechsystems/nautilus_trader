@@ -27,6 +27,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import TimeInForce
@@ -162,7 +163,7 @@ config_node = TradingNodeConfig(
             ),
             instrument_types=instrument_types,
             contract_types=contract_types,
-            # margin_mode=OKXMarginMode.ISOLATED,
+            margin_mode=OKXMarginMode.CROSS,
             use_spot_margin=False,
             # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API

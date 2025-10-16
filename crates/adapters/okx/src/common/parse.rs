@@ -1378,9 +1378,9 @@ pub fn parse_account_state(
     let mut balances = Vec::new();
     for b in &okx_account.details {
         // Skip balances with empty or whitespace-only currency codes
-        let ccy_str = b.ccy.trim();
+        let ccy_str = b.ccy.as_str().trim();
         if ccy_str.is_empty() {
-            tracing::warn!(
+            tracing::debug!(
                 "Skipping balance detail with empty currency code (cash_bal={}, avail_bal={})",
                 b.cash_bal,
                 b.avail_bal
@@ -1388,9 +1388,48 @@ pub fn parse_account_state(
             continue;
         }
 
-        let currency = Currency::from(ccy_str);
-        let total = Money::new(b.cash_bal.parse::<f64>()?, currency);
-        let free = Money::new(b.avail_bal.parse::<f64>()?, currency);
+        // Attempt to parse the currency, skip if invalid
+        let currency = match Currency::from_str(ccy_str) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    "Skipping balance detail with invalid currency code '{}' (cash_bal={}, avail_bal={}): {}",
+                    ccy_str,
+                    b.cash_bal,
+                    b.avail_bal,
+                    e
+                );
+                continue;
+            }
+        };
+
+        // Parse balance values, skip if invalid
+        let total = match b.cash_bal.parse::<f64>() {
+            Ok(v) => Money::new(v, currency),
+            Err(e) => {
+                tracing::warn!(
+                    "Skipping balance detail for {} with invalid cash_bal '{}': {}",
+                    ccy_str,
+                    b.cash_bal,
+                    e
+                );
+                continue;
+            }
+        };
+
+        let free = match b.avail_bal.parse::<f64>() {
+            Ok(v) => Money::new(v, currency),
+            Err(e) => {
+                tracing::warn!(
+                    "Skipping balance detail for {} with invalid avail_bal '{}': {}",
+                    ccy_str,
+                    b.avail_bal,
+                    e
+                );
+                continue;
+            }
+        };
+
         let locked = total - free;
         let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);

@@ -2377,7 +2377,11 @@ impl OKXWebSocketClient {
         // OKX API default behavior for SPOT market orders:
         // - BUY orders default to tgtCcy=quote_ccy (sz represents quote currency amount)
         // - SELL orders default to tgtCcy=base_ccy (sz represents base currency amount)
-        if instrument_type == OKXInstrumentType::Spot && order_type == OrderType::Market {
+        // Note: tgtCcy is only supported for cash (non-margin) trading
+        if instrument_type == OKXInstrumentType::Spot
+            && order_type == OrderType::Market
+            && td_mode == OKXTradeMode::Cash
+        {
             match quote_quantity {
                 Some(true) => {
                     // Explicitly request quote currency sizing

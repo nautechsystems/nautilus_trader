@@ -109,14 +109,15 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     is_demo : bool, default False
         If the client is connecting to the OKX demo API.
     margin_mode : OKXMarginMode, optional
-        The intended OKX account margin mode for derivatives trading (SWAP/FUTURES/OPTIONS).
-        - `ISOLATED`: Margin isolated to specific positions (default for derivatives)
-        - `CROSS`: Margin shared across all positions
-        Not applicable for SPOT trading (see `use_spot_margin` instead).
+        The intended OKX account margin mode.
+        - `ISOLATED`: Margin isolated to specific positions (default)
+        - `CROSS`: Margin shared across all positions (enables cross margin for SPOT and derivatives)
+        When combined with `use_spot_margin=True`, this determines the margin mode for SPOT trading.
     use_spot_margin : bool, default False
-        If True, enables margin/leverage for SPOT trading (uses 'spot_isolated' trade mode).
+        If True, enables margin/leverage for SPOT trading.
+        The margin mode is determined by `margin_mode` (CROSS or ISOLATED).
         If False, uses simple SPOT trading without leverage (uses 'cash' trade mode).
-        Only applicable when trading SPOT instruments.
+        Note: SPOT_ISOLATED mode is only available for OKX copy traders and lead traders.
     max_retries : PositiveInt, default 3
         The maximum retry attempts for requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
