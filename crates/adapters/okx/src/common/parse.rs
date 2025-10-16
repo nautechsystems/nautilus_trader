@@ -38,8 +38,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, CurrencyType, LiquiditySide,
-        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, AssetClass, LiquiditySide, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -177,13 +177,31 @@ where
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: &str) -> Currency {
+///
+/// If the code is empty, logs a warning with context and returns USDT as fallback.
+/// For unknown but valid codes, creates a new Currency (preserves newly listed OKX assets).
+fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
+    let trimmed = code.trim();
+    let ctx = context.unwrap_or("unknown");
+
+    if trimmed.is_empty() {
+        tracing::warn!(
+            "get_currency called with empty code (context: {ctx}), using USDT as fallback"
+        );
+        return Currency::USDT();
+    }
+
     CURRENCY_MAP
         .lock()
         .unwrap()
-        .get(code)
+        .get(trimmed)
         .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+        .unwrap_or_else(|| {
+            // For unknown codes, create a new currency (8 decimals, crypto type)
+            // This preserves newly listed OKX assets that aren't in CURRENCY_MAP yet
+            use nautilus_model::enums::CurrencyType;
+            Currency::new(trimmed, 8, 0, trimmed, CurrencyType::Crypto)
+        })
 }
 
 /// Returns the [`OKXInstrumentType`] that corresponds to the supplied
@@ -286,16 +304,15 @@ pub fn parse_fee_currency(
     let trimmed = fee_ccy.trim();
     if trimmed.is_empty() {
         if fee_amount != 0.0 {
+            let ctx = context();
             tracing::warn!(
-                "Empty fee_ccy in {} with non-zero fee={}, using USDT as fallback",
-                context(),
-                fee_amount
+                "Empty fee_ccy in {ctx} with non-zero fee={fee_amount}, using USDT as fallback"
             );
         }
-        Currency::USDT()
-    } else {
-        Currency::from(trimmed)
+        return Currency::USDT();
     }
+
+    get_currency_with_context(trimmed, Some(&context()))
 }
 
 /// Parses OKX side to Nautilus aggressor side.
@@ -1041,8 +1058,9 @@ impl InstrumentParser for SpotInstrumentParser {
         margin_fees: MarginAndFees,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny> {
-        let base_currency = get_currency(&definition.base_ccy);
-        let quote_currency = get_currency(&definition.quote_ccy);
+        let context = format!("SPOT instrument {}", definition.inst_id);
+        let base_currency = get_currency_with_context(&definition.base_ccy, Some(&context));
+        let quote_currency = get_currency_with_context(&definition.quote_ccy, Some(&context));
 
         let instrument = CurrencyPair::new(
             common.instrument_id,
@@ -1112,13 +1130,14 @@ pub fn parse_swap_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    let context = format!("SWAP instrument {}", definition.inst_id);
     let (base_currency, quote_currency) = definition
         .uly
         .split_once('-')
         .ok_or_else(|| anyhow::anyhow!("Invalid underlying for swap: {}", definition.uly))?;
-    let base_currency = get_currency(base_currency);
-    let quote_currency = get_currency(quote_currency);
-    let settlement_currency = get_currency(&definition.settle_ccy);
+    let base_currency = get_currency_with_context(base_currency, Some(&context));
+    let quote_currency = get_currency_with_context(quote_currency, Some(&context));
+    let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
@@ -1212,13 +1231,14 @@ pub fn parse_futures_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let underlying = get_currency(&definition.uly);
+    let context = format!("FUTURES instrument {}", definition.inst_id);
+    let underlying = get_currency_with_context(&definition.uly, Some(&context));
     let (_, quote_currency) = definition
         .uly
         .split_once('-')
         .ok_or_else(|| anyhow::anyhow!("Invalid underlying for Swap: {}", definition.uly))?;
-    let quote_currency = get_currency(quote_currency);
-    let settlement_currency = get_currency(&definition.settle_ccy);
+    let quote_currency = get_currency_with_context(quote_currency, Some(&context));
+    let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
@@ -1303,10 +1323,11 @@ pub fn parse_option_instrument(
     let underlying = Ustr::from(&definition.uly);
     let option_kind: OptionKind = definition.opt_type.into();
     let strike_price = Price::from(&definition.stk);
+    let context = format!("OPTION instrument {}", definition.inst_id);
     let currency = definition
         .uly
         .split_once('-')
-        .map(|(_, quote_ccy)| get_currency(quote_ccy))
+        .map(|(_, quote_ccy)| get_currency_with_context(quote_ccy, Some(&context)))
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "Invalid underlying for Option instrument: {}",
@@ -1367,6 +1388,23 @@ pub fn parse_option_instrument(
 
 /// Parses an OKX account into a Nautilus account state.
 ///
+fn parse_balance_field(
+    value_str: &str,
+    field_name: &str,
+    currency: Currency,
+    ccy_str: &str,
+) -> Option<Money> {
+    match value_str.parse::<f64>() {
+        Ok(v) => Some(Money::new(v, currency)),
+        Err(e) => {
+            tracing::warn!(
+                "Skipping balance detail for {ccy_str} with invalid {field_name} '{value_str}': {e}"
+            );
+            None
+        }
+    }
+}
+
 /// # Errors
 ///
 /// Returns an error if the data cannot be parsed.
@@ -1381,9 +1419,8 @@ pub fn parse_account_state(
         let ccy_str = b.ccy.as_str().trim();
         if ccy_str.is_empty() {
             tracing::debug!(
-                "Skipping balance detail with empty currency code (cash_bal={}, avail_bal={})",
-                b.cash_bal,
-                b.avail_bal
+                "Skipping balance detail with empty currency code | raw_data={:?}",
+                b
             );
             continue;
         }
@@ -1393,41 +1430,20 @@ pub fn parse_account_state(
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
-                    "Skipping balance detail with invalid currency code '{}' (cash_bal={}, avail_bal={}): {}",
-                    ccy_str,
-                    b.cash_bal,
-                    b.avail_bal,
-                    e
+                    "Skipping balance detail with invalid currency code '{ccy_str}': {e} | raw_data={:?}",
+                    b
                 );
                 continue;
             }
         };
 
         // Parse balance values, skip if invalid
-        let total = match b.cash_bal.parse::<f64>() {
-            Ok(v) => Money::new(v, currency),
-            Err(e) => {
-                tracing::warn!(
-                    "Skipping balance detail for {} with invalid cash_bal '{}': {}",
-                    ccy_str,
-                    b.cash_bal,
-                    e
-                );
-                continue;
-            }
+        let Some(total) = parse_balance_field(&b.cash_bal, "cash_bal", currency, ccy_str) else {
+            continue;
         };
 
-        let free = match b.avail_bal.parse::<f64>() {
-            Ok(v) => Money::new(v, currency),
-            Err(e) => {
-                tracing::warn!(
-                    "Skipping balance detail for {} with invalid avail_bal '{}': {}",
-                    ccy_str,
-                    b.avail_bal,
-                    e
-                );
-                continue;
-            }
+        let Some(free) = parse_balance_field(&b.avail_bal, "avail_bal", currency, ccy_str) else {
+            continue;
         };
 
         let locked = total - free;
@@ -1556,6 +1572,62 @@ mod tests {
         let result = parse_fee_currency("  ETH  ", 0.002, || "test context".to_string());
         assert_eq!(result, Currency::ETH());
     }
+
+    #[rstest]
+    fn test_parse_fee_currency_with_unknown_code() {
+        // Unknown currency code should create a new Currency (8 decimals, crypto)
+        let result = parse_fee_currency("NEWTOKEN", 0.5, || "test context".to_string());
+        assert_eq!(result.code.as_str(), "NEWTOKEN");
+        assert_eq!(result.precision, 8);
+    }
+
+    #[rstest]
+    fn test_get_currency_with_context_valid() {
+        let result = get_currency_with_context("BTC", Some("test context"));
+        assert_eq!(result, Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_get_currency_with_context_empty() {
+        let result = get_currency_with_context("", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_currency_with_context_whitespace() {
+        let result = get_currency_with_context("  ", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_currency_with_context_unknown() {
+        // Unknown codes should create a new Currency, preserving newly listed assets
+        let result = get_currency_with_context("NEWCOIN", Some("test context"));
+        assert_eq!(result.code.as_str(), "NEWCOIN");
+        assert_eq!(result.precision, 8);
+    }
+
+    #[rstest]
+    fn test_parse_balance_field_valid() {
+        let result = parse_balance_field("100.5", "test_field", Currency::BTC(), "BTC");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_f64(), 100.5);
+    }
+
+    #[rstest]
+    fn test_parse_balance_field_invalid_numeric() {
+        let result = parse_balance_field("not_a_number", "test_field", Currency::BTC(), "BTC");
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_balance_field_empty() {
+        let result = parse_balance_field("", "test_field", Currency::BTC(), "BTC");
+        assert!(result.is_none());
+    }
+
+    // Note: Tests for parse_account_state with edge cases (empty currency codes, invalid values)
+    // are covered by the existing tests using test data files (e.g., http_get_account_balance.json)
 
     #[rstest]
     fn test_parse_trades() {

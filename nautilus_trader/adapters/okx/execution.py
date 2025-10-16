@@ -104,11 +104,7 @@ class OKXExecutionClient(LiveExecutionClient):
     ) -> None:
         PyCondition.not_empty(config.instrument_types, "config.instrument_types")
 
-        # Determine account type based on instrument types
-        if instrument_provider.instrument_types == (OKXInstrumentType.SPOT,):
-            account_type = AccountType.CASH
-        else:
-            account_type = AccountType.MARGIN
+        account_type = self._derive_account_type(instrument_provider, config)
 
         super().__init__(
             loop=loop,
@@ -177,27 +173,36 @@ class OKXExecutionClient(LiveExecutionClient):
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
         # Determine trade mode based on account type and configuration
-        if account_type == AccountType.CASH:
-            # SPOT trading
-            if config.use_spot_margin:
-                # Use CROSS margin mode for spot margin trading
-                # Note: SPOT_ISOLATED is only available for copy traders
-                if config.margin_mode == OKXMarginMode.CROSS:
-                    self._trade_mode = OKXTradeMode.CROSS
-                else:
-                    self._trade_mode = OKXTradeMode.ISOLATED
-            else:
-                self._trade_mode = OKXTradeMode.CASH
-        else:
-            # Derivatives trading (SWAP, FUTURES, OPTIONS)
-            if config.margin_mode == OKXMarginMode.CROSS:
-                self._trade_mode = OKXTradeMode.CROSS
-            else:
-                self._trade_mode = OKXTradeMode.ISOLATED
+        self._trade_mode = self._derive_trade_mode(account_type, config)
 
     @property
     def okx_instrument_provider(self) -> OKXInstrumentProvider:
         return self._instrument_provider
+
+    def _derive_account_type(
+        self,
+        instrument_provider: OKXInstrumentProvider,
+        config: OKXExecClientConfig,
+    ) -> AccountType:
+        is_spot_only = instrument_provider.instrument_types == (OKXInstrumentType.SPOT,)
+        if is_spot_only and not config.use_spot_margin:
+            return AccountType.CASH
+        return AccountType.MARGIN
+
+    def _derive_trade_mode(
+        self,
+        account_type: AccountType,
+        config: OKXExecClientConfig,
+    ) -> OKXTradeMode:
+        is_cross_margin = config.margin_mode == OKXMarginMode.CROSS
+
+        if account_type == AccountType.CASH:
+            if not config.use_spot_margin:
+                return OKXTradeMode.CASH
+            # SPOT margin supports CROSS for leverage; ISOLATED is limited to copy or lead traders
+            return OKXTradeMode.CROSS if is_cross_margin else OKXTradeMode.ISOLATED
+
+        return OKXTradeMode.CROSS if is_cross_margin else OKXTradeMode.ISOLATED
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
