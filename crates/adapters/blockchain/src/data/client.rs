@@ -316,36 +316,34 @@ impl BlockchainDataClient {
                         }
                     }
                     msg = async {
-                        if let Some(ref mut rpc_client) = core_client.rpc_client {
-                            Some(rpc_client.next_rpc_message().await)
-                        } else {
-                            None
+                        match core_client.rpc_client {
+                            Some(ref mut rpc_client) => rpc_client.next_rpc_message().await,
+                            None => std::future::pending().await,  // Never resolves
                         }
                     } => {
-                        if let Some(msg) = msg {
-                            match msg {
-                                Ok(BlockchainMessage::Block(block)) => {
-                                    let data = DataEvent::DeFi(DefiData::Block(block));
-                                    core_client.send_data(data);
-                                },
-                                Ok(BlockchainMessage::SwapEvent(_)) => {
-                                    tracing::warn!("RPC swap events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::MintEvent(_)) => {
-                                    tracing::warn!("RPC mint events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::BurnEvent(_)) => {
-                                    tracing::warn!("RPC burn events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::CollectEvent(_)) => {
-                                    tracing::warn!("RPC collect events are not yet supported")
-                                }
-                                Ok(BlockchainMessage::FlashEvent(_)) => {
-                                    tracing::warn!("RPC flash events are not yet supported")
-                                }
-                                Err(e) => {
-                                    tracing::error!("Error processing RPC message: {e}");
-                                }
+                        // This branch only fires when we actually receive a message
+                        match msg {
+                            Ok(BlockchainMessage::Block(block)) => {
+                                let data = DataEvent::DeFi(DefiData::Block(block));
+                                core_client.send_data(data);
+                            },
+                            Ok(BlockchainMessage::SwapEvent(_)) => {
+                                tracing::warn!("RPC swap events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::MintEvent(_)) => {
+                                tracing::warn!("RPC mint events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::BurnEvent(_)) => {
+                                tracing::warn!("RPC burn events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::CollectEvent(_)) => {
+                                tracing::warn!("RPC collect events are not yet supported")
+                            }
+                            Ok(BlockchainMessage::FlashEvent(_)) => {
+                                tracing::warn!("RPC flash events are not yet supported")
+                            }
+                            Err(e) => {
+                                tracing::error!("Error processing RPC message: {e}");
                             }
                         }
                     }
