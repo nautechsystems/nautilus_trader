@@ -89,6 +89,30 @@ anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
 
 This makes messages more readable and self-documenting, especially when there are multiple variables.
 
+### Type qualification
+
+Follow these conventions for qualifying types in code:
+
+- **anyhow**: Always fully qualify `anyhow` macros (`anyhow::bail!`, `anyhow::anyhow!`) and the Result type (`anyhow::Result<T>`).
+- **Nautilus domain types**: Do not fully qualify Nautilus domain types. Use them directly after importing (e.g., `Symbol`, `InstrumentId`, `Price`).
+- **tokio**: Generally fully qualify `tokio` types as they can have equivalents in std library and other crates (e.g., `tokio::spawn`, `tokio::time::timeout`).
+
+```rust
+use nautilus_model::identifiers::Symbol;
+
+pub fn process_symbol(symbol: Symbol) -> anyhow::Result<()> {
+    if !symbol.is_valid() {
+        anyhow::bail!("Invalid symbol: {symbol}");
+    }
+
+    tokio::spawn(async move {
+        // Process symbol asynchronously
+    });
+
+    Ok(())
+}
+```
+
 ### Logging
 
 - Fully qualify logging macros so the backend is explicit:
