@@ -47,7 +47,7 @@ token = "ETH"
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    order_qty = Decimal("0.01")
+    order_qty = Decimal("0.005")
     enable_sells = False
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = f"{token}-USDT-SWAP"
@@ -60,6 +60,7 @@ elif instrument_type == OKXInstrumentType.FUTURES:
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
     enable_sells = True
+    raise RuntimeError("This example is not currently setup for futures, see instrument IDs below")
 elif instrument_type == OKXInstrumentType.OPTION:
     symbol = (
         f"{token}-USD-251226-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-12-26
@@ -67,6 +68,7 @@ elif instrument_type == OKXInstrumentType.OPTION:
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
     enable_sells = True
+    raise RuntimeError("This example is not currently setup for futures, see instrument IDs below")
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 
@@ -97,7 +99,7 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_instrument_ids=[spot_instrument_id, swap_instrument_id],
-        # reconciliation_lookback_mins=60,
+        # reconciliation_lookback_mins=60,  # Limiting to 1-day for testing
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,

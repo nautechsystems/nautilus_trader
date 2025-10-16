@@ -722,22 +722,36 @@ class OKXExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _parse_trade_mode_from_params(self, params: dict[str, Any] | None) -> OKXTradeMode:
-        if not params:
-            return self._trade_mode
+    def _get_trade_mode_for_order(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None,
+    ) -> OKXTradeMode:
+        if params:
+            td_mode = params.get("td_mode")
+            if td_mode:
+                try:
+                    return OKXTradeMode(td_mode)
+                except ValueError:
+                    self._log.warning(
+                        f"Invalid td_mode '{td_mode}', valid modes: 'cash', 'isolated', 'cross', 'spot_isolated'",
+                    )
 
-        td_mode_str = params.get("td_mode")
-        if not td_mode_str:
-            return self._trade_mode
-
-        try:
-            return OKXTradeMode(td_mode_str)
-        except ValueError:
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
             self._log.warning(
-                f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
-                f"falling back to '{str(self._trade_mode).lower()}'",
+                f"Instrument {instrument_id} not found in cache, using default trade mode",
             )
             return self._trade_mode
+
+        if isinstance(instrument, CurrencyPair):
+            return OKXTradeMode.SPOT_ISOLATED if self._config.use_spot_margin else OKXTradeMode.CASH
+        else:
+            return (
+                OKXTradeMode.CROSS
+                if self._config.margin_mode == OKXMarginMode.CROSS
+                else OKXTradeMode.ISOLATED
+            )
 
     async def _query_account(self, _command: QueryAccount) -> None:
         # TODO: Specific account ID (sub account) not yet supported
@@ -792,7 +806,7 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        td_mode = self._parse_trade_mode_from_params(command.params)
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
 
         try:
             await self._ws_client.submit_order(
@@ -840,7 +854,7 @@ class OKXExecutionClient(LiveExecutionClient):
             trigger_type_to_pyo3(order.trigger_type) if hasattr(order, "trigger_type") else None
         )
 
-        td_mode = self._parse_trade_mode_from_params(command.params)
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
 
         try:
             response = await self._http_client.place_algo_order(

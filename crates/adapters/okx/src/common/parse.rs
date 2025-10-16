@@ -274,6 +274,30 @@ pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Mone
     Money::new_checked(-fee_f64, currency)
 }
 
+/// Parses OKX fee currency code, handling empty strings.
+///
+/// OKX sometimes returns empty fee currency codes.
+/// When the fee currency is empty, defaults to USDT and logs a warning for non-zero fees.
+pub fn parse_fee_currency(
+    fee_ccy: &str,
+    fee_amount: f64,
+    context: impl FnOnce() -> String,
+) -> Currency {
+    let trimmed = fee_ccy.trim();
+    if trimmed.is_empty() {
+        if fee_amount != 0.0 {
+            tracing::warn!(
+                "Empty fee_ccy in {} with non-zero fee={}, using USDT as fallback",
+                context(),
+                fee_amount
+            );
+        }
+        Currency::USDT()
+    } else {
+        Currency::from(trimmed)
+    }
+}
+
 /// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
@@ -631,7 +655,10 @@ pub fn parse_fill_report(
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
     let fee_f64 = detail.fee.as_deref().unwrap_or("0").parse::<f64>()?;
-    let commission = Money::new(-fee_f64, Currency::from(&detail.fee_ccy));
+    let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_f64, || {
+        format!("fill report for instrument_id={}", instrument_id)
+    });
+    let commission = Money::new(-fee_f64, fee_currency);
     let liquidity_side: LiquiditySide = detail.exec_type.into();
     let ts_event = parse_millisecond_timestamp(detail.ts);
 
@@ -1350,13 +1377,18 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     for b in &okx_account.details {
-        // Skip balances with empty currency codes
-        if b.ccy.is_empty() {
-            tracing::warn!("Skipping balance detail with empty currency code");
+        // Skip balances with empty or whitespace-only currency codes
+        let ccy_str = b.ccy.trim();
+        if ccy_str.is_empty() {
+            tracing::warn!(
+                "Skipping balance detail with empty currency code (cash_bal={}, avail_bal={})",
+                b.cash_bal,
+                b.avail_bal
+            );
             continue;
         }
 
-        let currency = Currency::from(b.ccy);
+        let currency = Currency::from(ccy_str);
         let total = Money::new(b.cash_bal.parse::<f64>()?, currency);
         let free = Money::new(b.avail_bal.parse::<f64>()?, currency);
         let locked = total - free;
@@ -1455,6 +1487,36 @@ mod tests {
             },
         },
     };
+
+    #[rstest]
+    fn test_parse_fee_currency_with_zero_fee_empty_string() {
+        let result = parse_fee_currency("", 0.0, || "test context".to_string());
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_parse_fee_currency_with_zero_fee_valid_currency() {
+        let result = parse_fee_currency("BTC", 0.0, || "test context".to_string());
+        assert_eq!(result, Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_parse_fee_currency_with_valid_currency() {
+        let result = parse_fee_currency("BTC", 0.001, || "test context".to_string());
+        assert_eq!(result, Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_parse_fee_currency_with_empty_string_nonzero_fee() {
+        let result = parse_fee_currency("", 0.5, || "test context".to_string());
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_parse_fee_currency_with_whitespace() {
+        let result = parse_fee_currency("  ETH  ", 0.002, || "test context".to_string());
+        assert_eq!(result, Currency::ETH());
+    }
 
     #[rstest]
     fn test_parse_trades() {

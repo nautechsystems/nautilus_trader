@@ -144,12 +144,13 @@ This will be the final release with support for Python 3.11.
 - Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved socket client URL parsing
+- Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
-- Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
+- Improved OKX trade mode detection and fee currency parsing
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined setting of flags in Makefile (#3060), thanks @faysou
