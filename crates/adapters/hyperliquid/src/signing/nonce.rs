@@ -127,8 +127,13 @@ impl SignerState {
     }
 
     fn next_nonce(&mut self) -> TimeNonce {
+        // Always ensure we're at least at current time
+        let now = TimeNonce::now_millis().0;
+        self.next_nonce = self.next_nonce.max(now);
+
+        // Use and increment atomically to prevent reuse
         let nonce = TimeNonce::from_millis(self.next_nonce);
-        self.next_nonce = (self.next_nonce + 1).max(TimeNonce::now_millis().0);
+        self.next_nonce += 1;
 
         self.used_nonces.push_back(nonce);
         if self.used_nonces.len() > self.max_used {

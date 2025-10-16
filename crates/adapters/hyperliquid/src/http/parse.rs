@@ -652,7 +652,18 @@ pub fn parse_fill_report(
 
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
-    let trade_id = TradeId::new(format!("{}-{}", fill.hash, fill.time));
+
+    // Construct trade_id from hash and time
+    let trade_id_str = format!("{}-{}", fill.hash, fill.time);
+    tracing::debug!(
+        "Parsing fill: hash={}, time={}, trade_id_str='{}', len={}",
+        fill.hash,
+        fill.time,
+        trade_id_str,
+        trade_id_str.len()
+    );
+
+    let trade_id = TradeId::new(trade_id_str);
     let order_side = parse_fill_side(&fill.side);
 
     // Parse price and quantity

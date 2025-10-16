@@ -29,9 +29,36 @@ use crate::http::client::HyperliquidHttpClient;
 #[pymethods]
 impl HyperliquidHttpClient {
     #[new]
-    #[pyo3(signature = (is_testnet=false, timeout_secs=None))]
-    fn py_new(is_testnet: bool, timeout_secs: Option<u64>) -> Self {
-        Self::new(is_testnet, timeout_secs)
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None))]
+    fn py_new(
+        private_key: Option<String>,
+        vault_address: Option<String>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+    ) -> PyResult<Self> {
+        // Try to get credentials from parameters or environment variables
+        let pk = private_key.or_else(|| {
+            if is_testnet {
+                std::env::var("HYPERLIQUID_TESTNET_PK").ok()
+            } else {
+                std::env::var("HYPERLIQUID_PK").ok()
+            }
+        });
+
+        let vault = vault_address.or_else(|| {
+            if is_testnet {
+                std::env::var("HYPERLIQUID_TESTNET_VAULT").ok()
+            } else {
+                std::env::var("HYPERLIQUID_VAULT").ok()
+            }
+        });
+
+        if let Some(key) = pk {
+            Self::from_credentials(&key, vault.as_deref(), is_testnet, timeout_secs)
+                .map_err(to_pyvalue_err)
+        } else {
+            Ok(Self::new(is_testnet, timeout_secs))
+        }
     }
 
     /// Create an authenticated HTTP client from environment variables.
@@ -45,6 +72,27 @@ impl HyperliquidHttpClient {
     #[pyo3(name = "from_env")]
     fn py_from_env() -> PyResult<Self> {
         Self::from_env().map_err(to_pyvalue_err)
+    }
+
+    /// Create an authenticated HTTP client with explicit credentials.
+    ///
+    /// Args:
+    ///     private_key: The private key hex string (with or without 0x prefix)
+    ///     vault_address: Optional vault address for vault trading
+    ///     is_testnet: Whether to use testnet (default: false)
+    ///     timeout_secs: Optional request timeout in seconds
+    ///
+    /// Returns an authenticated HyperliquidHttpClient or raises an error if credentials are invalid.
+    #[staticmethod]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None))]
+    fn py_from_credentials(
+        private_key: &str,
+        vault_address: Option<&str>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+    ) -> PyResult<Self> {
+        Self::from_credentials(private_key, vault_address, is_testnet, timeout_secs)
+            .map_err(to_pyvalue_err)
     }
 
     /// Get perpetuals metadata as a JSON string.
@@ -64,6 +112,22 @@ impl HyperliquidHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let meta = client.get_spot_meta().await.map_err(to_pyvalue_err)?;
             to_string(&meta).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Get L2 order book for a specific coin.
+    ///
+    /// Args:
+    ///     coin: The coin symbol (e.g., "BTC", "ETH")
+    ///
+    /// Returns a JSON string with the order book data.
+    #[pyo3(name = "get_l2_book")]
+    fn py_get_l2_book<'py>(&self, py: Python<'py>, coin: &str) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let coin = coin.to_string();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let book = client.info_l2_book(&coin).await.map_err(to_pyvalue_err)?;
+            to_string(&book).map_err(to_pyvalue_err)
         })
     }
 
@@ -222,6 +286,14 @@ impl HyperliquidHttpClient {
         let account_id = nautilus_model::identifiers::AccountId::from(account_id);
         self.set_account_id(account_id);
         Ok(())
+    }
+
+    /// Get the user's wallet address derived from the private key.
+    ///
+    /// Returns the Ethereum address as a string (e.g., "0x123...").
+    #[pyo3(name = "get_user_address")]
+    fn py_get_user_address(&self) -> PyResult<String> {
+        self.get_user_address().map_err(to_pyvalue_err)
     }
 
     /// Request order status reports for the authenticated user.

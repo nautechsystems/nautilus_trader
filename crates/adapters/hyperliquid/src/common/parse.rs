@@ -300,27 +300,34 @@ pub fn time_in_force_to_hyperliquid_tif(
 ///
 /// Returns an error if the symbol format is unsupported or the asset is not found.
 pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
-    // For perpetuals, remove "-USD" suffix to get the base asset
-    if let Some(base) = symbol.strip_suffix("-USD") {
-        // Convert symbol like "BTC-USD" to asset index
-        // This is a simplified mapping - in practice you'd need to query the asset registry
-        Ok(match base {
-            "BTC" => 0,
-            "ETH" => 1,
-            "DOGE" => 3,
-            "SOL" => 4,
-            "WIF" => 8,
-            "SHIB" => 10,
-            "PEPE" => 11,
-            _ => {
-                // For unknown assets, we'll need to query the meta endpoint
-                // For now, return a placeholder that will need to be resolved
-                anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
-            }
-        })
+    // For perpetuals, remove "-USD-PERP" or "-USD" suffix to get the base asset
+    let base = if let Some(base) = symbol.strip_suffix("-PERP") {
+        // Remove "-USD-PERP" -> Remove "-USD" from what remains
+        base.strip_suffix("-USD")
+            .ok_or_else(|| anyhow::anyhow!("Cannot extract asset from symbol: {symbol}"))?
+    } else if let Some(base) = symbol.strip_suffix("-USD") {
+        // Just "-USD" suffix
+        base
     } else {
         anyhow::bail!("Cannot extract asset ID from symbol: {symbol}")
-    }
+    };
+
+    // Convert symbol like "BTC" to asset index
+    // Updated asset indices from testnet (as of October 2025)
+    Ok(match base {
+        "BTC" => 3, // Updated from 0 to 3
+        "ETH" => 1,
+        "DOGE" => 3,
+        "SOL" => 4,
+        "WIF" => 8,
+        "SHIB" => 10,
+        "PEPE" => 11,
+        _ => {
+            // For unknown assets, we'll need to query the meta endpoint
+            // For now, return a placeholder that will need to be resolved
+            anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
+        }
+    })
 }
 
 /// Determines if a trigger order should be TP (take profit) or SL (stop loss).

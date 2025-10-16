@@ -111,8 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sign the action
     let sign_request = SignRequest {
         action: action_json,
+        action_bytes: None,
         time_nonce: nonce,
         action_type: HyperliquidActionType::UserSigned,
+        is_testnet: false,
+        vault_address: None,
     };
 
     let signature_bundle = signer.sign(&sign_request)?;

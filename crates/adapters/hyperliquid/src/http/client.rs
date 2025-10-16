@@ -178,6 +178,29 @@ impl HyperliquidHttpClient {
         Ok(Self::with_credentials(&secrets, None))
     }
 
+    /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
+    ///
+    /// # Arguments
+    ///
+    /// * `private_key` - The private key hex string (with or without 0x prefix)
+    /// * `vault_address` - Optional vault address for vault trading
+    /// * `is_testnet` - Whether to use testnet
+    /// * `timeout_secs` - Optional request timeout in seconds
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    pub fn from_credentials(
+        private_key: &str,
+        vault_address: Option<&str>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+    ) -> Result<Self> {
+        let secrets = Secrets::from_private_key(private_key, vault_address, is_testnet)
+            .map_err(|e| Error::auth(format!("invalid credentials: {e}")))?;
+        Ok(Self::with_credentials(&secrets, timeout_secs))
+    }
+
     /// Configure rate limiting parameters (chainable).
     pub fn with_rate_limits(mut self) -> Self {
         self.rest_limiter = Arc::new(WeightedLimiter::per_minute(1200));
@@ -607,18 +630,134 @@ impl HyperliquidHttpClient {
             .ok_or_else(|| Error::auth("nonce manager missing"))?;
 
         let signer_id = self.signer_id()?;
-        let time_nonce = nonce_manager.next(signer_id.clone())?;
-        nonce_manager.validate_local(signer_id, time_nonce)?;
+        let time_nonce = nonce_manager.next(signer_id)?;
 
         let action_value = serde_json::to_value(action)
             .context("serialize exchange action")
             .map_err(|e| Error::bad_request(e.to_string()))?;
 
+        // Serialize the original action struct with MessagePack for L1 signing
+        let action_bytes = rmp_serde::to_vec_named(action)
+            .context("serialize action with MessagePack")
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+
+        let sign_request = SignRequest {
+            action: action_value.clone(),
+            action_bytes: Some(action_bytes),
+            time_nonce,
+            action_type: HyperliquidActionType::L1,
+            is_testnet: self.is_testnet,
+            vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
+        };
+
+        let sig = signer.sign(&sign_request)?.signature;
+
+        let nonce_u64 = time_nonce.as_millis() as u64;
+
+        let request = if let Some(vault) = self.vault_address {
+            HyperliquidExchangeRequest::with_vault(
+                action.clone(),
+                nonce_u64,
+                sig,
+                vault.to_string(),
+            )
+            .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
+        } else {
+            HyperliquidExchangeRequest::new(action.clone(), nonce_u64, sig)
+                .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
+        };
+
+        let response = self.http_roundtrip_exchange(&request).await?;
+
+        if response.status.is_success() {
+            let parsed_response: HyperliquidExchangeResponse =
+                serde_json::from_slice(&response.body).map_err(Error::Serde)?;
+
+            // Check if the response contains an error status
+            match &parsed_response {
+                HyperliquidExchangeResponse::Status {
+                    status,
+                    response: response_data,
+                } if status == "err" => {
+                    let error_msg = response_data
+                        .as_str()
+                        .map_or_else(|| response_data.to_string(), |s| s.to_string());
+                    tracing::error!("Hyperliquid API returned error: {}", error_msg);
+                    Err(Error::bad_request(format!("API error: {}", error_msg)))
+                }
+                HyperliquidExchangeResponse::Error { error } => {
+                    tracing::error!("Hyperliquid API returned error: {}", error);
+                    Err(Error::bad_request(format!("API error: {}", error)))
+                }
+                _ => Ok(parsed_response),
+            }
+        } else if response.status.as_u16() == 429 {
+            let ra = self.parse_retry_after_simple(&response.headers);
+            Err(Error::rate_limit("exchange", w, ra))
+        } else {
+            let error_body = String::from_utf8_lossy(&response.body);
+            tracing::error!(
+                "Exchange API error (status {}): {}",
+                response.status.as_u16(),
+                error_body
+            );
+            Err(Error::http(
+                response.status.as_u16(),
+                error_body.to_string(),
+            ))
+        }
+    }
+
+    /// Send a signed action to the exchange using the typed HyperliquidExecAction enum.
+    ///
+    /// This is the preferred method for placing orders as it uses properly typed
+    /// structures that match Hyperliquid's API expectations exactly.
+    pub async fn post_action_exec(
+        &self,
+        action: &crate::http::models::HyperliquidExecAction,
+    ) -> Result<HyperliquidExchangeResponse> {
+        use crate::http::models::HyperliquidExecAction;
+
+        let w = match action {
+            HyperliquidExecAction::Order { orders, .. } => 1 + (orders.len() as u32 / 40),
+            HyperliquidExecAction::Cancel { cancels } => 1 + (cancels.len() as u32 / 40),
+            HyperliquidExecAction::CancelByCloid { cancels } => 1 + (cancels.len() as u32 / 40),
+            HyperliquidExecAction::BatchModify { modifies } => 1 + (modifies.len() as u32 / 40),
+            _ => 1,
+        };
+        self.rest_limiter.acquire(w).await;
+
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| Error::auth("credentials required for exchange operations"))?;
+
+        let nonce_manager = self
+            .nonce_manager
+            .as_ref()
+            .ok_or_else(|| Error::auth("nonce manager missing"))?;
+
+        let signer_id = self.signer_id()?;
+        let time_nonce = nonce_manager.next(signer_id)?;
+        // No need to validate - next() guarantees a valid, unused nonce
+
+        let action_value = serde_json::to_value(action)
+            .context("serialize exchange action")
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+
+        // Serialize the original action struct with MessagePack for L1 signing
+        let action_bytes = rmp_serde::to_vec_named(action)
+            .context("serialize action with MessagePack")
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+
         let sig = signer
             .sign(&SignRequest {
                 action: action_value.clone(),
+                action_bytes: Some(action_bytes),
                 time_nonce,
-                action_type: HyperliquidActionType::UserSigned,
+                action_type: HyperliquidActionType::L1,
+                is_testnet: self.is_testnet,
+                vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
             })?
             .signature;
 
@@ -629,14 +768,36 @@ impl HyperliquidHttpClient {
                 sig,
                 vault.to_string(),
             )
+            .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
         } else {
             HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
+                .map_err(|e| Error::bad_request(format!("Failed to create request: {}", e)))?
         };
 
         let response = self.http_roundtrip_exchange(&request).await?;
 
         if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
+            let parsed_response: HyperliquidExchangeResponse =
+                serde_json::from_slice(&response.body).map_err(Error::Serde)?;
+
+            // Check if the response contains an error status
+            match &parsed_response {
+                HyperliquidExchangeResponse::Status {
+                    status,
+                    response: response_data,
+                } if status == "err" => {
+                    let error_msg = response_data
+                        .as_str()
+                        .map_or_else(|| response_data.to_string(), |s| s.to_string());
+                    tracing::error!("Hyperliquid API returned error: {}", error_msg);
+                    Err(Error::bad_request(format!("API error: {}", error_msg)))
+                }
+                HyperliquidExchangeResponse::Error { error } => {
+                    tracing::error!("Hyperliquid API returned error: {}", error);
+                    Err(Error::bad_request(format!("API error: {}", error)))
+                }
+                _ => Ok(parsed_response),
+            }
         } else if response.status.as_u16() == 429 {
             let ra = self.parse_retry_after_simple(&response.headers);
             Err(Error::rate_limit("exchange", w, ra))
@@ -666,14 +827,15 @@ impl HyperliquidHttpClient {
         let hyperliquid_order = order_to_hyperliquid_request(order)
             .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
 
-        // Convert single order to JSON array format for the exchange action
-        let orders_value = serde_json::json!([hyperliquid_order]);
+        // Create typed action using HyperliquidExecAction (same as working Rust binary)
+        let action = crate::http::models::HyperliquidExecAction::Order {
+            orders: vec![hyperliquid_order],
+            grouping: crate::http::models::HyperliquidExecGrouping::Na,
+            builder: None,
+        };
 
-        // Create exchange action
-        let action = ExchangeAction::order(orders_value);
-
-        // Submit to exchange
-        let response = self.post_action(&action).await?;
+        // Submit to exchange using the typed exec endpoint
+        let response = self.post_action_exec(&action).await?;
 
         // Parse the response to extract order status
         match response {
@@ -681,9 +843,17 @@ impl HyperliquidHttpClient {
                 status,
                 response: response_data,
             } if status == "ok" => {
+                // Extract the 'data' field from the response if it exists (new format)
+                // Otherwise use response_data directly (old format)
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
                 // Parse the response data to extract order status
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data).map_err(|e| {
+                    serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -843,15 +1013,15 @@ impl HyperliquidHttpClient {
         let hyperliquid_orders = orders_to_hyperliquid_requests(orders)
             .map_err(|e| Error::bad_request(format!("Failed to convert orders: {e}")))?;
 
-        // Convert orders to JSON value for the exchange action
-        let orders_value = serde_json::to_value(hyperliquid_orders)
-            .map_err(|e| Error::bad_request(format!("Failed to serialize orders: {e}")))?;
+        // Create typed action using HyperliquidExecAction (same as working Rust binary)
+        let action = crate::http::models::HyperliquidExecAction::Order {
+            orders: hyperliquid_orders,
+            grouping: crate::http::models::HyperliquidExecGrouping::Na,
+            builder: None,
+        };
 
-        // Create exchange action
-        let action = ExchangeAction::order(orders_value);
-
-        // Submit to exchange
-        let response = self.post_action(&action).await?;
+        // Submit to exchange using the typed exec endpoint
+        let response = self.post_action_exec(&action).await?;
 
         // Parse the response to extract order statuses
         match response {
@@ -859,9 +1029,17 @@ impl HyperliquidHttpClient {
                 status,
                 response: response_data,
             } if status == "ok" => {
+                // Extract the 'data' field from the response if it exists (new format)
+                // Otherwise use response_data directly (old format)
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
                 // Parse the response data to extract order statuses
                 let order_response: crate::http::models::HyperliquidExecOrderResponseData =
-                    serde_json::from_value(response_data).map_err(|e| {
+                    serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
 
@@ -965,15 +1143,19 @@ impl HyperliquidHttpClient {
     }
 
     /// Raw HTTP roundtrip for exchange requests
-    async fn http_roundtrip_exchange(
+    async fn http_roundtrip_exchange<T>(
         &self,
-        request: &HyperliquidExchangeRequest<ExchangeAction>,
-    ) -> Result<nautilus_network::http::HttpResponse> {
+        request: &HyperliquidExchangeRequest<T>,
+    ) -> Result<nautilus_network::http::HttpResponse>
+    where
+        T: serde::Serialize,
+    {
         let url = &self.base_exchange;
         let body = serde_json::to_string(&request).map_err(Error::Serde)?;
         let body_bytes = body.into_bytes();
 
-        self.client
+        let response = self
+            .client
             .request(
                 Method::POST,
                 url.clone(),
@@ -983,7 +1165,9 @@ impl HyperliquidHttpClient {
                 None,
             )
             .await
-            .map_err(Error::from_http_client)
+            .map_err(Error::from_http_client)?;
+
+        Ok(response)
     }
 
     /// Request order status reports for a user.

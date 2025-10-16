@@ -142,7 +142,10 @@ impl ExchangeAction {
     pub fn order(orders: Value) -> Self {
         Self {
             action_type: "order".to_string(),
-            params: serde_json::json!({ "orders": orders }),
+            params: serde_json::json!({
+                "orders": orders,
+                "grouping": "na"
+            }),
         }
     }
 
