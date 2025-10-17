@@ -26,6 +26,7 @@ use nautilus_blockchain::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
+    log_warn,
     logging::log_info,
     runtime::get_runtime,
 };
@@ -262,8 +263,21 @@ impl DataActor for BlockchainSubscriberActor {
             let cache = self.cache();
 
             for pool_id in &self.config.pools {
-                let pool_profiler = cache.pool_profiler(pool_id);
-                log_info!("{pool_profiler:?}", color = LogColor::Magenta);
+                if let Some(pool_profiler) = cache.pool_profiler(pool_id) {
+                    let total_ticks = pool_profiler.get_active_tick_count();
+                    let total_positions = pool_profiler.get_total_active_positions();
+                    let liquidity = pool_profiler.get_active_liquidity();
+                    log_info!(
+                        "Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                        color = LogColor::Magenta
+                    );
+                } else {
+                    log_warn!(
+                        "Pool profiler {} not found",
+                        pool_id,
+                        color = LogColor::Magenta
+                    );
+                }
             }
         }
 
