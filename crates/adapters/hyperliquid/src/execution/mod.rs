@@ -48,9 +48,8 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
-            cancel_requests_to_hyperliquid_action_value, client_order_id_to_cancel_request,
-            extract_error_message, is_response_successful, order_any_to_hyperliquid_request,
-            orders_to_hyperliquid_requests,
+            client_order_id_to_cancel_request, extract_error_message, is_response_successful,
+            order_any_to_hyperliquid_request, orders_to_hyperliquid_requests,
         },
     },
     config::HyperliquidExecClientConfig,
@@ -439,39 +438,27 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.spawn_task("submit_order", async move {
             match order_any_to_hyperliquid_request(&order_clone) {
                 Ok(hyperliquid_order) => {
-                    // Convert single order to JSON array format for the exchange action
-                    match serde_json::to_value(vec![hyperliquid_order]) {
-                        Ok(orders_json) => {
-                            // Create exchange action for order placement
-                            let action = ExchangeAction::order(orders_json);
+                    // Create exchange action for order placement with typed struct
+                    let action = ExchangeAction::order(vec![hyperliquid_order]);
 
-                            match http_client.post_action(&action).await {
-                                Ok(response) => {
-                                    if is_response_successful(&response) {
-                                        tracing::info!(
-                                            "Order submitted successfully: {:?}",
-                                            response
-                                        );
-                                        // Order acceptance/rejection events will be generated from WebSocket updates
-                                        // which provide the venue_order_id and definitive status
-                                    } else {
-                                        let error_msg = extract_error_message(&response);
-                                        tracing::warn!(
-                                            "Order submission rejected by exchange: {}",
-                                            error_msg
-                                        );
-                                        // Order rejection event will be generated from WebSocket updates
-                                    }
-                                }
-                                Err(err) => {
-                                    tracing::warn!("Order submission HTTP request failed: {err}");
-                                    // WebSocket reconnection and order reconciliation will handle recovery
-                                }
+                    match http_client.post_action(&action).await {
+                        Ok(response) => {
+                            if is_response_successful(&response) {
+                                tracing::info!("Order submitted successfully: {:?}", response);
+                                // Order acceptance/rejection events will be generated from WebSocket updates
+                                // which provide the venue_order_id and definitive status
+                            } else {
+                                let error_msg = extract_error_message(&response);
+                                tracing::warn!(
+                                    "Order submission rejected by exchange: {}",
+                                    error_msg
+                                );
+                                // Order rejection event will be generated from WebSocket updates
                             }
                         }
                         Err(err) => {
-                            tracing::warn!("Failed to serialize order to JSON: {err}");
-                            // This indicates a client-side bug that should be fixed
+                            tracing::warn!("Order submission HTTP request failed: {err}");
+                            // WebSocket reconnection and order reconciliation will handle recovery
                         }
                     }
                 }
@@ -511,36 +498,25 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let order_refs: Vec<&OrderAny> = orders.iter().collect();
             match orders_to_hyperliquid_requests(&order_refs) {
                 Ok(hyperliquid_orders) => {
-                    match serde_json::to_value(hyperliquid_orders) {
-                        Ok(orders_json) => {
-                            let action = ExchangeAction::order(orders_json);
-                            match http_client.post_action(&action).await {
-                                Ok(response) => {
-                                    if is_response_successful(&response) {
-                                        tracing::info!(
-                                            "Order list submitted successfully: {:?}",
-                                            response
-                                        );
-                                        // Order acceptance/rejection events will be generated from WebSocket updates
-                                    } else {
-                                        let error_msg = extract_error_message(&response);
-                                        tracing::warn!(
-                                            "Order list submission rejected by exchange: {}",
-                                            error_msg
-                                        );
-                                        // Individual order rejection events will be generated from WebSocket updates
-                                    }
-                                }
-                                Err(err) => {
-                                    tracing::warn!(
-                                        "Order list submission HTTP request failed: {err}"
-                                    );
-                                    // WebSocket reconciliation will handle recovery
-                                }
+                    // Create exchange action for order placement with typed struct
+                    let action = ExchangeAction::order(hyperliquid_orders);
+                    match http_client.post_action(&action).await {
+                        Ok(response) => {
+                            if is_response_successful(&response) {
+                                tracing::info!("Order list submitted successfully: {:?}", response);
+                                // Order acceptance/rejection events will be generated from WebSocket updates
+                            } else {
+                                let error_msg = extract_error_message(&response);
+                                tracing::warn!(
+                                    "Order list submission rejected by exchange: {}",
+                                    error_msg
+                                );
+                                // Individual order rejection events will be generated from WebSocket updates
                             }
                         }
                         Err(err) => {
-                            tracing::warn!("Failed to serialize order list to JSON: {err}");
+                            tracing::warn!("Order list submission HTTP request failed: {err}");
+                            // WebSocket reconciliation will handle recovery
                         }
                     }
                 }
@@ -574,23 +550,32 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let price = command.price;
         let quantity = command.quantity;
+        let symbol = command.instrument_id.symbol.to_string();
 
         self.spawn_task("modify_order", async move {
-            // Build modify request with new price and/or quantity
-            let mut modify_params = serde_json::Map::new();
+            use crate::common::parse::extract_asset_id_from_symbol;
+            use crate::http::models::HyperliquidExecModifyOrderRequest;
 
-            if let Some(new_price) = price {
-                modify_params.insert(
-                    "limitPx".to_string(),
-                    serde_json::json!(new_price.to_string()),
-                );
-            }
+            // Extract asset ID from instrument symbol
+            let asset = match extract_asset_id_from_symbol(&symbol) {
+                Ok(asset) => asset,
+                Err(e) => {
+                    tracing::warn!("Failed to extract asset ID from symbol {}: {}", symbol, e);
+                    return Ok(());
+                }
+            };
 
-            if let Some(new_qty) = quantity {
-                modify_params.insert("sz".to_string(), serde_json::json!(new_qty.to_string()));
-            }
+            // Build typed modify request with new price and/or quantity
+            let modify_request = HyperliquidExecModifyOrderRequest {
+                asset,
+                oid,
+                price: price.map(|p| (*p).into()),
+                size: quantity.map(|q| (*q).into()),
+                reduce_only: None,
+                kind: None,
+            };
 
-            let action = ExchangeAction::modify(oid, serde_json::Value::Object(modify_params));
+            let action = ExchangeAction::modify(oid, modify_request);
 
             match http_client.post_action(&action).await {
                 Ok(response) => {
@@ -625,37 +610,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.spawn_task("cancel_order", async move {
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
                 Ok(cancel_request) => {
-                    // Convert single cancel request to JSON array format for the exchange action
-                    match serde_json::to_value(vec![cancel_request]) {
-                        Ok(cancels_json) => {
-                            // Create exchange action for order cancellation
-                            let action = ExchangeAction::cancel_by_cloid(cancels_json);
-                            match http_client.post_action(&action).await {
-                                Ok(response) => {
-                                    if is_response_successful(&response) {
-                                        tracing::info!(
-                                            "Order cancelled successfully: {:?}",
-                                            response
-                                        );
-                                        // Order cancelled events will be generated from WebSocket updates
-                                        // which provide definitive confirmation and venue_order_id
-                                    } else {
-                                        let error_msg = extract_error_message(&response);
-                                        tracing::warn!(
-                                            "Order cancellation rejected by exchange: {}",
-                                            error_msg
-                                        );
-                                        // Order cancel rejected events will be generated from WebSocket updates
-                                    }
-                                }
-                                Err(err) => {
-                                    tracing::warn!("Order cancellation HTTP request failed: {err}");
-                                    // WebSocket reconnection and reconciliation will handle recovery
-                                }
+                    // Create exchange action for order cancellation with typed struct
+                    let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
+                    match http_client.post_action(&action).await {
+                        Ok(response) => {
+                            if is_response_successful(&response) {
+                                tracing::info!("Order cancelled successfully: {:?}", response);
+                                // Order cancelled events will be generated from WebSocket updates
+                                // which provide definitive confirmation and venue_order_id
+                            } else {
+                                let error_msg = extract_error_message(&response);
+                                tracing::warn!(
+                                    "Order cancellation rejected by exchange: {}",
+                                    error_msg
+                                );
+                                // Order cancel rejected events will be generated from WebSocket updates
                             }
                         }
                         Err(err) => {
-                            tracing::warn!("Failed to serialize cancel request to JSON: {:?}", err);
+                            tracing::warn!("Order cancellation HTTP request failed: {err}");
+                            // WebSocket reconnection and reconciliation will handle recovery
                         }
                     }
                 }
@@ -714,10 +688,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        let cancels_value = cancel_requests_to_hyperliquid_action_value(&cancel_requests)
-            .context("Failed to convert cancel requests to JSON")?;
-
-        let action = ExchangeAction::cancel_by_cloid(cancels_value);
+        // Create exchange action for cancellation with typed struct
+        let action = ExchangeAction::cancel_by_cloid(cancel_requests);
 
         // Send cancel request via HTTP API
         // Note: The WebSocket connection will authoritatively handle the OrderCancelled events
@@ -764,10 +736,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        let cancels_value = cancel_requests_to_hyperliquid_action_value(&cancel_requests)
-            .context("Failed to convert cancel requests to JSON")?;
-
-        let action = ExchangeAction::cancel_by_cloid(cancels_value);
+        // Create exchange action for batch cancellation with typed struct
+        let action = ExchangeAction::cancel_by_cloid(cancel_requests);
 
         // Send batch cancel request via HTTP API
         // Note: The WebSocket connection will authoritatively handle the OrderCancelled events

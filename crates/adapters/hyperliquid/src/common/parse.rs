@@ -313,15 +313,23 @@ pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
     };
 
     // Convert symbol like "BTC" to asset index
-    // Updated asset indices from testnet (as of October 2025)
     Ok(match base {
-        "BTC" => 3, // Updated from 0 to 3
-        "ETH" => 1,
-        "DOGE" => 3,
-        "SOL" => 4,
-        "WIF" => 8,
-        "SHIB" => 10,
-        "PEPE" => 11,
+        "SOL" => 0,
+        "APT" => 1,
+        "ATOM" => 2,
+        "BTC" => 3,
+        "ETH" => 4,
+        "MATIC" => 5,
+        "BNB" => 6,
+        "AVAX" => 7,
+        "DYDX" => 9,
+        "APE" => 10,
+        "OP" => 11,
+        "kPEPE" => 12,
+        "ARB" => 13,
+        "WIF" => 78,
+        "kSHIB" => 29,
+        "DOGE" => 173,
         _ => {
             // For unknown assets, we'll need to query the meta endpoint
             // For now, return a placeholder that will need to be resolved
@@ -634,13 +642,6 @@ pub fn client_order_id_to_cancel_request(
     })?;
 
     Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
-}
-
-/// Creates a JSON value representing cancel requests for the Hyperliquid exchange action.
-pub fn cancel_requests_to_hyperliquid_action_value(
-    requests: &[HyperliquidExecCancelByCloidRequest],
-) -> anyhow::Result<Value> {
-    serde_json::to_value(requests).context("Failed to serialize cancel requests to JSON")
 }
 
 /// Checks if a Hyperliquid exchange response indicates success.
