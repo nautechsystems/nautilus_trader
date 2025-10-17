@@ -107,6 +107,9 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(event), LogColor.BLUE)
 
+    def on_pool(self, pool) -> None:
+        self.log.info(f"Received pool: {pool.instrument_id}", LogColor.GREEN)
+
     def on_block(self, block: Block) -> None:
         """
         Actions to be performed on receiving a block.
@@ -115,7 +118,15 @@ class BlockchainActor(DataActor):
 
         for pool_id in self.pools:
             pool = self.cache.pool_profiler(pool_id)
-            self.log.info(repr(pool), LogColor.MAGENTA)
+            if pool is None:
+                continue
+            total_ticks = pool.get_active_tick_count()
+            total_positions = pool.get_total_active_positions()
+            liquidity = pool.get_active_liquidity()
+            self.log.info(
+                f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                LogColor.MAGENTA,
+            )
 
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """
