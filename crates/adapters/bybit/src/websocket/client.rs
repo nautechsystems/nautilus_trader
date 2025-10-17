@@ -122,9 +122,6 @@ pub struct BybitWebSocketClient {
     subscriptions: SubscriptionState,
     is_authenticated: Arc<AtomicBool>,
     instruments_cache: Arc<DashMap<InstrumentId, InstrumentAny>>,
-    /// Maps symbols (e.g., "BTCUSDT-LINEAR") to instrument IDs
-    /// for efficient O(1) lookup in WebSocket message handlers
-    symbol_to_instrument_id: Arc<DashMap<ustr::Ustr, InstrumentId>>,
     account_id: Option<AccountId>,
     quote_cache: Arc<RwLock<cache::QuoteCache>>,
     retry_manager: Arc<RetryManager<BybitWsError>>,
@@ -161,7 +158,6 @@ impl Clone for BybitWebSocketClient {
             subscriptions: self.subscriptions.clone(),
             is_authenticated: Arc::clone(&self.is_authenticated),
             instruments_cache: Arc::clone(&self.instruments_cache),
-            symbol_to_instrument_id: Arc::clone(&self.symbol_to_instrument_id),
             account_id: self.account_id,
             quote_cache: Arc::clone(&self.quote_cache),
             retry_manager: Arc::clone(&self.retry_manager),
@@ -209,7 +205,6 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
-            symbol_to_instrument_id: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -246,7 +241,6 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
-            symbol_to_instrument_id: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -283,7 +277,6 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
-            symbol_to_instrument_id: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             retry_manager: Arc::new(
@@ -605,9 +598,7 @@ impl BybitWebSocketClient {
     /// Adds an instrument to the cache for parsing WebSocket messages.
     pub fn add_instrument(&self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
-        let symbol = ustr::Ustr::from(instrument_id.symbol.as_str());
         self.instruments_cache.insert(instrument_id, instrument);
-        self.symbol_to_instrument_id.insert(symbol, instrument_id);
         tracing::debug!("Added instrument {instrument_id} to WebSocket client cache");
     }
 
@@ -615,12 +606,6 @@ impl BybitWebSocketClient {
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<InstrumentId, InstrumentAny>> {
         &self.instruments_cache
-    }
-
-    /// Returns a reference to the symbol-to-instrument-id mapping for efficient lookups.
-    #[must_use]
-    pub fn symbol_to_instrument_id(&self) -> &Arc<DashMap<ustr::Ustr, InstrumentId>> {
-        &self.symbol_to_instrument_id
     }
 
     /// Sets the account ID for account message parsing.

@@ -163,7 +163,6 @@ impl BybitWebSocketClient {
             let stream = client.stream();
 
             let instruments = Arc::clone(client.instruments());
-            let symbol_to_instrument_id = Arc::clone(client.symbol_to_instrument_id());
             let account_id = client.account_id();
             let product_type = client.product_type();
             let quote_cache = Arc::clone(client.quote_cache());
@@ -182,25 +181,25 @@ impl BybitWebSocketClient {
                                 make_bybit_symbol(raw_symbol.as_str(), pt)
                             });
 
-                            // Use efficient O(1) lookup instead of O(n) iteration
-                            if let Some(instrument_id) = symbol_to_instrument_id.get(&symbol) {
-                                if let Some(instrument) = instruments.get(instrument_id.value()) {
-                                    let ts_init = clock.get_time_ns();
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                            {
+                                let instrument = instrument_entry.value();
+                                let ts_init = clock.get_time_ns();
 
-                                    match parse_orderbook_deltas(&msg, instrument.value(), ts_init)
-                                    {
-                                        Ok(deltas) => {
-                                            Python::attach(|py| {
-                                                let py_obj = data_to_pycapsule(
-                                                    py,
-                                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                                );
-                                                call_python(py, &callback, py_obj);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Error parsing orderbook deltas: {e}");
-                                        }
+                                match parse_orderbook_deltas(&msg, instrument, ts_init) {
+                                    Ok(deltas) => {
+                                        Python::attach(|py| {
+                                            let py_obj = data_to_pycapsule(
+                                                py,
+                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                            );
+                                            call_python(py, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Error parsing orderbook deltas: {e}");
                                     }
                                 }
                             } else {
@@ -218,33 +217,31 @@ impl BybitWebSocketClient {
                                 make_bybit_symbol(raw_symbol.as_str(), pt)
                             });
 
-                            // Use efficient O(1) lookup instead of O(n) iteration
-                            if let Some(instrument_id) = symbol_to_instrument_id.get(&symbol) {
-                                if let Some(instrument) = instruments.get(instrument_id.value()) {
-                                    let instrument_id = *instrument_id.value();
-                                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
-                                        .unwrap_or_else(|_| {
-                                            get_atomic_clock_realtime().get_time_ns()
-                                        });
-                                    let ts_init = clock.get_time_ns();
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                            {
+                                let instrument = instrument_entry.value();
+                                let instrument_id = instrument.id();
+                                let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
+                                    .unwrap_or_else(|_| get_atomic_clock_realtime().get_time_ns());
+                                let ts_init = clock.get_time_ns();
 
-                                    match quote_cache.write().await.process_linear_ticker(
-                                        &msg.data,
-                                        instrument_id,
-                                        instrument.value(),
-                                        ts_event,
-                                        ts_init,
-                                    ) {
-                                        Ok(quote) => {
-                                            Python::attach(|py| {
-                                                let py_obj =
-                                                    data_to_pycapsule(py, Data::Quote(quote));
-                                                call_python(py, &callback, py_obj);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::debug!("Skipping partial ticker update: {e}");
-                                        }
+                                match quote_cache.write().await.process_linear_ticker(
+                                    &msg.data,
+                                    instrument_id,
+                                    instrument,
+                                    ts_event,
+                                    ts_init,
+                                ) {
+                                    Ok(quote) => {
+                                        Python::attach(|py| {
+                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
+                                            call_python(py, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("Skipping partial ticker update: {e}");
                                     }
                                 }
                             } else {
@@ -263,33 +260,31 @@ impl BybitWebSocketClient {
                                 |pt| make_bybit_symbol(raw_symbol, pt),
                             );
 
-                            // Use efficient O(1) lookup instead of O(n) iteration
-                            if let Some(instrument_id) = symbol_to_instrument_id.get(&symbol) {
-                                if let Some(instrument) = instruments.get(instrument_id.value()) {
-                                    let instrument_id = *instrument_id.value();
-                                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
-                                        .unwrap_or_else(|_| {
-                                            get_atomic_clock_realtime().get_time_ns()
-                                        });
-                                    let ts_init = clock.get_time_ns();
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                            {
+                                let instrument = instrument_entry.value();
+                                let instrument_id = instrument.id();
+                                let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
+                                    .unwrap_or_else(|_| get_atomic_clock_realtime().get_time_ns());
+                                let ts_init = clock.get_time_ns();
 
-                                    match quote_cache.write().await.process_option_ticker(
-                                        &msg.data,
-                                        instrument_id,
-                                        instrument.value(),
-                                        ts_event,
-                                        ts_init,
-                                    ) {
-                                        Ok(quote) => {
-                                            Python::attach(|py| {
-                                                let py_obj =
-                                                    data_to_pycapsule(py, Data::Quote(quote));
-                                                call_python(py, &callback, py_obj);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::debug!("Skipping partial ticker update: {e}");
-                                        }
+                                match quote_cache.write().await.process_option_ticker(
+                                    &msg.data,
+                                    instrument_id,
+                                    instrument,
+                                    ts_event,
+                                    ts_init,
+                                ) {
+                                    Ok(quote) => {
+                                        Python::attach(|py| {
+                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
+                                            call_python(py, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("Skipping partial ticker update: {e}");
                                     }
                                 }
                             } else {
@@ -308,27 +303,23 @@ impl BybitWebSocketClient {
                                     make_bybit_symbol(raw_symbol.as_str(), pt)
                                 });
 
-                                // Use efficient O(1) lookup instead of O(n) iteration
-                                if let Some(instrument_id) = symbol_to_instrument_id.get(&symbol) {
-                                    if let Some(instrument) = instruments.get(instrument_id.value())
-                                    {
-                                        let ts_init = clock.get_time_ns();
+                                if let Some(instrument_entry) = instruments
+                                    .iter()
+                                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                                {
+                                    let instrument = instrument_entry.value();
+                                    let ts_init = clock.get_time_ns();
 
-                                        match parse_ws_trade_tick(
-                                            trade,
-                                            instrument.value(),
-                                            ts_init,
-                                        ) {
-                                            Ok(tick) => {
-                                                Python::attach(|py| {
-                                                    let py_obj =
-                                                        data_to_pycapsule(py, Data::Trade(tick));
-                                                    call_python(py, &callback, py_obj);
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("Error parsing trade tick: {e}");
-                                            }
+                                    match parse_ws_trade_tick(trade, instrument, ts_init) {
+                                        Ok(tick) => {
+                                            Python::attach(|py| {
+                                                let py_obj =
+                                                    data_to_pycapsule(py, Data::Trade(tick));
+                                                call_python(py, &callback, py_obj);
+                                            });
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Error parsing trade tick: {e}");
                                         }
                                     }
                                 } else {
@@ -354,62 +345,55 @@ impl BybitWebSocketClient {
                                 |pt| make_bybit_symbol(raw_symbol, pt),
                             );
 
-                            // Use efficient O(1) lookup instead of O(n) iteration
-                            if let Some(instrument_id) = symbol_to_instrument_id.get(&symbol) {
-                                if let Some(instrument) = instruments.get(instrument_id.value()) {
-                                    let ts_init = clock.get_time_ns();
+                            if let Some(instrument_entry) = instruments
+                                .iter()
+                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                            {
+                                let instrument = instrument_entry.value();
+                                let ts_init = clock.get_time_ns();
 
-                                    let (step, aggregation) = match interval_str.parse::<usize>() {
-                                        Ok(minutes) if minutes > 0 => {
-                                            (minutes, BarAggregation::Minute)
-                                        }
-                                        _ => {
-                                            // Handle other intervals (D, W, M) if needed
-                                            tracing::warn!(
-                                                "Unsupported kline interval: {}",
-                                                interval_str
-                                            );
-                                            continue;
-                                        }
-                                    };
-
-                                    if let Some(non_zero_step) = NonZero::new(step) {
-                                        let bar_spec = BarSpecification {
-                                            step: non_zero_step,
-                                            aggregation,
-                                            price_type: PriceType::Last,
-                                        };
-                                        let bar_type = BarType::new(
-                                            instrument.value().id(),
-                                            bar_spec,
-                                            AggregationSource::External,
+                                let (step, aggregation) = match interval_str.parse::<usize>() {
+                                    Ok(minutes) if minutes > 0 => (minutes, BarAggregation::Minute),
+                                    _ => {
+                                        // Handle other intervals (D, W, M) if needed
+                                        tracing::warn!(
+                                            "Unsupported kline interval: {}",
+                                            interval_str
                                         );
+                                        continue;
+                                    }
+                                };
 
-                                        for kline in &msg.data {
-                                            match parse_ws_kline_bar(
-                                                kline,
-                                                instrument.value(),
-                                                bar_type,
-                                                false,
-                                                ts_init,
-                                            ) {
-                                                Ok(bar) => {
-                                                    Python::attach(|py| {
-                                                        let py_obj =
-                                                            data_to_pycapsule(py, Data::Bar(bar));
-                                                        call_python(py, &callback, py_obj);
-                                                    });
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "Error parsing kline to bar: {e}"
-                                                    );
-                                                }
+                                if let Some(non_zero_step) = NonZero::new(step) {
+                                    let bar_spec = BarSpecification {
+                                        step: non_zero_step,
+                                        aggregation,
+                                        price_type: PriceType::Last,
+                                    };
+                                    let bar_type = BarType::new(
+                                        instrument.id(),
+                                        bar_spec,
+                                        AggregationSource::External,
+                                    );
+
+                                    for kline in &msg.data {
+                                        match parse_ws_kline_bar(
+                                            kline, instrument, bar_type, false, ts_init,
+                                        ) {
+                                            Ok(bar) => {
+                                                Python::attach(|py| {
+                                                    let py_obj =
+                                                        data_to_pycapsule(py, Data::Bar(bar));
+                                                    call_python(py, &callback, py_obj);
+                                                });
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Error parsing kline to bar: {e}");
                                             }
                                         }
-                                    } else {
-                                        tracing::error!("Invalid step value: {}", step);
                                     }
+                                } else {
+                                    tracing::error!("Invalid step value: {}", step);
                                 }
                             } else {
                                 tracing::warn!(
@@ -428,33 +412,27 @@ impl BybitWebSocketClient {
                                     let symbol =
                                         make_bybit_symbol(raw_symbol.as_str(), order.category);
 
-                                    // Use efficient O(1) lookup instead of O(n) iteration
-                                    if let Some(instrument_id) =
-                                        symbol_to_instrument_id.get(&symbol)
+                                    if let Some(instrument_entry) = instruments
+                                        .iter()
+                                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
                                     {
-                                        if let Some(instrument) =
-                                            instruments.get(instrument_id.value())
-                                        {
-                                            let ts_init = clock.get_time_ns();
+                                        let instrument = instrument_entry.value();
+                                        let ts_init = clock.get_time_ns();
 
-                                            match parse_ws_order_status_report(
-                                                order,
-                                                instrument.value(),
-                                                account_id,
-                                                ts_init,
-                                            ) {
-                                                Ok(report) => {
-                                                    Python::attach(|py| {
-                                                        if let Ok(py_obj) = report.into_py_any(py) {
-                                                            call_python(py, &callback, py_obj);
-                                                        }
-                                                    });
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "Error parsing order status report: {e}"
-                                                    );
-                                                }
+                                        match parse_ws_order_status_report(
+                                            order, instrument, account_id, ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                Python::attach(|py| {
+                                                    if let Ok(py_obj) = report.into_py_any(py) {
+                                                        call_python(py, &callback, py_obj);
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Error parsing order status report: {e}"
+                                                );
                                             }
                                         }
                                     } else {
@@ -478,33 +456,25 @@ impl BybitWebSocketClient {
                                     let symbol =
                                         make_bybit_symbol(raw_symbol.as_str(), execution.category);
 
-                                    // Use efficient O(1) lookup instead of O(n) iteration
-                                    if let Some(instrument_id) =
-                                        symbol_to_instrument_id.get(&symbol)
+                                    if let Some(instrument_entry) = instruments
+                                        .iter()
+                                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
                                     {
-                                        if let Some(instrument) =
-                                            instruments.get(instrument_id.value())
-                                        {
-                                            let ts_init = clock.get_time_ns();
+                                        let instrument = instrument_entry.value();
+                                        let ts_init = clock.get_time_ns();
 
-                                            match parse_ws_fill_report(
-                                                execution,
-                                                account_id,
-                                                instrument.value(),
-                                                ts_init,
-                                            ) {
-                                                Ok(report) => {
-                                                    Python::attach(|py| {
-                                                        if let Ok(py_obj) = report.into_py_any(py) {
-                                                            call_python(py, &callback, py_obj);
-                                                        }
-                                                    });
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "Error parsing fill report: {e}"
-                                                    );
-                                                }
+                                        match parse_ws_fill_report(
+                                            execution, account_id, instrument, ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                Python::attach(|py| {
+                                                    if let Ok(py_obj) = report.into_py_any(py) {
+                                                        call_python(py, &callback, py_obj);
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Error parsing fill report: {e}");
                                             }
                                         }
                                     } else {
