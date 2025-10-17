@@ -535,11 +535,6 @@ impl LiveExecutionClient for OKXExecutionClient {
 
         self.ensure_instruments_initialized_async().await?;
 
-        // Query VIP level and update websocket client
-        if let Ok(Some(vip_level)) = self.http_client.request_vip_level().await {
-            self.ws_client.set_vip_level(vip_level);
-        }
-
         self.ws_client.connect().await?;
         self.ws_client.wait_until_active(10.0).await?;
 
@@ -569,6 +564,18 @@ impl LiveExecutionClient for OKXExecutionClient {
 
         self.connected = true;
         tracing::info!("OKX execution client {} connected", self.core.client_id);
+
+        // Query VIP level after connection is established (non-critical)
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        self.spawn_task("query_vip_level", async move {
+            if let Ok(Some(vip_level)) = http_client.request_vip_level().await {
+                ws_client.set_vip_level(vip_level);
+                tracing::info!("Set OKX VIP level to: {vip_level:?}");
+            }
+            Ok(())
+        });
+
         Ok(())
     }
 
