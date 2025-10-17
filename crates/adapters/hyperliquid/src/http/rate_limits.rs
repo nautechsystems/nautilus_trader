@@ -217,7 +217,6 @@ mod tests {
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
         };
 
-        // Create dummy orders for testing
         let orders: Vec<HyperliquidExecPlaceOrderRequest> = (0..array_len)
             .map(|_| HyperliquidExecPlaceOrderRequest {
                 asset: 0,
@@ -248,7 +247,6 @@ mod tests {
     fn test_exchange_weight_cancel() {
         use super::super::models::{Cloid, HyperliquidExecCancelByCloidRequest};
 
-        // Create dummy cancel requests for testing
         let cancels: Vec<HyperliquidExecCancelByCloidRequest> = (0..40)
             .map(|_| HyperliquidExecCancelByCloidRequest {
                 asset: 0,

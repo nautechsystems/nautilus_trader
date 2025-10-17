@@ -738,7 +738,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        // Create exchange action for batch cancellation with typed struct
         let action = ExchangeAction::cancel_by_cloid(cancel_requests);
 
         // Send batch cancel request via HTTP API

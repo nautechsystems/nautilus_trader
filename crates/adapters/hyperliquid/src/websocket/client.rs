@@ -404,8 +404,6 @@ pub struct HyperliquidWebSocketClient {
     inner: Arc<RwLock<Option<HyperliquidWebSocketInnerClient>>>,
     url: String,
     instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
-    /// Map coin symbols (e.g., "BTC") to instrument IDs (e.g., "BTC-PERP")
-    /// for O(1) lookup when processing WebSocket messages.
     instruments_by_symbol: Arc<DashMap<Ustr, InstrumentId>>,
 }
 
