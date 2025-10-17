@@ -38,6 +38,13 @@ use crate::{
 /// for the hypersync to index the block.
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
+/// Timeout in seconds for HyperSync HTTP requests.
+const HYPERSYNC_REQUEST_TIMEOUT_SECS: u64 = 30;
+
+/// Timeout in seconds for graceful task shutdown during disconnect.
+/// If the task doesn't finish within this time, it will be forcefully aborted.
+const DISCONNECT_TIMEOUT_SECS: u64 = 5;
+
 /// A client for interacting with a HyperSync API to retrieve blockchain data.
 #[derive(Debug)]
 pub struct HyperSyncClient {
@@ -265,10 +272,28 @@ impl HyperSyncClient {
         tracing::debug!("Disconnecting HyperSync client");
         self.cancellation_token.cancel();
 
-        // Await blocks task
-        if let Some(task) = self.blocks_task.take() {
-            if let Err(e) = task.await {
-                tracing::error!("Error awaiting blocks task: {e}");
+        // Await blocks task with timeout, abort if it takes too long
+        if let Some(mut task) = self.blocks_task.take() {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                &mut task,
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    tracing::debug!("Blocks task completed gracefully");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Error awaiting blocks task: {e}");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "Blocks task did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, \
+                         aborting task (this is expected if Hypersync long-poll was in progress)"
+                    );
+                    task.abort();
+                    let _ = task.await;
+                }
             }
         }
 
@@ -355,8 +380,22 @@ impl HyperSyncClient {
                         tracing::debug!("Blocks subscription task received cancellation signal");
                         break;
                     }
-                    result = client.get(&query) => {
-                        let response = result.unwrap();
+                    result = tokio::time::timeout(
+                        std::time::Duration::from_secs(HYPERSYNC_REQUEST_TIMEOUT_SECS),
+                        client.get(&query)
+                    ) => {
+                        let response = match result {
+                            Ok(Ok(resp)) => resp,
+                            Ok(Err(e)) => {
+                                tracing::error!("Hypersync request failed: {e}");
+                                break;
+                            }
+                            Err(_) => {
+                                tracing::warn!("Hypersync request timed out after {HYPERSYNC_REQUEST_TIMEOUT_SECS}s, retrying...");
+                                continue;
+                            }
+                        };
+
                         for batch in response.data.blocks {
                             for received_block in batch {
                                 let block = transform_hypersync_block(chain, received_block).unwrap();
