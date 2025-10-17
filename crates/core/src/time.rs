@@ -622,9 +622,9 @@ mod tests {
         let reader = std::thread::spawn(move || {
             let mut last_time = 0u64;
             let mut max_aux_seen = 0u64;
-            let mut iterations = 0;
 
-            while iterations < 10_000 && !reader_done.load(Ordering::Acquire) {
+            // Poll until writer is done, with no iteration limit
+            while !reader_done.load(Ordering::Acquire) {
                 let current_time = reader_clock.get_time_ns().as_u64();
 
                 if current_time > last_time {
@@ -646,15 +646,21 @@ mod tests {
                     last_time = current_time;
                 }
 
-                iterations += 1;
                 std::thread::yield_now();
             }
 
+            // Check final state after writer completes to ensure we observe updates
             let final_time = reader_clock.get_time_ns().as_u64();
             if final_time > last_time {
                 let final_aux = reader_aux.load(Ordering::Relaxed);
                 if final_aux > 0 {
-                    assert!(final_aux >= max_aux_seen);
+                    assert!(
+                        final_aux >= max_aux_seen,
+                        "Acquire/Release contract violated: final aux {} < max {}",
+                        final_aux,
+                        max_aux_seen
+                    );
+                    max_aux_seen = final_aux;
                 }
             }
 
@@ -696,9 +702,9 @@ mod tests {
         let reader = std::thread::spawn(move || {
             let mut last_time = 0u64;
             let mut max_aux = 0u64;
-            let mut iterations = 0;
 
-            while iterations < 10_000 && !reader_done.load(Ordering::Acquire) {
+            // Poll until writer is done, with no iteration limit
+            while !reader_done.load(Ordering::Acquire) {
                 let current_time = reader_clock.get_time_ns().as_u64();
 
                 if current_time > last_time {
@@ -718,15 +724,21 @@ mod tests {
                     last_time = current_time;
                 }
 
-                iterations += 1;
                 std::thread::yield_now();
             }
 
+            // Check final state after writer completes to ensure we observe updates
             let final_time = reader_clock.get_time_ns().as_u64();
             if final_time > last_time {
                 let final_aux = reader_aux.load(Ordering::Relaxed);
                 if final_aux > 0 {
-                    assert!(final_aux >= max_aux);
+                    assert!(
+                        final_aux >= max_aux,
+                        "AcqRel contract violated: final aux {} < max {}",
+                        final_aux,
+                        max_aux
+                    );
+                    max_aux = final_aux;
                 }
             }
 

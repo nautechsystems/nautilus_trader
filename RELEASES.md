@@ -69,6 +69,10 @@ This will be the final release with support for Python 3.11.
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed `SandboxExecutionClient` instrument data handling
 - Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
+- Fixed `CryptoOption` Arrow schema `option_kind` field to accept string values
+- Fixed `FuturesSpread` Arrow schema missing max/min quantity and price fields
+- Fixed `OptionSpread` Arrow schema missing max/min quantity and price fields
+- Fixed `Commodity` Arrow schema to match from_dict requirements
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
