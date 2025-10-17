@@ -313,26 +313,30 @@ pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
     };
 
     // Convert symbol like "BTC" to asset index
+    // Asset indices from Hyperliquid testnet meta endpoint (as of October 2025)
+    // Source: https://api.hyperliquid-testnet.xyz/info
+    //
+    // NOTE: These indices may change. For production, consider querying the meta endpoint
+    // dynamically during initialization to avoid hardcoded mappings.
     Ok(match base {
-        "SOL" => 0,
-        "APT" => 1,
-        "ATOM" => 2,
-        "BTC" => 3,
-        "ETH" => 4,
-        "MATIC" => 5,
-        "BNB" => 6,
-        "AVAX" => 7,
-        "DYDX" => 9,
-        "APE" => 10,
-        "OP" => 11,
-        "kPEPE" => 12,
-        "ARB" => 13,
-        "WIF" => 78,
-        "kSHIB" => 29,
-        "DOGE" => 173,
+        "SOL" => 0,    // Solana
+        "APT" => 1,    // Aptos
+        "ATOM" => 2,   // Cosmos
+        "BTC" => 3,    // Bitcoin
+        "ETH" => 4,    // Ethereum
+        "MATIC" => 5,  // Polygon
+        "BNB" => 6,    // Binance Coin
+        "AVAX" => 7,   // Avalanche
+        "DYDX" => 9,   // dYdX
+        "APE" => 10,   // ApeCoin
+        "OP" => 11,    // Optimism
+        "kPEPE" => 12, // Pepe (1k units)
+        "ARB" => 13,   // Arbitrum
+        "kSHIB" => 29, // Shiba Inu (1k units)
+        "WIF" => 78,   // Dogwifhat
+        "DOGE" => 173, // Dogecoin
         _ => {
-            // For unknown assets, we'll need to query the meta endpoint
-            // For now, return a placeholder that will need to be resolved
+            // For unknown assets, query the meta endpoint or add to this mapping
             anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
         }
     })

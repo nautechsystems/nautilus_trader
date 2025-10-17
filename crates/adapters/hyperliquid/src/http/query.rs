@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::http::models::{
     HyperliquidExecCancelByCloidRequest, HyperliquidExecModifyOrderRequest,
@@ -90,13 +89,73 @@ pub struct UpdateIsolatedMarginParams {
     pub ntli: i64,
 }
 
+/// Parameters for L2 book request.
+#[derive(Debug, Clone, Serialize)]
+pub struct L2BookParams {
+    pub coin: String,
+}
+
+/// Parameters for user fills request.
+#[derive(Debug, Clone, Serialize)]
+pub struct UserFillsParams {
+    pub user: String,
+}
+
+/// Parameters for order status request.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrderStatusParams {
+    pub user: String,
+    pub oid: u64,
+}
+
+/// Parameters for open orders request.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenOrdersParams {
+    pub user: String,
+}
+
+/// Parameters for clearinghouse state request.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClearinghouseStateParams {
+    pub user: String,
+}
+
+/// Parameters for candle snapshot request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandleSnapshotReq {
+    pub coin: String,
+    pub interval: String,
+    pub start_time: u64,
+    pub end_time: u64,
+}
+
+/// Wrapper for candle snapshot parameters.
+#[derive(Debug, Clone, Serialize)]
+pub struct CandleSnapshotParams {
+    pub req: CandleSnapshotReq,
+}
+
+/// Info request parameters.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum InfoRequestParams {
+    L2Book(L2BookParams),
+    UserFills(UserFillsParams),
+    OrderStatus(OrderStatusParams),
+    OpenOrders(OpenOrdersParams),
+    ClearinghouseState(ClearinghouseStateParams),
+    CandleSnapshot(CandleSnapshotParams),
+    None,
+}
+
 /// Represents an info request wrapper for `POST /info`.
 #[derive(Debug, Clone, Serialize)]
 pub struct InfoRequest {
     #[serde(rename = "type")]
     pub request_type: String,
     #[serde(flatten)]
-    pub params: Value,
+    pub params: InfoRequestParams,
 }
 
 impl InfoRequest {
@@ -104,7 +163,7 @@ impl InfoRequest {
     pub fn meta() -> Self {
         Self {
             request_type: "meta".to_string(),
-            params: Value::Null,
+            params: InfoRequestParams::None,
         }
     }
 
@@ -112,7 +171,7 @@ impl InfoRequest {
     pub fn spot_meta() -> Self {
         Self {
             request_type: "spotMeta".to_string(),
-            params: Value::Null,
+            params: InfoRequestParams::None,
         }
     }
 
@@ -120,7 +179,7 @@ impl InfoRequest {
     pub fn meta_and_asset_ctxs() -> Self {
         Self {
             request_type: "metaAndAssetCtxs".to_string(),
-            params: Value::Null,
+            params: InfoRequestParams::None,
         }
     }
 
@@ -128,7 +187,7 @@ impl InfoRequest {
     pub fn spot_meta_and_asset_ctxs() -> Self {
         Self {
             request_type: "spotMetaAndAssetCtxs".to_string(),
-            params: Value::Null,
+            params: InfoRequestParams::None,
         }
     }
 
@@ -136,7 +195,9 @@ impl InfoRequest {
     pub fn l2_book(coin: &str) -> Self {
         Self {
             request_type: "l2Book".to_string(),
-            params: serde_json::json!({ "coin": coin }),
+            params: InfoRequestParams::L2Book(L2BookParams {
+                coin: coin.to_string(),
+            }),
         }
     }
 
@@ -144,7 +205,9 @@ impl InfoRequest {
     pub fn user_fills(user: &str) -> Self {
         Self {
             request_type: "userFills".to_string(),
-            params: serde_json::json!({ "user": user }),
+            params: InfoRequestParams::UserFills(UserFillsParams {
+                user: user.to_string(),
+            }),
         }
     }
 
@@ -152,7 +215,10 @@ impl InfoRequest {
     pub fn order_status(user: &str, oid: u64) -> Self {
         Self {
             request_type: "orderStatus".to_string(),
-            params: serde_json::json!({ "user": user, "oid": oid }),
+            params: InfoRequestParams::OrderStatus(OrderStatusParams {
+                user: user.to_string(),
+                oid,
+            }),
         }
     }
 
@@ -160,7 +226,9 @@ impl InfoRequest {
     pub fn open_orders(user: &str) -> Self {
         Self {
             request_type: "openOrders".to_string(),
-            params: serde_json::json!({ "user": user }),
+            params: InfoRequestParams::OpenOrders(OpenOrdersParams {
+                user: user.to_string(),
+            }),
         }
     }
 
@@ -168,7 +236,9 @@ impl InfoRequest {
     pub fn frontend_open_orders(user: &str) -> Self {
         Self {
             request_type: "frontendOpenOrders".to_string(),
-            params: serde_json::json!({ "user": user }),
+            params: InfoRequestParams::OpenOrders(OpenOrdersParams {
+                user: user.to_string(),
+            }),
         }
     }
 
@@ -176,7 +246,9 @@ impl InfoRequest {
     pub fn clearinghouse_state(user: &str) -> Self {
         Self {
             request_type: "clearinghouseState".to_string(),
-            params: serde_json::json!({ "user": user }),
+            params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
+                user: user.to_string(),
+            }),
         }
     }
 
@@ -190,13 +262,13 @@ impl InfoRequest {
     pub fn candle_snapshot(coin: &str, interval: &str, start_time: u64, end_time: u64) -> Self {
         Self {
             request_type: "candleSnapshot".to_string(),
-            params: serde_json::json!({
-                "req": {
-                    "coin": coin,
-                    "interval": interval,
-                    "startTime": start_time,
-                    "endTime": end_time
-                }
+            params: InfoRequestParams::CandleSnapshot(CandleSnapshotParams {
+                req: CandleSnapshotReq {
+                    coin: coin.to_string(),
+                    interval: interval.to_string(),
+                    start_time,
+                    end_time,
+                },
             }),
         }
     }
@@ -308,7 +380,7 @@ mod tests {
         let req = InfoRequest::meta();
 
         assert_eq!(req.request_type, "meta");
-        assert_eq!(req.params, Value::Null);
+        assert!(matches!(req.params, InfoRequestParams::None));
     }
 
     #[rstest]
@@ -322,11 +394,12 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_order() {
+        use rust_decimal::Decimal;
+
         use crate::http::models::{
             HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
             HyperliquidExecTif,
         };
-        use rust_decimal::Decimal;
 
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
@@ -366,11 +439,12 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_serialization() {
+        use rust_decimal::Decimal;
+
         use crate::http::models::{
             HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
             HyperliquidExecTif,
         };
-        use rust_decimal::Decimal;
 
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
@@ -450,8 +524,9 @@ mod tests {
 
     #[rstest]
     fn test_modify_serialization() {
-        use crate::http::models::HyperliquidExecModifyOrderRequest;
         use rust_decimal::Decimal;
+
+        use crate::http::models::HyperliquidExecModifyOrderRequest;
 
         let modify_request = HyperliquidExecModifyOrderRequest {
             asset: 0,

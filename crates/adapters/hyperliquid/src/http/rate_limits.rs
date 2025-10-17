@@ -197,7 +197,7 @@ mod tests {
     use super::*;
     use crate::http::query::{
         CancelParams, ExchangeAction, ExchangeActionParams, ExchangeActionType, InfoRequest,
-        OrderParams, UpdateLeverageParams,
+        InfoRequestParams, L2BookParams, OrderParams, UpdateLeverageParams, UserFillsParams,
     };
 
     #[rstest]
@@ -210,11 +210,12 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
+        use rust_decimal::Decimal;
+
         use super::super::models::{
             Cloid, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
         };
-        use rust_decimal::Decimal;
 
         // Create dummy orders for testing
         let orders: Vec<HyperliquidExecPlaceOrderRequest> = (0..array_len)
@@ -288,7 +289,9 @@ mod tests {
     fn test_info_base_weights(#[case] request_type: &str, #[case] expected_weight: u32) {
         let request = InfoRequest {
             request_type: request_type.to_string(),
-            params: json!({ "coin": "BTC" }),
+            params: InfoRequestParams::L2Book(L2BookParams {
+                coin: "BTC".to_string(),
+            }),
         };
         assert_eq!(info_base_weight(&request), expected_weight);
     }
@@ -297,7 +300,9 @@ mod tests {
     fn test_info_extra_weight_no_charging() {
         let l2_book = InfoRequest {
             request_type: "l2Book".to_string(),
-            params: json!({ "coin": "BTC" }),
+            params: InfoRequestParams::L2Book(L2BookParams {
+                coin: "BTC".to_string(),
+            }),
         };
         let large_json = json!(vec![1; 1000]);
         assert_eq!(info_extra_weight(&l2_book, &large_json), 0);
@@ -307,7 +312,9 @@ mod tests {
     fn test_info_extra_weight_complex_json() {
         let user_fills = InfoRequest {
             request_type: "userFills".to_string(),
-            params: json!({ "user": "0x123" }),
+            params: InfoRequestParams::UserFills(UserFillsParams {
+                user: "0x123".to_string(),
+            }),
         };
         let complex_json = json!({
             "fills": vec![1; 40],

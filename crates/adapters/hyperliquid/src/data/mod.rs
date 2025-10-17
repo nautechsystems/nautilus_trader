@@ -150,6 +150,10 @@ impl HyperliquidDataClient {
             if let Some(coin) = symbol.split('-').next() {
                 coin_map.insert(Ustr::from(coin), instrument_id);
             }
+
+            // Also add instrument to the WebSocket client's cache for fast lookups
+            // used by the WebSocket client and execution path.
+            self.ws_client.add_instrument(instrument.clone());
         }
 
         tracing::info!(

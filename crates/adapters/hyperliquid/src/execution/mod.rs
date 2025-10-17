@@ -553,8 +553,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let symbol = command.instrument_id.symbol.to_string();
 
         self.spawn_task("modify_order", async move {
-            use crate::common::parse::extract_asset_id_from_symbol;
-            use crate::http::models::HyperliquidExecModifyOrderRequest;
+            use crate::{
+                common::parse::extract_asset_id_from_symbol,
+                http::models::HyperliquidExecModifyOrderRequest,
+            };
 
             // Extract asset ID from instrument symbol
             let asset = match extract_asset_id_from_symbol(&symbol) {
