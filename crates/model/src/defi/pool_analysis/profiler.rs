@@ -76,7 +76,7 @@ pub struct PoolProfiler {
     /// Analytics counters tracking pool operations and performance metrics.
     pub analytics: PoolAnalytics,
     /// The block position of the last processed event.
-    last_processed_event: Option<BlockPosition>,
+    pub last_processed_event: Option<BlockPosition>,
     /// Flag indicating whether the pool has been initialized with a starting price.
     pub is_initialized: bool,
 }

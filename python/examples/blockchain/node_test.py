@@ -100,7 +100,7 @@ def main() -> None:
             "chain": "Arbitrum",
             "client_id": "BLOCKCHAIN-Arbitrum",
             "pools": [
-                "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+                "0xD491076C7316bC28fD4D35E3da9aB5286D079250.Arbitrum:UniswapV3",
             ],
         },
     )
