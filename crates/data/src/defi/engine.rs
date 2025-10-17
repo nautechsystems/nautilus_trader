@@ -470,8 +470,10 @@ impl DataEngine {
 
                 if let Err(e) = cache.add_pool_profiler(pool_profiler) {
                     log::error!("Failed to add pool profiler for {instrument_id}: {e}");
+                    drop(cache);
                     return;
                 }
+                drop(cache);
             } else {
                 // Neither profiler nor pool exists, request snapshot
                 drop(cache);

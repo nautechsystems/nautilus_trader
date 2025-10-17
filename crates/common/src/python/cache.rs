@@ -98,13 +98,19 @@ impl PyCache {
     #[cfg(feature = "defi")]
     #[pyo3(name = "pool")]
     fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
-        self.0.borrow().pool(&instrument_id).cloned()
+        self.0
+            .try_borrow()
+            .ok()
+            .and_then(|cache| cache.pool(&instrument_id).cloned())
     }
 
     #[cfg(feature = "defi")]
     #[pyo3(name = "pool_profiler")]
     fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
-        self.0.borrow().pool_profiler(&instrument_id).cloned()
+        self.0
+            .try_borrow()
+            .ok()
+            .and_then(|cache| cache.pool_profiler(&instrument_id).cloned())
     }
 }
 
