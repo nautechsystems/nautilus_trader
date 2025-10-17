@@ -25,6 +25,7 @@ use nautilus_model::defi::{
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash},
     pool_analysis::compare::compare_pool_profiler,
 };
+use thousands::Separable;
 
 use crate::{
     cache::BlockchainCache,
@@ -193,8 +194,9 @@ impl BlockchainDataClientCore {
         let from_block = self.determine_from_block();
 
         tracing::info!(
-            "Connecting to blockchain data source for '{chain_name}' from block {from_block}",
-            chain_name = self.chain.name
+            "Connecting to blockchain data source for '{}' from block {}",
+            self.chain.name,
+            from_block.separate_with_commas()
         );
 
         // Initialize the chain and register the Dex exchanges in the cache.
@@ -231,7 +233,10 @@ impl BlockchainDataClientCore {
                     blocks_status.last_continuous_block
                 );
                 let target_block = max(blocks_status.max_block + 1, from_block);
-                tracing::info!("Starting fast sync with COPY from block {}", target_block);
+                tracing::info!(
+                    "Starting fast sync with COPY from block {}",
+                    target_block.separate_with_commas()
+                );
                 self.sync_blocks(target_block, to_block, true).await?;
             } else {
                 let gap_size = blocks_status.max_block - blocks_status.last_continuous_block;
@@ -256,7 +261,7 @@ impl BlockchainDataClientCore {
 
                 tracing::info!(
                     "Block syncing Phase 2: Continuing with fast COPY from block {}",
-                    blocks_status.max_block + 1
+                    (blocks_status.max_block + 1).separate_with_commas()
                 );
                 self.sync_blocks(blocks_status.max_block + 1, to_block, true)
                     .await?;
@@ -286,7 +291,10 @@ impl BlockchainDataClientCore {
         };
         let total_blocks = to_block.saturating_sub(from_block) + 1;
         tracing::info!(
-            "Syncing blocks from {from_block} to {to_block} (total: {total_blocks} blocks)"
+            "Syncing blocks from {} to {} (total: {} blocks)",
+            from_block.separate_with_commas(),
+            to_block.separate_with_commas(),
+            total_blocks.separate_with_commas()
         );
 
         // Enable performance settings for sync operations
@@ -404,8 +412,8 @@ impl BlockchainDataClientCore {
             tracing::info!(
                 "D {} already synced to block {} (current: {}), skipping sync",
                 dex,
-                last_synced_block.unwrap_or(0),
-                to_block
+                last_synced_block.unwrap_or(0).separate_with_commas(),
+                to_block.separate_with_commas()
             );
             return Ok(());
         }
@@ -420,11 +428,14 @@ impl BlockchainDataClientCore {
         tracing::info!(
             "Syncing Pool: '{}' events from {} to {} (total: {} blocks){}",
             pool_display,
-            effective_from_block,
-            to_block,
-            total_blocks,
+            effective_from_block.separate_with_commas(),
+            to_block.separate_with_commas(),
+            total_blocks.separate_with_commas(),
             if let Some(last_synced) = last_synced_block {
-                format!(" - resuming from last synced block {}", last_synced)
+                format!(
+                    " - resuming from last synced block {}",
+                    last_synced.separate_with_commas()
+                )
             } else {
                 String::new()
             }
@@ -641,7 +652,7 @@ impl BlockchainDataClientCore {
             "Successfully synced Dex '{}' Pool '{}' up to block {}",
             dex,
             pool_display,
-            to_block
+            to_block.separate_with_commas()
         );
                 Ok(())
             } => result
@@ -874,8 +885,8 @@ impl BlockchainDataClientCore {
             tracing::info!(
                 "DEX {} already synced to block {} (current: {}), skipping sync",
                 dex,
-                last_synced_block.unwrap_or(0),
-                to_block
+                last_synced_block.unwrap_or(0).separate_with_commas(),
+                to_block.separate_with_commas()
             );
             return Ok(());
         }
@@ -883,11 +894,14 @@ impl BlockchainDataClientCore {
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
         tracing::info!(
             "Syncing DEX exchange pools from {} to {} (total: {} blocks){}",
-            effective_from_block,
-            to_block,
-            total_blocks,
+            effective_from_block.separate_with_commas(),
+            to_block.separate_with_commas(),
+            total_blocks.separate_with_commas(),
             if let Some(last_synced) = last_synced_block {
-                format!(" - resuming from last synced block {last_synced}")
+                format!(
+                    " - resuming from last synced block {}",
+                    last_synced.separate_with_commas()
+                )
             } else {
                 String::new()
             }
@@ -991,7 +1005,7 @@ impl BlockchainDataClientCore {
         tracing::info!(
             "Successfully synced DEX {} pools up to block {}",
             dex.dex.name,
-            to_block
+            to_block.separate_with_commas()
         );
 
                 Ok(())
@@ -1189,7 +1203,7 @@ impl BlockchainDataClientCore {
                 Ok(Some(snapshot)) => {
                     tracing::info!(
                         "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
-                        snapshot.block_position.number,
+                        snapshot.block_position.number.separate_with_commas(),
                         snapshot.positions.len(),
                         snapshot.ticks.len()
                     );

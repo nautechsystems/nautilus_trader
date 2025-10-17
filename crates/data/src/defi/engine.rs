@@ -124,7 +124,7 @@ impl DataEngine {
         }
 
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            log::info!("Forwarding subscription to client {:?}", cmd.client_id());
+            log::info!("Forwarding subscription to client {}", client.client_id);
             client.execute_defi_subscribe(cmd);
         } else {
             log::error!(
