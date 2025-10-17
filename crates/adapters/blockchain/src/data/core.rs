@@ -20,15 +20,19 @@ use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
-    SharedPool, Token,
+    Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolProfiler, PoolSwap, SharedChain,
+    SharedDex, SharedPool, Token,
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash},
+    pool_analysis::compare::compare_pool_profiler,
 };
 
 use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
-    contracts::erc20::{Erc20Contract, TokenInfoError},
+    contracts::{
+        erc20::{Erc20Contract, TokenInfoError},
+        uniswap_v3_pool::UniswapV3PoolContract,
+    },
     data::subscription::DefiDataSubscriptionManager,
     events::{
         burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent,
@@ -67,6 +71,8 @@ pub struct BlockchainDataClientCore {
     pub cache: BlockchainCache,
     /// Interface for interacting with ERC20 token contracts.
     tokens: Erc20Contract,
+    /// Interface for interacting with UniswapV3 pool contracts.
+    univ3_pool: UniswapV3PoolContract,
     /// Client for the HyperSync data indexing service.
     pub hypersync_client: HyperSyncClient,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -94,10 +100,20 @@ impl BlockchainDataClientCore {
     ) -> Self {
         let chain = config.chain.clone();
         let cache = BlockchainCache::new(chain.clone());
+
+        // Log RPC endpoints being used
+        tracing::info!(
+            "Initializing blockchain data client for '{}' with HTTP RPC: {}",
+            chain.name,
+            config.http_rpc_url
+        );
+
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
+            tracing::info!("WebSocket RPC URL: {}", wss_rpc_url);
             Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
         } else {
+            tracing::info!("Using HyperSync for live data (no WebSocket RPC)");
             None
         };
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
@@ -105,7 +121,7 @@ impl BlockchainDataClientCore {
             config.rpc_requests_per_second,
         ));
         let erc20_contract = Erc20Contract::new(
-            http_rpc_client,
+            http_rpc_client.clone(),
             config.pool_filters.remove_pools_with_empty_erc20fields,
         );
 
@@ -116,6 +132,7 @@ impl BlockchainDataClientCore {
             config,
             rpc_client,
             tokens: erc20_contract,
+            univ3_pool: UniswapV3PoolContract::new(http_rpc_client.clone()),
             cache,
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),
@@ -356,7 +373,7 @@ impl BlockchainDataClientCore {
     pub async fn sync_pool_events(
         &mut self,
         dex: &DexType,
-        pool_address: Address,
+        pool_address: &Address,
         from_block: Option<u64>,
         to_block: Option<u64>,
         reset: bool,
@@ -528,26 +545,22 @@ impl BlockchainDataClientCore {
                     Ok(fee_collect) => collect_batch.push(fee_collect),
                     Err(e) => tracing::error!("Failed to process collect event: {e}"),
                 }
-            } else if let Some(flash_sig_bytes_inner) = &flash_sig_bytes {
-                if event_sig_bytes == flash_sig_bytes_inner.as_slice() {
-                    if let Some(parse_fn) = dex_extended.parse_flash_event_fn {
-                        match parse_fn(dex_extended.dex.clone(), log) {
-                            Ok(flash_event) => {
-                                match self.process_pool_flash_event(&flash_event, &pool) {
-                                    Ok(flash) => flash_batch.push(flash),
-                                    Err(e) => tracing::error!("Failed to process flash event: {e}"),
-                                }
+            } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
+                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                self.cache
+                    .update_pool_initialize_price_tick(&initialize_event)
+                    .await?;
+            } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
+                if let Some(parse_fn) = dex_extended.parse_flash_event_fn {
+                    match parse_fn(dex_extended.dex.clone(), log) {
+                        Ok(flash_event) => {
+                            match self.process_pool_flash_event(&flash_event, &pool) {
+                                Ok(flash) => flash_batch.push(flash),
+                                Err(e) => tracing::error!("Failed to process flash event: {e}"),
                             }
-                            Err(e) => tracing::error!("Failed to parse flash event: {e}"),
                         }
+                        Err(e) => tracing::error!("Failed to parse flash event: {e}"),
                     }
-                }
-            } else if let Some(init_sig_bytes) = &initialize_sig_bytes {
-                if event_sig_bytes == init_sig_bytes.as_slice() {
-                    let initialize_event = dex_extended.parse_initialize_event(log)?;
-                    self.cache
-                        .update_pool_initialize_price_tick(&initialize_event)
-                        .await?;
                 }
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
@@ -1142,6 +1155,148 @@ impl BlockchainDataClientCore {
         } else {
             anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name)
         }
+    }
+
+    /// Bootstraps a [`PoolProfiler`] with the latest state for a given pool.
+    ///
+    /// This method creates a new pool profiler and hydrates it by:
+    /// 1. Attempting to restore from the latest valid snapshot in the database (if available)
+    /// 2. If no snapshot exists, initializing with the pool's initial sqrt price
+    /// 3. Streaming and processing all subsequent events from the snapshot point or pool creation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database is not initialized
+    /// - Snapshot restoration fails
+    /// - Event processing fails during state hydration
+    pub async fn bootstrap_latest_pool_profiler(
+        &self,
+        pool: &SharedPool,
+    ) -> anyhow::Result<PoolProfiler> {
+        tracing::info!(
+            "Bootstrapping latest pool profiler for pool {}",
+            pool.address
+        );
+        if let Some(database) = &self.cache.database {
+            let mut profiler = PoolProfiler::new(pool.clone());
+            // If snapshot exists we restore it and if it doesnt exists or there is some error fetching it
+            // we just initialize it with the initial sqrt price x96.
+            let from_position = match database
+                .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.address)
+                .await
+            {
+                Ok(Some(snapshot)) => {
+                    tracing::info!(
+                        "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
+                        snapshot.block_position.number,
+                        snapshot.positions.len(),
+                        snapshot.ticks.len()
+                    );
+                    let block_position = snapshot.block_position.clone();
+                    profiler.restore_from_snapshot(snapshot)?;
+                    tracing::info!("Restored profiler from snapshot");
+                    Some(block_position)
+                }
+                _ => {
+                    tracing::info!("No valid snapshot found, processing from beginning");
+                    let initial_sqrt_price_x96 = pool
+                        .initial_sqrt_price_x96
+                        .expect("Pool has no initial sqrt price");
+                    profiler.initialize(initial_sqrt_price_x96);
+                    None
+                }
+            };
+
+            let mut stream = database.stream_pool_events(
+                pool.chain.clone(),
+                pool.dex.clone(),
+                pool.instrument_id,
+                &pool.address,
+                from_position.clone(),
+            );
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(event) => {
+                        profiler.process(&event)?;
+                    }
+                    Err(e) => log::error!("Error processing event: {}", e),
+                }
+            }
+
+            Ok(profiler)
+        } else {
+            anyhow::bail!(
+                "Database is not initialized, so we cannot properly bootstrap the latest pool profiler"
+            );
+        }
+    }
+
+    /// Validates a pool profiler's state against on-chain data for accuracy verification.
+    ///
+    /// This method performs integrity checking by comparing the profiler's internal state
+    /// (positions, ticks, liquidity) with the actual on-chain smart contract state. For UniswapV3
+    /// pools, it fetches current on-chain data and verifies that the profiler's tracked state matches.
+    /// If validation succeeds, the snapshot is marked as valid in the database for future use.
+    ///
+    /// Currently only supports UniswapV3 pools. Other DEX protocols will log a warning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Fetching the on-chain snapshot fails
+    /// - Database operations fail when marking the snapshot as valid
+    pub async fn check_snapshot_validity(&self, profiler: &PoolProfiler) -> anyhow::Result<()> {
+        if profiler.pool.dex.name == DexType::UniswapV3 {
+            tracing::info!("Comparing profiler state with on-chain state...");
+            let last_processed_event = profiler
+                .last_processed_event
+                .clone()
+                .expect("We expect at least one processed event in the pool");
+            let tick_values = profiler.get_active_tick_values();
+            let position_keys: Vec<(Address, i32, i32)> = profiler
+                .get_active_positions()
+                .iter()
+                .map(|position| (position.owner, position.tick_lower, position.tick_upper))
+                .collect();
+            let on_chain_snapshot = self
+                .univ3_pool
+                .fetch_snapshot(
+                    &profiler.pool.address,
+                    profiler.pool.instrument_id,
+                    tick_values.as_slice(),
+                    &position_keys,
+                    Some(last_processed_event.number),
+                )
+                .await?;
+            let result = compare_pool_profiler(&profiler, &on_chain_snapshot);
+
+            if result {
+                // Mark the snapshot as valid since verification passed
+                if let Some(cache_database) = &self.cache.database {
+                    cache_database
+                        .mark_pool_snapshot_valid(
+                            profiler.pool.chain.chain_id,
+                            &profiler.pool.address,
+                            last_processed_event.number,
+                            last_processed_event.transaction_index,
+                            last_processed_event.log_index,
+                        )
+                        .await?;
+                    tracing::info!("Marked pool profiler snapshot as valid");
+                }
+            } else {
+                tracing::error!("Pool profiler state does NOT match on-chain smart contract state")
+            }
+        } else {
+            tracing::warn!(
+                "Dex protocol {} is not supported yet.",
+                profiler.pool.dex.name
+            );
+        }
+
+        Ok(())
     }
 
     /// Replays historical events for a pool to hydrate its profiler state.

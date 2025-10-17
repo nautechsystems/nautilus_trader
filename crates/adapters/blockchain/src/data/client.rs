@@ -746,6 +746,15 @@ impl BlockchainDataClient {
                         )
                     })?;
 
+                // Sync the pool events before bootstrapping of pool profiler
+                let (_, dex) = cmd.instrument_id.venue.parse_dex()?;
+                if let Err(e) = core_client
+                    .sync_pool_events(&dex, &pool_address, None, None, false)
+                    .await
+                {
+                    tracing::error!("Failed to sync pool events for snapshot request: {}", e);
+                }
+
                 match core_client.get_pool(&pool_address) {
                     Ok(pool) => {
                         tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
@@ -754,40 +763,30 @@ impl BlockchainDataClient {
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
                         core_client.send_data(pool_data);
 
-                        // Load and send the stored snapshot from database
-                        if let Some(database) = &core_client.cache.database {
-                            match database
-                                .load_latest_valid_pool_snapshot(
-                                    core_client.chain.chain_id,
-                                    &pool_address,
-                                )
-                                .await
-                            {
-                                Ok(Some(snapshot)) => {
-                                    tracing::info!(
-                                        "Loaded pool snapshot for {} at block {} with {} positions and {} ticks",
-                                        cmd.instrument_id,
-                                        snapshot.block_position.number,
-                                        snapshot.positions.len(),
-                                        snapshot.ticks.len()
-                                    );
-                                    let snapshot_data =
-                                        DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                    core_client.send_data(snapshot_data);
-                                }
-                                Ok(None) => {
-                                    tracing::warn!(
-                                        "No valid pool snapshot found in database for {}",
-                                        cmd.instrument_id
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to load pool snapshot for {}: {e}",
-                                        cmd.instrument_id
-                                    );
-                                }
+                        match core_client.bootstrap_latest_pool_profiler(pool).await {
+                            Ok(profiler) => {
+                                let snapshot = profiler.extract_snapshot();
+
+                                tracing::info!(
+                                    "Saving pool snapshot with {} positions and {} ticks to database...",
+                                    snapshot.positions.len(),
+                                    snapshot.ticks.len()
+                                );
+                                core_client
+                                    .cache
+                                    .add_pool_snapshot(&pool.address, &snapshot)
+                                    .await?;
+                                core_client.check_snapshot_validity(&profiler).await?;
+
+                                let snapshot_data =
+                                    DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
+                                core_client.send_data(snapshot_data);
                             }
+                            Err(e) => tracing::error!(
+                                "Failed to bootstrap pool profiler for {} and extract snapshot with error {}",
+                                cmd.instrument_id,
+                                e.to_string()
+                            ),
                         }
                     }
                     Err(e) => {
