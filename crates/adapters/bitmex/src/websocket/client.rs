@@ -1682,7 +1682,7 @@ impl BitmexWsMessageHandler {
 
                                 let Some(instrument) = self.get_instrument(&symbol) else {
                                     tracing::error!(
-                                        "Instrument cache miss: execution message dropped for symbol={}, exec_id={:?}, exec_type={:?}. CRITICAL: Liquidation/ADL fills may be lost",
+                                        "Instrument cache miss: execution message dropped for symbol={}, exec_id={:?}, exec_type={:?}, Liquidation/ADL fills may be lost",
                                         symbol,
                                         exec_msg.exec_id,
                                         exec_msg.exec_type
