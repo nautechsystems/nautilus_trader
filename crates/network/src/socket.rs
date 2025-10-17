@@ -41,10 +41,7 @@ use std::{
 use bytes::Bytes;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
-    net::TcpStream,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio_tungstenite::{
     MaybeTlsStream,
     tungstenite::{Error, client::IntoClientRequest, stream::Mode},
@@ -56,6 +53,7 @@ use crate::{
     fix::process_fix_buffer,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
+    net::TcpStream,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
@@ -1264,6 +1262,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "turmoil"))]
 mod rust_tests {
     use rstest::rstest;
     use tokio::{

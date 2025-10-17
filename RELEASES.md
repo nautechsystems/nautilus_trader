@@ -115,6 +115,7 @@ This will be the final release with support for Python 3.11.
 - Added ARM64 support to Docker builds
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
+- Added turmoil network simulation testing to network crate
 - Ported `PortfolioAnalyzer` and all portfolio statistics to Rust
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
