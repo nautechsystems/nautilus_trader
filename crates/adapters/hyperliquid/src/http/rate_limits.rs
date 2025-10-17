@@ -229,7 +229,7 @@ mod tests {
                         tif: HyperliquidExecTif::Gtc,
                     },
                 },
-                cloid: Some(Cloid::from_hex("00000000000000000000000000000000").unwrap()),
+                cloid: Some(Cloid::from_hex("0x00000000000000000000000000000000").unwrap()),
             })
             .collect();
 
@@ -251,7 +251,7 @@ mod tests {
         let cancels: Vec<HyperliquidExecCancelByCloidRequest> = (0..40)
             .map(|_| HyperliquidExecCancelByCloidRequest {
                 asset: 0,
-                cloid: Cloid::from_hex("00000000000000000000000000000000").unwrap(),
+                cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
             })
             .collect();
 

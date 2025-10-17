@@ -355,7 +355,7 @@ mod tests {
 
         let cancel = HyperliquidExecCancelByCloidRequest {
             asset: 0,
-            cloid: crate::http::models::Cloid::from_hex("00000000000000000000000000000000")
+            cloid: crate::http::models::Cloid::from_hex("0x00000000000000000000000000000000")
                 .unwrap(),
         };
 
@@ -439,7 +439,7 @@ mod tests {
 
         let cancel_request = HyperliquidExecCancelByCloidRequest {
             asset: 0,
-            cloid: Cloid::from_hex("00000000000000000000000000000000").unwrap(),
+            cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
         };
         let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
         let json = serde_json::to_string(&action).unwrap();
