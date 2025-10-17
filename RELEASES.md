@@ -121,6 +121,7 @@ This will be the final release with support for Python 3.11.
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented `PoolFlash` event in blockchain adapter (#3055, #3058), thanks @filipmacek
+- Implemented Blockchain adapter pool profiler snapshot integration (#3090), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad

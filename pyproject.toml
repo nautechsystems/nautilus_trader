@@ -33,7 +33,7 @@ dependencies = [
   "pyarrow>=21.0.0",
   "pytz>=2025.2.0",
   "tqdm>=4.67.1,<5.0.0",
-  "uvloop>=0.21.0,<1.0.0; sys_platform != \"win32\"",
+  "uvloop==0.21.0,<1.0.0; sys_platform != \"win32\"", # Pinned to v0.21.0 due breaking loop semantics
 ]
 
 [project.urls]
