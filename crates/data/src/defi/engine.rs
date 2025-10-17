@@ -438,7 +438,9 @@ impl DataEngine {
 
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId, client_id: Option<&ClientId>) {
         // Early return if updater already exists or we are in the middle of setting it up.
-        if self.pool_updaters.contains_key(instrument_id) || self.pool_updaters_pending.contains(instrument_id) {
+        if self.pool_updaters.contains_key(instrument_id)
+            || self.pool_updaters_pending.contains(instrument_id)
+        {
             log::debug!("Pool updater for {instrument_id} already exists");
             return;
         }
