@@ -28,6 +28,7 @@ extension-module = [
   "nautilus-serialization/extension-module",
   "python",
   "pyo3/extension-module",
+  "replay",
 ]
 python = [
   "nautilus-core/python",
@@ -35,6 +36,7 @@ python = [
   "nautilus-serialization/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "replay",
 ]
 replay = []
 
