@@ -414,6 +414,8 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             database.add_pools_batch(&pools).await?;
         }
+        self.pools
+            .extend(pools.into_iter().map(|pool| (pool.address, Arc::new(pool))));
 
         Ok(())
     }
