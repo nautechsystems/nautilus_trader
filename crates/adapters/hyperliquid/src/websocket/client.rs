@@ -404,6 +404,7 @@ pub struct HyperliquidWebSocketClient {
     inner: Arc<RwLock<Option<HyperliquidWebSocketInnerClient>>>,
     url: String,
     instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
+    instruments_by_symbol: Arc<DashMap<Ustr, InstrumentId>>,
 }
 
 impl HyperliquidWebSocketClient {
@@ -414,12 +415,22 @@ impl HyperliquidWebSocketClient {
             inner: Arc::new(RwLock::new(None)),
             url,
             instruments: Arc::new(DashMap::new()),
+            instruments_by_symbol: Arc::new(DashMap::new()),
         }
     }
 
     /// Adds an instrument to the cache for parsing WebSocket messages.
     pub fn add_instrument(&self, instrument: InstrumentAny) {
-        self.instruments.insert(instrument.id(), instrument);
+        // Insert instrument into primary cache
+        let instrument_id = instrument.id();
+        self.instruments.insert(instrument_id, instrument);
+
+        // Extract coin prefix (e.g., "BTC" from "BTC-PERP") and index for fast lookup
+        let symbol = instrument_id.symbol.as_str();
+        if let Some(coin) = symbol.split('-').next() {
+            self.instruments_by_symbol
+                .insert(Ustr::from(coin), instrument_id);
+        }
     }
 
     /// Gets an instrument from the cache by ID.
@@ -429,6 +440,15 @@ impl HyperliquidWebSocketClient {
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument_by_symbol(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+        // Fast path: lookup instrument id by coin prefix, then fetch instrument by id.
+        if let Some(id_entry) = self.instruments_by_symbol.get(symbol) {
+            let instrument_id = *id_entry.value();
+            if let Some(inst_entry) = self.instruments.get(&instrument_id) {
+                return Some(inst_entry.value().clone());
+            }
+        }
+
+        // Fallback: (should be rare) scan full instruments map to find exact symbol match
         self.instruments
             .iter()
             .find(|e| e.key().symbol == (*symbol).into())
@@ -442,6 +462,7 @@ impl HyperliquidWebSocketClient {
             inner: Arc::new(RwLock::new(Some(inner_client))),
             url: url.to_string(),
             instruments: Arc::new(DashMap::new()),
+            instruments_by_symbol: Arc::new(DashMap::new()),
         })
     }
 

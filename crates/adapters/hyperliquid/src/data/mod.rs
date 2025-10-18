@@ -54,7 +54,10 @@ use crate::{
     common::consts::{HYPERLIQUID_TESTNET_WS_URL, HYPERLIQUID_VENUE, HYPERLIQUID_WS_URL},
     config::HyperliquidDataClientConfig,
     http::{client::HyperliquidHttpClient, models::HyperliquidCandle},
-    websocket::{client::HyperliquidWebSocketClient, messages::HyperliquidWsMessage},
+    websocket::{
+        client::HyperliquidWebSocketClient, messages::HyperliquidWsMessage,
+        parse::parse_ws_quote_tick,
+    },
 };
 
 #[derive(Debug)]
@@ -69,6 +72,9 @@ pub struct HyperliquidDataClient {
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    /// Maps coin symbols (e.g., "BTC") to instrument IDs (e.g., "BTC-PERP")
+    /// for efficient O(1) lookup in WebSocket message handlers
+    coin_to_instrument_id: Arc<RwLock<AHashMap<Ustr, InstrumentId>>>,
     clock: &'static AtomicTime,
     #[allow(dead_code)]
     instrument_refresh_active: bool,
@@ -114,6 +120,7 @@ impl HyperliquidDataClient {
             tasks: Vec::new(),
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
+            coin_to_instrument_id: Arc::new(RwLock::new(AHashMap::new())),
             clock,
             instrument_refresh_active: false,
         })
@@ -131,11 +138,29 @@ impl HyperliquidDataClient {
             .context("Failed to fetch instruments during bootstrap")?;
 
         let mut instruments_map = self.instruments.write().unwrap();
+        let mut coin_map = self.coin_to_instrument_id.write().unwrap();
+
         for instrument in &instruments {
-            instruments_map.insert(instrument.id(), instrument.clone());
+            let instrument_id = instrument.id();
+            instruments_map.insert(instrument_id, instrument.clone());
+
+            // Build coin-to-instrument-id index for efficient WebSocket message lookup
+            // Extract coin symbol from instrument ID (e.g., "BTC" from "BTC-PERP")
+            let symbol = instrument_id.symbol.as_str();
+            if let Some(coin) = symbol.split('-').next() {
+                coin_map.insert(Ustr::from(coin), instrument_id);
+            }
+
+            // Also add instrument to the WebSocket client's cache for fast lookups
+            // used by the WebSocket client and execution path.
+            self.ws_client.add_instrument(instrument.clone());
         }
 
-        tracing::info!("Bootstrapped {} instruments", instruments_map.len());
+        tracing::info!(
+            "Bootstrapped {} instruments with {} coin mappings",
+            instruments_map.len(),
+            coin_map.len()
+        );
         Ok(instruments)
     }
 
@@ -154,42 +179,44 @@ impl HyperliquidDataClient {
         msg: HyperliquidWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        coin_to_instrument_id: &Arc<RwLock<AHashMap<Ustr, InstrumentId>>>,
         _venue: Venue,
         clock: &'static AtomicTime,
     ) {
-        use crate::websocket::parse::parse_ws_quote_tick;
-
         match msg {
             HyperliquidWsMessage::Bbo { data } => {
                 tracing::debug!("Received BBO message for coin: {}", data.coin);
 
-                // Find instrument by matching the coin prefix
-                // Hyperliquid WebSocket sends coin="BTC", but we have instrument "BTC-PERP"
-                let instruments_map = instruments.read().unwrap();
-                let matching_instrument = instruments_map.iter().find(|(id, _)| {
-                    id.symbol.as_str().starts_with(data.coin.as_str())
-                        && id.symbol.as_str().split('-').next() == Some(data.coin.as_str())
-                });
+                // Use efficient O(1) lookup instead of iterating through all instruments
+                // Hyperliquid WebSocket sends coin="BTC", lookup returns "BTC-PERP" instrument ID
+                let coin_map = coin_to_instrument_id.read().unwrap();
+                let instrument_id = coin_map.get(&data.coin);
 
-                if let Some((_, instrument)) = matching_instrument {
-                    let ts_init = clock.get_time_ns();
+                if let Some(&instrument_id) = instrument_id {
+                    let instruments_map = instruments.read().unwrap();
+                    if let Some(instrument) = instruments_map.get(&instrument_id) {
+                        let ts_init = clock.get_time_ns();
 
-                    match parse_ws_quote_tick(&data, instrument, ts_init) {
-                        Ok(quote_tick) => {
-                            tracing::debug!(
-                                "Parsed quote tick for {}: bid={}, ask={}",
-                                data.coin,
-                                quote_tick.bid_price,
-                                quote_tick.ask_price
-                            );
-                            if let Err(e) =
-                                data_sender.send(DataEvent::Data(Data::Quote(quote_tick)))
-                            {
-                                tracing::error!("Failed to send quote tick: {e}");
+                        match parse_ws_quote_tick(&data, instrument, ts_init) {
+                            Ok(quote_tick) => {
+                                tracing::debug!(
+                                    "Parsed quote tick for {}: bid={}, ask={}",
+                                    data.coin,
+                                    quote_tick.bid_price,
+                                    quote_tick.ask_price
+                                );
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(Data::Quote(quote_tick)))
+                                {
+                                    tracing::error!("Failed to send quote tick: {e}");
+                                }
                             }
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to parse quote tick for {}: {e}", data.coin);
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to parse quote tick for {}: {e}",
+                                    data.coin
+                                );
+                            }
                         }
                     }
                 } else {
