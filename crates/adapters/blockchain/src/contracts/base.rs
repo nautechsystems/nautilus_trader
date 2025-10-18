@@ -23,6 +23,11 @@ use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient}
 sol! {
     #[sol(rpc)]
     contract Multicall3 {
+        struct Call {
+            address target;
+            bytes callData;
+        }
+
         struct Call3 {
             address target;
             bool allowFailure;
@@ -35,6 +40,7 @@ sol! {
         }
 
         function aggregate3(Call3[] calldata calls) external payable returns (Result[] memory returnData);
+        function tryAggregate(bool requireSuccess, Call[] calldata calls) external payable returns (Result[] memory returnData);
     }
 }
 
@@ -122,16 +128,16 @@ impl BaseContract {
         block: Option<u64>,
     ) -> Result<Vec<Multicall3::Result>, BlockchainRpcClientError> {
         // Convert to Multicall3 format.
-        let multicall_calls: Vec<Multicall3::Call3> = calls
+        let multicall_calls: Vec<Multicall3::Call> = calls
             .into_iter()
-            .map(|call| Multicall3::Call3 {
+            .map(|call| Multicall3::Call {
                 target: call.target,
-                allowFailure: call.allow_failure,
                 callData: call.call_data.into(),
             })
             .collect();
 
-        let multicall_data = Multicall3::aggregate3Call {
+        let multicall_data = Multicall3::tryAggregateCall {
+            requireSuccess: false,
             calls: multicall_calls,
         }
         .abi_encode();
@@ -148,7 +154,7 @@ impl BaseContract {
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("Multicall failed: {e}")))?;
 
         let bytes = decode_hex_response(&encoded_response)?;
-        let results = Multicall3::aggregate3Call::abi_decode_returns(&bytes).map_err(|e| {
+        let results = Multicall3::tryAggregateCall::abi_decode_returns(&bytes).map_err(|e| {
             BlockchainRpcClientError::AbiDecodingError(format!(
                 "Failed to decode multicall results: {e}"
             ))

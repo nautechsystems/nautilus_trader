@@ -138,12 +138,6 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[ignore = "JSON functionality not implemented in Rust"]
-#[rstest]
-fn test_catalog_serialization_json_round_trip() {
-    // This test is skipped because write_to_json is not implemented in the Rust backend
-}
-
 #[rstest]
 fn test_datafusion_parquet_round_trip() {
     use std::collections::HashMap;
@@ -204,12 +198,6 @@ fn test_datafusion_parquet_round_trip() {
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
         assert_eq!(orig, loaded);
     }
-}
-
-#[ignore = "JSON functionality not implemented in Rust"]
-#[rstest]
-fn test_catalog_export_functionality() {
-    // This test is skipped because write_to_json is not implemented in the Rust backend
 }
 
 // ================================================================================================

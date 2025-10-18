@@ -128,30 +128,51 @@ Only *limit* order types support `post_only`.
 
 ### Position management
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|---------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                  |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                 |
 | Position mode       | -    | -      | ✓            | ✓            | One-Way vs Hedge mode (position IDs).       |
-| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.      |
+| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
 | Margin mode         | -    | ✓      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
+
+### Risk events
+
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
+|----------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Liquidation handling | -    | -      | ✓            | ✓            | Exchange-forced position closures.          |
+| ADL handling         | -    | -      | ✓            | ✓            | Auto-Deleveraging events.                   |
+
+Binance Futures can trigger exchange-generated orders in response to risk events:
+
+- **Liquidations**: When insufficient margin exists to maintain a position, Binance forcibly closes it at the bankruptcy price. These orders have client IDs starting with `autoclose-`.
+- **ADL (Auto-Deleveraging)**: When the insurance fund is depleted, Binance closes profitable positions to cover losses. These orders use client ID `adl_autoclose`.
+- **Settlements**: Quarterly contract deliveries use client IDs starting with `settlement_autoclose-`.
+
+The adapter detects these special order types via their client ID patterns and execution type (`CALCULATED`), then:
+
+1. Logs a warning with order details for monitoring.
+2. Generates an `OrderStatusReport` to seed the cache.
+3. Generates a `FillReport` with correct fill details and TAKER liquidity side.
+
+This ensures liquidation and ADL events are properly reflected in portfolio state and PnL calculations.
 
 ### Order querying
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|---------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                      |
-| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                       |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
+| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
 | Order status updates| ✓    | ✓      | ✓            | ✓            | Real-time order state changes.              |
 | Trade history       | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.                 |
 
 ### Contingent orders
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |---------------------|------|--------|--------------|--------------|----------------------------------------------|
 | Order lists         | -    | -      | -            | -            | *Not supported*.                             |
 | OCO orders          | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
-| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.       |
-| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.          |
+| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.        |
+| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.           |
 
 ### Order parameters
 

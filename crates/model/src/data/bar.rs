@@ -866,6 +866,8 @@ impl HasTsInit for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::TimeZone;
     use rstest::rstest;
 
@@ -1055,6 +1057,25 @@ mod tests {
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
+    }
+
+    #[rstest]
+    fn test_bar_type_from_str_with_utf8_symbol() {
+        let non_ascii_instrument = "TËST-PÉRP.BINANCE";
+        let non_ascii_bar_type = "TËST-PÉRP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+
+        let bar_type = BarType::from_str(non_ascii_bar_type).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id(),
+            InstrumentId::from_str(non_ascii_instrument).unwrap()
+        );
+        assert_eq!(
+            bar_type.spec(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last)
+        );
+        assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
+        assert_eq!(bar_type.to_string(), non_ascii_bar_type);
     }
 
     #[rstest]

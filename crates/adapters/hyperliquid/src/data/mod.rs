@@ -54,7 +54,7 @@ use crate::{
     common::consts::{HYPERLIQUID_TESTNET_WS_URL, HYPERLIQUID_VENUE, HYPERLIQUID_WS_URL},
     config::HyperliquidDataClientConfig,
     http::{client::HyperliquidHttpClient, models::HyperliquidCandle},
-    websocket::client::HyperliquidWebSocketClient,
+    websocket::{client::HyperliquidWebSocketClient, messages::HyperliquidWsMessage},
 };
 
 #[derive(Debug)]
@@ -145,7 +145,65 @@ impl HyperliquidDataClient {
             .await
             .context("Failed to connect to Hyperliquid WebSocket")?;
 
+        // No message processing loop needed - the WebSocket client handles it internally
         Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn handle_ws_message(
+        msg: HyperliquidWsMessage,
+        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        _venue: Venue,
+        clock: &'static AtomicTime,
+    ) {
+        use crate::websocket::parse::parse_ws_quote_tick;
+
+        match msg {
+            HyperliquidWsMessage::Bbo { data } => {
+                tracing::debug!("Received BBO message for coin: {}", data.coin);
+
+                // Find instrument by matching the coin prefix
+                // Hyperliquid WebSocket sends coin="BTC", but we have instrument "BTC-PERP"
+                let instruments_map = instruments.read().unwrap();
+                let matching_instrument = instruments_map.iter().find(|(id, _)| {
+                    id.symbol.as_str().starts_with(data.coin.as_str())
+                        && id.symbol.as_str().split('-').next() == Some(data.coin.as_str())
+                });
+
+                if let Some((_, instrument)) = matching_instrument {
+                    let ts_init = clock.get_time_ns();
+
+                    match parse_ws_quote_tick(&data, instrument, ts_init) {
+                        Ok(quote_tick) => {
+                            tracing::debug!(
+                                "Parsed quote tick for {}: bid={}, ask={}",
+                                data.coin,
+                                quote_tick.bid_price,
+                                quote_tick.ask_price
+                            );
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::Quote(quote_tick)))
+                            {
+                                tracing::error!("Failed to send quote tick: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse quote tick for {}: {e}", data.coin);
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Received BBO for unknown coin: {} (no matching instrument found)",
+                        data.coin
+                    );
+                }
+            }
+            _ => {
+                // Log other message types for debugging
+                tracing::trace!("Received WebSocket message: {:?}", msg);
+            }
+        }
     }
 
     fn get_instrument(&self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {

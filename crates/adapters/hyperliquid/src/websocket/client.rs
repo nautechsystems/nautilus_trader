@@ -574,6 +574,7 @@ impl HyperliquidWebSocketClient {
     /// Ensures connection is established before subscribing.
     pub async fn subscribe_bbo(&self, coin: Ustr) -> anyhow::Result<()> {
         self.ensure_connected().await?;
+        tracing::info!("Subscribing to BBO for coin: {}", coin);
         let subscription = SubscriptionRequest::Bbo { coin };
         let mut inner = self.inner.write().await;
         inner
@@ -1437,7 +1438,16 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
+        // Extract coin from symbol (e.g., "BTC-USD-PERP" -> "BTC")
+        let coin_str = instrument_id
+            .symbol
+            .as_str()
+            .split('-')
+            .next()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid instrument symbol")
+            })?;
+        let coin = Ustr::from(coin_str);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.subscribe_bbo(coin).await.map_err(to_pyruntime_err)?;
@@ -1452,7 +1462,16 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
+        // Extract coin from symbol (e.g., "BTC-USD-PERP" -> "BTC")
+        let coin_str = instrument_id
+            .symbol
+            .as_str()
+            .split('-')
+            .next()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid instrument symbol")
+            })?;
+        let coin = Ustr::from(coin_str);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client

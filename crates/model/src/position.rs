@@ -2303,7 +2303,7 @@ mod tests {
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.duration_ns, 0);
 
-        // CRITICAL: Verify empty shell reports as closed (this was the bug we fixed!)
+        // Verify empty shell reports as closed (this was the bug we fixed!)
         // is_closed() must return true so cache purge logic recognizes empty shells
         assert!(position.is_closed());
         assert!(!position.is_open());

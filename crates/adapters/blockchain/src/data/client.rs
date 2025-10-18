@@ -67,8 +67,8 @@ pub struct BlockchainDataClient {
     command_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DefiDataCommand>>,
     /// Background task for processing messages.
     process_task: Option<tokio::task::JoinHandle<()>>,
-    /// Oneshot channel sender for graceful shutdown signal.
-    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Cancellation token for graceful shutdown of background tasks.
+    cancellation_token: tokio_util::sync::CancellationToken,
 }
 
 impl BlockchainDataClient {
@@ -87,7 +87,7 @@ impl BlockchainDataClient {
             command_tx,
             command_rx: Some(command_rx),
             process_task: None,
-            shutdown_tx: None,
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
         }
     }
 
@@ -106,33 +106,41 @@ impl BlockchainDataClient {
             return;
         };
 
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        self.shutdown_tx = Some(shutdown_tx);
+        let cancellation_token = self.cancellation_token.clone();
 
         let data_tx = nautilus_common::runner::get_data_event_sender();
 
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
         let hypersync_tx = self.hypersync_tx.take();
 
-        let mut core_client =
-            BlockchainDataClientCore::new(self.config.clone(), hypersync_tx, Some(data_tx));
+        let mut core_client = BlockchainDataClientCore::new(
+            self.config.clone(),
+            hypersync_tx,
+            Some(data_tx),
+            cancellation_token.clone(),
+        );
 
         let handle = get_runtime().spawn(async move {
             tracing::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
-                tracing::error!("Failed to connect blockchain core client: {e}");
+                // TODO: connect() could return more granular error types to distinguish
+                // cancellation from actual failures without string matching
+                if e.to_string().contains("cancelled") || e.to_string().contains("Sync cancelled") {
+                    tracing::warn!("Blockchain core client connection interrupted: {e}");
+                } else {
+                    tracing::error!("Failed to connect blockchain core client: {e}");
+                }
                 return;
             }
 
             let mut command_rx = command_rx;
-            let mut shutdown_rx = shutdown_rx;
 
             loop {
                 tokio::select! {
-                    _ = &mut shutdown_rx => {
-                        tracing::debug!("Received shutdown signal in Blockchain data client process task");
-                        core_client.disconnect();
+                    () = cancellation_token.cancelled() => {
+                        tracing::debug!("Received cancellation signal in Blockchain data client process task");
+                        core_client.disconnect().await;
                         break;
                     }
                     command = command_rx.recv() => {
@@ -186,7 +194,7 @@ impl BlockchainDataClient {
                                                 core_client.subscription_manager.get_dex_pool_swap_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_mint_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_burn_event_signature(&dex).unwrap(),
-                                            ).await;
+                                            );
                                         }
                                     }
 
@@ -308,36 +316,34 @@ impl BlockchainDataClient {
                         }
                     }
                     msg = async {
-                        if let Some(ref mut rpc_client) = core_client.rpc_client {
-                            Some(rpc_client.next_rpc_message().await)
-                        } else {
-                            None
+                        match core_client.rpc_client {
+                            Some(ref mut rpc_client) => rpc_client.next_rpc_message().await,
+                            None => std::future::pending().await,  // Never resolves
                         }
                     } => {
-                        if let Some(msg) = msg {
-                            match msg {
-                                Ok(BlockchainMessage::Block(block)) => {
-                                    let data = DataEvent::DeFi(DefiData::Block(block));
-                                    core_client.send_data(data);
-                                },
-                                Ok(BlockchainMessage::SwapEvent(_)) => {
-                                    tracing::warn!("RPC swap events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::MintEvent(_)) => {
-                                    tracing::warn!("RPC mint events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::BurnEvent(_)) => {
-                                    tracing::warn!("RPC burn events are not yet supported");
-                                }
-                                Ok(BlockchainMessage::CollectEvent(_)) => {
-                                    tracing::warn!("RPC collect events are not yet supported")
-                                }
-                                Ok(BlockchainMessage::FlashEvent(_)) => {
-                                    tracing::warn!("RPC flash events are not yet supported")
-                                }
-                                Err(e) => {
-                                    tracing::error!("Error processing RPC message: {e}");
-                                }
+                        // This branch only fires when we actually receive a message
+                        match msg {
+                            Ok(BlockchainMessage::Block(block)) => {
+                                let data = DataEvent::DeFi(DefiData::Block(block));
+                                core_client.send_data(data);
+                            },
+                            Ok(BlockchainMessage::SwapEvent(_)) => {
+                                tracing::warn!("RPC swap events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::MintEvent(_)) => {
+                                tracing::warn!("RPC mint events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::BurnEvent(_)) => {
+                                tracing::warn!("RPC burn events are not yet supported");
+                            }
+                            Ok(BlockchainMessage::CollectEvent(_)) => {
+                                tracing::warn!("RPC collect events are not yet supported")
+                            }
+                            Ok(BlockchainMessage::FlashEvent(_)) => {
+                                tracing::warn!("RPC flash events are not yet supported")
+                            }
+                            Err(e) => {
+                                tracing::error!("Error processing RPC message: {e}");
                             }
                         }
                     }
@@ -576,7 +582,7 @@ impl BlockchainDataClient {
                 }
 
                 // Use HyperSync client for unsubscription
-                core_client.hypersync_client.unsubscribe_blocks();
+                core_client.hypersync_client.unsubscribe_blocks().await;
                 tracing::info!("Unsubscribed from blocks via HyperSync");
 
                 Ok(())
@@ -740,6 +746,15 @@ impl BlockchainDataClient {
                         )
                     })?;
 
+                // Sync the pool events before bootstrapping of pool profiler
+                let (_, dex) = cmd.instrument_id.venue.parse_dex()?;
+                if let Err(e) = core_client
+                    .sync_pool_events(&dex, &pool_address, None, None, false)
+                    .await
+                {
+                    tracing::error!("Failed to sync pool events for snapshot request: {}", e);
+                }
+
                 match core_client.get_pool(&pool_address) {
                     Ok(pool) => {
                         tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
@@ -748,40 +763,30 @@ impl BlockchainDataClient {
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
                         core_client.send_data(pool_data);
 
-                        // Load and send the stored snapshot from database
-                        if let Some(database) = &core_client.cache.database {
-                            match database
-                                .load_latest_valid_pool_snapshot(
-                                    core_client.chain.chain_id,
-                                    &pool_address,
-                                )
-                                .await
-                            {
-                                Ok(Some(snapshot)) => {
-                                    tracing::info!(
-                                        "Loaded pool snapshot for {} at block {} with {} positions and {} ticks",
-                                        cmd.instrument_id,
-                                        snapshot.block_position.number,
-                                        snapshot.positions.len(),
-                                        snapshot.ticks.len()
-                                    );
-                                    let snapshot_data =
-                                        DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                    core_client.send_data(snapshot_data);
-                                }
-                                Ok(None) => {
-                                    tracing::warn!(
-                                        "No valid pool snapshot found in database for {}",
-                                        cmd.instrument_id
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to load pool snapshot for {}: {e}",
-                                        cmd.instrument_id
-                                    );
-                                }
+                        match core_client.bootstrap_latest_pool_profiler(pool).await {
+                            Ok(profiler) => {
+                                let snapshot = profiler.extract_snapshot();
+
+                                tracing::info!(
+                                    "Saving pool snapshot with {} positions and {} ticks to database...",
+                                    snapshot.positions.len(),
+                                    snapshot.ticks.len()
+                                );
+                                core_client
+                                    .cache
+                                    .add_pool_snapshot(&pool.address, &snapshot)
+                                    .await?;
+                                core_client.check_snapshot_validity(&profiler).await?;
+
+                                let snapshot_data =
+                                    DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
+                                core_client.send_data(snapshot_data);
                             }
+                            Err(e) => tracing::error!(
+                                "Failed to bootstrap pool profiler for {} and extract snapshot with error {}",
+                                cmd.instrument_id,
+                                e.to_string()
+                            ),
                         }
                     }
                     Err(e) => {
@@ -832,6 +837,10 @@ impl DataClient for BlockchainDataClient {
             "Stopping blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.cancellation_token.cancel();
+
+        // Create fresh token for next start cycle
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
         Ok(())
     }
 
@@ -840,6 +849,7 @@ impl DataClient for BlockchainDataClient {
             "Resetting blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
         Ok(())
     }
 
@@ -870,10 +880,17 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
-        }
+        self.cancellation_token.cancel();
         self.await_process_task_close().await;
+
+        // Create fresh token and channels for next connect cycle
+        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.hypersync_tx = Some(hypersync_tx);
+        self.hypersync_rx = Some(hypersync_rx);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.command_tx = command_tx;
+        self.command_rx = Some(command_rx);
 
         Ok(())
     }

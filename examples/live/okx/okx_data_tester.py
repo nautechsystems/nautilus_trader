@@ -38,33 +38,56 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 # Configuration - Change instrument_type to switch between trading modes
 instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
+token = "ETH"
 
 # Symbol mapping based on instrument type
 if instrument_type == OKXInstrumentType.SPOT:
-    symbol = "ETH-USDT"
+    symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
     trade_size = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.SWAP:
-    symbol = "ETH-USDT-SWAP"
-    contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
+    symbol = f"{token}-USDT-SWAP"
+    contract_types = (OKXContractType.LINEAR,)
     trade_size = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Note: ETH-USD futures follow same pattern as BTC-USD
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
-    symbol = "ETH-USD-251226"  # ETH-USD futures expiring December 26, 2025
+    symbol = f"{token}-USD-251226"  # ETH-USD futures expiring December 26, 2025
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     trade_size = Decimal(1)
 elif instrument_type == OKXInstrumentType.OPTION:
-    symbol = "ETH-USD-251226-4000-C"  # Example: ETH-USD call option, strike $4000, exp 2025-12-26
+    symbol = (
+        f"{token}-USD-251226-4000-C"  # Example: ETH-USD call option, strike $4000, exp 2025-12-26
+    )
     contract_types = None  # OPTIONS don't use contract types in the same way
     trade_size = Decimal(1)
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 
+instrument_id = InstrumentId.from_str(f"{symbol}.{OKX}")
+
+# Additional instruments for testing (matching exec_tester setup)
+spot_instrument_id = InstrumentId.from_str(f"{token}-USDT.{OKX}")
+swap_instrument_id = InstrumentId.from_str(f"{token}-USDT-SWAP.{OKX}")
+
+instrument_types = (
+    OKXInstrumentType.SPOT,
+    OKXInstrumentType.SWAP,
+)
+
+instrument_families = (
+    # "BTC-USD",
+    # "ETH-USDT",
+)
+
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(
+        log_level="INFO",
+        log_level_file="DEBUG",
+        use_pyo3=True,
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
     ),
@@ -74,16 +97,19 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'OKX_API_SECRET' env var
             api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(instrument_type,),  # Will load swap instruments
-            contract_types=contract_types,  # Will load linear contracts
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=frozenset([spot_instrument_id, swap_instrument_id]),
+            ),
+            instrument_types=instrument_types,
+            contract_types=contract_types,
             is_demo=False,  # If client uses the demo API
             http_timeout_secs=10,  # Set to reasonable duration
         ),
     },
     timeout_connection=20.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=1.0,
+    timeout_post_stop=2.0,
 )
 
 # Instantiate the node with a configuration
@@ -91,15 +117,18 @@ node = TradingNode(config=config_node)
 
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
-    instrument_ids=[InstrumentId.from_str(f"{symbol}.OKX")],
-    bar_types=[BarType.from_str(f"{symbol}.OKX-1-MINUTE-LAST-EXTERNAL")],
+    instrument_ids=[spot_instrument_id, swap_instrument_id],
+    bar_types=[
+        BarType.from_str(f"{spot_instrument_id.value}-1-MINUTE-LAST-EXTERNAL"),
+        BarType.from_str(f"{swap_instrument_id.value}-1-MINUTE-LAST-EXTERNAL"),
+    ],
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
     subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_mark_prices=True,
-    subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
+    subscribe_index_prices=False,  # Only for some derivatives
     subscribe_funding_rates=True,
     subscribe_bars=True,
     subscribe_instrument_status=False,

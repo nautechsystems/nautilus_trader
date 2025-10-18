@@ -1620,7 +1620,7 @@ class TestPosition:
         assert position.ts_closed == 0
         assert position.duration_ns == 0
 
-        # CRITICAL: Verify empty shell reports as closed (this was the bug we fixed!)
+        # Verify empty shell reports as closed (this was the bug we fixed!)
         # is_closed must return True so cache purge logic recognizes empty shells
         assert position.is_closed
         assert not position.is_open

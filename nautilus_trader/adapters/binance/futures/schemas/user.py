@@ -31,6 +31,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -282,10 +283,36 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         instrument_id = exec_client._get_cached_instrument_id(self.s)
         strategy_id = None
 
+        # Check for exchange-generated liquidation/ADL orders
+        is_liquidation = self.c.startswith("autoclose-") if self.c else False
+        is_adl = self.c.startswith("adl_autoclose") if self.c else False
+        is_settlement = self.c.startswith("settlement_autoclose-") if self.c else False
+
         if client_order_id:
             strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
 
-        if strategy_id is None:
+        # Log exchange-generated liquidation/ADL/settlement orders
+        if is_liquidation:
+            exec_client._log.warning(
+                f"Received liquidation order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+        elif is_adl:
+            exec_client._log.warning(
+                f"Received ADL order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+        elif is_settlement:
+            exec_client._log.warning(
+                f"Received settlement order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+
+        # For exchange-generated orders without strategy, still need to process fills
+        if strategy_id is None and not (is_liquidation or is_adl or is_settlement):
             report = self.parse_to_order_status_report(
                 account_id=exec_client.account_id,
                 instrument_id=instrument_id,
@@ -307,9 +334,86 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision
 
+        # Handle exchange-generated liquidation/ADL/settlement orders that may not be in cache
+        # Check for CALCULATED execution type (liquidation fills) OR special client order IDs
+        # Binance sends liquidation/ADL fills with x=CALCULATED and X=FILLED
+        if (is_liquidation or is_adl or is_settlement) and (
+            self.x == BinanceExecutionType.CALCULATED
+            or self.X == BinanceOrderStatus.NEW_ADL
+            or self.X == BinanceOrderStatus.NEW_INSURANCE
+        ):
+            # These are special exchange-generated fills without a pre-existing order
+            if Decimal(self.l) == 0:
+                exec_client._log.warning(
+                    f"Received {self.X.value} status with l=0 for "
+                    f"{'liquidation' if is_liquidation else 'ADL' if is_adl else 'settlement'} "
+                    f"order {venue_order_id}, skipping",
+                )
+                return
+
+            # Send OrderStatusReport first to seed the cache
+            order_report = self.parse_to_order_status_report(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                enum_parser=exec_client._enum_parser,
+            )
+            exec_client._send_order_status_report(order_report)
+
+            # Generate fill report directly for exchange-generated liquidation/ADL
+            liq_commission_asset: str | None = self.N
+            liq_commission_amount: str | float | None = self.n
+            liq_last_qty = Quantity(float(self.l), size_precision)
+            liq_last_px = Price(float(self.L), price_precision)
+
+            if liq_commission_asset is not None:
+                liq_commission = Money.from_str(f"{liq_commission_amount} {liq_commission_asset}")
+            else:
+                # Liquidations and ADL are always taker
+                liq_fee = instrument.taker_fee
+                liq_commission_asset = instrument.quote_currency
+                liq_commission_amount = float(liq_last_qty * liq_last_px * liq_fee)
+                liq_commission = Money(liq_commission_amount, liq_commission_asset)
+
+            liq_venue_position_id: PositionId | None = None
+            if exec_client.use_position_ids:
+                liq_venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
+
+            # Note: We cannot use generate_order_filled without strategy_id and cached order
+            # Send FillReport directly for exchange-generated liquidation/ADL orders
+            fill_report = FillReport(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=venue_order_id,
+                trade_id=TradeId(str(self.t)),
+                order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
+                last_qty=liq_last_qty,
+                last_px=liq_last_px,
+                commission=liq_commission,
+                liquidity_side=LiquiditySide.TAKER,  # Liquidations/ADL are always taker
+                report_id=UUID4(),
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                venue_position_id=liq_venue_position_id,
+                client_order_id=client_order_id,
+            )
+            exec_client._send_fill_report(fill_report)
+            return
+
         order = exec_client._cache.order(client_order_id)
         if not order:
-            exec_client._log.error(f"Cannot find order {client_order_id!r}")
+            # For non-special exchange orders, we need the order in cache
+            if is_liquidation or is_adl or is_settlement:
+                exec_client._log.warning(
+                    f"Cannot find order for "
+                    f"{'liquidation' if is_liquidation else 'ADL' if is_adl else 'settlement'} "
+                    f"{client_order_id!r}, status={self.X.value}",
+                )
+            else:
+                exec_client._log.error(f"Cannot find order {client_order_id!r}")
             return
 
         if self.x == BinanceExecutionType.NEW:

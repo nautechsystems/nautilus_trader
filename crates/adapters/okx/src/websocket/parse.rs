@@ -30,7 +30,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -47,9 +47,9 @@ use crate::{
         enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType, OKXTriggerType},
         models::OKXInstrument,
         parse::{
-            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_funding_rate_msg,
-            parse_instrument_any, parse_message_vec, parse_millisecond_timestamp, parse_price,
-            parse_quantity,
+            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_fee_currency,
+            parse_funding_rate_msg, parse_instrument_any, parse_message_vec,
+            parse_millisecond_timestamp, parse_price, parse_quantity,
         },
     },
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
@@ -963,7 +963,15 @@ pub fn parse_fill_report(
         )
     })?;
 
-    let fee_currency = Currency::from(&msg.fee_ccy);
+    let fee_str = msg.fee.as_deref().unwrap_or("0");
+    let fee_value = fee_str
+        .parse::<f64>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee '{}': {}", fee_str, e))?;
+
+    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_value, || {
+        format!("fill report for inst_id={}", msg.inst_id)
+    });
+
     // OKX sends fees as negative numbers (e.g., "-2.5" for a $2.5 charge), parse_fee negates to positive
     let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)
         .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {}", msg.fee, e))?;
@@ -1151,6 +1159,7 @@ mod tests {
         data::bar::BAR_SPEC_1_DAY_LAST,
         identifiers::{ClientOrderId, Symbol},
         instruments::CryptoPerpetual,
+        types::Currency,
     };
     use rstest::rstest;
     use rust_decimal::Decimal;

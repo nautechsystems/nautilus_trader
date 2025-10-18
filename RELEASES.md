@@ -69,6 +69,10 @@ This will be the final release with support for Python 3.11.
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed `SandboxExecutionClient` instrument data handling
 - Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
+- Fixed `CryptoOption` Arrow schema `option_kind` field to accept string values
+- Fixed `FuturesSpread` Arrow schema missing max/min quantity and price fields
+- Fixed `OptionSpread` Arrow schema missing max/min quantity and price fields
+- Fixed `Commodity` Arrow schema to match from_dict requirements
 - Fixed safe encoded symbols (#2964), thanks @ms32035
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
@@ -78,15 +82,18 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
 - Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
-- Fixed Binance futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
-- Fixed Binance futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks for reporting @woung717
+- Fixed Binance Futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
+- Fixed Binance Futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks for reporting @woung717
+- Fixed Binance Futures liquidation and ADL fill handling
 - Fixed BitMEX testnet support
 - Fixed BitMEX instrument parsing of lot size
 - Fixed BitMEX order rejection handling and response parsing
+- Fixed Blockchain adapter out of gas RPC error in Multicall for problematic contracts (#3086), thanks @filipmacek
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Bybit account endpoint pagination handling
 - Fixed Coinbase Intx API credentials handling to allow passing explicitly
+- Fixed Hyperliquid L1 signing with direct MessagePack serialization (#3087), thanks @nicolad
 - Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 - Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
 - Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
@@ -103,6 +110,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
 - Fixed Polymarket market order submission to use native CLOB market orders (#2984), thanks for reporting @njkds
 - Fixed Polymarket maker fill order side inversion (#3077), thanks for reporting @DarioHett
+- Fixed Polymarket `neg_risk` order parameter handling
 - Fixed Tardis instruments `lot_size` mapping
 - Fixed Tardis adapter error handling and connection robustness
 - Fixed Tardis replay to use catalog-compatible filenames
@@ -111,11 +119,13 @@ This will be the final release with support for Python 3.11.
 - Added ARM64 support to Docker builds
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
+- Added turmoil network simulation testing to network crate
 - Ported `PortfolioAnalyzer` and all portfolio statistics to Rust
 - Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010, #3019, #3036), thanks @filipmacek
 - Introduced snapshot, analytics, and PSQL schema for PoolProfiler (#3048), thanks @filipmacek
 - Implemented consistency checking for AMM pool profiler with RPC state (#3030), thanks @filipmacek
 - Implemented `PoolFlash` event in blockchain adapter (#3055, #3058), thanks @filipmacek
+- Implemented Blockchain adapter pool profiler snapshot integration (#3090), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -136,20 +146,22 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
-- Relaxed `Currency` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
-- Relaxed `Symbol` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
+- Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved order books error handling, state integrity, and pprint/display
 - Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved socket client URL parsing
+- Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
+- Improved Blockchain adapter shutdown with cancellation token
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
+- Improved BitMEX instrument cache error logging
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
-- Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
+- Improved OKX trade mode detection and fee currency parsing
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined setting of flags in Makefile (#3060), thanks @faysou

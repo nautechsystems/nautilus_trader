@@ -44,12 +44,17 @@ use futures_util::{
 use http::HeaderName;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-use tokio::net::TcpStream;
+#[cfg(feature = "turmoil")]
+use tokio_tungstenite::client_async;
+#[cfg(not(feature = "turmoil"))]
+use tokio_tungstenite::connect_async;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
+    MaybeTlsStream, WebSocketStream,
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
+#[cfg(feature = "turmoil")]
+use crate::net::TcpConnector;
 use crate::{
     RECONNECTED,
     backoff::ExponentialBackoff,
@@ -68,8 +73,15 @@ const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
 
-type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+#[cfg(not(feature = "turmoil"))]
+type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, Message>;
+#[cfg(not(feature = "turmoil"))]
+pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>;
+
+#[cfg(feature = "turmoil")]
+type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<crate::net::TcpStream>>, Message>;
+#[cfg(feature = "turmoil")]
+pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<crate::net::TcpStream>>>;
 
 /// Function type for handling WebSocket messages.
 ///
@@ -367,7 +379,9 @@ impl WebSocketClientInner {
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
+    /// Production version that uses `connect_async` convenience helper.
     #[inline]
+    #[cfg(not(feature = "turmoil"))]
     pub async fn connect_with_server(
         url: &str,
         headers: Vec<(String, String)>,
@@ -384,6 +398,76 @@ impl WebSocketClientInner {
         }
 
         connect_async(request).await.map(|resp| resp.0.split())
+    }
+
+    /// Connects with the server creating a tokio-tungstenite websocket stream.
+    /// Turmoil version that uses the lower-level `client_async` API with injected stream.
+    #[inline]
+    #[cfg(feature = "turmoil")]
+    pub async fn connect_with_server(
+        url: &str,
+        headers: Vec<(String, String)>,
+    ) -> Result<(MessageWriter, MessageReader), Error> {
+        use rustls::ClientConfig;
+        use tokio_rustls::TlsConnector;
+
+        let mut request = url.into_client_request()?;
+        let req_headers = request.headers_mut();
+
+        let mut header_names: Vec<HeaderName> = Vec::new();
+        for (key, val) in headers {
+            let header_value = HeaderValue::from_str(&val)?;
+            let header_name: HeaderName = key.parse()?;
+            header_names.push(header_name.clone());
+            req_headers.insert(header_name, header_value);
+        }
+
+        let uri = request.uri();
+        let scheme = uri.scheme_str().unwrap_or("ws");
+        let host = uri.host().ok_or_else(|| {
+            Error::Url(tokio_tungstenite::tungstenite::error::UrlError::NoHostName)
+        })?;
+
+        // Determine port: use explicit port if specified, otherwise default based on scheme
+        let port = uri
+            .port_u16()
+            .unwrap_or_else(|| if scheme == "wss" { 443 } else { 80 });
+
+        let addr = format!("{host}:{port}");
+
+        // Use the connector to get a turmoil-compatible stream
+        let connector = crate::net::RealTcpConnector::default();
+        let tcp_stream = connector.connect(&addr).await?;
+
+        // Wrap stream appropriately based on scheme
+        let maybe_tls_stream = if scheme == "wss" {
+            // Build TLS config with webpki roots
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+            let config = ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+
+            let tls_connector = TlsConnector::from(std::sync::Arc::new(config));
+            let domain =
+                rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|e| {
+                    Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Invalid DNS name: {e}"),
+                    ))
+                })?;
+
+            let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
+            MaybeTlsStream::Rustls(tls_stream)
+        } else {
+            MaybeTlsStream::Plain(tcp_stream)
+        };
+
+        // Use client_async with the stream (plain or TLS)
+        client_async(request, maybe_tls_stream)
+            .await
+            .map(|resp| resp.0.split())
     }
 
     /// Reconnect with server.
@@ -1165,6 +1249,7 @@ impl Drop for WebSocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
+#[cfg(not(feature = "turmoil"))]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::{num::NonZeroU32, sync::Arc};
@@ -1427,6 +1512,7 @@ mod tests {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
+#[cfg(not(feature = "turmoil"))]
 mod rust_tests {
     use futures_util::StreamExt;
     use rstest::rstest;

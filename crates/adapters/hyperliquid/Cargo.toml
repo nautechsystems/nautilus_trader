@@ -75,6 +75,8 @@ alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
+alloy-sol-types = "1.4.1"
+rmp-serde = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
@@ -123,3 +125,7 @@ path = "bin/ws_exec.rs"
 [[bin]]
 name = "hyperliquid-ws-post"
 path = "bin/ws_post.rs"
+
+[[bin]]
+name = "hyperliquid-http-exec"
+path = "bin/http_exec.rs"

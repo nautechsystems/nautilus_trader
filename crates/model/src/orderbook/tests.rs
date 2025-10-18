@@ -5110,55 +5110,6 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
 }
 
 #[rstest]
-fn test_cache_consistency_debug() {
-    // Test more complex cache consistency scenarios
-    let instrument_id = InstrumentId::from("TEST.VENUE");
-    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
-
-    // Scenario 1: Simple zero-size update
-    let order1 = BookOrder::new(OrderSide::Buy, Price::from("100.0"), Quantity::from(10), 1);
-    book.add(order1, 0, 1, 1.into());
-
-    let order1_zero = BookOrder::new(OrderSide::Buy, Price::from("100.0"), Quantity::from(0), 1);
-    book.update(order1_zero, 0, 2, 2.into());
-
-    println!("After simple zero-size update:");
-    println!("Cache len: {}", book.bids.cache.len());
-    println!(
-        "Total level orders: {}",
-        book.bids.levels.values().map(|l| l.len()).sum::<usize>()
-    );
-
-    // Scenario 2: Update with existing order ID but different price
-    let order2 = BookOrder::new(OrderSide::Buy, Price::from("101.0"), Quantity::from(5), 2);
-    book.add(order2, 0, 3, 3.into());
-
-    // Update order 2 to a different price
-    let order2_new_price =
-        BookOrder::new(OrderSide::Buy, Price::from("102.0"), Quantity::from(8), 2);
-    book.update(order2_new_price, 0, 4, 4.into());
-
-    println!("After price update:");
-    println!("Cache len: {}", book.bids.cache.len());
-    println!(
-        "Total level orders: {}",
-        book.bids.levels.values().map(|l| l.len()).sum::<usize>()
-    );
-
-    // Scenario 3: Update non-existent order
-    let order3_nonexistent =
-        BookOrder::new(OrderSide::Buy, Price::from("99.0"), Quantity::from(3), 999);
-    book.update(order3_nonexistent, 0, 5, 5.into());
-
-    println!("After non-existent order update:");
-    println!("Cache len: {}", book.bids.cache.len());
-    println!(
-        "Total level orders: {}",
-        book.bids.levels.values().map(|l| l.len()).sum::<usize>()
-    );
-}
-
-#[rstest]
 // Cache consistency bugs partially fixed, but property test still reveals edge cases
 // Keeping disabled until all edge cases are resolved
 #[ignore = "Cache consistency fixes in progress - multiple edge cases remain"]

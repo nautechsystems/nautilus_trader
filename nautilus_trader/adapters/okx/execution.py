@@ -62,6 +62,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.orders import Order
 
 
@@ -103,11 +104,7 @@ class OKXExecutionClient(LiveExecutionClient):
     ) -> None:
         PyCondition.not_empty(config.instrument_types, "config.instrument_types")
 
-        # Determine account type based on instrument types
-        if instrument_provider.instrument_types == (OKXInstrumentType.SPOT,):
-            account_type = AccountType.CASH
-        else:
-            account_type = AccountType.MARGIN
+        account_type = self._derive_account_type(instrument_provider, config)
 
         super().__init__(
             loop=loop,
@@ -176,22 +173,36 @@ class OKXExecutionClient(LiveExecutionClient):
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
         # Determine trade mode based on account type and configuration
-        if account_type == AccountType.CASH:
-            # SPOT trading
-            if config.use_spot_margin:
-                self._trade_mode = OKXTradeMode.SPOT_ISOLATED
-            else:
-                self._trade_mode = OKXTradeMode.CASH
-        else:
-            # Derivatives trading (SWAP, FUTURES, OPTIONS)
-            if config.margin_mode == OKXMarginMode.CROSS:
-                self._trade_mode = OKXTradeMode.CROSS
-            else:
-                self._trade_mode = OKXTradeMode.ISOLATED
+        self._trade_mode = self._derive_trade_mode(account_type, config)
 
     @property
     def okx_instrument_provider(self) -> OKXInstrumentProvider:
         return self._instrument_provider
+
+    def _derive_account_type(
+        self,
+        instrument_provider: OKXInstrumentProvider,
+        config: OKXExecClientConfig,
+    ) -> AccountType:
+        is_spot_only = instrument_provider.instrument_types == (OKXInstrumentType.SPOT,)
+        if is_spot_only and not config.use_spot_margin:
+            return AccountType.CASH
+        return AccountType.MARGIN
+
+    def _derive_trade_mode(
+        self,
+        account_type: AccountType,
+        config: OKXExecClientConfig,
+    ) -> OKXTradeMode:
+        is_cross_margin = config.margin_mode == OKXMarginMode.CROSS
+
+        if account_type == AccountType.CASH:
+            if not config.use_spot_margin:
+                return OKXTradeMode.CASH
+            # SPOT margin supports CROSS for leverage; ISOLATED is limited to copy or lead traders
+            return OKXTradeMode.CROSS if is_cross_margin else OKXTradeMode.ISOLATED
+
+        return OKXTradeMode.CROSS if is_cross_margin else OKXTradeMode.ISOLATED
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -647,13 +658,15 @@ class OKXExecutionClient(LiveExecutionClient):
 
         try:
             if command.instrument_id:
-                # SPOT instruments in CASH account don't have positions - return FLAT
-                if self.account_type == AccountType.CASH:
-                    instrument = self._cache.instrument(command.instrument_id)
-                    if instrument is None:
-                        raise RuntimeError(
-                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found in cache",
-                        )
+                # Check if this is a SPOT instrument (SPOT instruments don't have positions)
+                instrument = self._cache.instrument(command.instrument_id)
+                if instrument is None:
+                    raise RuntimeError(
+                        f"Cannot create position report - instrument {command.instrument_id} not found in cache",
+                    )
+
+                # SPOT instruments (CurrencyPair) don't have positions - return FLAT
+                if isinstance(instrument, CurrencyPair):
                     report = PositionStatusReport.create_flat(
                         account_id=self.account_id,
                         instrument_id=command.instrument_id,
@@ -719,22 +732,47 @@ class OKXExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _parse_trade_mode_from_params(self, params: dict[str, Any] | None) -> OKXTradeMode:
-        if not params:
-            return self._trade_mode
+    def _get_trade_mode_for_order(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None,
+    ) -> OKXTradeMode:
+        if params:
+            td_mode = params.get("td_mode")
+            if td_mode:
+                try:
+                    return OKXTradeMode(td_mode)
+                except ValueError:
+                    self._log.warning(
+                        f"Invalid td_mode '{td_mode}', valid modes: 'cash', 'isolated', 'cross', 'spot_isolated'",
+                    )
 
-        td_mode_str = params.get("td_mode")
-        if not td_mode_str:
-            return self._trade_mode
-
-        try:
-            return OKXTradeMode(td_mode_str)
-        except ValueError:
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
             self._log.warning(
-                f"Failed to parse OKXTradeMode: Valid modes are 'cash', 'isolated', 'cross', 'spot_isolated', "
-                f"falling back to '{str(self._trade_mode).lower()}'",
+                f"Instrument {instrument_id} not found in cache, using default trade mode",
             )
             return self._trade_mode
+
+        if isinstance(instrument, CurrencyPair):
+            # SPOT trading
+            if self._config.use_spot_margin:
+                # Use CROSS or ISOLATED margin mode for spot margin trading
+                # Note: SPOT_ISOLATED is only available for copy traders
+                return (
+                    OKXTradeMode.CROSS
+                    if self._config.margin_mode == OKXMarginMode.CROSS
+                    else OKXTradeMode.ISOLATED
+                )
+            else:
+                return OKXTradeMode.CASH
+        else:
+            # Derivatives trading
+            return (
+                OKXTradeMode.CROSS
+                if self._config.margin_mode == OKXMarginMode.CROSS
+                else OKXTradeMode.ISOLATED
+            )
 
     async def _query_account(self, _command: QueryAccount) -> None:
         # TODO: Specific account ID (sub account) not yet supported
@@ -789,7 +827,7 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        td_mode = self._parse_trade_mode_from_params(command.params)
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
 
         try:
             await self._ws_client.submit_order(
@@ -837,7 +875,7 @@ class OKXExecutionClient(LiveExecutionClient):
             trigger_type_to_pyo3(order.trigger_type) if hasattr(order, "trigger_type") else None
         )
 
-        td_mode = self._parse_trade_mode_from_params(command.params)
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
 
         try:
             response = await self._http_client.place_algo_order(

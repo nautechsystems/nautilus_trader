@@ -124,7 +124,7 @@ impl DataEngine {
         }
 
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            log::info!("Forwarding subscription to client {:?}", cmd.client_id());
+            log::info!("Forwarding subscription to client {}", client.client_id);
             client.execute_defi_subscribe(cmd);
         } else {
             log::error!(
@@ -437,8 +437,10 @@ impl DataEngine {
     }
 
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId, client_id: Option<&ClientId>) {
-        // Early return if updater already exists
-        if self.pool_updaters.contains_key(instrument_id) {
+        // Early return if updater already exists or we are in the middle of setting it up.
+        if self.pool_updaters.contains_key(instrument_id)
+            || self.pool_updaters_pending.contains(instrument_id)
+        {
             log::debug!("Pool updater for {instrument_id} already exists");
             return;
         }
@@ -468,8 +470,10 @@ impl DataEngine {
 
                 if let Err(e) = cache.add_pool_profiler(pool_profiler) {
                     log::error!("Failed to add pool profiler for {instrument_id}: {e}");
+                    drop(cache);
                     return;
                 }
+                drop(cache);
             } else {
                 // Neither profiler nor pool exists, request snapshot
                 drop(cache);
@@ -488,10 +492,10 @@ impl DataEngine {
                     self.execute_defi_request(&DefiRequestCommand::PoolSnapshot(request))
                 {
                     log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
-                    self.pool_updaters_pending.insert(*instrument_id);
                 } else {
                     log::debug!("Requested pool snapshot for {instrument_id}");
                     self.pool_snapshot_pending.insert(*instrument_id);
+                    self.pool_updaters_pending.insert(*instrument_id);
                     self.pool_event_buffers.entry(*instrument_id).or_default();
                 }
                 return;

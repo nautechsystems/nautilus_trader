@@ -1156,14 +1156,66 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the HTTP request fails.
     pub async fn request_vip_level(&self) -> anyhow::Result<Option<OKXVipLevel>> {
-        // Try different instrument types (VIP level is the same across all)
-        // Try SPOT and MARGIN first (no inst_family required)
-        let simple_types = [OKXInstrumentType::Spot, OKXInstrumentType::Margin];
+        // VIP level is account-wide, try SPOT first (most common)
+        let params = GetTradeFeeParams {
+            inst_type: OKXInstrumentType::Spot,
+            inst_family: None,
+            uly: None,
+        };
 
-        for inst_type in simple_types {
+        match self.inner.http_get_trade_fee(params).await {
+            Ok(resp) => {
+                if let Some(fee_rate) = resp.first() {
+                    tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
+                    return Ok(Some(fee_rate.level));
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Failed to query SPOT fee rates: {e}, trying other types");
+            }
+        }
+
+        // Try MARGIN for accounts with spot disabled but margin enabled
+        let params = GetTradeFeeParams {
+            inst_type: OKXInstrumentType::Margin,
+            inst_family: None,
+            uly: None,
+        };
+
+        match self.inner.http_get_trade_fee(params).await {
+            Ok(resp) => {
+                if let Some(fee_rate) = resp.first() {
+                    tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
+                    return Ok(Some(fee_rate.level));
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Failed to query MARGIN fee rates: {e}, trying derivatives");
+            }
+        }
+
+        // Fallback to derivatives for accounts with spot/margin disabled.
+        // OKX sub-accounts can have selective permissions (e.g., USDT-margined only,
+        // inverse only, or specific instrument types), so we probe multiple common
+        // instrument families to find one that works for the account configuration.
+        let derivatives_types = [
+            (OKXInstrumentType::Swap, None),
+            (OKXInstrumentType::Swap, Some("BTC-USDT")),
+            (OKXInstrumentType::Swap, Some("ETH-USDT")),
+            (OKXInstrumentType::Swap, Some("BTC-USD")),
+            (OKXInstrumentType::Swap, Some("ETH-USD")),
+            (OKXInstrumentType::Futures, Some("BTC-USDT")),
+            (OKXInstrumentType::Futures, Some("ETH-USDT")),
+            (OKXInstrumentType::Futures, Some("BTC-USD")),
+            (OKXInstrumentType::Futures, Some("ETH-USD")),
+            (OKXInstrumentType::Option, Some("BTC-USD")),
+            (OKXInstrumentType::Option, Some("ETH-USD")),
+        ];
+
+        for (inst_type, inst_family) in derivatives_types {
             let params = GetTradeFeeParams {
                 inst_type,
-                inst_family: None,
+                inst_family: inst_family.map(String::from),
                 uly: None,
             };
 
@@ -1176,49 +1228,13 @@ impl OKXHttpClient {
                 }
                 Err(e) => {
                     tracing::debug!(
-                        "Failed to query fee rates for {inst_type:?}: {e}, trying next type"
+                        "Failed to query {inst_type:?} fee rates (family: {inst_family:?}): {e}"
                     );
-                    continue;
                 }
             }
         }
 
-        // Try derivatives types with common instrument families
-        let derivatives_types = [
-            OKXInstrumentType::Swap,
-            OKXInstrumentType::Futures,
-            OKXInstrumentType::Option,
-        ];
-
-        // Common instrument families to try
-        let inst_families = ["BTC-USD", "ETH-USD", "BTC-USDT", "ETH-USDT"];
-
-        for inst_type in derivatives_types {
-            for family in inst_families {
-                let params = GetTradeFeeParams {
-                    inst_type,
-                    inst_family: Some(family.to_string()),
-                    uly: None,
-                };
-
-                match self.inner.http_get_trade_fee(params).await {
-                    Ok(resp) => {
-                        if let Some(fee_rate) = resp.first() {
-                            tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
-                            return Ok(Some(fee_rate.level));
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            "Failed to query fee rates for {inst_type:?} family {family}: {e}"
-                        );
-                        continue;
-                    }
-                }
-            }
-        }
-
-        tracing::warn!("Unable to query VIP level from any instrument type or family");
+        tracing::warn!("Unable to query VIP level from any instrument type");
         Ok(None)
     }
 

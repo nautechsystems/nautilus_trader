@@ -50,6 +50,7 @@ use nautilus_model::{
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    reports::OrderStatusReport,
     types::{Money, Price, Quantity},
 };
 use nautilus_network::{
@@ -92,12 +93,13 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXTradeMode,
-            OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type, is_conditional_order,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXTradeMode, OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type,
+            is_conditional_order,
         },
         parse::{
             bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
-            parse_client_order_id, parse_millisecond_timestamp,
+            parse_client_order_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
     },
     http::models::OKXAccount,
@@ -107,7 +109,18 @@ use crate::{
     },
 };
 
-type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
+enum PendingOrderParams {
+    Regular(WsPostOrderParams),
+    Algo(()),
+}
+
+type PlaceRequestData = (
+    PendingOrderParams,
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+);
 type CancelRequestData = (
     ClientOrderId,
     TraderId,
@@ -206,6 +219,7 @@ pub struct OKXWebSocketClient {
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
+    emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>, // Track orders we've already emitted OrderAccepted for
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
@@ -287,6 +301,7 @@ impl OKXWebSocketClient {
             pending_amend_requests: Arc::new(DashMap::new()),
             pending_mass_cancel_requests: Arc::new(DashMap::new()),
             active_client_orders: Arc::new(DashMap::new()),
+            emitted_order_accepted: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
@@ -491,6 +506,7 @@ impl OKXWebSocketClient {
         let pending_amend_requests = self.pending_amend_requests.clone();
         let pending_mass_cancel_requests = self.pending_mass_cancel_requests.clone();
         let active_client_orders = self.active_client_orders.clone();
+        let emitted_order_accepted = self.emitted_order_accepted.clone();
         let auth_tracker = self.auth_tracker.clone();
 
         let instruments_cache = self.instruments_cache.clone();
@@ -519,6 +535,7 @@ impl OKXWebSocketClient {
                     pending_mass_cancel_requests,
                     active_client_orders,
                     client_id_aliases,
+                    emitted_order_accepted,
                     auth_tracker.clone(),
                     subscriptions_state.clone(),
                 );
@@ -2345,10 +2362,8 @@ impl OKXWebSocketClient {
                 builder.ccy(quote_currency.to_string());
             }
             OKXInstrumentType::Margin => {
-                // MARGIN: use quote currency for margin
                 builder.ccy(quote_currency.to_string());
 
-                // TODO: Consider position mode (only applicable for NET)
                 if let Some(ro) = reduce_only
                     && ro
                 {
@@ -2358,12 +2373,21 @@ impl OKXWebSocketClient {
             OKXInstrumentType::Swap | OKXInstrumentType::Futures => {
                 // SWAP/FUTURES: use quote currency for margin (required by OKX)
                 builder.ccy(quote_currency.to_string());
+
+                // For derivatives, posSide is required by OKX
+                // Use Net for one-way mode (default for NETTING OMS)
+                if position_side.is_none() {
+                    builder.pos_side(OKXPositionSide::Net);
+                }
             }
             _ => {
-                // For other instrument types (OPTIONS, etc.), use quote currency as fallback
                 builder.ccy(quote_currency.to_string());
 
-                // TODO: Consider position mode (only applicable for NET)
+                // For derivatives, posSide is required
+                if position_side.is_none() {
+                    builder.pos_side(OKXPositionSide::Net);
+                }
+
                 if let Some(ro) = reduce_only
                     && ro
                 {
@@ -2372,13 +2396,19 @@ impl OKXWebSocketClient {
             }
         };
 
-        if instrument_type == OKXInstrumentType::Spot && order_type == OrderType::Market {
-            // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
-            // OKX API default behavior for SPOT:
-            // - BUY orders default to tgtCcy=quote_ccy
-            // - SELL orders default to tgtCcy=base_ccy
+        // For SPOT market orders, handle tgtCcy parameter
+        // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
+        // OKX API default behavior for SPOT market orders:
+        // - BUY orders default to tgtCcy=quote_ccy (sz represents quote currency amount)
+        // - SELL orders default to tgtCcy=base_ccy (sz represents base currency amount)
+        // Note: tgtCcy is only supported for cash (non-margin) trading
+        if instrument_type == OKXInstrumentType::Spot
+            && order_type == OrderType::Market
+            && td_mode == OKXTradeMode::Cash
+        {
             match quote_quantity {
                 Some(true) => {
+                    // Explicitly request quote currency sizing
                     builder.tgt_ccy(OKX_TARGET_CCY_QUOTE.to_string());
                 }
                 Some(false) => {
@@ -2437,7 +2467,13 @@ impl OKXWebSocketClient {
 
         self.pending_place_requests.insert(
             request_id.clone(),
-            (client_order_id, trader_id, strategy_id, instrument_id),
+            (
+                PendingOrderParams::Regular(params.clone()),
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            ),
         );
 
         self.active_client_orders
@@ -2933,7 +2969,13 @@ impl OKXWebSocketClient {
 
         self.pending_place_requests.insert(
             request_id.clone(),
-            (client_order_id, trader_id, strategy_id, instrument_id),
+            (
+                PendingOrderParams::Algo(()),
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            ),
         );
 
         self.retry_manager
@@ -3261,6 +3303,7 @@ struct OKXWsMessageHandler {
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
+    emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
@@ -3507,6 +3550,7 @@ impl OKXWsMessageHandler {
         pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
+        emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
     ) -> Self {
@@ -3521,6 +3565,7 @@ impl OKXWsMessageHandler {
             pending_mass_cancel_requests,
             active_client_orders,
             client_id_aliases,
+            emitted_order_accepted,
             instruments_cache,
             last_account_state: None,
             fee_cache: AHashMap::new(),
@@ -3633,6 +3678,163 @@ impl OKXWsMessageHandler {
                                 "Mass cancel operation successful for instrument: {}",
                                 instrument_id
                             );
+                        } else if op == OKXWsOperation::Order
+                            && let Some(request_id) = &id
+                            && let Some((
+                                _,
+                                (params, client_order_id, _trader_id, _strategy_id, instrument_id),
+                            )) = self.pending_place_requests.remove(request_id)
+                        {
+                            let (venue_order_id, ts_accepted) = if let Some(first) = data.first() {
+                                let ord_id = first
+                                    .get("ordId")
+                                    .and_then(|v| v.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .map(VenueOrderId::new);
+
+                                let ts = first
+                                    .get("ts")
+                                    .and_then(|v| v.as_str())
+                                    .and_then(|s| s.parse::<u64>().ok())
+                                    .map_or_else(
+                                        || clock.get_time_ns(),
+                                        |ms| UnixNanos::from(ms * 1_000_000),
+                                    );
+
+                                (ord_id, ts)
+                            } else {
+                                (None, clock.get_time_ns())
+                            };
+
+                            if let Some(instrument) = self
+                                .instruments_cache
+                                .get(&Ustr::from(instrument_id.symbol.as_str()))
+                            {
+                                match params {
+                                    PendingOrderParams::Regular(order_params) => {
+                                        // Check if this is an explicit quote-sized order
+                                        let is_explicit_quote_sized = order_params
+                                            .tgt_ccy
+                                            .as_ref()
+                                            .is_some_and(|tgt| tgt == OKX_TARGET_CCY_QUOTE);
+
+                                        // Check if this is an implicit quote-sized order:
+                                        // SPOT market BUY in cash mode with no tgt_ccy defaults to quote-sizing
+                                        let is_implicit_quote_sized =
+                                            order_params.tgt_ccy.is_none()
+                                                && order_params.side == OKXSide::Buy
+                                                && matches!(
+                                                    order_params.ord_type,
+                                                    OKXOrderType::Market
+                                                )
+                                                && order_params.td_mode == OKXTradeMode::Cash
+                                                && instrument.instrument_class().as_ref() == "SPOT";
+
+                                        if is_explicit_quote_sized || is_implicit_quote_sized {
+                                            // For quote-sized orders, sz is in quote currency (USDT),
+                                            // not base currency (ETH). We can't accurately parse the
+                                            // base quantity without the fill price, so we skip the
+                                            // synthetic OrderAccepted and rely on the orders channel
+                                            tracing::info!(
+                                                "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={:?}",
+                                                if is_explicit_quote_sized {
+                                                    "explicit"
+                                                } else {
+                                                    "implicit"
+                                                },
+                                                venue_order_id
+                                            );
+                                            continue;
+                                        }
+
+                                        let order_side = order_params.side.into();
+                                        let order_type = order_params.ord_type.into();
+                                        let time_in_force = match order_params.ord_type {
+                                            OKXOrderType::Fok => TimeInForce::Fok,
+                                            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
+                                                TimeInForce::Ioc
+                                            }
+                                            _ => TimeInForce::Gtc,
+                                        };
+
+                                        let size_precision = instrument.size_precision();
+                                        let quantity = match parse_quantity(
+                                            &order_params.sz,
+                                            size_precision,
+                                        ) {
+                                            Ok(q) => q,
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse quantity for accepted order: {e}"
+                                                );
+                                                continue;
+                                            }
+                                        };
+
+                                        let filled_qty = Quantity::zero(size_precision);
+
+                                        let mut report = OrderStatusReport::new(
+                                            self.account_id,
+                                            instrument_id,
+                                            Some(client_order_id),
+                                            venue_order_id
+                                                .unwrap_or_else(|| VenueOrderId::new("PENDING")),
+                                            order_side,
+                                            order_type,
+                                            time_in_force,
+                                            OrderStatus::Accepted,
+                                            quantity,
+                                            filled_qty,
+                                            ts_accepted,
+                                            ts_accepted, // ts_last same as ts_accepted for new orders
+                                            ts_init,
+                                            None, // Generate UUID4 automatically
+                                        );
+
+                                        if let Some(px) = &order_params.px
+                                            && !px.is_empty()
+                                            && let Ok(price) =
+                                                parse_price(px, instrument.price_precision())
+                                        {
+                                            report = report.with_price(price);
+                                        }
+
+                                        if let Some(true) = order_params.reduce_only {
+                                            report = report.with_reduce_only(true);
+                                        }
+
+                                        if order_type == OrderType::Limit
+                                            && order_params.ord_type == OKXOrderType::PostOnly
+                                        {
+                                            report = report.with_post_only(true);
+                                        }
+
+                                        if let Some(ref v_order_id) = venue_order_id {
+                                            self.emitted_order_accepted.insert(*v_order_id, ());
+                                        }
+
+                                        tracing::info!(
+                                            "Order accepted: client_order_id={client_order_id}, venue_order_id={:?}",
+                                            venue_order_id
+                                        );
+
+                                        return Some(NautilusWsMessage::ExecutionReports(vec![
+                                            ExecutionReport::Order(report),
+                                        ]));
+                                    }
+                                    PendingOrderParams::Algo(_) => {
+                                        // Algo orders handled via orders-algo channel
+                                        tracing::info!(
+                                            "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
+                                            venue_order_id
+                                        );
+                                    }
+                                }
+                            } else {
+                                tracing::error!(
+                                    "Instrument not found for accepted order: {instrument_id}"
+                                );
+                            }
                         }
 
                         if let Some(first) = data.first()
@@ -3669,7 +3871,13 @@ impl OKXWsMessageHandler {
                             OKXWsOperation::Order => {
                                 if let Some((
                                     _,
-                                    (client_order_id, trader_id, strategy_id, instrument_id),
+                                    (
+                                        _params,
+                                        client_order_id,
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                    ),
                                 )) = self.pending_place_requests.remove(request_id)
                                 {
                                     let ts_event = clock.get_time_ns();
@@ -3882,11 +4090,63 @@ impl OKXWsMessageHandler {
                                             "Successfully parsed execution report: {:?}",
                                             report
                                         );
+
+                                        // Check for duplicate OrderAccepted events
+                                        let is_duplicate_accepted =
+                                            if let ExecutionReport::Order(ref status_report) =
+                                                report
+                                            {
+                                                if status_report.order_status
+                                                    == OrderStatus::Accepted
+                                                {
+                                                    self.emitted_order_accepted
+                                                        .contains_key(&status_report.venue_order_id)
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+
+                                        if is_duplicate_accepted {
+                                            tracing::debug!(
+                                                "Skipping duplicate OrderAccepted for venue_order_id={}",
+                                                if let ExecutionReport::Order(ref r) = report {
+                                                    r.venue_order_id.to_string()
+                                                } else {
+                                                    "unknown".to_string()
+                                                }
+                                            );
+                                            continue;
+                                        }
+
+                                        if let ExecutionReport::Order(ref status_report) = report
+                                            && status_report.order_status == OrderStatus::Accepted
+                                        {
+                                            self.emitted_order_accepted
+                                                .insert(status_report.venue_order_id, ());
+                                        }
+
                                         let adjusted = self.adjust_execution_report(
                                             report,
                                             &effective_client_id,
                                             &raw_child,
                                         );
+
+                                        // Clean up tracking for terminal states
+                                        if let ExecutionReport::Order(ref status_report) = adjusted
+                                            && matches!(
+                                                status_report.order_status,
+                                                OrderStatus::Filled
+                                                    | OrderStatus::Canceled
+                                                    | OrderStatus::Expired
+                                                    | OrderStatus::Rejected
+                                            )
+                                        {
+                                            self.emitted_order_accepted
+                                                .remove(&status_report.venue_order_id);
+                                        }
+
                                         self.update_caches_with_report(&adjusted);
                                         exec_reports.push(adjusted);
                                     }
@@ -4179,9 +4439,24 @@ mod tests {
         let strategy_id = StrategyId::from("test-strategy-001");
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
 
+        let dummy_params = WsPostOrderParamsBuilder::default()
+            .inst_id("BTC-USDT".to_string())
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("1".to_string())
+            .build()
+            .unwrap();
+
         client.pending_place_requests.insert(
             "place-123".to_string(),
-            (client_order_id, trader_id, strategy_id, instrument_id),
+            (
+                PendingOrderParams::Regular(dummy_params),
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            ),
         );
 
         assert_eq!(client.pending_place_requests.len(), 1);
@@ -4294,9 +4569,24 @@ mod tests {
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let request_id_str = request_id.to_string();
 
+                let dummy_params = WsPostOrderParamsBuilder::default()
+                    .inst_id(instrument_id.symbol.to_string())
+                    .td_mode(OKXTradeMode::Cash)
+                    .side(OKXSide::Buy)
+                    .ord_type(OKXOrderType::Limit)
+                    .sz("1".to_string())
+                    .build()
+                    .unwrap();
+
                 client_clone.pending_place_requests.insert(
                     request_id_str.clone(),
-                    (client_order_id, trader_id, strategy_id, instrument_id),
+                    (
+                        PendingOrderParams::Regular(dummy_params),
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    ),
                 );
 
                 // Simulate processing delay

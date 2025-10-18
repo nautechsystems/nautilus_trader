@@ -27,6 +27,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import TimeInForce
@@ -41,26 +42,29 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # Configuration - Change instrument_type to switch between trading modes
 instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
+token = "ETH"
 
 # Symbol mapping based on instrument type
 if instrument_type == OKXInstrumentType.SPOT:
-    symbol = "ETH-USDT"
+    symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    order_qty = Decimal("0.005")
+    order_qty = Decimal("0.01")
     enable_sells = False
 elif instrument_type == OKXInstrumentType.SWAP:
-    symbol = "ETH-USDT-SWAP"
-    contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
+    symbol = f"{token}-USDT-SWAP"
+    contract_types = (OKXContractType.LINEAR,)
     order_qty = Decimal("0.01")
     enable_sells = True
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
-    symbol = "ETH-USD-251226"  # ETH-USD futures expiring 2025-12-26
+    symbol = f"{token}-USD-251226"  # ETH-USD futures expiring 2025-12-26
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
     enable_sells = True
 elif instrument_type == OKXInstrumentType.OPTION:
-    symbol = "ETH-USD-251226-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-12-26
+    symbol = (
+        f"{token}-USD-251226-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-12-26
+    )
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
     enable_sells = True
@@ -69,12 +73,25 @@ else:
 
 instrument_id = InstrumentId.from_str(f"{symbol}.{OKX}")
 
-instrument_types = (
-    OKXInstrumentType.SPOT,
-    OKXInstrumentType.SWAP,
-    OKXInstrumentType.FUTURES,
-    # OKXInstrumentType.OPTION,
-)
+# Setup instruments and types based on instrument_type
+instrument_types: tuple[OKXInstrumentType, ...]
+if instrument_type in (OKXInstrumentType.SPOT, OKXInstrumentType.SWAP):
+    # Use dual spot and swap instruments for reconciliation (matching wingman setup)
+    spot_instrument_id = InstrumentId.from_str(f"{token}-USDT.{OKX}")
+    swap_instrument_id = InstrumentId.from_str(f"{token}-USDT-SWAP.{OKX}")
+    reconciliation_instrument_ids = [spot_instrument_id, swap_instrument_id]
+    load_ids = frozenset([spot_instrument_id, swap_instrument_id])
+    external_order_claims = [spot_instrument_id, swap_instrument_id]
+    instrument_types = (
+        OKXInstrumentType.SPOT,
+        OKXInstrumentType.SWAP,
+    )
+else:
+    # For FUTURES and OPTION, use only the primary instrument
+    reconciliation_instrument_ids = [instrument_id]
+    load_ids = frozenset([instrument_id])
+    external_order_claims = [instrument_id]
+    instrument_types = (instrument_type,)
 
 instrument_families = (
     # "BTC-USD",
@@ -91,8 +108,8 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_instrument_ids=[instrument_id],
-        # reconciliation_lookback_mins=60,
+        reconciliation_instrument_ids=reconciliation_instrument_ids,
+        # reconciliation_lookback_mins=60,  # Limiting to 1-day for testing
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,
@@ -132,9 +149,11 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'OKX_API_SECRET' env var
             api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=load_ids,
+            ),
             instrument_types=instrument_types,
-            instrument_families=instrument_families,
             contract_types=contract_types,
             is_demo=False,  # If client uses the demo API
             http_timeout_secs=10,  # Set to reasonable duration
@@ -147,11 +166,13 @@ config_node = TradingNodeConfig(
             api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=load_ids,
+            ),
             instrument_types=instrument_types,
-            instrument_families=instrument_families,
             contract_types=contract_types,
-            # margin_mode=OKXMarginMode.ISOLATED,
+            margin_mode=OKXMarginMode.CROSS,
             use_spot_margin=False,
             # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API
@@ -172,14 +193,14 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
-    external_order_claims=[instrument_id],
+    external_order_claims=external_order_claims,
     use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
     enable_buys=True,
     enable_sells=enable_sells,
-    # open_position_on_start_qty=order_qty,
+    open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.FOK,
     tob_offset_ticks=100,
     # stop_offset_ticks=1,

@@ -79,7 +79,7 @@ config_tester = DataTesterConfig(
     # subscribe_funding_rates=True,
     # subscribe_bars=True,
     # subscribe_book_deltas=True,
-    # subscribe_book_depth=True,
+    # subscribe_book_depth=True,  # Not yet supported
     subscribe_book_at_interval=True,
     book_type=BookType.L2_MBP,
     book_depth=25,
@@ -103,4 +103,5 @@ try:
     node.run()
 except KeyboardInterrupt:
     node.stop()
+finally:
     node.dispose()

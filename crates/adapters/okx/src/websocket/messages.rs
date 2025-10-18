@@ -620,6 +620,7 @@ pub struct WsPostOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ccy: Option<Ustr>,
     /// Unique client order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
     /// Order side: buy or sell.

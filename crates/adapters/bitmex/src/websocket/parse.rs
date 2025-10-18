@@ -122,7 +122,10 @@ pub fn parse_book_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for book delta");
+            tracing::error!(
+                "Instrument cache miss: book delta dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     deltas
@@ -149,7 +152,10 @@ pub fn parse_book10_msg_vec(
                 ts_init,
             ))));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for depth10");
+            tracing::error!(
+                "Instrument cache miss: depth10 message dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     depths
@@ -176,7 +182,10 @@ pub fn parse_trade_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade");
+            tracing::error!(
+                "Instrument cache miss: trade message dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     trades
@@ -205,7 +214,10 @@ pub fn parse_trade_bin_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::warn!(symbol = %msg.symbol, "Instrument not found in cache for trade bin");
+            tracing::error!(
+                "Instrument cache miss: trade bin (bar) dropped for symbol={}",
+                msg.symbol
+            );
         }
     }
     trades
@@ -680,6 +692,14 @@ pub fn parse_order_update_msg(
 
 /// Parse a BitMEX WebSocket execution message into a Nautilus `FillReport`.
 ///
+/// Handles different execution types appropriately:
+/// - `Trade`: Normal trade execution → FillReport
+/// - `Liquidation`: Auto-deleveraging or liquidation → FillReport
+/// - `Bankruptcy`: Bankruptcy execution → FillReport (with warning)
+/// - `Settlement`, `TrialFill`: Non-obvious cases → None (with warning)
+/// - `Funding`, `Insurance`, `Rebalance`: Expected non-fills → None (debug log)
+/// - Order state changes (`New`, `Canceled`, etc.): → None (debug log)
+///
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
@@ -692,8 +712,86 @@ pub fn parse_execution_msg(
     msg: BitmexExecutionMsg,
     instrument: &InstrumentAny,
 ) -> Option<FillReport> {
-    if msg.exec_type != Some(BitmexExecType::Trade) {
-        return None;
+    let exec_type = msg.exec_type?;
+
+    match exec_type {
+        // Position-affecting executions that generate fills
+        BitmexExecType::Trade | BitmexExecType::Liquidation => {}
+        BitmexExecType::Bankruptcy => {
+            tracing::warn!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Processing bankruptcy execution as fill"
+            );
+        }
+
+        // Settlement executions are mark-to-market events, not fills
+        BitmexExecType::Settlement => {
+            tracing::debug!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Settlement execution skipped (not a fill): applies quanto conversion/PnL transfer on contract settlement"
+            );
+            return None;
+        }
+        BitmexExecType::TrialFill => {
+            tracing::warn!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Trial fill execution received (testnet only), not processed as fill"
+            );
+            return None;
+        }
+
+        // Expected non-fill executions
+        BitmexExecType::Funding => {
+            tracing::debug!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Funding execution skipped (not a fill)"
+            );
+            return None;
+        }
+        BitmexExecType::Insurance => {
+            tracing::debug!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Insurance execution skipped (not a fill)"
+            );
+            return None;
+        }
+        BitmexExecType::Rebalance => {
+            tracing::debug!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                symbol = ?msg.symbol,
+                "Rebalance execution skipped (not a fill)"
+            );
+            return None;
+        }
+
+        // Order state changes (not fills)
+        BitmexExecType::New
+        | BitmexExecType::Canceled
+        | BitmexExecType::CancelReject
+        | BitmexExecType::Replaced
+        | BitmexExecType::Rejected
+        | BitmexExecType::AmendReject
+        | BitmexExecType::Suspended
+        | BitmexExecType::Released
+        | BitmexExecType::TriggeredOrActivatedBySystem => {
+            tracing::debug!(
+                exec_type = ?exec_type,
+                order_id = ?msg.order_id,
+                "Execution message skipped (order state change, not a fill)"
+            );
+            return None;
+        }
     }
 
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account?));
@@ -1380,6 +1478,123 @@ mod tests {
         let instrument = create_test_perpetual_instrument();
         let result = parse_execution_msg(msg, &instrument);
         assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_liquidation() {
+        // Critical for ADL/hedge tracking
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Liquidation);
+
+        let instrument = create_test_perpetual_instrument();
+        let fill = parse_execution_msg(msg, &instrument).unwrap();
+
+        assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from(100));
+        assert_eq!(fill.last_px, Price::from("98950.0"));
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_bankruptcy() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Bankruptcy);
+
+        let instrument = create_test_perpetual_instrument();
+        let fill = parse_execution_msg(msg, &instrument).unwrap();
+
+        assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from(100));
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_settlement() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Settlement);
+
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_trial_fill() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::TrialFill);
+
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_funding() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Funding);
+
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_insurance() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Insurance);
+
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_rebalance() {
+        let mut msg: BitmexExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(BitmexExecType::Rebalance);
+
+        let instrument = create_test_perpetual_instrument();
+        let result = parse_execution_msg(msg, &instrument);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_order_state_changes() {
+        let instrument = create_test_perpetual_instrument();
+
+        let order_state_types = vec![
+            BitmexExecType::New,
+            BitmexExecType::Canceled,
+            BitmexExecType::CancelReject,
+            BitmexExecType::Replaced,
+            BitmexExecType::Rejected,
+            BitmexExecType::AmendReject,
+            BitmexExecType::Suspended,
+            BitmexExecType::Released,
+            BitmexExecType::TriggeredOrActivatedBySystem,
+        ];
+
+        for exec_type in order_state_types {
+            let mut msg: BitmexExecutionMsg =
+                serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+            msg.exec_type = Some(exec_type);
+
+            let result = parse_execution_msg(msg, &instrument);
+            assert!(
+                result.is_none(),
+                "Expected None for exec_type {:?}",
+                exec_type
+            );
+        }
     }
 
     #[rstest]

@@ -13,15 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 import pkgutil
+from unittest.mock import call
 
 import msgspec
 
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -285,3 +289,209 @@ class TestBinanceSpotExecutionHandlers:
         assert call_kwargs["client_order_id"] == ClientOrderId(wrapper.data.c)
         assert call_kwargs["reason"] == "GTX_ORDER_REJECT"
         assert call_kwargs["due_post_only"] is True  # GTX order rejected
+
+
+class TestBinanceFuturesExecutionHandlers:
+    """
+    Tests for Binance Futures ORDER_TRADE_UPDATE handler methods with mocked
+    dependencies.
+    """
+
+    def test_liquidation_order_sends_order_status_then_fill_report(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_liquidation.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = BTCUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.SELL
+        exec_client._clock.timestamp_ns.return_value = 1759347763167000000
+        exec_client.use_position_ids = False
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client._log.warning.assert_called_once()
+        assert "Received liquidation order" in exec_client._log.warning.call_args[0][0]
+        assert "autoclose-" in exec_client._log.warning.call_args[0][0]
+
+        exec_client._send_order_status_report.assert_called_once()
+        order_report = exec_client._send_order_status_report.call_args[0][0]
+        assert order_report.client_order_id == ClientOrderId("autoclose-1234567890123456")
+        assert order_report.venue_order_id == VenueOrderId("9876543210")
+
+        exec_client._send_fill_report.assert_called_once()
+        fill_report = exec_client._send_fill_report.call_args[0][0]
+        assert fill_report.last_qty == Quantity.from_str("0.100")
+        assert fill_report.last_px == Price.from_str("50000.00")
+        assert fill_report.liquidity_side == LiquiditySide.TAKER
+        assert fill_report.client_order_id == ClientOrderId("autoclose-1234567890123456")
+
+        # Verify OrderStatusReport sent before FillReport
+        status_call = call._send_order_status_report(order_report)
+        fill_call = call._send_fill_report(fill_report)
+        status_idx = exec_client.mock_calls.index(status_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
+
+    def test_adl_order_sends_order_status_then_fill_report(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_adl.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._clock.timestamp_ns.return_value = 1759347763200000000
+        exec_client.use_position_ids = False
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client._log.warning.assert_called_once()
+        assert "Received ADL order" in exec_client._log.warning.call_args[0][0]
+        assert "adl_autoclose" in exec_client._log.warning.call_args[0][0]
+
+        exec_client._send_order_status_report.assert_called_once()
+        order_report = exec_client._send_order_status_report.call_args[0][0]
+        assert order_report.client_order_id == ClientOrderId("adl_autoclose")
+
+        exec_client._send_fill_report.assert_called_once()
+        fill_report = exec_client._send_fill_report.call_args[0][0]
+        assert fill_report.last_qty == Quantity.from_str("1.000")
+        assert fill_report.last_px == Price.from_str("2500.00")
+        assert fill_report.liquidity_side == LiquiditySide.TAKER
+        assert fill_report.client_order_id == ClientOrderId("adl_autoclose")
+
+        # Verify OrderStatusReport sent before FillReport
+        status_call = call._send_order_status_report(order_report)
+        fill_call = call._send_fill_report(fill_report)
+        status_idx = exec_client.mock_calls.index(status_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
+
+    def test_settlement_order_sends_order_status_then_fill_report(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_settlement.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = BTCUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._clock.timestamp_ns.return_value = 1759347763300000000
+        exec_client.use_position_ids = False
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client._log.warning.assert_called_once()
+        assert "Received settlement order" in exec_client._log.warning.call_args[0][0]
+        assert "settlement_autoclose-" in exec_client._log.warning.call_args[0][0]
+
+        exec_client._send_order_status_report.assert_called_once()
+        order_report = exec_client._send_order_status_report.call_args[0][0]
+
+        exec_client._send_fill_report.assert_called_once()
+        fill_report = exec_client._send_fill_report.call_args[0][0]
+        assert fill_report.last_qty == Quantity.from_str("0.050")
+        assert fill_report.last_px == Price.from_str("51000.00")
+        assert fill_report.liquidity_side == LiquiditySide.TAKER
+
+        # Verify OrderStatusReport sent before FillReport
+        status_call = call._send_order_status_report(order_report)
+        fill_call = call._send_fill_report(fill_report)
+        status_idx = exec_client.mock_calls.index(status_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
+
+    def test_liquidation_order_zero_quantity_skipped(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_liquidation_zero_qty.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = BTCUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        warning_calls = [call[0][0] for call in exec_client._log.warning.call_args_list]
+        assert any("Received liquidation order" in msg for msg in warning_calls)
+        assert any("l=0" in msg for msg in warning_calls)
+
+        exec_client._send_order_status_report.assert_not_called()
+        exec_client._send_fill_report.assert_not_called()
+
+    def test_liquidation_fill_commission_calculated_when_not_provided(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_liquidation.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        data = json.loads(raw)
+        data["data"]["o"]["N"] = None
+        data["data"]["o"]["n"] = None
+        wrapper = decoder.decode(json.dumps(data).encode())
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = BTCUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.SELL
+        exec_client._clock.timestamp_ns.return_value = 1759347763167000000
+        exec_client.use_position_ids = False
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client._send_fill_report.assert_called_once()
+        fill_report = exec_client._send_fill_report.call_args[0][0]
+        expected_commission = float(
+            Quantity.from_str("0.100") * Price.from_str("50000.00") * BTCUSDT_BINANCE.taker_fee,
+        )
+        assert fill_report.commission.as_double() == expected_commission
+
+        # Verify OrderStatusReport sent before FillReport
+        exec_client._send_order_status_report.assert_called_once()
+        order_report = exec_client._send_order_status_report.call_args[0][0]
+        status_call = call._send_order_status_report(order_report)
+        fill_call = call._send_fill_report(fill_report)
+        status_idx = exec_client.mock_calls.index(status_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"

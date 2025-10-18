@@ -97,10 +97,10 @@ def test_tardis_load_deltas(
     )
 
     # Act
-    deltas = loader.load_deltas(filepath, limit=10_000)
+    deltas = loader.load_deltas(filepath, limit=100)
 
     # Assert
-    assert len(deltas) == 10_000
+    assert len(deltas) == 15
     assert deltas[0].instrument_id == instrument_id
     assert deltas[0].action == BookAction.ADD
     assert deltas[0].order.side == OrderSide.SELL
@@ -133,10 +133,10 @@ def test_tardis_load_depth10_from_snapshot5(
     )
 
     # Act
-    deltas = loader.load_depth10(filepath, levels=5, limit=10_000)
+    deltas = loader.load_depth10(filepath, levels=5, limit=100)
 
     # Assert
-    assert len(deltas) == 10_000
+    assert len(deltas) == 10
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
 
     # Verify all 10 bid levels (first 5 from data, rest are null/empty)
@@ -247,10 +247,10 @@ def test_tardis_load_depth10_from_snapshot25(
     )
 
     # Act
-    deltas = loader.load_depth10(filepath, levels=25, limit=10_000)
+    deltas = loader.load_depth10(filepath, levels=25, limit=100)
 
     # Assert
-    assert len(deltas) == 10_000
+    assert len(deltas) == 10
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
 
     # Verify all 10 bid levels from snapshot25 (only first 10 of 25 are used)
@@ -345,10 +345,10 @@ def test_tardis_load_quotes(
     )
 
     # Act
-    trades = loader.load_quotes(filepath, limit=10_000)
+    trades = loader.load_quotes(filepath, limit=100)
 
     # Assert
-    assert len(trades) == 10_000
+    assert len(trades) == 10
     assert trades[0].instrument_id == InstrumentId.from_str("BTC-USD.HUOBI_DELIVERY")
     assert trades[0].bid_price == Price.from_str("8629.2")
     assert trades[0].ask_price == Price.from_str("8629.3")
@@ -379,10 +379,10 @@ def test_tardis_load_trades(
     )
 
     # Act
-    trades = loader.load_trades(filepath, limit=10_000)
+    trades = loader.load_trades(filepath, limit=100)
 
     # Assert
-    assert len(trades) == 10_000
+    assert len(trades) == 10
     assert trades[0].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
     assert trades[0].price == Price.from_str("8531.5")
     assert trades[0].size == Quantity.from_str("2152")

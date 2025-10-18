@@ -272,6 +272,35 @@ exec_clients={
 }
 ```
 
+##### For mixed SPOT and derivatives trading
+
+When trading both SPOT and derivatives instruments simultaneously, the adapter automatically determines the correct trade mode **per-order** based on the instrument being traded:
+
+```python
+# Mixed SPOT + SWAP configuration
+exec_clients={
+    OKX: OKXExecClientConfig(
+        instrument_types=(OKXInstrumentType.SPOT, OKXInstrumentType.SWAP),
+        use_spot_margin=True,           # Applies to SPOT orders only
+        margin_mode=OKXMarginMode.CROSS,  # Applies to SWAP orders only
+        # ... other config
+    ),
+}
+```
+
+**How it works:**
+
+- **SPOT orders** → Uses `spot_isolated` mode (because `use_spot_margin=True`)
+- **SWAP orders** → Uses `cross` mode (because `margin_mode=CROSS`)
+- Each order automatically gets the correct `tdMode` based on its instrument type
+- No manual intervention required
+
+This enables strategies that trade across multiple instrument types with different margin configurations, such as:
+
+- Spot-futures arbitrage strategies
+- Delta-neutral strategies combining spot and perpetual swaps
+- Market making across spot and derivatives markets
+
 :::warning
 **Manual trade mode override**: While you can still manually override the trade mode per order using `params={"td_mode": "..."}`, this is **not recommended** as it bypasses automatic mode selection and can lead to order rejection if the wrong mode is specified for the instrument type (e.g., using `isolated` for SPOT instruments).
 

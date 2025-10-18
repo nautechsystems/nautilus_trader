@@ -26,6 +26,7 @@ use nautilus_blockchain::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
+    log_warn,
     logging::log_info,
     runtime::get_runtime,
 };
@@ -92,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![InstrumentId::from(
-        "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+        "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",
     )];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
@@ -262,8 +263,21 @@ impl DataActor for BlockchainSubscriberActor {
             let cache = self.cache();
 
             for pool_id in &self.config.pools {
-                let pool_profiler = cache.pool_profiler(pool_id);
-                log_info!("{pool_profiler:?}", color = LogColor::Magenta);
+                if let Some(pool_profiler) = cache.pool_profiler(pool_id) {
+                    let total_ticks = pool_profiler.get_active_tick_count();
+                    let total_positions = pool_profiler.get_total_active_positions();
+                    let liquidity = pool_profiler.get_active_liquidity();
+                    log_info!(
+                        "Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                        color = LogColor::Magenta
+                    );
+                } else {
+                    log_warn!(
+                        "Pool profiler {} not found",
+                        pool_id,
+                        color = LogColor::Magenta
+                    );
+                }
             }
         }
 

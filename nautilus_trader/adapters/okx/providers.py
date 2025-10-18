@@ -148,6 +148,13 @@ class OKXInstrumentProvider(InstrumentProvider):
         for instrument in instruments:
             self.add(instrument=instrument)
 
+            base_currency = instrument.get_base_currency()
+            if base_currency is not None:
+                self.add_currency(base_currency)
+
+            self.add_currency(instrument.quote_currency)
+            self.add_currency(instrument.get_settlement_currency())
+
         self._log.info(f"Loaded {len(self._instruments)} instruments")
 
     async def load_ids_async(  # noqa: C901 (too complex)
@@ -202,6 +209,13 @@ class OKXInstrumentProvider(InstrumentProvider):
             if instrument.id not in instrument_ids:
                 continue  # Filter instrument ID
             self.add(instrument=instrument)
+
+            base_currency = instrument.get_base_currency()
+            if base_currency is not None:
+                self.add_currency(base_currency)
+
+            self.add_currency(instrument.quote_currency)
+            self.add_currency(instrument.get_settlement_currency())
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")

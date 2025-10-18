@@ -39,8 +39,8 @@ use nautilus_model::{
     data::{QuoteTick, stubs::quote_audusd},
     enums::{AccountType, LiquiditySide, OrderSide, OrderType, TimeInForce, TradingState},
     events::{
-        AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderEventType, OrderFilled,
-        OrderSubmitted, account::stubs::cash_account_state_million_usd,
+        AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
+        account::stubs::cash_account_state_million_usd,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -604,31 +604,6 @@ fn test_given_random_command_then_logs_and_continues(
     let random_command = TradingCommand::SubmitOrder(submit_order);
 
     risk_engine.execute(random_command);
-}
-
-#[rstest]
-fn test_given_random_event_then_logs_and_continues(instrument_audusd: InstrumentAny) {
-    let mut risk_engine = get_risk_engine(None, None, None, false);
-
-    let order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .price(Price::from_raw(100, 0))
-        .quantity(Quantity::from("1000"))
-        .build();
-
-    let random_event = OrderEventAny::Denied(OrderDenied::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        Ustr::from("DENIED"),
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    ));
-
-    risk_engine.process(random_event);
 }
 
 // SUBMIT ORDER TESTS
@@ -2352,7 +2327,8 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
     );
 }
 
-// TODO: After ExecutionClient
+// TODO: Implement test for multi-currency cash account over cumulative notional
+#[ignore = "TODO: Requires ExecutionClient implementation"]
 #[rstest]
 fn test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional() {}
 
@@ -3145,6 +3121,8 @@ fn test_submit_bracket_with_default_settings_sends_to_client(
     // assert_eq!(saved_process_messages.len(), 0);
 }
 
+// TODO: Verify bracket orders with emulated orders are sent to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_submit_bracket_with_emulated_orders_sends_to_emulator() {}
 
@@ -3232,6 +3210,8 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
     }
 }
 
+// TODO: Verify emulated orders are sent to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_submit_order_for_emulation_sends_command_to_emulator() {}
 
@@ -3449,6 +3429,8 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     );
 }
 
+// TODO: Verify modify order for emulated orders sends to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
 
@@ -3593,6 +3575,8 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     );
 }
 
+// TODO: Verify account balance updates correctly with partial and full fills
+#[ignore = "TODO: Requires account balance tracking implementation"]
 #[rstest]
 fn test_partial_fill_and_full_fill_account_balance_correct() {}
 

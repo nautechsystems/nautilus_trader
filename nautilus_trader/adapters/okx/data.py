@@ -58,6 +58,7 @@ from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -183,7 +184,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_business_client.wait_until_active(timeout_secs=10.0)
         self._log.info(
             f"Connected to business websocket {self._ws_business_client.url}",
             LogColor.BLUE,
@@ -314,6 +315,20 @@ class OKXDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        # Funding rates only apply to perpetual swaps
+        instrument = self._instrument_provider.find(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {command.instrument_id}")
+            return
+
+        # Check if instrument is a perpetual swap
+        if not isinstance(instrument, CryptoPerpetual):
+            self._log.warning(
+                f"Funding rates not applicable for {command.instrument_id} "
+                f"(instrument type: {type(instrument).__name__}), skipping subscription",
+            )
+            return
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
 
@@ -362,6 +377,20 @@ class OKXDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        # Funding rates only apply to perpetual swaps
+        instrument = self._instrument_provider.find(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {command.instrument_id}")
+            return
+
+        # Check if instrument is a perpetual swap
+        if not isinstance(instrument, CryptoPerpetual):
+            self._log.warning(
+                f"Funding rates not applicable for {command.instrument_id} "
+                f"(instrument type: {type(instrument).__name__}), skipping unsubscription",
+            )
+            return
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
