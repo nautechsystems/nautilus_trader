@@ -312,6 +312,26 @@ impl BlockchainCacheDatabase {
         copy_handler.copy_blocks(chain_id, blocks).await
     }
 
+    /// Inserts tokens using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn add_tokens_copy(&self, chain_id: u32, tokens: &[Token]) -> anyhow::Result<()> {
+        let copy_handler = PostgresCopyHandler::new(&self.pool);
+        copy_handler.copy_tokens(chain_id, tokens).await
+    }
+
+    /// Inserts pools using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn add_pools_copy(&self, chain_id: u32, pools: &[Pool]) -> anyhow::Result<()> {
+        let copy_handler = PostgresCopyHandler::new(&self.pool);
+        copy_handler.copy_pools(chain_id, pools).await
+    }
+
     /// Inserts pool swaps using PostgreSQL COPY BINARY for maximum performance.
     ///
     /// This method is significantly faster than INSERT for bulk operations as it bypasses

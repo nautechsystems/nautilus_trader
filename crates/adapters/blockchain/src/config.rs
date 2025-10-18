@@ -105,7 +105,7 @@ impl BlockchainDataClientConfig {
             use_hypersync_for_live_data,
             http_rpc_url,
             rpc_requests_per_second,
-            multicall_calls_per_rpc_request: multicall_calls_per_rpc_request.unwrap_or(100),
+            multicall_calls_per_rpc_request: multicall_calls_per_rpc_request.unwrap_or(200),
             wss_rpc_url,
             from_block,
             pool_filters: pools_filters.unwrap_or_default(),
