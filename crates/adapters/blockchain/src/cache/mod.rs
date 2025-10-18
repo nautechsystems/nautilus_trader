@@ -412,7 +412,7 @@ impl BlockchainCache {
         }
 
         if let Some(database) = &self.database {
-            database.add_pools_batch(&pools).await?;
+            database.add_pools_copy(self.chain.chain_id, &pools).await?;
         }
 
         Ok(())
@@ -429,6 +429,38 @@ impl BlockchainCache {
         }
         self.tokens.insert(token.address, token);
         Ok(())
+    }
+
+    /// Adds multiple tokens to the cache and persists them to the database in batch if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the tokens to the database fails.
+    pub async fn add_tokens_batch(&mut self, tokens: Vec<Token>) -> anyhow::Result<()> {
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(database) = &self.database {
+            database
+                .add_tokens_copy(self.chain.chain_id, &tokens)
+                .await?;
+        }
+
+        self.tokens
+            .extend(tokens.into_iter().map(|token| (token.address, token)));
+
+        Ok(())
+    }
+
+    /// Updates the in-memory token cache without persisting to the database.
+    pub fn insert_token_in_memory(&mut self, token: Token) {
+        self.tokens.insert(token.address, token);
+    }
+
+    /// Marks a token address as invalid in the in-memory cache without persisting to the database.
+    pub fn insert_invalid_token_in_memory(&mut self, address: Address) {
+        self.invalid_tokens.insert(address);
     }
 
     /// Adds an invalid token address with associated error information to the cache.
