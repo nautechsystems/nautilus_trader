@@ -144,6 +144,7 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
+- Implemented Hyperliquid typed enums and optimize WebSocket lookups (#3089), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
 - Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
@@ -155,6 +156,7 @@ This will be the final release with support for Python 3.11.
 - Improved socket client URL parsing
 - Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
 - Improved Blockchain adapter shutdown with cancellation token
+- Improved Blockchain adapter `node_test` script (#3092), thanks @filipmacek
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
