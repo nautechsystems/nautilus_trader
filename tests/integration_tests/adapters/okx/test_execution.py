@@ -115,9 +115,9 @@ async def test_connect_success(exec_client_builder, monkeypatch):
         )
         http_client.request_account_state.assert_awaited_once()
         private_ws.connect.assert_awaited_once()
-        private_ws.wait_until_active.assert_awaited_once_with(timeout_secs=10.0)
+        private_ws.wait_until_active.assert_awaited_once_with(timeout_secs=30.0)
         business_ws.connect.assert_awaited_once()
-        business_ws.wait_until_active.assert_awaited_once_with(timeout_secs=10.0)
+        business_ws.wait_until_active.assert_awaited_once_with(timeout_secs=30.0)
         private_ws.subscribe_orders.assert_awaited_once_with(nautilus_pyo3.OKXInstrumentType.SPOT)
         business_ws.subscribe_orders_algo.assert_awaited_once_with(
             nautilus_pyo3.OKXInstrumentType.SPOT,

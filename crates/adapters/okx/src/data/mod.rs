@@ -136,6 +136,13 @@ impl OKXDataClient {
             None
         };
 
+        if let Some(vip_level) = config.vip_level {
+            ws_public.set_vip_level(vip_level);
+            if let Some(ref ws) = ws_business {
+                ws.set_vip_level(vip_level);
+            }
+        }
+
         Ok(Self {
             client_id,
             config,
@@ -521,18 +528,6 @@ impl DataClient for OKXDataClient {
         }
 
         self.bootstrap_instruments().await?;
-
-        // Query VIP level and update websocket clients
-        if self.config.has_api_credentials()
-            && let Ok(Some(vip_level)) = self.http_client.request_vip_level().await
-        {
-            if let Some(ws) = self.ws_public.as_mut() {
-                ws.set_vip_level(vip_level);
-            }
-            if let Some(ws) = self.ws_business.as_mut() {
-                ws.set_vip_level(vip_level);
-            }
-        }
 
         {
             let ws_public = self.public_ws_mut()?;

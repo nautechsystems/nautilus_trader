@@ -125,20 +125,22 @@ class OKXExecutionClient(LiveExecutionClient):
         contract_types = (
             [c.name.upper() for c in config.contract_types] if config.contract_types else None
         )
+        margin_mode = str(config.margin_mode) if config.margin_mode else None
 
         # Configuration
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
+        self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
-        self._log.info(f"config.is_demo={config.is_demo}", LogColor.BLUE)
-        self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
+        self._log.info(f"{config.is_demo=}", LogColor.BLUE)
+        self._log.info(f"config.margin_mode={margin_mode}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_margin=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
-        self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
+        self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
 
         # Set account ID
         account_id = AccountId(f"{name or OKX_VENUE.value}-master")
@@ -204,17 +206,21 @@ class OKXExecutionClient(LiveExecutionClient):
 
         return OKXTradeMode.CROSS if is_cross_margin else OKXTradeMode.ISOLATED
 
+    async def _check_clock_sync(self) -> None:
+        try:
+            server_time: int = await self._http_client.http_get_server_time()
+            nautilus_time: int = self._clock.timestamp_ms()
+            self._log.info(f"OKX server time {server_time} UNIX (ms)")
+            self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+        except Exception:
+            self._log.warning("Failed to query OKX server time")
+
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
         await self._cache_instruments()
         await self._update_account_state()
 
-        # Check OKX-Nautilus clock sync
-        server_time: int = await self._http_client.http_get_server_time()
-        self._log.info(f"OKX server time {server_time} UNIX (ms)")
-
-        nautilus_time: int = self._clock.timestamp_ms()
-        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+        self.create_task(self._check_clock_sync())
 
         await self._ws_client.connect(
             instruments=self.okx_instrument_provider.instruments_pyo3(),
@@ -222,7 +228,7 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
 
         if self._ws_client.api_key:
@@ -237,7 +243,7 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
         # Wait for connection to be established
-        await self._ws_business_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_business_client.wait_until_active(timeout_secs=30.0)
         self._log.info(
             f"Connected to business websocket {self._ws_business_client.url}",
             LogColor.BLUE,
