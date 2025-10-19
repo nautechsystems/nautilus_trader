@@ -44,7 +44,7 @@ pub enum BlockchainSyncReportItems {
     Blocks,
     PoolCreatedEvents,
     PoolEvents,
-    PoolProfilerBootstrap,
+    PoolProfiling,
 }
 
 impl Display for BlockchainSyncReportItems {
@@ -54,7 +54,7 @@ impl Display for BlockchainSyncReportItems {
 }
 
 /// Tracks performance metrics during block synchronization
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockchainSyncReporter {
     item: BlockchainSyncReportItems,
     start_time: Instant,
