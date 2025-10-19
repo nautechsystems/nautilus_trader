@@ -746,25 +746,17 @@ impl BlockchainDataClient {
                         )
                     })?;
 
-                // Sync the pool events before bootstrapping of pool profiler
-                let (_, dex) = cmd.instrument_id.venue.parse_dex()?;
-                if let Err(e) = core_client
-                    .sync_pool_events(&dex, &pool_address, None, None, false)
-                    .await
-                {
-                    tracing::error!("Failed to sync pool events for snapshot request: {}", e);
-                }
-
                 match core_client.get_pool(&pool_address) {
                     Ok(pool) => {
+                        let pool = pool.clone();
                         tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
 
                         // Send the pool definition
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
                         core_client.send_data(pool_data);
 
-                        match core_client.bootstrap_latest_pool_profiler(pool).await {
-                            Ok(profiler) => {
+                        match core_client.bootstrap_latest_pool_profiler(&pool).await {
+                            Ok((profiler, already_valid)) => {
                                 let snapshot = profiler.extract_snapshot();
 
                                 tracing::info!(
@@ -776,11 +768,16 @@ impl BlockchainDataClient {
                                     .cache
                                     .add_pool_snapshot(&pool.address, &snapshot)
                                     .await?;
-                                core_client.check_snapshot_validity(&profiler).await?;
 
-                                let snapshot_data =
-                                    DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                core_client.send_data(snapshot_data);
+                                // If snapshot is valid, send it back to the data engine.
+                                if core_client
+                                    .check_snapshot_validity(&profiler, already_valid)
+                                    .await?
+                                {
+                                    let snapshot_data =
+                                        DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
+                                    core_client.send_data(snapshot_data);
+                                }
                             }
                             Err(e) => tracing::error!(
                                 "Failed to bootstrap pool profiler for {} and extract snapshot with error {}",

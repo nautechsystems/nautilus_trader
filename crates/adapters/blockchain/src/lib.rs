@@ -68,8 +68,5 @@ pub mod factories;
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
 
-#[cfg(feature = "hypersync")]
-pub mod reporting;
-
 #[cfg(feature = "python")]
 pub mod python;

@@ -157,22 +157,6 @@ pub struct PoolAnalytics {
     pub total_fee_collects: u64,
     /// Total number of flash events processed.
     pub total_flashes: u64,
-    /// Time spent processing swap events (debug builds only).
-    #[cfg(debug_assertions)]
-    #[serde(skip)]
-    pub swap_processing_time: std::time::Duration,
-    /// Time spent processing mint events (debug builds only).
-    #[cfg(debug_assertions)]
-    #[serde(skip)]
-    pub mint_processing_time: std::time::Duration,
-    /// Time spent processing burn events (debug builds only).
-    #[cfg(debug_assertions)]
-    #[serde(skip)]
-    pub burn_processing_time: std::time::Duration,
-    /// Time spent processing collect events (debug builds only).
-    #[cfg(debug_assertions)]
-    #[serde(skip)]
-    pub collect_processing_time: std::time::Duration,
 }
 
 impl Default for PoolAnalytics {
@@ -187,14 +171,6 @@ impl Default for PoolAnalytics {
             total_burns: 0,
             total_fee_collects: 0,
             total_flashes: 0,
-            #[cfg(debug_assertions)]
-            swap_processing_time: std::time::Duration::ZERO,
-            #[cfg(debug_assertions)]
-            mint_processing_time: std::time::Duration::ZERO,
-            #[cfg(debug_assertions)]
-            burn_processing_time: std::time::Duration::ZERO,
-            #[cfg(debug_assertions)]
-            collect_processing_time: std::time::Duration::ZERO,
         }
     }
 }

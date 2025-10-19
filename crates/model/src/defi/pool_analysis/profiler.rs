@@ -30,6 +30,7 @@ use crate::defi::{
         snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
         swap_math::compute_swap_step,
     },
+    reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
     tick_map::{
         TickMap,
         full_math::{FullMath, Q128},
@@ -79,6 +80,10 @@ pub struct PoolProfiler {
     pub last_processed_event: Option<BlockPosition>,
     /// Flag indicating whether the pool has been initialized with a starting price.
     pub is_initialized: bool,
+    /// Optional progress reporter for tracking event processing.
+    reporter: Option<BlockchainSyncReporter>,
+    /// The last block number that was reported (used for progress tracking).
+    last_reported_block: u64,
 }
 
 impl PoolProfiler {
@@ -98,6 +103,8 @@ impl PoolProfiler {
             analytics: PoolAnalytics::default(),
             last_processed_event: None,
             is_initialized: false,
+            reporter: None,
+            last_reported_block: 0,
         }
     }
 
@@ -156,18 +163,33 @@ impl PoolProfiler {
     /// - Event contains invalid data (tick ranges, amounts).
     /// - Mathematical operations overflow.
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
+        // Skip events at or before the last processed event to prevent double-processing
+        if let Some(last_event) = &self.last_processed_event {
+            let event_block = event.block_number();
+            let event_tx_idx = event.transaction_index();
+            let event_log_idx = event.log_index();
+
+            let should_skip = event_block < last_event.number
+                || (event_block == last_event.number
+                    && event_tx_idx < last_event.transaction_index)
+                || (event_block == last_event.number
+                    && event_tx_idx == last_event.transaction_index
+                    && event_log_idx <= last_event.log_index);
+
+            if should_skip {
+                tracing::debug!(
+                    "Skipping already processed event at block {} tx {} log {}",
+                    event_block,
+                    event_tx_idx,
+                    event_log_idx
+                );
+                return Ok(());
+            }
+        }
+
         match event {
             DexPoolData::Swap(swap) => {
-                #[cfg(debug_assertions)]
-                let start = std::time::Instant::now();
-
                 self.process_swap(swap)?;
-
-                #[cfg(debug_assertions)]
-                {
-                    self.analytics.swap_processing_time += start.elapsed();
-                }
-
                 self.analytics.total_swaps += 1;
                 self.last_processed_event = Some(BlockPosition::new(
                     swap.block,
@@ -178,16 +200,7 @@ impl PoolProfiler {
             }
             DexPoolData::LiquidityUpdate(update) => match update.kind {
                 PoolLiquidityUpdateType::Mint => {
-                    #[cfg(debug_assertions)]
-                    let start = std::time::Instant::now();
-
                     self.process_mint(update)?;
-
-                    #[cfg(debug_assertions)]
-                    {
-                        self.analytics.mint_processing_time += start.elapsed();
-                    }
-
                     self.analytics.total_mints += 1;
                     self.last_processed_event = Some(BlockPosition::new(
                         update.block,
@@ -197,16 +210,7 @@ impl PoolProfiler {
                     ));
                 }
                 PoolLiquidityUpdateType::Burn => {
-                    #[cfg(debug_assertions)]
-                    let start = std::time::Instant::now();
-
                     self.process_burn(update)?;
-
-                    #[cfg(debug_assertions)]
-                    {
-                        self.analytics.burn_processing_time += start.elapsed();
-                    }
-
                     self.analytics.total_burns += 1;
                     self.last_processed_event = Some(BlockPosition::new(
                         update.block,
@@ -217,16 +221,7 @@ impl PoolProfiler {
                 }
             },
             DexPoolData::FeeCollect(collect) => {
-                #[cfg(debug_assertions)]
-                let start = std::time::Instant::now();
-
                 self.process_collect(collect)?;
-
-                #[cfg(debug_assertions)]
-                {
-                    self.analytics.collect_processing_time += start.elapsed();
-                }
-
                 self.analytics.total_fee_collects += 1;
                 self.last_processed_event = Some(BlockPosition::new(
                     collect.block,
@@ -246,6 +241,22 @@ impl PoolProfiler {
                 ));
             }
         }
+
+        // Auto-update reporter if enabled
+        if let Some(reporter) = &mut self.reporter {
+            let current_block = event.block_number();
+            let blocks_processed = current_block.saturating_sub(self.last_reported_block);
+
+            if blocks_processed > 0 {
+                reporter.update(blocks_processed as usize);
+                self.last_reported_block = current_block;
+
+                if reporter.should_log_progress(current_block, current_block) {
+                    reporter.log_progress(current_block);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -289,17 +300,19 @@ impl PoolProfiler {
         // Verify simulation against event data - correct with event values if mismatch detected
         if swap.tick != self.state.current_tick {
             tracing::error!(
-                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
                 self.state.current_tick,
-                swap.tick
+                swap.tick,
+                swap.block
             );
             self.state.current_tick = swap.tick;
         }
         if swap.liquidity != self.tick_map.liquidity {
             tracing::error!(
-                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {}",
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
                 self.tick_map.liquidity,
-                swap.liquidity
+                swap.liquidity,
+                swap.block
             );
             self.tick_map.liquidity = swap.liquidity;
         }
@@ -1372,6 +1385,14 @@ impl PoolProfiler {
             .collect()
     }
 
+    /// Returns position keys for all currently active positions.
+    pub fn get_active_position_keys(&self) -> Vec<(Address, i32, i32)> {
+        self.get_active_positions()
+            .iter()
+            .map(|position| (position.owner, position.tick_lower, position.tick_upper))
+            .collect()
+    }
+
     /// Returns a list of all positions tracked by the profiler.
     ///
     /// This includes both active and inactive positions, regardless of their
@@ -1582,15 +1603,6 @@ impl PoolProfiler {
         self.state.fee_growth_global_1 = fee_growth_global_1;
     }
 
-    /// Returns the total time spent processing all events.
-    #[cfg(debug_assertions)]
-    pub fn get_total_processing_time(&self) -> std::time::Duration {
-        self.analytics.swap_processing_time
-            + self.analytics.mint_processing_time
-            + self.analytics.burn_processing_time
-            + self.analytics.collect_processing_time
-    }
-
     /// Returns the total number of events processed.
     pub fn get_total_events(&self) -> u64 {
         self.analytics.total_swaps
@@ -1600,93 +1612,28 @@ impl PoolProfiler {
             + self.analytics.total_flashes
     }
 
-    /// Logs a formatted performance report showing event processing breakdown.
-    #[cfg(debug_assertions)]
-    pub fn log_performance_report(
-        &self,
-        total_time: std::time::Duration,
-        streaming_time: std::time::Duration,
-    ) {
-        use thousands::Separable;
+    /// Enables progress reporting for pool profiler event processing.
+    ///
+    /// When enabled, the profiler will automatically track and log progress
+    /// as events are processed through the `process()` method.
+    pub fn enable_reporting(&mut self, from_block: u64, total_blocks: u64, update_interval: u64) {
+        self.reporter = Some(BlockchainSyncReporter::new(
+            BlockchainSyncReportItems::PoolProfiling,
+            from_block,
+            total_blocks,
+            update_interval,
+        ));
+        self.last_reported_block = from_block;
+    }
 
-        let processing_time = self.get_total_processing_time();
-        let total_events = self.get_total_events();
-
-        log::info!("═══════════════════════════════════════════════════════");
-        log::info!("         Profiling Performance Report");
-        log::info!("═══════════════════════════════════════════════════════");
-        log::info!("");
-        log::info!("Total Time: {:.2}s", total_time.as_secs_f64());
-        log::info!(
-            "├─ Database Streaming: {:.2}s ({:.1}%)",
-            streaming_time.as_secs_f64(),
-            (streaming_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0
-        );
-        log::info!(
-            "└─ Event Processing: {:.2}s ({:.1}%)",
-            processing_time.as_secs_f64(),
-            (processing_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0
-        );
-        log::info!("");
-        log::info!(
-            "Event Processing Breakdown: {:.2}s",
-            processing_time.as_secs_f64()
-        );
-
-        if self.analytics.total_swaps > 0 {
-            let swap_time = self.analytics.swap_processing_time.as_secs_f64();
-            log::info!(
-                "├─ Swaps:    {:.2}s ({:.1}%) - {} events → {} events/sec",
-                swap_time,
-                (swap_time / processing_time.as_secs_f64()) * 100.0,
-                self.analytics.total_swaps.separate_with_commas(),
-                ((self.analytics.total_swaps as f64 / swap_time) as u64).separate_with_commas()
-            );
+    /// Finalizes reporting and logs final statistics.
+    ///
+    /// Should be called after all events have been processed to output
+    /// the final summary of the profiler bootstrap operation.
+    pub fn finalize_reporting(&mut self) {
+        if let Some(reporter) = &self.reporter {
+            reporter.log_final_stats();
         }
-
-        if self.analytics.total_mints > 0 {
-            let mint_time = self.analytics.mint_processing_time.as_secs_f64();
-            log::info!(
-                "├─ Mints:    {:.2}s ({:.1}%) - {} events → {} events/sec",
-                mint_time,
-                (mint_time / processing_time.as_secs_f64()) * 100.0,
-                self.analytics.total_mints.separate_with_commas(),
-                ((self.analytics.total_mints as f64 / mint_time) as u64).separate_with_commas()
-            );
-        }
-
-        if self.analytics.total_burns > 0 {
-            let burn_time = self.analytics.burn_processing_time.as_secs_f64();
-            log::info!(
-                "├─ Burns:    {:.2}s ({:.1}%) - {} events → {} events/sec",
-                burn_time,
-                (burn_time / processing_time.as_secs_f64()) * 100.0,
-                self.analytics.total_burns.separate_with_commas(),
-                ((self.analytics.total_burns as f64 / burn_time) as u64).separate_with_commas()
-            );
-        }
-
-        if self.analytics.total_fee_collects > 0 {
-            let collect_time = self.analytics.collect_processing_time.as_secs_f64();
-            log::info!(
-                "└─ Collects: {:.2}s ({:.1}%) - {} events → {} events/sec",
-                collect_time,
-                (collect_time / processing_time.as_secs_f64()) * 100.0,
-                self.analytics.total_fee_collects.separate_with_commas(),
-                ((self.analytics.total_fee_collects as f64 / collect_time) as u64)
-                    .separate_with_commas()
-            );
-        }
-
-        log::info!("");
-        log::info!(
-            "Overall Throughput: {} events/sec",
-            ((total_events as f64 / total_time.as_secs_f64()) as u64).separate_with_commas()
-        );
-        log::info!(
-            "Processing Throughput: {} events/sec",
-            ((total_events as f64 / processing_time.as_secs_f64()) as u64).separate_with_commas()
-        );
-        log::info!("═══════════════════════════════════════════════════════");
+        self.reporter = None;
     }
 }
