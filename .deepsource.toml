@@ -1,6 +1,87 @@
 version = 1
 
 [[analyzers]]
+name = "test-coverage"
+
+[[analyzers]]
+name = "terraform"
+
+[[analyzers]]
+name = "swift"
+
+[[analyzers]]
+name = "sql"
+
+[[analyzers]]
+name = "secrets"
+
+[[analyzers]]
+name = "scala"
+
+[[analyzers]]
+name = "ruby"
+
+[[analyzers]]
+name = "python"
+
+  [analyzers.meta]
+  runtime_version = "3.x.x"
+
+[[analyzers]]
+name = "php"
+
+[[analyzers]]
+name = "kotlin"
+
+  [analyzers.meta]
+  runtime_version = "21"
+  language_version = "2.1"
+
+[[analyzers]]
+name = "javascript"
+
+  [analyzers.meta]
+  plugins = [
+    "react",
+    "angular",
+    "ember",
+    "angularjs",
+    "meteor"
+  ]
+  environment = [
+    "nodejs",
+    "jquery",
+    "mongo",
+    "browser",
+    "jest",
+    "cypress",
+    "vitest",
+    "mocha",
+    "jasmine"
+  ]
+
+[[analyzers]]
+name = "java"
+
+  [analyzers.meta]
+  runtime_version = "21"
+
+[[analyzers]]
+name = "go"
+
+  [analyzers.meta]
+  import_root = "github.com/Markowes23/nautilus_trader"
+
+[[analyzers]]
+name = "cxx"
+
+[[analyzers]]
+name = "csharp"
+
+[[analyzers]]
+name = "ansible"
+
+[[analyzers]]
 name = "rust"
 
   [analyzers.meta]
@@ -11,3 +92,48 @@ name = "shell"
 
 [[transformers]]
 name = "rustfmt"
+
+[[transformers]]
+name = "swift-format"
+
+[[transformers]]
+name = "scalafmt"
+
+[[transformers]]
+name = "standardrb"
+
+[[transformers]]
+name = "rubocop"
+
+[[transformers]]
+name = "isort"
+
+[[transformers]]
+name = "yapf"
+
+[[transformers]]
+name = "autopep8"
+
+[[transformers]]
+name = "ruff"
+
+[[transformers]]
+name = "black"
+
+[[transformers]]
+name = "ktlint"
+
+[[transformers]]
+name = "prettier"
+
+[[transformers]]
+name = "standardjs"
+
+[[transformers]]
+name = "google-java-format"
+
+[[transformers]]
+name = "clang-format"
+
+[[transformers]]
+name = "dotnet-format"
