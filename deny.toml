@@ -1,0 +1,113 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+# =============================================================================
+# Dependency Graph Configuration
+# =============================================================================
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# =============================================================================
+# Security Advisories
+# =============================================================================
+[advisories]
+# Ignored advisories (use sparingly - document the reason)
+ignore = [
+  # paste is unmaintained but pulled in transitively via alloy (blockchain dependencies)
+  # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
+  { id = "RUSTSEC-2024-0436", reason = "paste crate is unmaintained but a transitive dependency via alloy" },
+
+  # fast-float has soundness issues and is unmaintained, pulled in via hypersync-client
+  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for polars upgrade
+  # Consider migrating to fast-float2 fork once hypersync-client updates
+  { id = "RUSTSEC-2024-0379", reason = "fast-float is transitive via hypersync-client→polars-arrow, no safe upgrade available" },
+  { id = "RUSTSEC-2025-0003", reason = "fast-float is transitive via hypersync-client→polars-arrow, no safe upgrade available" },
+]
+
+# =============================================================================
+# License Configuration
+# =============================================================================
+[licenses]
+# Licenses compatible with LGPL-3.0
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MPL-2.0",
+  "CC0-1.0",
+  "Zlib",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "0BSD",
+  "LGPL-3.0",
+  "OpenSSL",
+]
+
+confidence-threshold = 0.8
+
+# Per-crate license exceptions
+exceptions = [
+  # implied-vol v1.3.0 contains an MIT LICENSE file but doesn't specify
+  # `license = "MIT"` in its Cargo.toml manifest, causing cargo-deny to
+  # fail license detection. Verified MIT licensed at:
+  # https://crates.io/crates/implied-vol/1.3.0
+  { allow = ["MIT"], crate = "implied-vol" },
+]
+
+[licenses.private]
+# Ignore workspace crates that aren't published
+# Note: All workspace crates in this project are LGPL-3.0 (project license)
+# If adding workspace crates with different licenses, set this to false
+ignore = true
+registries = []
+
+# =============================================================================
+# Banned/Duplicate Crates
+# =============================================================================
+[bans]
+# Warn on multiple versions of the same crate
+# TODO: Currently 35 duplicate warnings - schedule cleanup then change to "deny"
+# Common duplicates: base64, darling, hashbrown, getrandom, rand
+multiple-versions = "warn"
+
+# Deny wildcard version requirements (*)
+# Prevents uncontrolled version drift and supply-chain attacks
+wildcards = "deny"
+
+highlight = "all"
+
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+# Explicitly allowed crates (use with care)
+allow = []
+
+# Explicitly denied crates
+deny = []
+
+# Skip certain crates during duplicate detection
+skip = []
+skip-tree = []
+
+# =============================================================================
+# Dependency Sources
+# =============================================================================
+[sources]
+# Only allow dependencies from crates.io
+unknown-registry = "deny"
+unknown-git = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

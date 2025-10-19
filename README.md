@@ -298,7 +298,31 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 - `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
 - `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
 
-### From Source
+#### Verifying build provenance
+
+All release artifacts (wheels and source distributions) published to PyPI, GitHub Releases,
+and the Nautech Systems package index include cryptographic attestations that prove their authenticity and build provenance.
+
+These attestations are generated automatically during the CI/CD pipeline using [SLSA](https://slsa.dev/) build provenance, and can be verified to ensure:
+
+- The artifact was built by the official NautilusTrader GitHub Actions workflow.
+- The artifact corresponds to a specific commit SHA in the repository.
+- The artifact hasn't been tampered with since it was built.
+
+To verify a wheel file using the GitHub CLI:
+
+```bash
+gh attestation verify nautilus_trader-1.220.0-*.whl --owner nautechsystems
+```
+
+This provides supply chain security by allowing you to cryptographically verify that the installed package came from the official NautilusTrader build process.
+
+> [!NOTE]
+>
+> Attestation verification requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed.
+> Development wheels from `develop` and `nightly` branches are also attested and can be verified the same way.
+
+### From source
 
 It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
 
