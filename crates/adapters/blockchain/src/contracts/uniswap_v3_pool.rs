@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy::{
-    primitives::{Address, U160, U256, keccak256},
+    primitives::{Address, U256, keccak256},
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
@@ -83,23 +83,6 @@ sol! {
     }
 }
 
-/// Combined global state of a Uniswap V3 pool.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PoolGlobalState {
-    /// Current sqrt price
-    pub sqrt_price_x96: U160,
-    /// Current tick
-    pub tick: i32,
-    /// Current liquidity
-    pub liquidity: u128,
-    /// Global fee growth for token0
-    pub fee_growth_global_0_x128: U256,
-    /// Global fee growth for token1
-    pub fee_growth_global_1_x128: U256,
-    /// Protocol fee setting
-    pub fee_protocol: u8,
-}
-
 /// Represents errors that can occur when interacting with UniswapV3Pool contract.
 #[derive(Debug, Error)]
 pub enum UniswapV3PoolError {
@@ -151,7 +134,7 @@ impl UniswapV3PoolContract {
         &self,
         pool_address: &Address,
         block: Option<u64>,
-    ) -> Result<PoolGlobalState, UniswapV3PoolError> {
+    ) -> Result<PoolState, UniswapV3PoolError> {
         let calls = vec![
             ContractCall {
                 target: *pool_address,
@@ -225,13 +208,15 @@ impl UniswapV3PoolContract {
                     raw_data: hex::encode(&results[3].returnData),
                 })?;
 
-        Ok(PoolGlobalState {
-            sqrt_price_x96: slot0.sqrtPriceX96,
-            tick: slot0.tick.as_i32(),
+        Ok(PoolState {
+            current_tick: slot0.tick.as_i32(),
+            price_sqrt_ratio_x96: slot0.sqrtPriceX96,
             liquidity,
-            fee_growth_global_0_x128: fee_growth_0,
-            fee_growth_global_1_x128: fee_growth_1,
+            protocol_fees_token0: U256::ZERO,
+            protocol_fees_token1: U256::ZERO,
             fee_protocol: slot0.feeProtocol,
+            fee_growth_global_0: fee_growth_0,
+            fee_growth_global_1: fee_growth_1,
         })
     }
 
@@ -442,9 +427,10 @@ impl UniswapV3PoolContract {
         instrument_id: InstrumentId,
         tick_values: &[i32],
         position_keys: &[(Address, i32, i32)],
-        block: Option<u64>,
+        block_position: BlockPosition,
     ) -> Result<PoolSnapshot, UniswapV3PoolError> {
-        // Fetch all data
+        // Fetch all data at the specified block
+        let block = Some(block_position.number);
         let global_state = self.get_global_state(pool_address, block).await?;
         let ticks_map = self
             .batch_get_ticks(pool_address, tick_values, block)
@@ -453,36 +439,12 @@ impl UniswapV3PoolContract {
             .batch_get_positions(pool_address, position_keys, block)
             .await?;
 
-        // Convert HashMap<i32, Tick> to Vec<Tick>
-        let ticks: Vec<PoolTick> = ticks_map.into_values().collect();
-
-        // Construct PoolState from on-chain global state
-        let pool_state = PoolState {
-            current_tick: global_state.tick,
-            price_sqrt_ratio_x96: global_state.sqrt_price_x96,
-            liquidity: global_state.liquidity,
-            protocol_fees_token0: U256::ZERO,
-            protocol_fees_token1: U256::ZERO,
-            fee_protocol: global_state.fee_protocol,
-            fee_growth_global_0: global_state.fee_growth_global_0_x128,
-            fee_growth_global_1: global_state.fee_growth_global_1_x128,
-        };
-
-        // For on-chain snapshots used in comparison, analytics and block position are not relevant
-        let analytics = PoolAnalytics::default();
-        let block_position = BlockPosition {
-            number: 0,
-            transaction_hash: String::new(),
-            transaction_index: 0,
-            log_index: 0,
-        };
-
         Ok(PoolSnapshot::new(
             instrument_id,
-            pool_state,
+            global_state,
             positions,
-            ticks,
-            analytics,
+            ticks_map.into_values().collect(),
+            PoolAnalytics::default(),
             block_position,
         ))
     }
