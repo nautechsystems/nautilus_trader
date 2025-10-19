@@ -16,7 +16,10 @@
 use std::{
     ops::{Div, Mul},
     str::FromStr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use alloy_primitives::{Address, I256, U160, U256, address};
@@ -38,6 +41,14 @@ use crate::defi::{
         tick_math::get_tick_at_sqrt_ratio,
     },
 };
+
+// Global counter for log indices to ensure each test event has a unique position
+static LOG_INDEX_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+/// Gets the next log index for test events
+fn next_log_index() -> u32 {
+    LOG_INDEX_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
 
 fn arbitrum() -> SharedChain {
     Arc::new(Chain::from_chain_id(42161).unwrap().clone())
@@ -129,7 +140,7 @@ fn create_mint_event(
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
-        1,
+        next_log_index(),
         None,
         owner,
         liquidity,
@@ -164,7 +175,7 @@ fn create_burn_event(
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
-        1,
+        next_log_index(),
         None,
         owner,
         liquidity,
@@ -188,10 +199,10 @@ fn create_collect_event(
         uniswap_v3(arbitrum()),
         pool_definition.instrument_id,
         pool_definition.address,
-        10000,
+        100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
-        1,
+        next_log_index(),
         lp_address(),
         amount0,
         amount1,
@@ -206,7 +217,7 @@ fn create_block_position() -> BlockPosition {
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
-        1,
+        next_log_index(),
     )
 }
 
