@@ -39,7 +39,6 @@ This will be the final release with support for Python 3.11.
 ### Breaking Changes
 - Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
-- Removed OKX `vip_level` config option as now redundant with detection through account query
 - Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
@@ -157,6 +156,7 @@ This will be the final release with support for Python 3.11.
 - Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
 - Improved Blockchain adapter shutdown with cancellation token
 - Improved Blockchain adapter `node_test` script (#3092), thanks @filipmacek
+- Improved and optimize AMM pool profiling (#3098), thanks @filipmacek
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
