@@ -1649,14 +1649,6 @@ impl BlockchainCacheDatabase {
                 total_burns: row.get::<i32, _>("total_burns") as u64,
                 total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
                 total_flashes: row.get::<i32, _>("total_flashes") as u64,
-                #[cfg(debug_assertions)]
-                swap_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                mint_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                burn_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                collect_processing_time: std::time::Duration::ZERO,
             };
 
             // Load positions and ticks
