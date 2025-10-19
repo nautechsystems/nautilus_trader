@@ -22,8 +22,9 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolProfiler, PoolSwap, SharedChain,
     SharedDex, SharedPool, Token,
-    data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash},
-    pool_analysis::compare::compare_pool_profiler,
+    data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
+    pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
+    reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
 use thousands::Separable;
 
@@ -41,7 +42,6 @@ use crate::{
         client::HyperSyncClient,
         helpers::{extract_block_number, extract_event_signature_bytes},
     },
-    reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -1219,78 +1219,222 @@ impl BlockchainDataClientCore {
 
     /// Bootstraps a [`PoolProfiler`] with the latest state for a given pool.
     ///
-    /// This method creates a new pool profiler and hydrates it by:
-    /// 1. Attempting to restore from the latest valid snapshot in the database (if available)
-    /// 2. If no snapshot exists, initializing with the pool's initial sqrt price
-    /// 3. Streaming and processing all subsequent events from the snapshot point or pool creation
+    /// Uses two paths depending on whether the pool has been synced to the database:
+    /// - **Never synced**: Streams events from HyperSync → restores from on-chain RPC → returns `(profiler, true)`
+    /// - **Previously synced**: Syncs new events to DB → streams from DB → returns `(profiler, false)`
+    ///
+    /// Both paths restore from the latest valid snapshot first (if available), otherwise initialize with pool's initial price.
+    ///
+    /// # Returns
+    ///
+    /// - `PoolProfiler`: Hydrated profiler with current pool state
+    /// - `bool`: `true` if constructed from RPC (already valid), `false` if from DB (needs validation)
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The database is not initialized
-    /// - Snapshot restoration fails
-    /// - Event processing fails during state hydration
+    /// Returns an error if database is not initialized or event processing fails.
     pub async fn bootstrap_latest_pool_profiler(
-        &self,
+        &mut self,
         pool: &SharedPool,
-    ) -> anyhow::Result<PoolProfiler> {
+    ) -> anyhow::Result<(PoolProfiler, bool)> {
         tracing::info!(
             "Bootstrapping latest pool profiler for pool {}",
             pool.address
         );
-        if let Some(database) = &self.cache.database {
-            let mut profiler = PoolProfiler::new(pool.clone());
-            // If snapshot exists we restore it and if it doesnt exists or there is some error fetching it
-            // we just initialize it with the initial sqrt price x96.
-            let from_position = match database
-                .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.address)
-                .await
-            {
-                Ok(Some(snapshot)) => {
-                    tracing::info!(
-                        "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
-                        snapshot.block_position.number.separate_with_commas(),
-                        snapshot.positions.len(),
-                        snapshot.ticks.len()
-                    );
-                    let block_position = snapshot.block_position.clone();
-                    profiler.restore_from_snapshot(snapshot)?;
-                    tracing::info!("Restored profiler from snapshot");
-                    Some(block_position)
-                }
-                _ => {
-                    tracing::info!("No valid snapshot found, processing from beginning");
-                    let initial_sqrt_price_x96 = pool
-                        .initial_sqrt_price_x96
-                        .expect("Pool has no initial sqrt price");
-                    profiler.initialize(initial_sqrt_price_x96);
-                    None
-                }
-            };
 
-            let mut stream = database.stream_pool_events(
-                pool.chain.clone(),
-                pool.dex.clone(),
-                pool.instrument_id,
-                &pool.address,
-                from_position.clone(),
-            );
-
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(event) => {
-                        profiler.process(&event)?;
-                    }
-                    Err(e) => log::error!("Error processing event: {}", e),
-                }
-            }
-
-            Ok(profiler)
-        } else {
+        if self.cache.database.is_none() {
             anyhow::bail!(
                 "Database is not initialized, so we cannot properly bootstrap the latest pool profiler"
             );
         }
+
+        let mut profiler = PoolProfiler::new(pool.clone());
+
+        // Calculate latest valid block position after which we need to start profiling.
+        let from_position = match self
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.address)
+            .await
+        {
+            Ok(Some(snapshot)) => {
+                tracing::info!(
+                    "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
+                    snapshot.block_position.number.separate_with_commas(),
+                    snapshot.positions.len(),
+                    snapshot.ticks.len()
+                );
+                let block_position = snapshot.block_position.clone();
+                profiler.restore_from_snapshot(snapshot)?;
+                tracing::info!("Restored profiler from snapshot");
+                Some(block_position)
+            }
+            _ => {
+                tracing::info!("No valid snapshot found, processing from beginning");
+                let initial_sqrt_price_x96 = pool
+                    .initial_sqrt_price_x96
+                    .expect("Pool has no initial sqrt price");
+                profiler.initialize(initial_sqrt_price_x96);
+                None
+            }
+        };
+
+        // If we don't have never synced pool events, proceed with faster
+        // construction of pool profiler from hypersync and RPC, where we
+        // dont need syncing of pool events and fetching it from database
+        if self
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .get_pool_last_synced_block(self.chain.chain_id, &pool.dex.name, &pool.address)
+            .await?
+            .is_none()
+        {
+            return self
+                .construct_pool_profiler_from_hypersync_rpc(profiler, from_position)
+                .await;
+        }
+
+        // Sync the pool events before bootstrapping of pool profiler
+        if let Err(e) = self
+            .sync_pool_events(&pool.dex.name, &pool.address, None, None, false)
+            .await
+        {
+            tracing::error!("Failed to sync pool events for snapshot request: {}", e);
+        }
+
+        let mut stream = self.cache.database.as_ref().unwrap().stream_pool_events(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            pool.instrument_id,
+            &pool.address,
+            from_position.clone(),
+        );
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    profiler.process(&event)?;
+                }
+                Err(e) => log::error!("Error processing event: {}", e),
+            }
+        }
+
+        Ok((profiler, false))
+    }
+
+    /// Constructs a pool profiler by fetching events directly from HyperSync RPC.
+    ///
+    /// This method is used when the pool has never been synced to the database. It streams
+    /// liquidity events (mints, burns) directly from HyperSync and processes them
+    /// to build up the profiler's state in real-time. After processing all events, it
+    /// restores the profiler from the current on-chain state with the provided ticks and positions
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of:
+    /// - `PoolProfiler`: The hydrated profiler with state built from events
+    /// - `bool`: Always `true` to indicate the profiler state was valid, and it was constructed from RPC
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Event streaming from HyperSync fails
+    /// - Event parsing or processing fails
+    /// - DEX configuration is invalid
+    async fn construct_pool_profiler_from_hypersync_rpc(
+        &self,
+        mut profiler: PoolProfiler,
+        from_position: Option<BlockPosition>,
+    ) -> anyhow::Result<(PoolProfiler, bool)> {
+        tracing::info!(
+            "Constructing pool profiler from hypersync stream and RPC final state querying"
+        );
+        let dex_extended = self.get_dex_extended(&profiler.pool.dex.name)?.clone();
+        let mint_event_signature = dex_extended.mint_created_event.as_ref();
+        let burn_event_signature = dex_extended.burn_created_event.as_ref();
+        let mint_sig_bytes = hex::decode(
+            mint_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(mint_event_signature),
+        )?;
+        let burn_sig_bytes = hex::decode(
+            burn_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(burn_event_signature),
+        )?;
+
+        let from_block = from_position
+            .map(|block_position| block_position.number)
+            .unwrap_or(profiler.pool.creation_block);
+        let to_block = self.hypersync_client.current_block().await;
+        let total_blocks = to_block.saturating_sub(from_block) + 1;
+
+        tracing::info!(
+            "Bootstrapping pool profiler for pool {} from block {} to {} (total: {} blocks)",
+            profiler.pool.address,
+            from_block.separate_with_commas(),
+            to_block.separate_with_commas(),
+            total_blocks.separate_with_commas()
+        );
+
+        // Enable embedded profiler reporting
+        profiler.enable_reporting(from_block, total_blocks, BLOCKS_PROCESS_IN_SYNC_REPORT);
+
+        let pool_events_stream = self
+            .hypersync_client
+            .request_contract_events_stream(
+                from_block,
+                None,
+                &profiler.pool.address,
+                vec![mint_event_signature, burn_event_signature],
+            )
+            .await;
+        tokio::pin!(pool_events_stream);
+
+        while let Some(log) = pool_events_stream.next().await {
+            let event_sig_bytes = extract_event_signature_bytes(&log)?;
+
+            if event_sig_bytes == mint_sig_bytes {
+                let mint_event = dex_extended.parse_mint_event(log)?;
+                match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
+                    Ok(liquidity_update) => {
+                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
+                    }
+                    Err(e) => tracing::error!("Failed to process mint event: {e}"),
+                }
+            } else if event_sig_bytes == burn_sig_bytes {
+                let burn_event = dex_extended.parse_burn_event(log)?;
+                match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
+                    Ok(liquidity_update) => {
+                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
+                    }
+                    Err(e) => tracing::error!("Failed to process burn event: {e}"),
+                }
+            } else {
+                let event_signature = hex::encode(event_sig_bytes);
+                tracing::error!(
+                    "Unexpected event signature in bootstrap_latest_pool_profiler: {} for log {:?}",
+                    event_signature,
+                    log
+                );
+            }
+        }
+
+        profiler.finalize_reporting();
+
+        // Hydrate from the current RPC state
+        match self.get_on_chain_snapshot(&profiler).await {
+            Ok(on_chain_snapshot) => profiler.restore_from_snapshot(on_chain_snapshot)?,
+            Err(e) => tracing::error!(
+                "Failed to restore from on-chain snapshot: {e}. Sending not hydrated state to client."
+            ),
+        }
+
+        Ok((profiler, true))
     }
 
     /// Validates a pool profiler's state against on-chain data for accuracy verification.
@@ -1298,65 +1442,93 @@ impl BlockchainDataClientCore {
     /// This method performs integrity checking by comparing the profiler's internal state
     /// (positions, ticks, liquidity) with the actual on-chain smart contract state. For UniswapV3
     /// pools, it fetches current on-chain data and verifies that the profiler's tracked state matches.
-    /// If validation succeeds, the snapshot is marked as valid in the database for future use.
-    ///
-    /// Currently only supports UniswapV3 pools. Other DEX protocols will log a warning.
+    /// If validation succeeds or is bypassed, the snapshot is marked as valid in the database.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Fetching the on-chain snapshot fails
-    /// - Database operations fail when marking the snapshot as valid
-    pub async fn check_snapshot_validity(&self, profiler: &PoolProfiler) -> anyhow::Result<()> {
+    /// Returns an error if database operations fail when marking the snapshot as valid.
+    pub async fn check_snapshot_validity(
+        &self,
+        profiler: &PoolProfiler,
+        already_validated: bool,
+    ) -> anyhow::Result<bool> {
+        // Determine validity and get block position for marking
+        let (is_valid, block_position) = if already_validated {
+            // Skip RPC call - profiler was validated during construction from RPC
+            tracing::info!("Snapshot already validated from RPC, skipping on-chain comparison");
+            let last_event = profiler
+                .last_processed_event
+                .clone()
+                .expect("Profiler should have last_processed_event");
+            (true, last_event)
+        } else {
+            // Fetch on-chain state and compare
+            match self.get_on_chain_snapshot(profiler).await {
+                Ok(on_chain_snapshot) => {
+                    tracing::info!("Comparing profiler state with on-chain state...");
+                    let valid = compare_pool_profiler(&profiler, &on_chain_snapshot);
+                    if !valid {
+                        tracing::error!(
+                            "Pool profiler state does NOT match on-chain smart contract state"
+                        );
+                    }
+                    (valid, on_chain_snapshot.block_position)
+                }
+                Err(e) => {
+                    tracing::error!("Failed to check snapshot validity: {e}");
+                    return Ok(false);
+                }
+            }
+        };
+
+        // Mark snapshot as valid in database if validation passed
+        if is_valid {
+            if let Some(cache_database) = &self.cache.database {
+                cache_database
+                    .mark_pool_snapshot_valid(
+                        profiler.pool.chain.chain_id,
+                        &profiler.pool.address,
+                        block_position.number,
+                        block_position.transaction_index,
+                        block_position.log_index,
+                    )
+                    .await?;
+                tracing::info!("Marked pool profiler snapshot as valid");
+            }
+        }
+
+        Ok(is_valid)
+    }
+
+    /// Fetches current on-chain pool state at the last processed block.
+    ///
+    /// Queries the pool smart contract to retrieve active tick liquidity and position data,
+    /// using the profiler's active positions and last processed block number.
+    /// Used for profiler state restoration after bootstrapping and validation.
+    async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
         if profiler.pool.dex.name == DexType::UniswapV3 {
-            tracing::info!("Comparing profiler state with on-chain state...");
             let last_processed_event = profiler
                 .last_processed_event
                 .clone()
                 .expect("We expect at least one processed event in the pool");
-            let tick_values = profiler.get_active_tick_values();
-            let position_keys: Vec<(Address, i32, i32)> = profiler
-                .get_active_positions()
-                .iter()
-                .map(|position| (position.owner, position.tick_lower, position.tick_upper))
-                .collect();
             let on_chain_snapshot = self
                 .univ3_pool
                 .fetch_snapshot(
                     &profiler.pool.address,
                     profiler.pool.instrument_id,
-                    tick_values.as_slice(),
-                    &position_keys,
-                    Some(last_processed_event.number),
+                    profiler.get_active_tick_values().as_slice(),
+                    &profiler.get_active_position_keys(),
+                    last_processed_event,
                 )
                 .await?;
-            let result = compare_pool_profiler(&profiler, &on_chain_snapshot);
 
-            if result {
-                // Mark the snapshot as valid since verification passed
-                if let Some(cache_database) = &self.cache.database {
-                    cache_database
-                        .mark_pool_snapshot_valid(
-                            profiler.pool.chain.chain_id,
-                            &profiler.pool.address,
-                            last_processed_event.number,
-                            last_processed_event.transaction_index,
-                            last_processed_event.log_index,
-                        )
-                        .await?;
-                    tracing::info!("Marked pool profiler snapshot as valid");
-                }
-            } else {
-                tracing::error!("Pool profiler state does NOT match on-chain smart contract state")
-            }
+            Ok(on_chain_snapshot)
         } else {
-            tracing::warn!(
-                "Dex protocol {} is not supported yet.",
+            anyhow::bail!(
+                "Fetching on-chain snapshot for Dex protocol {} is not supported yet.",
                 profiler.pool.dex.name
-            );
+            )
         }
-
-        Ok(())
     }
 
     /// Replays historical events for a pool to hydrate its profiler state.

@@ -111,8 +111,9 @@ pub async fn run_analyze_pool(
     let pool = data_client
         .cache
         .get_pool(&pool_address)
-        .expect("Pool not found in cache");
-    let profiler = data_client.bootstrap_latest_pool_profiler(pool).await?;
+        .expect("Pool not found in cache")
+        .clone();
+    let (profiler, already_valid) = data_client.bootstrap_latest_pool_profiler(&pool).await?;
     let snapshot = profiler.extract_snapshot();
 
     // Save complete pool snapshot to database (includes state, positions, and ticks)
@@ -126,6 +127,8 @@ pub async fn run_analyze_pool(
         .add_pool_snapshot(&pool.address, &snapshot)
         .await?;
     log::info!("Saved complete pool snapshot to database");
-    data_client.check_snapshot_validity(&profiler).await?;
+    data_client
+        .check_snapshot_validity(&profiler, already_valid)
+        .await?;
     Ok(())
 }

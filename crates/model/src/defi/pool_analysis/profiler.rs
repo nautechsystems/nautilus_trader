@@ -163,6 +163,30 @@ impl PoolProfiler {
     /// - Event contains invalid data (tick ranges, amounts).
     /// - Mathematical operations overflow.
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
+        // Skip events at or before the last processed event to prevent double-processing
+        if let Some(last_event) = &self.last_processed_event {
+            let event_block = event.block_number();
+            let event_tx_idx = event.transaction_index();
+            let event_log_idx = event.log_index();
+
+            let should_skip = event_block < last_event.number
+                || (event_block == last_event.number
+                    && event_tx_idx < last_event.transaction_index)
+                || (event_block == last_event.number
+                    && event_tx_idx == last_event.transaction_index
+                    && event_log_idx <= last_event.log_index);
+
+            if should_skip {
+                tracing::debug!(
+                    "Skipping already processed event at block {} tx {} log {}",
+                    event_block,
+                    event_tx_idx,
+                    event_log_idx
+                );
+                return Ok(());
+            }
+        }
+
         match event {
             DexPoolData::Swap(swap) => {
                 self.process_swap(swap)?;
@@ -276,17 +300,19 @@ impl PoolProfiler {
         // Verify simulation against event data - correct with event values if mismatch detected
         if swap.tick != self.state.current_tick {
             tracing::error!(
-                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {}",
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
                 self.state.current_tick,
-                swap.tick
+                swap.tick,
+                swap.block
             );
             self.state.current_tick = swap.tick;
         }
         if swap.liquidity != self.tick_map.liquidity {
             tracing::error!(
-                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {}",
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
                 self.tick_map.liquidity,
-                swap.liquidity
+                swap.liquidity,
+                swap.block
             );
             self.tick_map.liquidity = swap.liquidity;
         }
@@ -1598,11 +1624,6 @@ impl PoolProfiler {
             update_interval,
         ));
         self.last_reported_block = from_block;
-        tracing::info!(
-            "Enabled pool profiler reporting from block {} for {} total blocks",
-            from_block,
-            total_blocks
-        );
     }
 
     /// Finalizes reporting and logs final statistics.
