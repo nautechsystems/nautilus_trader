@@ -330,7 +330,7 @@ pub fn create_object_store_from_path(
         s if s.starts_with("gs://") || s.starts_with("gcs://") => {
             create_gcs_store(&uri, storage_options)
         }
-        s if s.starts_with("azure://") => create_azure_store(&uri, storage_options),
+        s if s.starts_with("az://") => create_azure_store(&uri, storage_options),
         s if s.starts_with("abfs://") => create_abfs_store(&uri, storage_options),
         s if s.starts_with("http://") || s.starts_with("https://") => {
             create_http_store(&uri, storage_options)
@@ -348,7 +348,7 @@ pub fn create_object_store_from_path(
 /// Supported URI schemes:
 /// - `s3://` for AWS S3
 /// - `gs://` or `gcs://` for Google Cloud Storage
-/// - `azure://` or `abfs://` for Azure Blob Storage
+/// - `az://` or `abfs://` for Azure Blob Storage
 /// - `http://` or `https://` for HTTP/WebDAV
 /// - `file://` for local files
 ///
@@ -535,23 +535,12 @@ fn create_azure_store(
     storage_options: Option<std::collections::HashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, _) = parse_url_and_path(uri)?;
-    let account = extract_host(&url, "Invalid Azure URI: missing account")?;
+    let container = extract_host(&url, "Invalid Azure URI: missing container")?;
 
-    let path_segments: Vec<&str> = url.path().trim_start_matches('/').split('/').collect();
-    if path_segments.is_empty() || path_segments[0].is_empty() {
-        anyhow::bail!("Invalid Azure URI: missing container");
-    }
+    let path = url.path().trim_start_matches('/').to_string();
 
-    let container = path_segments[0];
-    let path = if path_segments.len() > 1 {
-        path_segments[1..].join("/")
-    } else {
-        String::new()
-    };
-
-    let mut builder = object_store::azure::MicrosoftAzureBuilder::new()
-        .with_account(&account)
-        .with_container_name(container);
+    let mut builder =
+        object_store::azure::MicrosoftAzureBuilder::new().with_container_name(container);
 
     // Apply storage options if provided
     if let Some(options) = storage_options {
@@ -763,15 +752,14 @@ mod tests {
         // Use a valid base64 encoded key for testing
         options.insert("account_key".to_string(), "dGVzdGtleQ==".to_string()); // "testkey" in base64
 
-        let result =
-            create_object_store_from_path("azure://testaccount/container/path", Some(options));
+        let result = create_object_store_from_path("az://container/path", Some(options));
         if let Err(e) = &result {
             println!("Azure Error: {e:?}");
         }
         assert!(result.is_ok());
         let (_, base_path, uri) = result.unwrap();
         assert_eq!(base_path, "path");
-        assert_eq!(uri, "azure://testaccount/container/path");
+        assert_eq!(uri, "az://container/path");
     }
 
     #[rstest]

@@ -1616,8 +1616,7 @@ fn test_is_remote_uri_extended_moved() {
 
     // Test Azure URIs
     let azure_catalog =
-        ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
-            .unwrap();
+        ParquetDataCatalog::from_uri("az://container/path", None, None, None, None).unwrap();
     assert!(azure_catalog.is_remote_uri());
 
     let abfs_catalog = ParquetDataCatalog::from_uri(
@@ -1666,10 +1665,9 @@ fn test_reconstruct_full_uri_moved() {
 
     // Test Azure URI reconstruction
     let azure_catalog =
-        ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
-            .unwrap();
+        ParquetDataCatalog::from_uri("az://container/path", None, None, None, None).unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
-    assert_eq!(reconstructed, "azure://account/data/bars/file.parquet");
+    assert_eq!(reconstructed, "az://container/data/bars/file.parquet");
 
     // Test HTTP URI reconstruction
     let http_catalog =

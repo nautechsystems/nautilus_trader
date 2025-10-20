@@ -624,12 +624,28 @@ catalog = ParquetDataCatalog(
 )
 ```
 
-**Azure Blob Storage (`abfs`):**
+**Azure Blob Storage :**
+
+`abfs` protocol
 
 ```python
 catalog = ParquetDataCatalog(
     path="abfs://container@account.dfs.core.windows.net/nautilus-data/",
     fs_protocol="abfs",
+    fs_storage_options={
+        "account_name": "your-storage-account",
+        "account_key": "your-account-key",
+        # Or use SAS token: "sas_token": "your-sas-token"
+    }
+)
+```
+
+`az` protocol
+
+```python
+catalog = ParquetDataCatalog(
+    path="az://container/nautilus-data/",
+    fs_protocol="az",
     fs_storage_options={
         "account_name": "your-storage-account",
         "account_key": "your-account-key",
