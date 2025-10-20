@@ -714,7 +714,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         if len(file_list) <= 1:
             return
 
-        tables = [pq.read_table(file, memory_map=True, pre_buffer=False, filesystem=self.fs) for file in file_list]
+        tables = [
+            pq.read_table(file, memory_map=True, pre_buffer=False, filesystem=self.fs)
+            for file in file_list
+        ]
         combined_table = pa.concat_tables(tables)
 
         if deduplicate:

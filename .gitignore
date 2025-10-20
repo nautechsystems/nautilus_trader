@@ -60,6 +60,7 @@ __pycache__/
 cython_debug/
 requirements*
 venv*/
+.venv*/
 python/nautilus_trader/_libnautilus.pyi
 
 # Build environment and temp
