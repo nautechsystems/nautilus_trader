@@ -151,6 +151,7 @@ This will be the final release with support for Python 3.11.
 - Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
+- Improved `ActorExecutor` lifecycle and concurrency handling
 - Improved order books error handling, state integrity, and pprint/display
 - Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
