@@ -1273,10 +1273,6 @@ impl BlockchainDataClientCore {
             }
             _ => {
                 tracing::info!("No valid snapshot found, processing from beginning");
-                let initial_sqrt_price_x96 = pool
-                    .initial_sqrt_price_x96
-                    .expect("Pool has no initial sqrt price");
-                profiler.initialize(initial_sqrt_price_x96);
                 None
             }
         };
@@ -1356,6 +1352,15 @@ impl BlockchainDataClientCore {
         let dex_extended = self.get_dex_extended(&profiler.pool.dex.name)?.clone();
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
+        let initialize_event_signature =
+            if let Some(initialize_event) = &dex_extended.initialize_event {
+                initialize_event.as_ref()
+            } else {
+                anyhow::bail!(
+                    "DEX {} does not have initialize event set.",
+                    &profiler.pool.dex.name
+                );
+            };
         let mint_sig_bytes = hex::decode(
             mint_event_signature
                 .strip_prefix("0x")
@@ -1365,6 +1370,11 @@ impl BlockchainDataClientCore {
             burn_event_signature
                 .strip_prefix("0x")
                 .unwrap_or(burn_event_signature),
+        )?;
+        let initialize_sig_bytes = hex::decode(
+            initialize_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(initialize_event_signature),
         )?;
 
         let from_block = from_position
@@ -1390,7 +1400,11 @@ impl BlockchainDataClientCore {
                 from_block,
                 None,
                 &profiler.pool.address,
-                vec![mint_event_signature, burn_event_signature],
+                vec![
+                    mint_event_signature,
+                    burn_event_signature,
+                    initialize_event_signature,
+                ],
             )
             .await;
         tokio::pin!(pool_events_stream);
@@ -1398,7 +1412,16 @@ impl BlockchainDataClientCore {
         while let Some(log) = pool_events_stream.next().await {
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
-            if event_sig_bytes == mint_sig_bytes {
+            if event_sig_bytes == initialize_sig_bytes {
+                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                profiler.initialize(initialize_event.sqrt_price_x96);
+                self.cache
+                    .database
+                    .as_ref()
+                    .unwrap()
+                    .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
+                    .await?;
+            } else if event_sig_bytes == mint_sig_bytes {
                 let mint_event = dex_extended.parse_mint_event(log)?;
                 match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
