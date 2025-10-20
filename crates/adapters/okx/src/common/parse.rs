@@ -220,6 +220,36 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
     }
 }
 
+/// Parses `OKXInstrumentType` from an instrument symbol.
+///
+/// OKX instrument symbol formats:
+/// - SPOT: {BASE}-{QUOTE} (e.g., BTC-USDT)
+/// - MARGIN: {BASE}-{QUOTE} (same as SPOT, determined by trade mode)
+/// - SWAP: {BASE}-{QUOTE}-SWAP (e.g., BTC-USDT-SWAP)
+/// - FUTURES: {BASE}-{QUOTE}-{YYMMDD} (e.g., BTC-USDT-250328)
+/// - OPTION: {BASE}-{QUOTE}-{YYMMDD}-{STRIKE}-{C/P} (e.g., BTC-USD-250328-50000-C)
+pub fn okx_instrument_type_from_symbol(symbol: &str) -> OKXInstrumentType {
+    // TODO: Improve efficiency of this
+    let parts: Vec<&str> = symbol.split('-').collect();
+
+    match parts.len() {
+        2 => OKXInstrumentType::Spot,
+        3 => {
+            let suffix = parts[2];
+            if suffix == "SWAP" {
+                OKXInstrumentType::Swap
+            } else if suffix.len() == 6 && suffix.chars().all(|c| c.is_ascii_digit()) {
+                // Date format YYMMDD
+                OKXInstrumentType::Futures
+            } else {
+                OKXInstrumentType::Spot
+            }
+        }
+        5 => OKXInstrumentType::Option,
+        _ => OKXInstrumentType::Spot, // Default fallback
+    }
+}
+
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {

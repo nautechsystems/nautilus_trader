@@ -32,6 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -915,6 +916,54 @@ class OKXExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
+    async def _batch_cancel_orders(self, command) -> None:
+        orders_to_cancel = []
+
+        for cancel in command.cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                self._log.warning(f"{cancel.client_order_id!r} not found in cache, skipping")
+                continue
+
+            if order.is_closed:
+                self._log.debug(
+                    f"Order {cancel.client_order_id!r} already {order.status_string()}, skipping",
+                )
+                continue
+
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+
+            resolved_client_order_id = self._exchange_client_order_id(cancel.client_order_id)
+            pyo3_client_order_id = (
+                nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
+                if resolved_client_order_id is not None
+                else None
+            )
+
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
+                if cancel.venue_order_id
+                else None
+            )
+
+            orders_to_cancel.append(
+                (
+                    pyo3_inst_id,
+                    pyo3_client_order_id,
+                    pyo3_venue_order_id,
+                ),
+            )
+
+        if not orders_to_cancel:
+            self._log.warning("No valid orders to cancel in batch")
+            return
+
+        try:
+            await self._ws_client.batch_cancel_orders(orders_to_cancel)
+            self._log.info(f"Submitted batch cancel for {len(orders_to_cancel)} orders")
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel orders: {e}")
+
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
         if order is None:
@@ -992,6 +1041,7 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             alias_lookup_key = canonical_client_order_id or command.client_order_id
             algo_id = self._algo_order_ids.get(alias_lookup_key)
+
             if algo_id:
                 self._log.debug(
                     f"Cancelling OKX algo order using algo_id {algo_id} "
@@ -1000,6 +1050,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
                 )
+
                 try:
                     await self._http_client.cancel_algo_order(
                         instrument_id=pyo3_instrument_id,
@@ -1016,6 +1067,7 @@ class OKXExecutionClient(LiveExecutionClient):
                         and client_text not in message
                     ):
                         raise
+
                 if alias_lookup_key is not None:
                     del self._algo_order_ids[alias_lookup_key]
                     self._algo_order_instruments.pop(alias_lookup_key, None)
@@ -1028,11 +1080,13 @@ class OKXExecutionClient(LiveExecutionClient):
                 resolved_client_order_id = self._exchange_client_order_id(
                     command.client_order_id,
                 )
+
                 self._log.debug(
                     "Cancelling OKX order over websocket using exchange id "
                     f"{resolved_client_order_id!r} (canonical {canonical_client_order_id!r}, "
                     f"requested {command.client_order_id!r})",
                 )
+
                 pyo3_client_order_id = (
                     nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
                     if resolved_client_order_id is not None
@@ -1117,26 +1171,52 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders_individually(self, command: CancelAllOrders) -> None:
         orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
+        cancels: list[CancelOrder] = []
         processed: set[ClientOrderId] = set()
+
+        # Build cancel commands for regular orders (skip algo orders)
         for order in orders_open:
             if order.is_closed:
                 continue
 
-            cancel_command = CancelOrder(
+            # Skip algo orders - they must use REST API fallback
+            if order.client_order_id in self._algo_order_ids:
+                continue
+
+            cancels.append(
+                CancelOrder(
+                    trader_id=command.trader_id,
+                    strategy_id=command.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=command.id,
+                    ts_init=command.ts_init,
+                ),
+            )
+            processed.add(order.client_order_id)
+
+        # Process cancels in batches of 20 (OKX API limit)
+        # Reference: https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders
+        batch_size = 20
+
+        for i in range(0, len(cancels), batch_size):
+            batch = cancels[i : i + batch_size]
+            batch_command = BatchCancelOrders(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
+                instrument_id=command.instrument_id,
+                cancels=batch,
                 command_id=command.id,
                 ts_init=command.ts_init,
             )
-            await self._cancel_order(cancel_command)
-            processed.add(order.client_order_id)
+            await self._batch_cancel_orders(batch_command)
 
+        # Cancel algo orders individually via REST API (cannot be batched)
         for client_order_id, algo_id in list(self._algo_order_ids.items()):
             if client_order_id in processed:
                 continue
+
             instrument_id = self._algo_order_instruments.get(client_order_id)
             if instrument_id is None or instrument_id != command.instrument_id:
                 continue

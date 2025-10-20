@@ -1010,9 +1010,9 @@ impl OKXWebSocketClient {
                 post_only,
                 reduce_only,
             ): (
-                String,
+                OKXInstrumentType,
                 InstrumentId,
-                String,
+                OKXTradeMode,
                 ClientOrderId,
                 OrderSide,
                 OrderType,
@@ -1026,14 +1026,10 @@ impl OKXWebSocketClient {
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-            let inst_type =
-                OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
-            let trade_mode = OKXTradeMode::from_str(&td_mode).map_err(to_pyvalue_err)?;
-
             domain_orders.push((
-                inst_type,
+                instrument_type,
                 instrument_id,
-                trade_mode,
+                td_mode,
                 client_order_id,
                 order_side,
                 position_side,
@@ -1061,29 +1057,26 @@ impl OKXWebSocketClient {
     fn py_batch_cancel_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<Py<PyAny>>,
+        cancels: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut domain_orders = Vec::with_capacity(orders.len());
+        let mut batched_cancels = Vec::with_capacity(cancels.len());
 
-        for obj in orders {
-            let (instrument_type, instrument_id, client_order_id, order_id): (
-                String,
+        for obj in cancels {
+            let (instrument_id, client_order_id, order_id): (
                 InstrumentId,
                 Option<ClientOrderId>,
-                Option<String>,
+                Option<VenueOrderId>,
             ) = obj
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-            let inst_type =
-                OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
-            domain_orders.push((inst_type, instrument_id, client_order_id, order_id));
+            batched_cancels.push((instrument_id, client_order_id, order_id));
         }
 
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .batch_cancel_orders(domain_orders)
+                .batch_cancel_orders(batched_cancels)
                 .await
                 .map_err(to_pyvalue_err)
         })

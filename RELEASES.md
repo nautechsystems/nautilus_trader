@@ -34,6 +34,7 @@ This will be the final release with support for Python 3.11.
 - Added OKX trade mode per order via `params` using `td_mode` key
 - Added OKX margin configuration and spot margin support
 - Added OKX demo account support
+- Added OKX batch cancel support
 - Added Polymarket native market orders support
 
 ### Breaking Changes

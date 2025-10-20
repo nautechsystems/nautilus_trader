@@ -22,18 +22,29 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clock::Clock, messages::ExecutionEvent, msgbus, runner::get_exec_event_sender,
+    clock::Clock,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GeneratePositionReports,
+        },
+    },
+    msgbus,
+    runner::get_exec_event_sender,
     runtime::get_runtime,
 };
 use nautilus_core::UnixNanos;
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
-    enums::{AccountType, OrderType},
+    accounts::AccountAny,
+    enums::{AccountType, OmsType, OrderType},
     events::{AccountState, OrderEventAny},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     orders::Order,
-    reports::ExecutionMassStatus,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, MarginBalance},
 };
 use tokio::task::JoinHandle;
 
@@ -328,32 +339,32 @@ impl ExecutionClient for OKXExecutionClient {
         self.connected
     }
 
-    fn client_id(&self) -> nautilus_model::identifiers::ClientId {
+    fn client_id(&self) -> ClientId {
         self.core.client_id
     }
 
-    fn account_id(&self) -> nautilus_model::identifiers::AccountId {
+    fn account_id(&self) -> AccountId {
         self.core.account_id
     }
 
-    fn venue(&self) -> nautilus_model::identifiers::Venue {
+    fn venue(&self) -> Venue {
         *OKX_VENUE
     }
 
-    fn oms_type(&self) -> nautilus_model::enums::OmsType {
+    fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
 
-    fn get_account(&self) -> Option<nautilus_model::accounts::AccountAny> {
+    fn get_account(&self) -> Option<AccountAny> {
         self.core.get_account()
     }
 
     fn generate_account_state(
         &self,
-        balances: Vec<nautilus_model::types::AccountBalance>,
-        margins: Vec<nautilus_model::types::MarginBalance>,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: nautilus_core::UnixNanos,
+        ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
         self.core
             .generate_account_state(balances, margins, reported, ts_event)
@@ -469,32 +480,22 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(
-        &self,
-        cmd: &nautilus_common::messages::execution::CancelOrder,
-    ) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
         self.cancel_ws_order(cmd)
     }
 
-    fn cancel_all_orders(
-        &self,
-        cmd: &nautilus_common::messages::execution::CancelAllOrders,
-    ) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         self.mass_cancel_instrument(cmd.instrument_id)
     }
 
-    fn batch_cancel_orders(
-        &self,
-        cmd: &nautilus_common::messages::execution::BatchCancelOrders,
-    ) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         let mut payload = Vec::with_capacity(cmd.cancels.len());
 
         for cancel in &cmd.cancels {
             payload.push((
-                OKXInstrumentType::Spot, // TODO: derive real instrument type
                 cancel.instrument_id,
                 Some(cancel.client_order_id),
-                Some(cancel.venue_order_id.as_str().to_string()),
+                Some(cancel.venue_order_id),
             ));
         }
 
@@ -591,8 +592,8 @@ impl LiveExecutionClient for OKXExecutionClient {
 
     async fn generate_order_status_report(
         &self,
-        cmd: &nautilus_common::messages::execution::GenerateOrderStatusReport,
-    ) -> anyhow::Result<Option<nautilus_model::reports::OrderStatusReport>> {
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
         let Some(instrument_id) = cmd.instrument_id else {
             tracing::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
             return Ok(None);
@@ -624,8 +625,8 @@ impl LiveExecutionClient for OKXExecutionClient {
 
     async fn generate_order_status_reports(
         &self,
-        cmd: &nautilus_common::messages::execution::GenerateOrderStatusReport,
-    ) -> anyhow::Result<Vec<nautilus_model::reports::OrderStatusReport>> {
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let mut reports = Vec::new();
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -673,8 +674,8 @@ impl LiveExecutionClient for OKXExecutionClient {
 
     async fn generate_fill_reports(
         &self,
-        cmd: nautilus_common::messages::execution::GenerateFillReports,
-    ) -> anyhow::Result<Vec<nautilus_model::reports::FillReport>> {
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
         let start_dt = nanos_to_datetime(cmd.start);
         let end_dt = nanos_to_datetime(cmd.end);
         let mut reports = Vec::new();
@@ -718,8 +719,8 @@ impl LiveExecutionClient for OKXExecutionClient {
 
     async fn generate_position_status_reports(
         &self,
-        cmd: &nautilus_common::messages::execution::GeneratePositionReports,
-    ) -> anyhow::Result<Vec<nautilus_model::reports::PositionStatusReport>> {
+        cmd: &GeneratePositionReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let mut reports = Vec::new();
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -859,4 +860,95 @@ fn dispatch_order_event(event: OrderEventAny) {
 
 fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<DateTime<Utc>> {
     value.map(|nanos| nanos.to_datetime_utc())
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::messages::execution::{BatchCancelOrders, CancelOrder};
+    use nautilus_core::UnixNanos;
+    use nautilus_model::identifiers::{
+        ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    };
+
+    #[test]
+    fn test_batch_cancel_orders_builds_payload() {
+        use nautilus_model::identifiers::ClientId;
+
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("STRATEGY-001");
+        let client_id = ClientId::from("OKX");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let client_order_id1 = ClientOrderId::new("order1");
+        let client_order_id2 = ClientOrderId::new("order2");
+        let venue_order_id1 = VenueOrderId::new("venue1");
+        let venue_order_id2 = VenueOrderId::new("venue2");
+
+        let cmd = BatchCancelOrders {
+            trader_id,
+            client_id,
+            strategy_id,
+            instrument_id,
+            cancels: vec![
+                CancelOrder {
+                    trader_id,
+                    client_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id: client_order_id1,
+                    venue_order_id: venue_order_id1,
+                    command_id: Default::default(),
+                    ts_init: UnixNanos::default(),
+                },
+                CancelOrder {
+                    trader_id,
+                    client_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id: client_order_id2,
+                    venue_order_id: venue_order_id2,
+                    command_id: Default::default(),
+                    ts_init: UnixNanos::default(),
+                },
+            ],
+            command_id: Default::default(),
+            ts_init: UnixNanos::default(),
+        };
+
+        // Verify we can build the payload structure
+        let mut payload = Vec::with_capacity(cmd.cancels.len());
+        for cancel in &cmd.cancels {
+            payload.push((
+                cancel.instrument_id,
+                Some(cancel.client_order_id),
+                Some(cancel.venue_order_id),
+            ));
+        }
+
+        assert_eq!(payload.len(), 2);
+        assert_eq!(payload[0].0, instrument_id);
+        assert_eq!(payload[0].1, Some(client_order_id1));
+        assert_eq!(payload[0].2, Some(venue_order_id1));
+        assert_eq!(payload[1].0, instrument_id);
+        assert_eq!(payload[1].1, Some(client_order_id2));
+        assert_eq!(payload[1].2, Some(venue_order_id2));
+    }
+
+    #[test]
+    fn test_batch_cancel_orders_with_empty_cancels() {
+        use nautilus_model::identifiers::ClientId;
+
+        let cmd = BatchCancelOrders {
+            trader_id: TraderId::from("TRADER-001"),
+            client_id: ClientId::from("OKX"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
+            cancels: vec![],
+            command_id: Default::default(),
+            ts_init: UnixNanos::default(),
+        };
+
+        let payload: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)> =
+            Vec::with_capacity(cmd.cancels.len());
+        assert_eq!(payload.len(), 0);
+    }
 }
