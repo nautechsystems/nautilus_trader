@@ -2223,13 +2223,30 @@ impl OKXHttpClient {
 
     /// Requests current position status reports for the given parameters.
     ///
+    /// # Position Modes
+    ///
+    /// OKX supports two position modes, which affects how position data is returned:
+    ///
+    /// ## Net Mode (One-way)
+    /// - `posSide` field will be `"net"`
+    /// - `pos` field uses **signed quantities**:
+    ///   - Positive value = Long position
+    ///   - Negative value = Short position
+    ///   - Zero = Flat/no position
+    ///
+    /// ## Long/Short Mode (Hedge/Dual-side)
+    /// - `posSide` field will be `"long"` or `"short"`
+    /// - `pos` field is **always positive** (use `posSide` to determine actual side)
+    /// - Allows holding simultaneous long and short positions on the same instrument
+    /// - Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness
+    ///
     /// # Errors
     ///
     /// Returns an error if the request fails.
     ///
     /// # References
     ///
-    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>.
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
