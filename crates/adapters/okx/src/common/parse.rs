@@ -1455,17 +1455,8 @@ pub fn parse_account_state(
             continue;
         }
 
-        // Attempt to parse the currency, skip if invalid
-        let currency = match Currency::from_str(ccy_str) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    "Skipping balance detail with invalid currency code '{ccy_str}': {e} | raw_data={:?}",
-                    b
-                );
-                continue;
-            }
-        };
+        // Get or create currency (consistent with instrument parsing)
+        let currency = get_currency_with_context(ccy_str, Some("balance detail"));
 
         // Parse balance values, skip if invalid
         let Some(total) = parse_balance_field(&b.cash_bal, "cash_bal", currency, ccy_str) else {
