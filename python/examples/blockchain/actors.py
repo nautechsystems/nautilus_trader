@@ -125,7 +125,7 @@ class BlockchainActor(DataActor):
             liquidity = pool.get_active_liquidity()
             self.log.info(
                 f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
-                LogColor.MAGENTA,
+                LogColor.BLUE,
             )
 
     def on_pool_swap(self, swap: PoolSwap) -> None:

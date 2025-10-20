@@ -27,6 +27,7 @@ dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",
   "pyarrow>=21.0.0",
+  "python-dotenv>=1.1.0",
   "pytz>=2025.2.0",
 ]
 
