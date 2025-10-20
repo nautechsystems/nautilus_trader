@@ -1302,6 +1302,14 @@ impl BlockchainDataClientCore {
             tracing::error!("Failed to sync pool events for snapshot request: {}", e);
         }
 
+        if !profiler.is_initialized {
+            if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
+                profiler.initialize(initial_sqrt_price_x96);
+            }else{
+                anyhow::bail!("Pool is not initialized and it doesnt contain inital price, cannot bootstrap profiler");
+            }
+        }
+
         let mut stream = self.cache.database.as_ref().unwrap().stream_pool_events(
             pool.chain.clone(),
             pool.dex.clone(),
