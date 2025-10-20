@@ -1732,30 +1732,46 @@ class ParquetDataCatalog(BaseDataCatalog):
                 where=where,
             )
 
-            # Convert file path to URI format for object store compatibility
-            file_uri = file
-
-            if self.fs_protocol != "file" and "://" not in file:
-                # Convert relative paths to full URIs based on protocol
-                if self.fs_protocol == "s3":
-                    file_uri = f"s3://{file}"
-                elif self.fs_protocol in ("gcs", "gs"):
-                    file_uri = f"gs://{file}"
-                elif self.fs_protocol in ("abfs"):
-                    file_uri = f"{self.path}/{file.partition('/')[2]}"
-                elif self.fs_protocol in ("azure", "az"):
-                    file_uri = f"az://{file}"
-                elif self.fs_protocol in ("http", "https"):
-                    file_uri = f"{self.fs_protocol}://{file}"
-                # Add more protocols as needed
-            elif self.fs_protocol == "file" and not file.startswith("file://"):
-                # For local files, DataFusion can handle both absolute paths and file:// URIs
-                # We'll keep the original path format for compatibility
-                file_uri = file
+            file_uri = self._build_file_uri(file)
 
             session.add_file(data_type, table, file_uri, query)
 
         return session
+
+    def _build_file_uri(self, file: str) -> str:
+        """
+        Convert a file path to a URI format based on the filesystem protocol.
+
+        Parameters
+        ----------
+        file : str
+            The file path to convert.
+
+        Returns
+        -------
+        str
+            The file path in URI format.
+
+        """
+        if self.fs_protocol != "file" and "://" not in file:
+            # Convert relative paths to full URIs based on protocol
+            if self.fs_protocol == "s3":
+                return f"s3://{file}"
+            elif self.fs_protocol in ("gcs", "gs"):
+                return f"gs://{file}"
+            elif self.fs_protocol in ("abfs"):
+                return f"{self.path}/{file.partition('/')[2]}"
+            elif self.fs_protocol in ("azure", "az"):
+                return f"az://{file}"
+            elif self.fs_protocol in ("http", "https"):
+                return f"{self.fs_protocol}://{file}"
+            # Add more protocols as needed
+        elif self.fs_protocol == "file" and not file.startswith("file://"):
+            # For local files, DataFusion can handle both absolute paths and file:// URIs
+            # We'll keep the original path format for compatibility
+            return file
+
+        return file
 
     def _register_object_store_with_session(self, session: DataBackendSession) -> None:
         """
