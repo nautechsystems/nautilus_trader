@@ -714,13 +714,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         if len(file_list) <= 1:
             return
 
-        tables = [pq.read_table(file, memory_map=True, pre_buffer=False) for file in file_list]
+        tables = [
+            pq.read_table(file, memory_map=True, pre_buffer=False, filesystem=self.fs)
+            for file in file_list
+        ]
         combined_table = pa.concat_tables(tables)
 
         if deduplicate:
             combined_table = self._deduplicate_table(combined_table)
 
-        pq.write_table(combined_table, where=new_file)
+        pq.write_table(combined_table, where=new_file, filesystem=self.fs)
 
         for file in file_list:
             if file != new_file:
