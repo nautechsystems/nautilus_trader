@@ -17,6 +17,7 @@ This will be the final release with support for Python 3.11.
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
 - Added `fs_rust_storage_options` to Python catalog (#3008), thanks @faysou and @Johnkhk
 - Added matching engine fallback to default order book for custom fill models (#3039), thanks @Hamish-Leahy
+- Added filesystem parameter to parquet in the consolidate functions (#3097), thanks @huracosunah
 - Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
@@ -78,6 +79,7 @@ This will be the final release with support for Python 3.11.
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed return type annotation for `ArrowSerializer.deserialize` (#3076), thanks @MK27MK
+- Fixed initializing of sqrt price setting flow when `Pool` profiling (#3100), thanks @filipmacek
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
