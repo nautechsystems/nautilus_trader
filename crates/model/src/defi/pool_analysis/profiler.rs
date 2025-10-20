@@ -163,88 +163,55 @@ impl PoolProfiler {
     /// - Event contains invalid data (tick ranges, amounts).
     /// - Mathematical operations overflow.
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
-        // Skip events at or before the last processed event to prevent double-processing
-        if let Some(last_event) = &self.last_processed_event {
-            let event_block = event.block_number();
-            let event_tx_idx = event.transaction_index();
-            let event_log_idx = event.log_index();
+        if self.check_if_already_processed(
+            event.block_number(),
+            event.transaction_index(),
+            event.log_index(),
+        ) {
+            return Ok(());
+        }
 
-            let should_skip = event_block < last_event.number
-                || (event_block == last_event.number
-                    && event_tx_idx < last_event.transaction_index)
-                || (event_block == last_event.number
-                    && event_tx_idx == last_event.transaction_index
-                    && event_log_idx <= last_event.log_index);
+        match event {
+            DexPoolData::Swap(swap) => self.process_swap(swap)?,
+            DexPoolData::LiquidityUpdate(update) => match update.kind {
+                PoolLiquidityUpdateType::Mint => self.process_mint(update)?,
+                PoolLiquidityUpdateType::Burn => self.process_burn(update)?,
+            },
+            DexPoolData::FeeCollect(collect) => self.process_collect(collect)?,
+            DexPoolData::Flash(flash) => self.process_flash(flash)?,
+        }
+        self.update_reporter_if_enabled(event.block_number());
+
+        Ok(())
+    }
+
+    // Checks if we need to skip events at or before the last processed event to prevent double-processing.
+    fn check_if_already_processed(&self, block: u64, tx_idx: u32, log_idx: u32) -> bool {
+        if let Some(last_event) = &self.last_processed_event {
+            let should_skip = block < last_event.number
+                || (block == last_event.number && tx_idx < last_event.transaction_index)
+                || (block == last_event.number
+                    && tx_idx == last_event.transaction_index
+                    && log_idx <= last_event.log_index);
 
             if should_skip {
                 tracing::debug!(
                     "Skipping already processed event at block {} tx {} log {}",
-                    event_block,
-                    event_tx_idx,
-                    event_log_idx
+                    block,
+                    tx_idx,
+                    log_idx
                 );
-                return Ok(());
             }
+            return should_skip;
         }
 
-        match event {
-            DexPoolData::Swap(swap) => {
-                self.process_swap(swap)?;
-                self.analytics.total_swaps += 1;
-                self.last_processed_event = Some(BlockPosition::new(
-                    swap.block,
-                    swap.transaction_hash.clone(),
-                    swap.transaction_index,
-                    swap.log_index,
-                ));
-            }
-            DexPoolData::LiquidityUpdate(update) => match update.kind {
-                PoolLiquidityUpdateType::Mint => {
-                    self.process_mint(update)?;
-                    self.analytics.total_mints += 1;
-                    self.last_processed_event = Some(BlockPosition::new(
-                        update.block,
-                        update.transaction_hash.clone(),
-                        update.transaction_index,
-                        update.log_index,
-                    ));
-                }
-                PoolLiquidityUpdateType::Burn => {
-                    self.process_burn(update)?;
-                    self.analytics.total_burns += 1;
-                    self.last_processed_event = Some(BlockPosition::new(
-                        update.block,
-                        update.transaction_hash.clone(),
-                        update.transaction_index,
-                        update.log_index,
-                    ));
-                }
-            },
-            DexPoolData::FeeCollect(collect) => {
-                self.process_collect(collect)?;
-                self.analytics.total_fee_collects += 1;
-                self.last_processed_event = Some(BlockPosition::new(
-                    collect.block,
-                    collect.transaction_hash.clone(),
-                    collect.transaction_index,
-                    collect.log_index,
-                ));
-            }
-            DexPoolData::Flash(flash) => {
-                self.process_flash(flash)?;
-                self.analytics.total_flashes += 1;
-                self.last_processed_event = Some(BlockPosition::new(
-                    flash.block,
-                    flash.transaction_hash.clone(),
-                    flash.transaction_index,
-                    flash.log_index,
-                ));
-            }
-        }
+        false
+    }
 
+    /// Auto-updates reporter if it's enabled.
+    fn update_reporter_if_enabled(&mut self, current_block: u64) {
         // Auto-update reporter if enabled
         if let Some(reporter) = &mut self.reporter {
-            let current_block = event.block_number();
             let blocks_processed = current_block.saturating_sub(self.last_reported_block);
 
             if blocks_processed > 0 {
@@ -256,8 +223,6 @@ impl PoolProfiler {
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Processes a historical swap event from blockchain data.
@@ -285,6 +250,10 @@ impl PoolProfiler {
     /// Panics if the pool has not been initialized.
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
+        if self.check_if_already_processed(swap.block, swap.transaction_index, swap.log_index) {
+            return Ok(());
+        }
+
         let zero_for_one = swap.amount0.is_positive();
         let amount_specified = if zero_for_one {
             swap.amount0
@@ -316,6 +285,15 @@ impl PoolProfiler {
             );
             self.tick_map.liquidity = swap.liquidity;
         }
+
+        self.analytics.total_swaps += 1;
+        self.last_processed_event = Some(BlockPosition::new(
+            swap.block,
+            swap.transaction_hash.clone(),
+            swap.transaction_index,
+            swap.log_index,
+        ));
+        self.update_reporter_if_enabled(swap.block);
 
         Ok(())
     }
@@ -746,6 +724,11 @@ impl PoolProfiler {
     /// - Position updates fail.
     pub fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
+        if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
+        {
+            return Ok(());
+        }
+
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
         self.add_liquidity(
             &update.owner,
@@ -755,6 +738,16 @@ impl PoolProfiler {
             update.amount0,
             update.amount1,
         )?;
+
+        self.analytics.total_mints += 1;
+        self.last_processed_event = Some(BlockPosition::new(
+            update.block,
+            update.transaction_hash.clone(),
+            update.transaction_index,
+            update.log_index,
+        ));
+        self.update_reporter_if_enabled(update.block);
+
         Ok(())
     }
 
@@ -860,6 +853,10 @@ impl PoolProfiler {
     /// - Position updates fail.
     pub fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
+        if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
+        {
+            return Ok(());
+        }
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
 
         // Update the position with a negative liquidity delta for the burn.
@@ -871,6 +868,15 @@ impl PoolProfiler {
             update.amount0,
             update.amount1,
         )?;
+
+        self.analytics.total_burns += 1;
+        self.last_processed_event = Some(BlockPosition::new(
+            update.block,
+            update.transaction_hash.clone(),
+            update.transaction_index,
+            update.log_index,
+        ));
+        self.update_reporter_if_enabled(update.block);
 
         Ok(())
     }
@@ -957,6 +963,13 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
+        if self.check_if_already_processed(
+            collect.block,
+            collect.transaction_index,
+            collect.log_index,
+        ) {
+            return Ok(());
+        }
 
         let position_key =
             PoolPosition::get_position_key(&collect.owner, collect.tick_lower, collect.tick_upper);
@@ -966,6 +979,15 @@ impl PoolProfiler {
 
         self.analytics.total_amount0_collected += U256::from(collect.amount0);
         self.analytics.total_amount1_collected += U256::from(collect.amount1);
+
+        self.analytics.total_fee_collects += 1;
+        self.last_processed_event = Some(BlockPosition::new(
+            collect.block,
+            collect.transaction_hash.clone(),
+            collect.transaction_index,
+            collect.log_index,
+        ));
+        self.update_reporter_if_enabled(collect.block);
 
         Ok(())
     }
@@ -983,7 +1005,22 @@ impl PoolProfiler {
     /// Panics if the pool has not been initialized.
     pub fn process_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
         self.check_if_initialized();
-        self.update_flash_state(flash.paid0, flash.paid1)
+        if self.check_if_already_processed(flash.block, flash.transaction_index, flash.log_index) {
+            return Ok(());
+        }
+
+        self.update_flash_state(flash.paid0, flash.paid1)?;
+
+        self.analytics.total_flashes += 1;
+        self.last_processed_event = Some(BlockPosition::new(
+            flash.block,
+            flash.transaction_hash.clone(),
+            flash.transaction_index,
+            flash.log_index,
+        ));
+        self.update_reporter_if_enabled(flash.block);
+
+        Ok(())
     }
 
     /// Executes a simulated flash loan operation and returns the resulting event.
