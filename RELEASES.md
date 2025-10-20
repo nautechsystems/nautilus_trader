@@ -184,6 +184,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
 - Upgraded `tokio` crate to v1.48.0
+- Upgraded `uvloop` to v0.22.1 (upgrades libuv to v1.49.0)
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International

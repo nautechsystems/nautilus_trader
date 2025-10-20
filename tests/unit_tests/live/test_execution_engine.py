@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
@@ -61,7 +60,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -77,14 +75,15 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestLiveExecutionEngine:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
         self.trader_id = TestIdStubs.trader_id()
+        self._engines_to_cleanup = []
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -178,18 +177,18 @@ class TestLiveExecutionEngine:
         self.emulator.start()
         self.strategy.start()
 
-    def teardown(self):
-        self.data_engine.stop()
-        self.risk_engine.stop()
+        yield
+
+        # Teardown - stop all engines and clean up any tasks
         self.emulator.stop()
-        self.strategy.stop()
+        self.exec_engine.stop()
+        self.risk_engine.stop()
+        self.data_engine.stop()
 
-        if self.exec_engine.is_running:
-            self.exec_engine.stop()
-
-        ensure_all_tasks_completed()
-
-        self.exec_engine.dispose()
+        # Clean up any additional engines created during tests
+        for engine in self._engines_to_cleanup:
+            if hasattr(engine, "stop") and not engine.is_stopped:
+                engine.stop()
 
     @pytest.mark.asyncio()
     async def test_start_when_loop_not_running_logs(self):
@@ -221,7 +220,7 @@ class TestLiveExecutionEngine:
             handler=self.exec_engine.reconcile_execution_mass_status,
         )
 
-        self.exec_engine = LiveExecutionEngine(
+        new_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -231,6 +230,8 @@ class TestLiveExecutionEngine:
                 inflight_check_threshold_ms=0,
             ),
         )
+        self._engines_to_cleanup.append(new_engine)
+        self.exec_engine = new_engine
 
         strategy = Strategy()
         strategy.register(
@@ -285,7 +286,7 @@ class TestLiveExecutionEngine:
             handler=self.exec_engine.reconcile_execution_mass_status,
         )
 
-        self.exec_engine = LiveExecutionEngine(
+        new_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -295,6 +296,8 @@ class TestLiveExecutionEngine:
                 inflight_check_threshold_ms=0,
             ),
         )
+        self._engines_to_cleanup.append(new_engine)
+        self.exec_engine = new_engine
 
         strategy = Strategy()
         strategy.register(

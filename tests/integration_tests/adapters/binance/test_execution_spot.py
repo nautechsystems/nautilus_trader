@@ -51,9 +51,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceSpotExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -129,6 +130,8 @@ class TestBinanceSpotExecutionClient:
             cache=self.cache,
             clock=self.clock,
         )
+
+        yield
 
     @pytest.mark.skip(reason="Pending overhaul of testing")
     @pytest.mark.asyncio()

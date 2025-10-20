@@ -57,10 +57,11 @@ class TestDYDXDataClientBarPartitioning:
     Comprehensive test cases for dYdX data client bar partitioning functionality.
     """
 
-    def setup_method(self):
+    def setup_method(self, session_event_loop):
         """
         Set up test fixtures.
         """
+        self.loop = session_event_loop
         self.clock = LiveClock()
         self.msgbus = MessageBus(
             trader_id=TraderId("TESTER-000"),
@@ -97,9 +98,8 @@ class TestDYDXDataClientBarPartitioning:
         # Add instrument to cache
         self.cache.add_instrument(self.instrument)
 
-        # Create data client
         self.data_client = DYDXDataClient(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -109,6 +109,13 @@ class TestDYDXDataClientBarPartitioning:
             config=DYDXDataClientConfig(wallet_address="test_wallet"),
             name="DYDX",
         )
+
+    def teardown_method(self):
+        """
+        Tear down test fixtures.
+        """
+        self.loop = None
+        self.data_client = None
 
     def create_request_bars(
         self,
@@ -431,9 +438,12 @@ class TestDYDXDataClientBarPartitioning:
 
             with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
-                start_time_test = asyncio.get_event_loop().time()
+                # Get the running loop from pytest-asyncio (session-scoped)
+                loop = asyncio.get_running_loop()
+
+                start_time_test = loop.time()
                 await self.data_client._request_bars(request)
-                end_time_test = asyncio.get_event_loop().time()
+                end_time_test = loop.time()
 
                 # Assert
                 mock_handle.assert_called_once()

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -93,76 +92,73 @@ def _build_snapshot(prices: tuple[str, str, str, str]) -> PolymarketBookSnapshot
     )
 
 
-def test_tick_size_change_rebuilds_local_book_precision() -> None:
+def test_tick_size_change_rebuilds_local_book_precision(event_loop) -> None:
     # Arrange
-    loop = asyncio.new_event_loop()
-    try:
-        clock = LiveClock()
-        msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
-        cache = Cache()
-        provider = MagicMock(spec=PolymarketInstrumentProvider)
-        http_client = MagicMock()
+    loop = event_loop
+    clock = LiveClock()
+    msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
+    cache = Cache()
+    provider = MagicMock(spec=PolymarketInstrumentProvider)
+    http_client = MagicMock()
 
-        config = PolymarketDataClientConfig()
-        client = _RecordingPolymarketDataClient(
-            loop=loop,
-            http_client=http_client,
-            msgbus=msgbus,
-            cache=cache,
-            clock=clock,
-            instrument_provider=provider,
-            config=config,
-            name="TEST-POLYMARKET",
-        )
+    config = PolymarketDataClientConfig()
+    client = _RecordingPolymarketDataClient(
+        loop=loop,
+        http_client=http_client,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        instrument_provider=provider,
+        config=config,
+        name="TEST-POLYMARKET",
+    )
 
-        instrument_old = _make_binary_option("0.01")
-        client._cache.add_instrument(instrument_old)
-        client._add_subscription_quote_ticks(instrument_old.id)
+    instrument_old = _make_binary_option("0.01")
+    client._cache.add_instrument(instrument_old)
+    client._add_subscription_quote_ticks(instrument_old.id)
 
-        snapshot_old = _build_snapshot(("0.90", "0.94", "0.96", "0.99"))
-        deltas_old = snapshot_old.parse_to_snapshot(instrument=instrument_old, ts_init=0)
-        book_old = OrderBook(instrument_old.id, book_type=BookType.L2_MBP)
-        book_old.apply_deltas(deltas_old)
-        client._local_books[instrument_old.id] = book_old
+    snapshot_old = _build_snapshot(("0.90", "0.94", "0.96", "0.99"))
+    deltas_old = snapshot_old.parse_to_snapshot(instrument=instrument_old, ts_init=0)
+    book_old = OrderBook(instrument_old.id, book_type=BookType.L2_MBP)
+    book_old.apply_deltas(deltas_old)
+    client._local_books[instrument_old.id] = book_old
 
-        quote_old = snapshot_old.parse_to_quote(
-            instrument=instrument_old,
-            ts_init=0,
-            drop_quotes_missing_side=False,
-        )
-        assert quote_old is not None
-        client._last_quotes[instrument_old.id] = quote_old
+    quote_old = snapshot_old.parse_to_quote(
+        instrument=instrument_old,
+        ts_init=0,
+        drop_quotes_missing_side=False,
+    )
+    assert quote_old is not None
+    client._last_quotes[instrument_old.id] = quote_old
 
-        change = PolymarketTickSizeChange(
-            market="0xMARKET",
-            asset_id="0xASSET",
-            new_tick_size="0.001",
-            old_tick_size="0.01",
-            timestamp="1700000001000",
-        )
+    change = PolymarketTickSizeChange(
+        market="0xMARKET",
+        asset_id="0xASSET",
+        new_tick_size="0.001",
+        old_tick_size="0.01",
+        timestamp="1700000001000",
+    )
 
-        # Act
-        client._handle_instrument_update(instrument=instrument_old, ws_message=change)
+    # Act
+    client._handle_instrument_update(instrument=instrument_old, ws_message=change)
 
-        # Assert
-        instrument_id = instrument_old.id
-        provider.add.assert_called_once()
+    # Assert
+    instrument_id = instrument_old.id
+    provider.add.assert_called_once()
 
-        cached_instrument = client._cache.instrument(instrument_id)
-        assert cached_instrument is not None
-        assert cached_instrument.price_precision == 3
+    cached_instrument = client._cache.instrument(instrument_id)
+    assert cached_instrument is not None
+    assert cached_instrument.price_precision == 3
 
-        rebuilt_book = client._local_books[instrument_id]
-        bid_price = rebuilt_book.best_bid_price()
-        ask_price = rebuilt_book.best_ask_price()
-        assert bid_price is not None and ask_price is not None
-        assert bid_price.precision == ask_price.precision == 3
+    rebuilt_book = client._local_books[instrument_id]
+    bid_price = rebuilt_book.best_bid_price()
+    ask_price = rebuilt_book.best_ask_price()
+    assert bid_price is not None and ask_price is not None
+    assert bid_price.precision == ask_price.precision == 3
 
-        assert any(
-            isinstance(item, QuoteTick)
-            and item.instrument_id == instrument_id
-            and item.bid_price.precision == item.ask_price.precision == 3
-            for item in client.emitted
-        )
-    finally:
-        loop.close()
+    assert any(
+        isinstance(item, QuoteTick)
+        and item.instrument_id == instrument_id
+        and item.bid_price.precision == item.ask_price.precision == 3
+        for item in client.emitted
+    )

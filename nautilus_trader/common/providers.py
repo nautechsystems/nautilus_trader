@@ -16,6 +16,7 @@
 import asyncio
 
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currencies import register_currency
@@ -209,7 +210,8 @@ class InstrumentProvider:
             The venue specific instrument loading filters to apply.
 
         """
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_all_async(filters))
             self._tasks.add(task)
@@ -235,7 +237,8 @@ class InstrumentProvider:
         """
         PyCondition.not_none(instrument_ids, "instrument_ids")
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_ids_async(instrument_ids, filters))
             self._tasks.add(task)
@@ -261,7 +264,8 @@ class InstrumentProvider:
         """
         PyCondition.not_none(instrument_id, "instrument_id")
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_async(instrument_id, filters))
             self._tasks.add(task)

@@ -56,7 +56,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -72,10 +71,10 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestLiveExecutionReconciliation:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -139,16 +138,6 @@ class TestLiveExecutionReconciliation:
 
         # Prepare components
         self.cache.add_instrument(AUDUSD_SIM)
-
-    def teardown(self):
-        self.data_engine.stop()
-        self.risk_engine.stop()
-        self.exec_engine.stop()
-
-        ensure_all_tasks_completed()
-
-        self.exec_engine.dispose()
-        self.client.dispose()
 
     @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_rejected_order(self):
@@ -671,9 +660,8 @@ class TestReconciliationEdgeCases:
     """
 
     @pytest.fixture()
-    def live_exec_engine(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    def live_exec_engine(self, event_loop):
+        loop = event_loop
 
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
@@ -2618,7 +2606,8 @@ class TestReconciliationFiltering:
     """
 
     def _get_exec_engine(self, config: LiveExecEngineConfig):
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
@@ -2856,7 +2845,8 @@ class TestLiveExecutionReconciliationEdgeCases:
         for event.
         """
         # Arrange
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
@@ -2907,7 +2897,8 @@ class TestLiveExecutionReconciliationEdgeCases:
         hang.
         """
         # Arrange
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
@@ -2939,7 +2930,8 @@ class TestLiveExecutionReconciliationEdgeCases:
         conditions.
         """
         # Arrange
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
@@ -2998,8 +2990,8 @@ class TestLiveExecutionReconciliationEdgeCases:
 
         """
         # Setup
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
 
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
@@ -3063,5 +3055,3 @@ class TestLiveExecutionReconciliationEdgeCases:
 
         # Assert
         assert result is True, "FLAT report should be successfully reconciled"
-
-        loop.close()

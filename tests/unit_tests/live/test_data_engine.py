@@ -36,7 +36,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -52,10 +51,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestLiveDataEngine:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        # Fixture Setup - get the event loop that pytest-asyncio will use for tests
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -82,8 +81,9 @@ class TestLiveDataEngine:
             clock=self.clock,
         )
 
-    def teardown(self):
-        ensure_all_tasks_completed()
+        yield
+
+        # Teardown - only dispose, ensure_all_tasks_completed() will fail with closed loop
         self.engine.dispose()
 
     @pytest.mark.asyncio

@@ -40,10 +40,12 @@ async def test_binance_websocket_client():
     response = await user.create_listen_key()
     key = response["listenKey"]
 
+    loop = asyncio.get_running_loop()
+
     ws = BinanceWebSocketClient(
         clock=clock,
         handler=print,
-        loop=asyncio.get_event_loop(),
+        loop=loop,
     )
 
     ws.subscribe(key=key)

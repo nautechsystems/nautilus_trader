@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 
 import pytest
@@ -39,11 +38,6 @@ from nautilus_trader.model.objects import Quantity
 
 
 @pytest.fixture(scope="session")
-def loop():
-    return asyncio.get_event_loop()
-
-
-@pytest.fixture(scope="session")
 def live_clock():
     return LiveClock()
 
@@ -54,7 +48,7 @@ def live_logger():
 
 
 @pytest.fixture(scope="session")
-def bybit_http_client(loop, live_clock):
+def bybit_http_client(session_event_loop, live_clock):
     client = BybitHttpClient(
         clock=live_clock,
         api_key="BYBIT_API_KEY",

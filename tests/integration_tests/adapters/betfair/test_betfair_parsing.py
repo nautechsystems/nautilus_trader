@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import datetime
 from collections import Counter
 from collections import defaultdict
@@ -339,9 +338,10 @@ class TestBetfairParsingStreaming:
 
 
 class TestBetfairParsing:
-    def setup(self) -> None:
+    @pytest.fixture(autouse=True)
+    def setup(self, session_event_loop) -> None:
         # Fixture Setup
-        self.loop = asyncio.new_event_loop()
+        self.loop = session_event_loop
         self.clock = LiveClock()
         self.instrument = betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
@@ -800,6 +800,10 @@ class TestBetfairParsing:
             },
         }
         assert result == expected
+
+    def teardown(self) -> None:
+        # pytest-asyncio manages loop lifecycle, no cleanup needed
+        pass
 
 
 def request_id() -> int:

@@ -22,6 +22,7 @@ from datetime import timedelta
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
@@ -61,7 +62,11 @@ class TradingNode:
 
         self._config: TradingNodeConfig = config
 
-        loop = loop or asyncio.get_event_loop()
+        if loop is None:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = get_event_loop()
 
         self.kernel = NautilusKernel(
             name=type(self).__name__,

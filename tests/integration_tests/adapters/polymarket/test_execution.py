@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import pkgutil
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -63,9 +62,10 @@ ELECTION_INSTRUMENT = TestInstrumentProvider.binary_option()
 
 
 class TestPolymarketExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -189,6 +189,8 @@ class TestPolymarketExecutionClient:
             reported=True,
             ts_event=self.clock.timestamp_ns(),
         )
+
+        yield
 
     def _setup_test_order_with_venue_id(
         self,

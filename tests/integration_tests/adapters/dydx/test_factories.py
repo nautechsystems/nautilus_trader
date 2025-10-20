@@ -16,8 +16,6 @@
 Unit tests for the dYdX factories.
 """
 
-import asyncio
-
 import pytest
 
 from nautilus_trader.adapters.dydx.common.urls import get_grpc_base_url
@@ -78,7 +76,7 @@ def test_grpc_base_url(is_testnet: bool, expected: str) -> None:
     assert base_url == expected
 
 
-def test_create_dydx_live_data_client() -> None:
+def test_create_dydx_live_data_client(event_loop_for_setup) -> None:
     """
     Test the data client factory for dYdX.
     """
@@ -90,9 +88,8 @@ def test_create_dydx_live_data_client() -> None:
     )
     cache = Cache(database=MockCacheDatabase())
 
-    # Act
     data_client = DYDXLiveDataClientFactory.create(
-        loop=asyncio.get_event_loop(),
+        loop=event_loop_for_setup,
         name="DYDX",
         config=DYDXDataClientConfig(wallet_address="DYDX_WALLET_ADDRESS"),
         msgbus=msgbus,

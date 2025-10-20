@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import datetime
 import re
 from typing import Literal
@@ -38,6 +37,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import log_level_from_str
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
@@ -67,7 +67,8 @@ class HistoricInteractiveBrokersClient:
         log_level: str = "INFO",
         cache_config: CacheConfig | None = None,
     ) -> None:
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         loop.set_debug(True)
         self._clock = LiveClock()
 
