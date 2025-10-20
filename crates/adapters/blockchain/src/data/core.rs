@@ -1305,10 +1305,22 @@ impl BlockchainDataClientCore {
         if !profiler.is_initialized {
             if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
                 profiler.initialize(initial_sqrt_price_x96);
-            }else{
-                anyhow::bail!("Pool is not initialized and it doesnt contain inital price, cannot bootstrap profiler");
+            } else {
+                anyhow::bail!(
+                    "Pool is not initialized and it doesnt contain initial price, cannot bootstrap profiler"
+                );
             }
         }
+
+        let from_block = from_position
+            .as_ref()
+            .map(|block_position| block_position.number)
+            .unwrap_or(profiler.pool.creation_block);
+        let to_block = self.hypersync_client.current_block().await;
+        let total_blocks = to_block.saturating_sub(from_block) + 1;
+
+        // Enable embedded profiler reporting
+        profiler.enable_reporting(from_block, total_blocks, BLOCKS_PROCESS_IN_SYNC_REPORT);
 
         let mut stream = self.cache.database.as_ref().unwrap().stream_pool_events(
             pool.chain.clone(),
@@ -1326,6 +1338,8 @@ impl BlockchainDataClientCore {
                 Err(e) => log::error!("Error processing event: {}", e),
             }
         }
+
+        profiler.finalize_reporting();
 
         Ok((profiler, false))
     }
