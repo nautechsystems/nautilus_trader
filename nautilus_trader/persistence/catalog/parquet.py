@@ -1738,8 +1738,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                     file_uri = f"s3://{file}"
                 elif self.fs_protocol in ("gcs", "gs"):
                     file_uri = f"gs://{file}"
-                elif self.fs_protocol in ("azure", "abfs"):
-                    file_uri = f"azure://{file}"
+                elif self.fs_protocol in ("abfs"):
+                    file_uri = f"{self.path}/{file.partition('/')[2]}"
+                elif self.fs_protocol in ("azure", "az"):
+                    file_uri = f"az://{file}"
                 elif self.fs_protocol in ("http", "https"):
                     file_uri = f"{self.fs_protocol}://{file}"
                 # Add more protocols as needed
@@ -1772,8 +1774,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                 catalog_uri = f"s3://{self.path}"
             elif self.fs_protocol in ("gcs", "gs"):
                 catalog_uri = f"gs://{self.path}"
-            elif self.fs_protocol in ("azure", "abfs"):
-                catalog_uri = f"azure://{self.path}"
+            elif self.fs_protocol in ("abfs"):
+                catalog_uri = f"abfs://{self.path}"
+            elif self.fs_protocol in ("azure", "az"):
+                catalog_uri = f"az://{self.path}"
             elif self.fs_protocol in ("http", "https"):
                 catalog_uri = f"{self.fs_protocol}://{self.path}"
             else:
