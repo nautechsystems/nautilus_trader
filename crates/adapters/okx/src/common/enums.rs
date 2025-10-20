@@ -924,6 +924,56 @@ pub enum OKXTransactionType {
     SpreadTradingCloseShort,
 }
 
+/// Represents the category of an order on OKX.
+///
+/// The category field indicates whether an order is a normal trade, liquidation,
+/// auto-deleveraging (ADL) event, or algorithmic order type. This is critical for
+/// risk management and proper handling of exchange-generated orders.
+///
+/// # References
+///
+/// <https://www.okx.com/docs-v5/en/#order-book-trading-ws-order-channel>
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OKXOrderCategory {
+    /// Normal trading order.
+    Normal,
+    /// Full liquidation order (position completely closed by exchange).
+    FullLiquidation,
+    /// Partial liquidation order (position partially closed by exchange).
+    PartialLiquidation,
+    /// Auto-deleveraging order (position closed to offset counterparty liquidation).
+    Adl,
+    /// Time-Weighted Average Price algorithmic order.
+    Twap,
+    /// Iceberg algorithmic order (hidden quantity).
+    Iceberg,
+    /// One-Cancels-the-Other algorithmic order.
+    Oco,
+    /// Conditional/trigger order.
+    Conditional,
+    /// Move order stop algorithmic order.
+    MoveOrderStop,
+    /// Delivery and exercise (for futures/options settlement).
+    Ddh,
+    /// Unknown or future category (graceful fallback).
+    #[serde(other)]
+    Other,
+}
+
 #[derive(
     Copy,
     Clone,

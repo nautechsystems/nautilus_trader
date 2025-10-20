@@ -4345,7 +4345,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::{OKXExecType, OKXSide};
+    use crate::common::enums::{OKXExecType, OKXOrderCategory, OKXSide};
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
@@ -4769,7 +4769,7 @@ mod tests {
             c_time: 0,
             cancel_source: None,
             cancel_source_reason: None,
-            category: ustr::Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: ustr::Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
             algo_cl_ord_id: None,

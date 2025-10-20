@@ -168,6 +168,7 @@ This will be the final release with support for Python 3.11.
 - Improved Binance fill handling when instrument not cached with clearer error log
 - Improved OKX trade mode detection and fee currency parsing
 - Improved OKX client connection reliability
+- Improved OKX liquidation and ADL fill handling and logging
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined setting of flags in Makefile (#3060), thanks @faysou
