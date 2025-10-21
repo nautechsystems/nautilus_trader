@@ -581,9 +581,28 @@ instrument_ids = [
 instrument_provider_config = InstrumentProviderConfig(load_ids=instrument_ids)
 ```
 
+### Option exchange filtering
+
+The instrument provider automatically filters out option-specific exchanges (such as `binance-options`, `binance-european-options`, `bybit-options`, `okex-options`, and `huobi-dm-options`) when the `instrument_type` filter is not provided or does not include `"option"`.
+
+To explicitly load option instruments, include `"option"` in the `instrument_type` filter:
+
+```python
+from nautilus_trader.config import InstrumentProviderConfig
+
+venues = {"BINANCE", "BYBIT"}
+filters = {
+    "venues": frozenset(venues),
+    "instrument_type": {"option"},  # Explicitly request options
+}
+instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
+```
+
+This filtering mechanism prevents unnecessary API calls to option exchanges when they are not needed, improving performance and reducing API usage.
+
 :::note
 Instruments must be available in the cache for all subscriptions.
-For simplicity, it’s recommended to load all instruments for the venues you intend to subscribe to.
+For simplicity, it's recommended to load all instruments for the venues you intend to subscribe to.
 :::
 
 ## Live data client
