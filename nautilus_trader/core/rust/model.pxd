@@ -104,21 +104,25 @@ cdef extern from "../includes/model.h":
 
 
 
-    # An account type provided by a trading venue or broker.
-    cpdef enum AccountType:
-        # An account with unleveraged cash assets only.
-        CASH # = 1,
-        # An account which facilitates trading on margin, using account assets as collateral.
-        MARGIN # = 2,
-        # An account specific to betting markets.
-        BETTING # = 3,
+    # The type of order book action for an order book event.
+    cpdef enum BookAction:
+        # An order is added to the book.
+        ADD # = 1,
+        # An existing order in the book is updated/modified.
+        UPDATE # = 2,
+        # An existing order in the book is deleted/canceled.
+        DELETE # = 3,
+        # The state of the order book is cleared.
+        CLEAR # = 4,
 
-    # An aggregation source for derived data.
-    cpdef enum AggregationSource:
-        # The data is externally aggregated (outside the Nautilus system boundary).
-        EXTERNAL # = 1,
-        # The data is internally aggregated (inside the Nautilus system boundary).
-        INTERNAL # = 2,
+    # The order side for a specific order, or action related to orders.
+    cpdef enum OrderSide:
+        # No order side is specified.
+        NO_ORDER_SIDE # = 0,
+        # The order is a BUY.
+        BUY # = 1,
+        # The order is a SELL.
+        SELL # = 2,
 
     # The side for the aggressing order of a trade in a market.
     cpdef enum AggressorSide:
@@ -128,6 +132,45 @@ cdef extern from "../includes/model.h":
         BUYER # = 1,
         # The SELL order was the aggressor for the trade.
         SELLER # = 2,
+
+    # The type of price for an instrument in a market.
+    cpdef enum PriceType:
+        # The best quoted price at which buyers are willing to buy a quantity of an instrument.
+        # Often considered the best bid in the order book.
+        BID # = 1,
+        # The best quoted price at which sellers are willing to sell a quantity of an instrument.
+        # Often considered the best ask in the order book.
+        ASK # = 2,
+        # The arithmetic midpoint between the best bid and ask quotes.
+        MID # = 3,
+        # The price at which the last trade of an instrument was executed.
+        LAST # = 4,
+        # A reference price reflecting an instrument's fair value, often used for portfolio
+        # calculations and risk management.
+        MARK # = 5,
+
+    # An aggregation source for derived data.
+    cpdef enum AggregationSource:
+        # The data is externally aggregated (outside the Nautilus system boundary).
+        EXTERNAL # = 1,
+        # The data is internally aggregated (inside the Nautilus system boundary).
+        INTERNAL # = 2,
+
+    # The type of event for an instrument close.
+    cpdef enum InstrumentCloseType:
+        # When the market session ended.
+        END_OF_SESSION # = 1,
+        # When the instrument expiration was reached.
+        CONTRACT_EXPIRED # = 2,
+
+    # An account type provided by a trading venue or broker.
+    cpdef enum AccountType:
+        # An account with unleveraged cash assets only.
+        CASH # = 1,
+        # An account which facilitates trading on margin, using account assets as collateral.
+        MARGIN # = 2,
+        # An account specific to betting markets.
+        BETTING # = 3,
 
     # A broad financial market asset class.
     cpdef enum AssetClass:
@@ -146,16 +189,33 @@ cdef extern from "../includes/model.h":
         # Alternative assets.
         ALTERNATIVE # = 7,
 
-    # The type of order book action for an order book event.
-    cpdef enum BookAction:
-        # An order is added to the book.
-        ADD # = 1,
-        # An existing order in the book is updated/modified.
-        UPDATE # = 2,
-        # An existing order in the book is deleted/canceled.
-        DELETE # = 3,
-        # The state of the order book is cleared.
-        CLEAR # = 4,
+    # The instrument class.
+    cpdef enum InstrumentClass:
+        # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+        SPOT # = 1,
+        # A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+        SWAP # = 2,
+        # A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+        FUTURE # = 3,
+        # A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
+        FUTURES_SPREAD # = 4,
+        # A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+        FORWARD # = 5,
+        # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+        CFD # = 6,
+        # A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+        BOND # = 7,
+        # An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+        OPTION # = 8,
+        # An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
+        OPTION_SPREAD # = 9,
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        WARRANT # = 10,
+        # A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
+        SPORTS_BETTING # = 11,
+        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
+        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+        BINARY_OPTION # = 12,
 
     # The order book type, representing the type of levels granularity and delta updating heuristics.
     cpdef enum BookType:
@@ -187,41 +247,6 @@ cdef extern from "../includes/model.h":
         FIAT # = 2,
         # A type of currency that is based on the value of an underlying commodity.
         COMMODITY_BACKED # = 3,
-
-    # The instrument class.
-    cpdef enum InstrumentClass:
-        # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
-        SPOT # = 1,
-        # A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-        SWAP # = 2,
-        # A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-        FUTURE # = 3,
-        # A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
-        FUTURES_SPREAD # = 4,
-        # A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-        FORWARD # = 5,
-        # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-        CFD # = 6,
-        # A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
-        BOND # = 7,
-        # An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-        OPTION # = 8,
-        # An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
-        OPTION_SPREAD # = 9,
-        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-        WARRANT # = 10,
-        # A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
-        SPORTS_BETTING # = 11,
-        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
-        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
-        BINARY_OPTION # = 12,
-
-    # The type of event for an instrument close.
-    cpdef enum InstrumentCloseType:
-        # When the market session ended.
-        END_OF_SESSION # = 1,
-        # When the instrument expiration was reached.
-        CONTRACT_EXPIRED # = 2,
 
     # The liquidity side for a trade.
     cpdef enum LiquiditySide:
@@ -298,15 +323,6 @@ cdef extern from "../includes/model.h":
         CALL # = 1,
         # A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
         PUT # = 2,
-
-    # The order side for a specific order, or action related to orders.
-    cpdef enum OrderSide:
-        # No order side is specified.
-        NO_ORDER_SIDE # = 0,
-        # The order is a BUY.
-        BUY # = 1,
-        # The order is a SELL.
-        SELL # = 2,
 
     # The status for a specific order.
     #
@@ -389,22 +405,6 @@ cdef extern from "../includes/model.h":
         LONG # = 2,
         # A short position in the market, typically acquired through one or many SELL orders.
         SHORT # = 3,
-
-    # The type of price for an instrument in a market.
-    cpdef enum PriceType:
-        # The best quoted price at which buyers are willing to buy a quantity of an instrument.
-        # Often considered the best bid in the order book.
-        BID # = 1,
-        # The best quoted price at which sellers are willing to sell a quantity of an instrument.
-        # Often considered the best ask in the order book.
-        ASK # = 2,
-        # The arithmetic midpoint between the best bid and ask quotes.
-        MID # = 3,
-        # The price at which the last trade of an instrument was executed.
-        LAST # = 4,
-        # A reference price reflecting an instrument's fair value, often used for portfolio
-        # calculations and risk management.
-        MARK # = 5,
 
     # A record flag bit field, indicating event end and data information.
     cpdef enum RecordFlag:
@@ -503,6 +503,10 @@ cdef extern from "../includes/model.h":
     #
     # This type cannot be `repr(C)` due to the `deltas` vec.
     cdef struct OrderBookDeltas_t:
+        pass
+
+    # Represents a tick in a Uniswap V3-style AMM with liquidity tracking and fee accounting.
+    cdef struct PoolTick:
         pass
 
     # Represents a synthetic instrument with prices derived from component instruments using a
