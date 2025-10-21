@@ -656,18 +656,46 @@ pub fn parse_order_msg_vec(
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     fee_cache: &AHashMap<Ustr, Money>,
+    filled_qty_cache: &AHashMap<Ustr, Quantity>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut order_reports = Vec::with_capacity(data.len());
 
     for msg in data {
-        match parse_order_msg(&msg, account_id, instruments, fee_cache, ts_init) {
+        match parse_order_msg(
+            &msg,
+            account_id,
+            instruments,
+            fee_cache,
+            filled_qty_cache,
+            ts_init,
+        ) {
             Ok(report) => order_reports.push(report),
             Err(e) => tracing::error!("Failed to parse execution report from message: {e}"),
         }
     }
 
     Ok(order_reports)
+}
+
+/// Checks if acc_fill_sz has increased compared to the previous filled quantity.
+fn has_acc_fill_sz_increased(
+    acc_fill_sz: &Option<String>,
+    previous_filled_qty: Option<Quantity>,
+    size_precision: u8,
+) -> bool {
+    if let Some(acc_str) = acc_fill_sz {
+        if acc_str.is_empty() || acc_str == "0" {
+            return false;
+        }
+        if let Ok(current_filled) = parse_quantity(acc_str, size_precision) {
+            if let Some(prev_qty) = previous_filled_qty {
+                return current_filled > prev_qty;
+            }
+            return !current_filled.is_zero();
+        }
+    }
+    false
 }
 
 /// Parses a single OKX order message into an [`ExecutionReport`].
@@ -681,6 +709,7 @@ pub fn parse_order_msg(
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     fee_cache: &AHashMap<Ustr, Money>,
+    filled_qty_cache: &AHashMap<Ustr, Quantity>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<ExecutionReport> {
     let instrument = instruments
@@ -688,15 +717,27 @@ pub fn parse_order_msg(
         .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
 
     let previous_fee = fee_cache.get(&msg.ord_id).copied();
+    let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
 
-    // Only generate fill reports when there's actual new fill data
-    // Check if fillSz is non-zero/non-empty OR trade_id is present
-    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0") || !msg.trade_id.is_empty();
+    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
+        || !msg.trade_id.is_empty()
+        || has_acc_fill_sz_increased(
+            &msg.acc_fill_sz,
+            previous_filled_qty,
+            instrument.size_precision(),
+        );
 
     match msg.state {
         OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
-            parse_fill_report(msg, instrument, account_id, previous_fee, ts_init)
-                .map(ExecutionReport::Fill)
+            parse_fill_report(
+                msg,
+                instrument,
+                account_id,
+                previous_fee,
+                previous_filled_qty,
+                ts_init,
+            )
+            .map(ExecutionReport::Fill)
         }
         _ => parse_order_status_report(msg, instrument, account_id, ts_init)
             .map(ExecutionReport::Order),
@@ -974,6 +1015,7 @@ pub fn parse_fill_report(
     instrument: &InstrumentAny,
     account_id: AccountId,
     previous_fee: Option<Money>,
+    previous_filled_qty: Option<Quantity>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
@@ -992,14 +1034,12 @@ pub fn parse_fill_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    // TODO: Extract to dedicated function:
-    // OKX may not provide fillPx for some orders, fall back to avgPx or lastPx
     let price_str = if !msg.fill_px.is_empty() {
         &msg.fill_px
     } else if !msg.avg_px.is_empty() {
         &msg.avg_px
     } else {
-        &msg.px // Last resort, use order price
+        &msg.px
     };
     let last_px = parse_price(price_str, price_precision).map_err(|e| {
         anyhow::anyhow!(
@@ -1011,28 +1051,44 @@ pub fn parse_fill_report(
         )
     })?;
 
-    // TODO: Extract to dedicated function:
-    // OKX may not provide fillSz for some orders, fall back to accFillSz (accumulated fill size)
-    let qty_str = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
-        &msg.fill_sz
+    // OKX provides fillSz (incremental fill) or accFillSz (cumulative total)
+    // If fillSz is provided, use it directly as the incremental fill quantity
+    let last_qty = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        parse_quantity(&msg.fill_sz, size_precision)
+            .map_err(|e| anyhow::anyhow!("Failed to parse fill_sz='{}': {e}", msg.fill_sz,))?
     } else if let Some(ref acc_fill_sz) = msg.acc_fill_sz {
+        // If fillSz is missing but accFillSz is available, calculate incremental fill
         if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
-            acc_fill_sz
+            let current_filled = parse_quantity(acc_fill_sz, size_precision).map_err(|e| {
+                anyhow::anyhow!("Failed to parse acc_fill_sz='{}': {e}", acc_fill_sz,)
+            })?;
+
+            // Calculate incremental fill as: current_total - previous_total
+            if let Some(prev_qty) = previous_filled_qty {
+                let incremental = current_filled - prev_qty;
+                if incremental.is_zero() {
+                    anyhow::bail!(
+                        "Incremental fill quantity is zero (acc_fill_sz='{}', previous_filled_qty={})",
+                        acc_fill_sz,
+                        prev_qty
+                    );
+                }
+                incremental
+            } else {
+                // First fill, use accumulated as incremental
+                current_filled
+            }
         } else {
-            &msg.sz // Last resort, use order size
+            anyhow::bail!(
+                "Cannot determine fill quantity: fill_sz is empty/zero and acc_fill_sz is empty/zero"
+            );
         }
     } else {
-        &msg.sz // Last resort, use order size
+        anyhow::bail!(
+            "Cannot determine fill quantity: fill_sz='{}' and acc_fill_sz is None",
+            msg.fill_sz
+        );
     };
-    let last_qty = parse_quantity(qty_str, size_precision).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to parse quantity (fill_sz='{}', acc_fill_sz={:?}, sz='{}'): {}",
-            msg.fill_sz,
-            msg.acc_fill_sz,
-            msg.sz,
-            e
-        )
-    })?;
 
     let fee_str = msg.fee.as_deref().unwrap_or("0");
     let fee_value = fee_str
@@ -1293,6 +1349,76 @@ mod tests {
         http::models::OKXAccount,
         websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
     };
+
+    fn create_stub_instrument() -> CryptoPerpetual {
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    fn create_stub_order_msg(
+        fill_sz: &str,
+        acc_fill_sz: Option<String>,
+        order_id: &str,
+        trade_id: &str,
+    ) -> OKXOrderMsg {
+        OKXOrderMsg {
+            acc_fill_sz,
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: OKXOrderCategory::Normal,
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "test_order_1".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("-1.0".to_string()),
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "50000.0".to_string(),
+            fill_sz: fill_sz.to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from(order_id),
+            ord_type: OKXOrderType::Market,
+            pnl: "0".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            exec_type: OKXExecType::Taker,
+            sz: "0.03".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: trade_id.to_string(),
+            u_time: 1746947317402,
+        }
+    }
 
     #[rstest]
     fn test_parse_books_snapshot() {
@@ -1715,8 +1841,16 @@ mod tests {
 
         let ts_init = UnixNanos::default();
         let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
 
-        let result = parse_order_msg_vec(data, account_id, &instruments, &fee_cache, ts_init);
+        let result = parse_order_msg_vec(
+            data,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            ts_init,
+        );
 
         assert!(result.is_ok());
         let order_reports = result.unwrap();
@@ -1852,6 +1986,7 @@ mod tests {
             order_msg,
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
+            None,
             None,
             ts_init,
         );
@@ -2022,6 +2157,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             None,
+            None,
             ts_init,
         )
         .unwrap();
@@ -2068,6 +2204,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             Some(fill_report_1.commission),
+            Some(fill_report_1.last_qty),
             ts_init,
         )
         .unwrap();
@@ -2150,6 +2287,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             None,
+            None,
             ts_init,
         )
         .unwrap();
@@ -2196,6 +2334,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             Some(fill_report_1.commission),
+            Some(fill_report_1.last_qty),
             ts_init,
         )
         .unwrap();
@@ -2276,6 +2415,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             None,
+            None,
             ts_init,
         )
         .unwrap();
@@ -2324,6 +2464,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             Some(fill_report_1.commission),
+            Some(fill_report_1.last_qty),
             ts_init,
         )
         .unwrap();
@@ -2405,6 +2546,7 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             None,
+            None,
             ts_init,
         )
         .unwrap();
@@ -2451,12 +2593,176 @@ mod tests {
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
             Some(fill_report_1.commission),
+            Some(fill_report_1.last_qty),
             ts_init,
         )
         .unwrap();
 
         // Incremental is negative: 1.5 - 2.0 = -0.5
         assert_eq!(fill_report_2.commission, Money::new(-0.5, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_empty_fill_sz_first_fill() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let order_msg =
+            create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "trade_1");
+
+        let fill_report = parse_fill_report(
+            &order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(fill_report.last_qty, Quantity::from("0.01"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_empty_fill_sz_subsequent_fills() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let order_msg_1 =
+            create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "trade_1");
+
+        let fill_report_1 = parse_fill_report(
+            &order_msg_1,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(fill_report_1.last_qty, Quantity::from("0.01"));
+
+        let order_msg_2 =
+            create_stub_order_msg("", Some("0.03".to_string()), "1234567890", "trade_2");
+
+        let fill_report_2 = parse_fill_report(
+            &order_msg_2,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(fill_report_1.commission),
+            Some(fill_report_1.last_qty),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(fill_report_2.last_qty, Quantity::from("0.02"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_error_both_empty() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let order_msg = create_stub_order_msg("", Some("".to_string()), "1234567890", "trade_1");
+
+        let result = parse_fill_report(
+            &order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            None,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Cannot determine fill quantity"));
+        assert!(err_msg.contains("empty/zero"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_error_acc_fill_sz_none() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let order_msg = create_stub_order_msg("", None, "1234567890", "trade_1");
+
+        let result = parse_fill_report(
+            &order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            None,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Cannot determine fill quantity"));
+        assert!(err_msg.contains("acc_fill_sz is None"));
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_acc_fill_sz_only_update() {
+        // Test that we emit fill reports when OKX only updates acc_fill_sz without fill_sz or trade_id
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let fee_cache = AHashMap::new();
+        let mut filled_qty_cache = AHashMap::new();
+
+        // First update: acc_fill_sz = 0.01, no fill_sz, no trade_id
+        let msg_1 = create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "");
+
+        let report_1 = parse_order_msg(
+            &msg_1,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            ts_init,
+        )
+        .unwrap();
+
+        // Should generate a fill report (not a status report)
+        assert!(matches!(report_1, ExecutionReport::Fill(_)));
+        if let ExecutionReport::Fill(fill) = &report_1 {
+            assert_eq!(fill.last_qty, Quantity::from("0.01"));
+        }
+
+        // Update cache
+        filled_qty_cache.insert(Ustr::from("1234567890"), Quantity::from("0.01"));
+
+        // Second update: acc_fill_sz increased to 0.03, still no fill_sz or trade_id
+        let msg_2 = create_stub_order_msg("", Some("0.03".to_string()), "1234567890", "");
+
+        let report_2 = parse_order_msg(
+            &msg_2,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            ts_init,
+        )
+        .unwrap();
+
+        // Should still generate a fill report for the incremental 0.02
+        assert!(matches!(report_2, ExecutionReport::Fill(_)));
+        if let ExecutionReport::Fill(fill) = &report_2 {
+            assert_eq!(fill.last_qty, Quantity::from("0.02"));
+        }
     }
 
     #[rstest]
@@ -2689,12 +2995,14 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
         let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
             vec![msg.clone()],
             account_id,
             &instruments,
             &fee_cache,
+            &filled_qty_cache,
             UnixNanos::default(),
         );
 
@@ -2759,12 +3067,14 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
         let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
             vec![msg.clone()],
             account_id,
             &instruments,
             &fee_cache,
+            &filled_qty_cache,
             UnixNanos::default(),
         );
 
@@ -2831,12 +3141,14 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
         let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
             vec![msg.clone()],
             account_id,
             &instruments,
             &fee_cache,
+            &filled_qty_cache,
             UnixNanos::default(),
         );
 
@@ -2951,11 +3263,13 @@ mod tests {
         };
 
         let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
         let result = parse_order_msg(
             &partial_liq_msg,
             account_id,
             &instruments,
             &fee_cache,
+            &filled_qty_cache,
             UnixNanos::default(),
         );
 

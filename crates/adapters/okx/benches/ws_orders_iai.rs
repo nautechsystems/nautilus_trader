@@ -78,11 +78,19 @@ fn build_context() -> (Vec<OKXOrderMsg>, AHashMap<Ustr, InstrumentAny>, AccountI
 fn bench_parse_order_msg() {
     let (orders, instruments, account_id) = build_context();
     let fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+    let filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
     let ts_init = UnixNanos::default();
 
     for msg in &orders {
-        let report = parse_order_msg(msg, account_id, &instruments, &fee_cache, ts_init)
-            .expect("order report");
+        let report = parse_order_msg(
+            msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            ts_init,
+        )
+        .expect("order report");
         black_box(report);
     }
 }
