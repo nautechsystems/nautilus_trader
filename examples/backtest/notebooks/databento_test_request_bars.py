@@ -22,6 +22,11 @@
 # %%
 import pandas as pd
 
+# %% [markdown]
+# ## parameters
+# %%
+# Set the data path for Databento data
+import nautilus_trader.adapters.databento.data_utils as db_data_utils
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.node import BacktestNode
@@ -34,6 +39,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
@@ -45,12 +51,6 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
-# %% [markdown]
-# ## parameters
-
-# %%
-# Set the data path for Databento data
-# import nautilus_trader.adapters.databento.data_utils as db_data_utils
 # DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
@@ -65,12 +65,12 @@ start_time = "2024-07-01T23:40"
 end_time = "2024-07-02T00:10"
 
 # A valid databento key can be entered here (or as an env variable of the same name)
-# DATABENTO_API_KEY = None
-# db_data_utils.init_databento_client(DATABENTO_API_KEY)
+DATABENTO_API_KEY = None
+db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
 # https://databento.com/docs/schemas-and-data-formats/whats-a-schema
 futures_data_bars = databento_data(
-    future_symbols,
+    ["ESU4", "NQU4"],
     start_time,
     end_time,
     "ohlcv-1m",
@@ -111,13 +111,14 @@ class TestHistoricalAggConfig(StrategyConfig, frozen=True):
 class TestHistoricalAggStrategy(Strategy):
     def __init__(self, config: TestHistoricalAggConfig):
         super().__init__(config=config)
+        self.bars_subscribed = False
 
         # self.external_sma = SimpleMovingAverage(2)
         # self.composite_sma = SimpleMovingAverage(2)
 
     def on_start(self):
         if self.config.data_type == "bars":
-            ######### for testing bars
+            # Define start and end historical request times
             utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
@@ -125,6 +126,7 @@ class TestHistoricalAggStrategy(Strategy):
             end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
             self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
+            # Define bar types
             symbol_id = self.config.symbol_id
             self.external_bar_type = BarType.from_str(f"{symbol_id}-1-MINUTE-LAST-EXTERNAL")
             self.bar_type_1 = BarType.from_str(
@@ -137,35 +139,54 @@ class TestHistoricalAggStrategy(Strategy):
                 f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
             )
 
-            self.request_instrument(symbol_id)
-            # self.subscribe_instruments(symbol_id.venue)
+            # Requesting instruments
+            # self.request_instrument(symbol_id)
+            # self.request_instrument(InstrumentId.from_str("NQU4.XCME"))
+            self.request_instruments(symbol_id.venue)
 
-            # registering bar types with indicators, request_aggregated_bars below will update both indicators
+            # Test registering bar types with indicators, request_aggregated_bars below will update both indicators
             # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
             # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
-            self.request_aggregated_bars(
-                [self.bar_type_1, self.bar_type_2, self.bar_type_3],
-                start=start_historical_bars,
-                end=end_historical_bars,
-                update_subscriptions=True,
-                include_external_data=True,
+            # Test request_aggregated_bars
+            # self.request_aggregated_bars(
+            #     [self.bar_type_1, self.bar_type_2, self.bar_type_3],
+            #     start=start_historical_bars,
+            #     end=end_historical_bars,
+            #     update_subscriptions=True,
+            #     include_external_data=True,
+            #     params={
+            #         "time_range_generator": "",  # Use default time range generator
+            #         "durations_seconds": [120],  # Request 2-minute chunks
+            #     },
+            #     callback=self.strategy_subscribe_bars,
+            # )
+
+            # Test request_join
+            self.external_bar_type_2 = BarType.from_str("NQU4.XCME-1-MINUTE-LAST-EXTERNAL")
+            uuid_1 = self.request_bars(
+                self.external_bar_type,
+                unix_nanos_to_dt(0),
+                join_request=True,
+                callback=lambda x: self.user_log("join bars ES done", log_color=LogColor.BLUE),
+            )
+            uuid_2 = self.request_bars(
+                self.external_bar_type_2,
+                unix_nanos_to_dt(0),
+                join_request=True,
+                callback=lambda x: self.user_log("join bars NQ done", log_color=LogColor.BLUE),
+            )
+            self.request_join(
+                (uuid_1, uuid_2),
+                start_historical_bars,
+                end_historical_bars,
                 params={
                     "time_range_generator": "",  # Use default time range generator
                     "durations_seconds": [120],  # Request 2-minute chunks
                 },
+                callback=lambda x: self.user_log("join bars done", log_color=LogColor.BLUE),
             )
-
-            self.user_log("request_aggregated_bars done")
-
-            self.subscribe_bars(self.external_bar_type)
-            self.subscribe_bars(self.bar_type_1)
-            self.subscribe_bars(self.bar_type_2)
-            self.subscribe_bars(self.bar_type_3)
-
-            self.user_log("subscribe_bars done")
         elif self.config.data_type == "quotes":
-            ######## for testing quotes
             utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
@@ -187,12 +208,9 @@ class TestHistoricalAggStrategy(Strategy):
                 end=end_historical_bars,
                 update_subscriptions=True,
                 include_external_data=False,
+                callback=self.strategy_subscribe_bars,
             )
-
-            self.subscribe_bars(self.bar_type_1)
-            self.subscribe_bars(self.bar_type_2)
         if self.config.data_type == "trades":
-            ######## for testing trades
             utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
                 minutes=self.config.historical_start_delay,
@@ -214,10 +232,28 @@ class TestHistoricalAggStrategy(Strategy):
                 end=end_historical_bars,
                 update_subscriptions=True,
                 include_external_data=False,
+                callback=self.strategy_subscribe_bars,
             )
 
+        self.user_log("request_aggregated_bars done")
+
+    def on_instrument(self, data):
+        self.user_log(f"instrument received {data}", log_color=LogColor.BLUE)
+
+    def strategy_subscribe_bars(self, uuid):
+        if self.config.data_type == "bars":
+            self.subscribe_bars(self.external_bar_type)
             self.subscribe_bars(self.bar_type_1)
             self.subscribe_bars(self.bar_type_2)
+            self.subscribe_bars(self.bar_type_3)
+        elif self.config.data_type == "quotes":
+            self.subscribe_bars(self.bar_type_1)
+            self.subscribe_bars(self.bar_type_2)
+        if self.config.data_type == "trades":
+            self.subscribe_bars(self.bar_type_1)
+            self.subscribe_bars(self.bar_type_2)
+
+        self.bars_subscribed = True
 
     def on_historical_data(self, data):
         if type(data) is Bar:
@@ -236,18 +272,19 @@ class TestHistoricalAggStrategy(Strategy):
         # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
         # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")
 
-    def user_log(self, msg):
-        self.log.warning(str(msg), color=LogColor.GREEN)
+    def user_log(self, msg, log_color=LogColor.GREEN):
+        self.log.warning(str(msg), color=log_color)
 
     def on_stop(self):
-        if self.config.data_type == "bars":
-            self.unsubscribe_bars(self.external_bar_type)
-            self.unsubscribe_bars(self.bar_type_1)
-            self.unsubscribe_bars(self.bar_type_2)
-            self.unsubscribe_bars(self.bar_type_3)
-        elif self.config.data_type in ["quote", "trades"]:
-            self.unsubscribe_bars(self.bar_type_1)
-            self.unsubscribe_bars(self.bar_type_2)
+        if self.bars_subscribed:
+            if self.config.data_type == "bars":
+                self.unsubscribe_bars(self.external_bar_type)
+                self.unsubscribe_bars(self.bar_type_1)
+                self.unsubscribe_bars(self.bar_type_2)
+                self.unsubscribe_bars(self.bar_type_3)
+            elif self.config.data_type in ["quote", "trades"]:
+                self.unsubscribe_bars(self.bar_type_1)
+                self.unsubscribe_bars(self.bar_type_2)
 
 
 # %% [markdown]
@@ -370,5 +407,7 @@ node = BacktestNode(configs=configs)
 
 # %%
 results = node.run()
+
+# %%
 
 # %%

@@ -26,10 +26,8 @@ import cython
 import msgspec
 import numpy as np
 import pandas as pd
-import pyarrow
 import pytz
 
-from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
@@ -38,13 +36,11 @@ cimport numpy as np
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
-from libc.stdio cimport printf
 
 from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.common.messages cimport ShutdownSystem
@@ -89,11 +85,9 @@ from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_time
 from nautilus_trader.core.rust.common cimport logging_init
-from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
-from nautilus_trader.core.rust.common cimport logging_shutdown
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
@@ -114,8 +108,6 @@ from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.core cimport nanos_to_millis
-from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -563,7 +555,6 @@ cpdef void register_component_clock(UUID4 instance_id, Clock clock):
     Condition.not_none(clock, "clock")
 
     cdef list[Clock] clocks = _COMPONENT_CLOCKS.get(instance_id)
-
     if clocks is None:
         clocks = []
         _COMPONENT_CLOCKS[instance_id] = clocks
@@ -956,6 +947,7 @@ cdef class LiveClock(Clock):
 
     cpdef uint64_t next_time_ns(self, str name):
         Condition.valid_string(name, "name")
+
         return live_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
@@ -1555,7 +1547,6 @@ cpdef void log_sysinfo(str component):
     logging_log_sysinfo(pystr_to_cstr(component))
 
 
-
 cpdef ComponentState component_state_from_str(str value):
     return component_state_from_cstr(pystr_to_cstr(value))
 
@@ -1858,6 +1849,7 @@ cdef class Component:
         # Cancel all active timers to prevent post-disposal execution
         if self._clock is not None:
             self._clock.cancel_timers()
+
         # Optionally override in subclass
 
     cpdef void _degrade(self):
@@ -2281,9 +2273,11 @@ cdef class MessageBus:
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
+
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+
         self._streaming_types = set()
         self._resolved = False
 
@@ -2603,13 +2597,12 @@ cdef class MessageBus:
 
         callback = self._correlation_index.pop(response.correlation_id, None)
         if callback is None:
-            self._log.error(
-                f"Cannot handle response: "
-                f"callback not found for correlation_id {response.correlation_id}",
-            )
-            return  # Cannot handle
+            self._log.debug(
+                f"No callback for correlation_id {response.correlation_id}",
+            )  # Cannot handle
+        else:
+            callback(response)
 
-        callback(response)
         self.res_count += 1
 
     cpdef void subscribe(
@@ -2667,9 +2660,9 @@ cdef class MessageBus:
 
         cdef list matches = []
         cdef list patterns = list(self._patterns.keys())
-
         cdef str pattern
         cdef list subs
+
         for pattern in patterns:
             if is_matching(topic, pattern):
                 subs = list(self._patterns[pattern])
@@ -2709,9 +2702,8 @@ cdef class MessageBus:
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
+        # Check if patterns exist for sub
         cdef list patterns = self._subscriptions.get(sub)
-
-        # Check if exists
         if patterns is None:
             self._log.warning(f"{sub} not found")
             return

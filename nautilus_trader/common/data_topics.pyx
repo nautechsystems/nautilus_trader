@@ -55,7 +55,7 @@ cdef class TopicCache:
         self._topic_cache_bars = {}
         self._topic_cache_signal = {}
 
-    cdef str get_instruments_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_instrument_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_instruments.get(key)
         if topic is None:
@@ -64,7 +64,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_instruments_topic_pattern(self, Venue venue):
+    cpdef str get_instruments_topic(self, Venue venue):
         """
         Get the topic pattern for all instruments at a venue.
 
@@ -86,7 +86,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_book_topic(self, type book_data_type, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_book_topic(self, type book_data_type, InstrumentId instrument_id, bint historical = False):
         if book_data_type == OrderBookDelta:
             return self.get_deltas_topic(instrument_id, historical)
         elif book_data_type == OrderBookDepth10:
@@ -94,7 +94,7 @@ cdef class TopicCache:
         else:  # pragma: no cover (design-time error)
             raise TypeError(f"Invalid book data type, was {book_data_type}")
 
-    cdef str get_deltas_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_deltas_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_deltas.get(key)
         if topic is None:
@@ -103,7 +103,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_depth_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_depth_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_depth.get(key)
         if topic is None:
@@ -112,7 +112,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_quotes_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_quotes_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_quotes.get(key)
         if topic is None:
@@ -121,7 +121,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_trades_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_trades_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_trades.get(key)
         if topic is None:
@@ -130,7 +130,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_status_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_status_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_status.get(key)
         if topic is None:
@@ -139,7 +139,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_mark_prices_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_mark_prices_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_mark_prices.get(key)
         if topic is None:
@@ -148,7 +148,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_index_prices_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_index_prices_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_index_prices.get(key)
         if topic is None:
@@ -157,7 +157,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_funding_rates_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_funding_rates_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_funding_rates.get(key)
         if topic is None:
@@ -166,7 +166,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_close_prices_topic(self, InstrumentId instrument_id, bint historical = False):
+    cpdef str get_close_prices_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
         cdef str topic = self._topic_cache_close_prices.get(key)
         if topic is None:
@@ -175,7 +175,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms, bint historical = False):
+    cpdef str get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms, bint historical = False):
         cdef tuple key = (instrument_id, interval_ms, historical)
         cdef str topic = self._topic_cache_snapshots.get(key)
         if topic is None:
@@ -184,7 +184,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = None, bint historical = False):
+    cpdef str get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = None, bint historical = False):
         cdef:
             tuple key
             str topic
@@ -208,7 +208,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_bars_topic(self, BarType bar_type, bint historical = False):
+    cpdef str get_bars_topic(self, BarType bar_type, bint historical = False):
         cdef tuple key = (bar_type, historical)
         cdef str topic = self._topic_cache_bars.get(key)
         if topic is None:
@@ -217,7 +217,7 @@ cdef class TopicCache:
 
         return topic
 
-    cdef str get_signal_topic(self, str name):
+    cpdef str get_signal_topic(self, str name):
         """
         Get the topic for a signal subscription.
 

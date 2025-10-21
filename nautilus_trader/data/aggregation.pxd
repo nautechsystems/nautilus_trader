@@ -98,9 +98,12 @@ cdef class RenkoBarAggregator(BarAggregator):
 
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
-    cdef bint _build_on_next_tick
-    cdef uint64_t _stored_open_ns
-    cdef uint64_t _stored_close_ns
+
+    cdef readonly timedelta interval
+    cdef readonly uint64_t interval_ns
+    cdef readonly uint64_t next_close_ns
+    cdef readonly uint64_t stored_open_ns
+
     cdef str _timer_name
     cdef bint _is_left_open
     cdef bint _timestamp_on_close
@@ -111,20 +114,10 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef object _time_bars_origin_offset
     cdef list _historical_events
 
-    cdef readonly timedelta interval
-    """The aggregators time interval.\n\n:returns: `timedelta`"""
-    cdef readonly uint64_t interval_ns
-    """The aggregators time interval.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t next_close_ns
-    """The aggregators next closing time.\n\n:returns: `uint64_t`"""
-
     cpdef void set_clock(self, Clock clock)
-    cpdef void set_time(self, uint64_t ts_init)
-    cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
     cpdef void start_timer(self)
     cpdef void stop_timer(self)
     cdef void _preprocess_historical_events(self, uint64_t ts_init)
     cdef void _postprocess_historical_events(self, uint64_t ts_init)
-    cdef void _process_build_on_next_tick(self, uint64_t ts_init)
     cpdef void _build_bar(self, TimeEvent event)
