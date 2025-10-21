@@ -427,6 +427,24 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
+
+            # Check if price changed (for price_match orders)
+            if order.has_price:
+                binance_price = Price(float(self.p), price_precision)
+                if binance_price != order.price:
+                    # Preserve trigger price for stop orders (priceMatch only affects limit price)
+                    trigger_price = order.trigger_price if order.has_trigger_price else None
+                    exec_client.generate_order_updated(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=order.quantity,
+                        price=binance_price,
+                        trigger_price=trigger_price,
+                        ts_event=ts_event,
+                        venue_order_id_modified=True,  # Setting true to avoid spurious warning log
+                    )
         elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
             if self.x == BinanceExecutionType.CALCULATED:
                 exec_client._log.info(

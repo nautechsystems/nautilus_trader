@@ -87,6 +87,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Binance execution handling for self-trade prevention and liquidations (#3006), thanks for reporting @bmlquant
 - Fixed Binance trailing stop to use server-side activation price (#3056), thanks for reporting @hope2see
 - Fixed Binance Futures reconciliation duplicated position bug (#3067), thanks @lisiyuan656
+- Fixed Binance `price_match` order price synchronization (#3074)
 - Fixed Binance Futures position risk query to use v3 API returning only symbols with positions or open orders (#3062), thanks for reporting @woung717
 - Fixed Binance Futures liquidation and ADL fill handling
 - Fixed BitMEX testnet support

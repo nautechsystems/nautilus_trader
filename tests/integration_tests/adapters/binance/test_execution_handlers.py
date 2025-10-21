@@ -290,6 +290,141 @@ class TestBinanceSpotExecutionHandlers:
         assert call_kwargs["reason"] == "GTX_ORDER_REJECT"
         assert call_kwargs["due_post_only"] is True  # GTX order rejected
 
+    def test_new_execution_limit_order_price_match_generates_order_updated(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_new_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.order_type = mocker.MagicMock()
+        mock_order.order_type.name = "LIMIT"
+        mock_order.price = Price.from_str("2500.00000000")  # Original price
+        mock_order.quantity = Quantity.from_str("1.00000000")
+        mock_order.has_price = True  # LIMIT orders have prices
+        mock_order.has_trigger_price = False  # LIMIT orders don't have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be LIMIT
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.LIMIT
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str("2495.50000000")  # Price from message
+        assert update_kwargs["quantity"] == mock_order.quantity
+        assert update_kwargs["trigger_price"] is None  # LIMIT order has no trigger
+
+    def test_new_execution_stop_limit_order_price_match_preserves_trigger_price(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_new_stop_limit_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2410.00000000")  # Original limit price
+        mock_order.trigger_price = Price.from_str("2400.00000000")  # Original stop price
+        mock_order.quantity = Quantity.from_str("1.00000000")
+        mock_order.has_price = True  # STOP_LIMIT orders have prices
+        mock_order.has_trigger_price = True  # STOP_LIMIT orders have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be STOP_LIMIT
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.STOP_LIMIT
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price but preserved trigger price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str(
+            "2405.75000000",
+        )  # New limit price from message
+        assert update_kwargs["trigger_price"] == Price.from_str(
+            "2400.00000000",
+        )  # Preserved stop price
+        assert update_kwargs["quantity"] == mock_order.quantity
+
+    def test_new_execution_limit_if_touched_order_price_match_preserves_trigger_price(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_new_limit_if_touched_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2510.00000000")  # Original limit price
+        mock_order.trigger_price = Price.from_str("2500.00000000")  # Original trigger price
+        mock_order.quantity = Quantity.from_str("1.00000000")
+        mock_order.has_price = True  # LIMIT_IF_TOUCHED orders have prices
+        mock_order.has_trigger_price = True  # LIMIT_IF_TOUCHED orders have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be LIMIT_IF_TOUCHED
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.LIMIT_IF_TOUCHED
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price but preserved trigger price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str(
+            "2505.25000000",
+        )  # New limit price from message
+        assert update_kwargs["trigger_price"] == Price.from_str(
+            "2500.00000000",
+        )  # Preserved trigger price
+        assert update_kwargs["quantity"] == mock_order.quantity
+
 
 class TestBinanceFuturesExecutionHandlers:
     """
@@ -495,3 +630,130 @@ class TestBinanceFuturesExecutionHandlers:
         status_idx = exec_client.mock_calls.index(status_call)
         fill_idx = exec_client.mock_calls.index(fill_call)
         assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
+
+    def test_new_execution_limit_order_price_match_generates_order_updated(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_new_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2500.00")  # Original price
+        mock_order.quantity = Quantity.from_str("1.000")
+        mock_order.has_price = True  # LIMIT orders have prices
+        mock_order.has_trigger_price = False  # LIMIT orders don't have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be LIMIT
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.LIMIT
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str("2495.50")  # Price from message
+        assert update_kwargs["quantity"] == mock_order.quantity
+        assert update_kwargs["trigger_price"] is None  # LIMIT order has no trigger
+
+    def test_new_execution_stop_limit_order_price_match_preserves_trigger_price(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_new_stop_limit_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2410.00")  # Original limit price
+        mock_order.trigger_price = Price.from_str("2400.00")  # Original stop price
+        mock_order.quantity = Quantity.from_str("1.000")
+        mock_order.has_price = True  # STOP_LIMIT orders have prices
+        mock_order.has_trigger_price = True  # STOP_LIMIT orders have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be STOP_LIMIT
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.STOP_LIMIT
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price but preserved trigger price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str("2405.75")  # New limit price from message
+        assert update_kwargs["trigger_price"] == Price.from_str("2400.00")  # Preserved stop price
+        assert update_kwargs["quantity"] == mock_order.quantity
+
+    def test_new_execution_limit_if_touched_order_price_match_preserves_trigger_price(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_new_limit_if_touched_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Create mocked order with different price than in message
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2510.00")  # Original limit price
+        mock_order.trigger_price = Price.from_str("2500.00")  # Original trigger price
+        mock_order.quantity = Quantity.from_str("1.000")
+        mock_order.has_price = True  # LIMIT_IF_TOUCHED orders have prices
+        mock_order.has_trigger_price = True  # LIMIT_IF_TOUCHED orders have trigger prices
+
+        # Create mocked exec_client
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Mock order type to be LIMIT_IF_TOUCHED
+        from nautilus_trader.model.enums import OrderType
+
+        mock_order.order_type = OrderType.LIMIT_IF_TOUCHED
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        # Verify OrderUpdated was called with new price but preserved trigger price
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str("2505.25")  # New limit price from message
+        assert update_kwargs["trigger_price"] == Price.from_str(
+            "2500.00",
+        )  # Preserved trigger price
+        assert update_kwargs["quantity"] == mock_order.quantity
