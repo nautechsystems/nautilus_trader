@@ -502,24 +502,92 @@ DBN records are decoded as PyO3 (Rust) objects. It's worth noting that legacy Cy
 objects can also be passed to `write_data`, but these need to be converted back to
 pyo3 objects under the hood (so passing PyO3 objects is an optimization).
 
+### Loading instruments
+
+**Important**: When loading market data (MBO, trades, quotes, bars, etc.) into a catalog, you must first load the corresponding instrument definitions from DEFINITION schema files.
+The catalog needs instruments to be present before it can store market data. Market data files (MBO, TRADES, etc.) do not contain instrument definitions.
+
 ```python
 # Initialize the catalog interface
 # (will use the `NAUTILUS_PATH` env var as the path)
 catalog = ParquetDataCatalog.from_env()
 
+loader = DatabentoDataLoader()
+
+# Step 1: Load instrument definitions FIRST
+# You must obtain DEFINITION schema files from Databento for your instruments
+instruments = loader.from_dbn_file(
+    path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-definition.dbn.zst",
+    as_legacy_cython=False,  # Use PyO3 for optimal performance
+)
+
+# Write instruments to catalog
+catalog.write_data(instruments)
+
+# Step 2: Now load and write market data
 instrument_id = InstrumentId.from_str("TSLA.XNAS")
 
-# Decode data to pyo3 objects
-loader = DatabentoDataLoader()
+# Decode trades to pyo3 objects
 trades = loader.from_dbn_file(
     path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst",
     instrument_id=instrument_id,
     as_legacy_cython=False,  # This is an optimization for writing to the catalog
 )
 
-# Write data
+# Write market data
 catalog.write_data(trades)
 ```
+
+#### Loading multiple data types for backtesting
+
+When preparing a catalog for backtesting with multiple data types (e.g., MBO order book data), always load instruments first:
+
+```python
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
+catalog = ParquetDataCatalog.from_env()
+loader = DatabentoDataLoader()
+
+# Step 1: Load instrument definitions from DEFINITION files
+instruments = loader.from_dbn_file(
+    path="equity-definitions.dbn.zst",
+    as_legacy_cython=False,
+)
+catalog.write_data(instruments)
+
+# Step 2: Load market data (MBO, trades, quotes, etc.)
+instrument_id = InstrumentId.from_str("AAPL.XNAS")
+
+# Load MBO order book deltas
+deltas = loader.from_dbn_file(
+    path="aapl-mbo.dbn.zst",
+    instrument_id=instrument_id,  # Optional but improves performance
+    as_legacy_cython=False,
+)
+catalog.write_data(deltas)
+
+# Load trades
+trades = loader.from_dbn_file(
+    path="aapl-trades.dbn.zst",
+    instrument_id=instrument_id,
+    as_legacy_cython=False,
+)
+catalog.write_data(trades)
+
+# Verify instruments are in the catalog
+print(catalog.instruments())  # Should show your loaded instruments
+```
+
+:::tip
+You can verify your instruments loaded correctly by calling `catalog.instruments()` which returns a list of all instruments in the catalog. If this returns an empty list, you need to load DEFINITION files first.
+:::
+
+:::info
+To obtain DEFINITION schema files from Databento, use the Databento API or CLI to download instrument definitions for your symbols and date ranges.
+See the [Databento documentation](https://databento.com/docs/api-reference-historical/timeseries/timeseries-get-range) for details on requesting definition data.
+:::
 
 :::info
 See also the [Data concepts guide](../concepts/data.md).
