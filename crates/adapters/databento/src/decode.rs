@@ -370,6 +370,15 @@ pub fn decode_mbo_msg(
         return Ok((None, None));
     }
 
+    let action = parse_book_action(msg.action)?;
+
+    // Skip messages with NoOrderSide for non-Clear actions
+    // These are typically fill/modify messages that reference existing orders
+    // and cannot be represented as standalone order book deltas
+    if side == OrderSide::NoOrderSide && action != BookAction::Clear {
+        return Ok((None, None));
+    }
+
     let order = BookOrder::new(
         side,
         Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
@@ -381,7 +390,7 @@ pub fn decode_mbo_msg(
 
     let delta = OrderBookDelta::new(
         instrument_id,
-        parse_book_action(msg.action)?,
+        action,
         order,
         msg.flags.raw(),
         msg.sequence.into(),
@@ -1632,6 +1641,33 @@ mod tests {
         assert_eq!(delta.sequence, 1_000_000);
         assert_eq!(delta.ts_event, ts_recv);
         assert_eq!(delta.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_mbo_msg_no_order_side_update_skipped() {
+        // MBO messages with NoOrderSide and non-Clear actions should be filtered out
+        // These are typically fill/modify messages that reference existing orders
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+            order_id: 123_456_789,
+            price: 4_800_250_000_000, // $4800.25 with precision 2
+            size: 1,
+            flags: dbn::FlagSet::empty(),
+            channel_id: 1,
+            action: 'M' as c_char, // Modify/Update action
+            side: 'N' as c_char,   // NoOrderSide
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_000_000,
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+
+        // Should be filtered out (no delta, no trade)
+        assert!(delta.is_none());
+        assert!(trade.is_none());
     }
 
     #[rstest]
