@@ -643,7 +643,7 @@ fn test_execute_swap_equivalence() {
     // but the core state (tick, price, liquidity) should be identical
 }
 
-// Follow Uniswapv3 offical tests
+// Follow Uniswapv3 official tests
 // Initialize pool profiler here https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L194
 #[fixture]
 fn uni_pool_profiler() -> PoolProfiler {
@@ -892,7 +892,7 @@ fn test_if_removing_of_liquidity_works_after_mint(mut uni_pool_profiler: PoolPro
         assert_eq!(position.liquidity, 0);
         assert_eq!(position.total_amount0_deposited, amount0);
         assert_eq!(position.total_amount1_deposited, amount1);
-        // With burn we didnt collect anything so and tokens stays in tokens_owned_* variables
+        // With burn we didn't collect anything so and tokens stays in tokens_owned_* variables
         assert_eq!(position.total_amount0_collected, 0);
         assert_eq!(position.total_amount1_collected, 0);
         assert_eq!(position.tokens_owed_0, 120);
@@ -1391,7 +1391,7 @@ fn test_mint_below_current_price_when_token1_only_changed(mut uni_pool_profiler:
 }
 
 #[rstest]
-fn test_mint_bellow_current_price_when_really_high_leverage(mut uni_pool_profiler: PoolProfiler) {
+fn test_mint_below_current_price_when_really_high_leverage(mut uni_pool_profiler: PoolProfiler) {
     // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L435
     let lower_tick = PoolTick::get_min_tick(TICK_SPACING);
     let upper_tick = lower_tick + TICK_SPACING;
@@ -1834,7 +1834,7 @@ fn test_flash_increases_fee_growth_by_expected_amount(mut medium_fee_pool_profil
     assert_eq!(medium_fee_pool_profiler.analytics.total_flashes, 1);
 }
 
-// ---------- ACTIVE LIQUIDITY AND TICK CROSSING TESTS WHEN SWAPING ----------
+// ---------- ACTIVE LIQUIDITY AND TICK CROSSING TESTS WHEN SWAPPING ----------
 
 #[rstest]
 fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolProfiler) {

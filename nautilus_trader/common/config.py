@@ -361,10 +361,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
+        If `False` then will persist as UNIX nanoseconds.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
-        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        The recommended range if using buffered pipelining is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
     autotrim_mins : int, optional
         The lookback window in minutes for automatic stream trimming.

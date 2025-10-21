@@ -400,7 +400,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -488,7 +488,7 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("RANDOM_VENUE"), // No client registered with this ID
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -679,7 +679,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         client_order_id: ClientOrderId::from("OL-19700101-000000-001-001-1"),
         venue_order_id: VenueOrderId::from("VOID"),
         order_list,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -805,7 +805,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         instrument_id: instrument.id,
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
     };
 
     // Act - Submit order directly to execution engine
@@ -902,7 +902,7 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1004,7 +1004,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1170,7 +1170,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -4546,7 +4546,7 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -4674,7 +4674,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         client_order_id: ClientOrderId::from("O-20240101-000000-001-001-1"),
         venue_order_id: VenueOrderId::from("VOID"),
         order_list: bracket,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -4866,7 +4866,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5015,7 +5015,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5239,7 +5239,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         client_order_id: ClientOrderId::from("O-20240101-000000-001-001-1"), // Use entry order's client order ID
         venue_order_id: VenueOrderId::from("VOID"),
         order_list,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -5405,7 +5405,7 @@ fn test_submit_market_should_not_add_to_own_book() {
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5493,7 +5493,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5578,7 +5578,7 @@ fn test_submit_order_adds_to_own_book_bid() {
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5741,7 +5741,7 @@ fn test_submit_order_adds_to_own_book_ask() {
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5920,7 +5920,7 @@ fn test_cancel_order_removes_from_own_book() {
         order: order_bid.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5934,7 +5934,7 @@ fn test_cancel_order_removes_from_own_book() {
         order: order_ask.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6097,7 +6097,7 @@ fn test_own_book_status_filtering() {
         order: order_bid.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6111,7 +6111,7 @@ fn test_own_book_status_filtering() {
         order: order_ask.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6311,7 +6311,7 @@ fn test_filled_order_removes_from_own_book() {
         order: order_bid.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6325,7 +6325,7 @@ fn test_filled_order_removes_from_own_book() {
         order: order_ask.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6528,7 +6528,7 @@ fn test_order_updates_in_own_book() {
         order: order_bid.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6542,7 +6542,7 @@ fn test_order_updates_in_own_book() {
         order: order_ask.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6768,7 +6768,7 @@ fn test_position_flip_with_own_order_book() {
         order: buy_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6866,7 +6866,7 @@ fn test_position_flip_with_own_order_book() {
         order: sell_order.clone(),
         position_id: Some(position_id), // Link to existing position
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7046,7 +7046,7 @@ fn test_own_book_with_crossed_orders() {
         order: buy_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7060,7 +7060,7 @@ fn test_own_book_with_crossed_orders() {
         order: sell_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7216,7 +7216,7 @@ fn test_own_book_with_contingent_orders() {
         order: entry_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7230,7 +7230,7 @@ fn test_own_book_with_contingent_orders() {
         order: tp_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7244,7 +7244,7 @@ fn test_own_book_with_contingent_orders() {
         order: sl_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7485,7 +7485,7 @@ fn test_own_book_order_status_filtering_parameterized(
         order: order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7736,7 +7736,7 @@ fn test_own_book_combined_status_filtering() {
         order: initialized_order,
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7752,7 +7752,7 @@ fn test_own_book_combined_status_filtering() {
         order: submitted_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7770,7 +7770,7 @@ fn test_own_book_combined_status_filtering() {
         order: accepted_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7791,7 +7791,7 @@ fn test_own_book_combined_status_filtering() {
         order: partially_filled_order.clone(),
         position_id: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7973,7 +7973,7 @@ fn test_own_book_status_integrity_during_transitions() {
             order: order.clone(),
             position_id: None,
             client_id: ClientId::from("STUB"),
-            exec_algorith_id: None,
+            exec_algorithm_id: None,
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
         };

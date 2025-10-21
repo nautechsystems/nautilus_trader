@@ -899,7 +899,7 @@ impl LiquiditySide {
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
-            stringify!(LiquditySide),
+            stringify!(LiquiditySide),
             self.name(),
             self.value(),
         )

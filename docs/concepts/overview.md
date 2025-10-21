@@ -140,7 +140,7 @@ A valid UUID v4 consists of:
 
 Example: `2d89666b-1a1e-4a75-b193-4eb3b454c757`
 
-For the complete specification, refer to [RFC 4122: A Universally Unique IDentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
+For the complete specification, refer to [RFC 4122: A Universally Unique IIdentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
 
 ## Data types
 

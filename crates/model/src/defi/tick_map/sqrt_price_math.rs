@@ -359,7 +359,7 @@ mod tests {
     #[rstest]
     fn test_any_input_amount_cannot_underflow_the_price() {
         // Testing that when we have minimal price(1) and an enormous input amount (2^255)
-        // the price calculation doesnt "underflow" to zero or wrap around to invalid value
+        // the price calculation doesn't "underflow" to zero or wrap around to invalid value
         let price = U160::from(1);
         let liquidity = 1;
         let amount_in = U256::from(2).pow(U256::from(255));

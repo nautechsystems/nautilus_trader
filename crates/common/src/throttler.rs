@@ -771,7 +771,7 @@ mod tests {
             }
 
             // Check the throttler rate limits on the appropriate conditions
-            // * Atleast one message is buffered
+            // * At least one message is buffered
             // * Timestamp queue is filled upto limit
             // * Least recent timestamp in queue exceeds interval
             let buffered_messages = throttler.qsize() > 0;

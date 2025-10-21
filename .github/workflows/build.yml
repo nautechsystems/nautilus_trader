@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop, test-ci]
+    branches: [master, nightly, develop, test-ci, test-build]
   pull_request:
     branches: ['*']
 
@@ -527,7 +527,7 @@ jobs:
       - name: Get uv version
         shell: bash
         run: |
-          echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+          echo "UV_VERSION=$(cat uv-version)" >> "$GITHUB_ENV"
 
       - name: Install uv
         uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
@@ -652,9 +652,9 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> $GITHUB_ENV
-          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> $GITHUB_ENV
-          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
+          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> "$GITHUB_ENV"
+          sed -n '/^#/,$ {p;/^---/q}; w RELEASE.md' RELEASES.md
 
       - name: Create GitHub release
         id: create-release
@@ -721,15 +721,15 @@ jobs:
             exit 1
           fi
 
-          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f | xargs ls -t 2>/dev/null | head -n 1)
+          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f -print0 | xargs -0 ls -t 2>/dev/null | head -n 1)
 
           if [ -z "$ASSET_PATH" ]; then
             echo "Error: No .tar.gz files found in dist directory"
             exit 1
           fi
 
-          echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
-          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
+          echo "ASSET_PATH=$ASSET_PATH" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> "$GITHUB_ENV"
 
       - name: Upload release asset
         # https://cli.github.com/manual/gh_release_upload

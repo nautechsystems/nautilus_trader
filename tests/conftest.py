@@ -117,7 +117,7 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     Falsy values (case-insensitive):
     - "0", "false", "no", "n", "off", "" (empty string)
 
-    Any other value raises :class:`ValueError` so mis-spelled variables
+    Any other value raises :class:`ValueError` so misspelled variables
     fail fast instead of being silently treated as *default*.
 
     """

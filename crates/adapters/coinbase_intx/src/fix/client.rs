@@ -284,7 +284,7 @@ impl CoinbaseIntxFixClient {
                         // These can be HEARTBEAT or TEST_REQUEST messages,
                         // ideally we'd respond to these with a heartbeat
                         // including tag 112 TestReqID.
-                        _ => tracing::trace!("Recieved unexpected {message:?}"),
+                        _ => tracing::trace!("Received unexpected {message:?}"),
                     }
                 }
             } else {

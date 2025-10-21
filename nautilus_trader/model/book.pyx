@@ -101,7 +101,7 @@ cdef class OrderBook(Data):
 
     Parameters
     ----------
-    instrument_id : IntrumentId
+    instrument_id : InstrumentId
         The instrument ID for the order book.
     book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
         The order book type.

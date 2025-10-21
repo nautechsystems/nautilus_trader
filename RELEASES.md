@@ -18,6 +18,7 @@ This will be the final release with support for Python 3.11.
 - Added `fs_rust_storage_options` to Python catalog (#3008), thanks @faysou and @Johnkhk
 - Added matching engine fallback to default order book for custom fill models (#3039), thanks @Hamish-Leahy
 - Added filesystem parameter to parquet in the consolidate functions (#3097), thanks @huracosunah
+- Added azure support for az protocol (#3102), thanks @huracosunah
 - Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
@@ -1809,7 +1810,7 @@ Released on 9th August 2024 (UTC).
 None
 
 ### Fixes
-- Fixed creation of `instrumend_id` folder when writing PyO3 bars in catalog (#1832), thanks @faysou
+- Fixed creation of `instrument_id` folder when writing PyO3 bars in catalog (#1832), thanks @faysou
 - Fixed `StreamingFeatherWriter` handling of `include_types` option (#1833), thanks @faysou
 - Fixed `BybitExecutionClient` position reports error handling and logging
 - Fixed `BybitExecutionClient` order report handling to correctly process external orders
@@ -2419,7 +2420,7 @@ Released on 3rd November 2023 (UTC).
 - Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
 - Fixed `BacktestEngine` logging error with immediate stop (caused by certain timestamps being `None`)
 - Fixed `BacktestNode` exceptions during backtest runs preventing next sequential run, thanks for reporting @cavan-black
-- Fixed `BinanceSpotPersmission` value error by relaxing typing for `BinanceSpotSymbolInfo.permissions`
+- Fixed `BinanceSpotPermission` value error by relaxing typing for `BinanceSpotSymbolInfo.permissions`
 - Interactive Brokers adapter various fixes, thanks @rsmb7z
 
 ---
@@ -2462,7 +2463,7 @@ This will be the final release with support for Python 3.9.
 - Renamed `Actor.on_venue_status_update(...)` to `Actor.on_venue_status(...)`
 - Renamed `Actor.on_instrument_status_update(...)` to `Actor.on_instrument_status(...)`
 - Changed `InstrumentStatus` fields/schema and constructor
-- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
+- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activating any GTD timers on start)
 
 ### Fixes
 - Fixed `LimitIfTouchedOrder.create` (`exec_algorithm_params` were not being passed in)
@@ -3415,7 +3416,7 @@ Released on 10th May 2022 (UTC).
 - Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
 - Added `tags` parameter to `Strategy.submit_order`
-- Added optional `check_positon_exists` flag to `Strategy.submit_order`
+- Added optional `check_position_exists` flag to `Strategy.submit_order`
 - Eliminated all use of `unsafe` Rust and C null-terminated byte strings
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 

@@ -1400,7 +1400,7 @@ impl ParquetDataCatalog {
     /// # Notes
     ///
     /// - Only files with valid timestamp-based filenames are included.
-    /// - Files with unparseable names are silently ignored.
+    /// - Files with unparsable names are silently ignored.
     /// - The method works with both local and remote object stores.
     /// - Results are automatically sorted by start timestamp.
     ///

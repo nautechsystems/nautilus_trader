@@ -868,7 +868,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str) -> None:
+    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallenge: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
     def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str) -> None:

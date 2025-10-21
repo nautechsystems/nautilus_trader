@@ -66,7 +66,7 @@ pub enum LiveMessage {
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
 ///
-/// [`LiveCommand`] messages are recieved synchronously across a channel,
+/// [`LiveCommand`] messages are received synchronously across a channel,
 /// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
 /// back to a message processing task.
 ///

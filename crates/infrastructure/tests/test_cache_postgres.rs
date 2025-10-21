@@ -168,7 +168,7 @@ mod serial_tests {
         database.close().unwrap();
     }
 
-    #[ignore = "continue testing and add foreign key contraints"]
+    #[ignore = "continue testing and add foreign key constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_cancel_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");
@@ -221,7 +221,7 @@ mod serial_tests {
         }
     }
 
-    #[ignore = "continue testing and add foreign key contraints"]
+    #[ignore = "continue testing and add foreign key constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_modify_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");

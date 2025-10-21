@@ -1967,7 +1967,7 @@ impl Cache {
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
 
-        // Serialize the position (TODO: temporily just to JSON to remove a dependency)
+        // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
         let position_serialized = serde_json::to_vec(&copied_position)?;
 
         let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
@@ -3037,7 +3037,7 @@ impl Cache {
             .and_then(|trades| trades.front())
     }
 
-    /// Gets a referenece to the latest mark price update for the `instrument_id`.
+    /// Gets a reference to the latest mark price update for the `instrument_id`.
     #[must_use]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
@@ -3045,7 +3045,7 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
-    /// Gets a referenece to the latest index price update for the `instrument_id`.
+    /// Gets a reference to the latest index price update for the `instrument_id`.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
         self.index_prices

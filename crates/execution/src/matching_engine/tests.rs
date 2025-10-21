@@ -747,7 +747,7 @@ fn test_not_enough_quantity_filled_fok_order(
         ))
         .build();
 
-    // Create FOK market order with quantity 2 which wont be enough to fill the order
+    // Create FOK market order with quantity 2 which won't be enough to fill the order
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
@@ -927,7 +927,7 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
         .build();
 
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
-    // Create limit order which is bellow currently supplied liquidity and ask
+    // Create limit order which is below currently supplied liquidity and ask
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
@@ -1205,7 +1205,7 @@ fn test_process_stop_limit_order_triggered_not_filled(
         ))
         .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
-    // Create but stop limit order, which is triggered (price of 1495 is bellow current ask of 1500)
+    // Create but stop limit order, which is triggered (price of 1495 is below current ask of 1500)
     // but price of 1490 it's not immediately filled.
     let mut stop_order = OrderTestBuilder::new(OrderType::StopLimit)
         .instrument_id(instrument_eth_usdt.id())
@@ -1328,7 +1328,7 @@ fn test_process_cancel_command_valid(
         ))
         .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
-    // Create BUY LIMIT order bellow current ask, so it wont be filled
+    // Create BUY LIMIT order below current ask, so it won't be filled
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
@@ -2301,7 +2301,7 @@ fn test_update_limit_if_touched_order_valid(
         .build();
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
 
-    // Create LIMIT IF TOUCHED order which is not activated as trigger price of 1498.00 is bellow current ask of 1500.00
+    // Create LIMIT IF TOUCHED order which is not activated as trigger price of 1498.00 is below current ask of 1500.00
     let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
     let mut limit_if_touched_order = OrderTestBuilder::new(OrderType::LimitIfTouched)
         .instrument_id(instrument_eth_usdt.id())

@@ -143,7 +143,7 @@ where
         chunk
             .first()
             .map(|elem| elem.metadata())
-            .expect("Chunk must have atleast one element to encode")
+            .expect("Chunk must have at least one element to encode")
     }
 }
 

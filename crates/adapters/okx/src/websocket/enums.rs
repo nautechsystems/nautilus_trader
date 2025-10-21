@@ -177,7 +177,7 @@ pub enum OKXWsChannel {
     // Rfqs,
     // #[serde(rename = "quotes")]
     // Quotes,
-    // #[display(fmt = "struc-block")]
+    // #[display(fmt = "structure-block-trades")]
     // StructuredBlock,
     // #[display(fmt = "spreads")]
     // Spreads,

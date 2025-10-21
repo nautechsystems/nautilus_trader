@@ -166,7 +166,7 @@ cdef extern from "../includes/model.h":
         # Market by order, multiple orders per level (full granularity).
         L3_MBO # = 3,
 
-    # The order contigency type which specifies the behavior of linked orders.
+    # The order contingency type which specifies the behavior of linked orders.
     #
     # [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
     cpdef enum ContingencyType:
@@ -223,13 +223,13 @@ cdef extern from "../includes/model.h":
         # When the instrument expiration was reached.
         CONTRACT_EXPIRED # = 2,
 
-    # The liqudity side for a trade.
+    # The liquidity side for a trade.
     cpdef enum LiquiditySide:
         # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
-        # The order passively provided liqudity to the market to complete the trade (made a market).
+        # The order passively provided liquidity to the market to complete the trade (made a market).
         MAKER # = 1,
-        # The order aggressively took liqudity from the market to complete the trade.
+        # The order aggressively took liquidity from the market to complete the trade.
         TAKER # = 2,
 
     # The status of an individual market on a trading venue.

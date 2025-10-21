@@ -502,7 +502,7 @@ class InteractiveBrokersClient(
         request: Request,
         timeout: int,
         default_value: Any | None = None,
-        supress_timeout_warning: bool = False,
+        suppress_timeout_warning: bool = False,
     ) -> Any:
         """
         Await the completion of a request within a specified timeout.
@@ -515,7 +515,7 @@ class InteractiveBrokersClient(
             The maximum time to wait for the request to complete, in seconds.
         default_value : Any, optional
             The default value to return if the request times out or fails. Defaults to None.
-        supress_timeout_warning: bool, optional
+        suppress_timeout_warning: bool, optional
             Suppress the timeout warning. Defaults to False.
 
         Returns
@@ -528,7 +528,7 @@ class InteractiveBrokersClient(
             return await asyncio.wait_for(request.future, timeout)
         except TimeoutError as e:
             msg = f"Request timed out for {request}. Ending request."
-            self._log.debug(msg) if supress_timeout_warning else self._log.warning(msg)
+            self._log.debug(msg) if suppress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value

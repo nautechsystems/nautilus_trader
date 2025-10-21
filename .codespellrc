@@ -1,0 +1,6 @@
+# Configuration for codespell spell checker
+# Checks for common misspellings in code, documentation, and configuration files
+
+[codespell]
+# Comma-separated list of words to ignore
+ignore-words-list = ACN,ALO,Alo,BadAloPx,arange,crate,datas,deques,disjointness,HIGHTER,Implementors,ot,pre,ser,socio-economic,Superseed,SUPERSEED,zar

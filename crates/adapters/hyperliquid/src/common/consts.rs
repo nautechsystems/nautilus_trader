@@ -40,7 +40,7 @@ pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-test
 /// - Conditional orders follow patterns from OKX, Bybit, and BitMEX adapters.
 /// - Stop orders (StopMarket/StopLimit) are protective stops (sl).
 /// - If Touched orders (MarketIfTouched/LimitIfTouched) are profit-taking or entry orders (tp).
-/// - Post-only orders are implemented via ALO (Add Liquidity Only) time-in-force.
+/// - Post-only orders are implemented via ALSO (Add Liquidity Only) time-in-force.
 ///
 /// # Trigger Semantics
 ///
