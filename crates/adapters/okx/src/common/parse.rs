@@ -42,7 +42,9 @@ use nautilus_model::{
         OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue, VenueOrderId,
+    },
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionContract},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -217,6 +219,36 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
         InstrumentAny::CryptoFuture(_) => Ok(OKXInstrumentType::Futures),
         InstrumentAny::CryptoOption(_) => Ok(OKXInstrumentType::Option),
         _ => anyhow::bail!("Invalid instrument type for OKX: {instrument:?}"),
+    }
+}
+
+/// Parses `OKXInstrumentType` from an instrument symbol.
+///
+/// OKX instrument symbol formats:
+/// - SPOT: {BASE}-{QUOTE} (e.g., BTC-USDT)
+/// - MARGIN: {BASE}-{QUOTE} (same as SPOT, determined by trade mode)
+/// - SWAP: {BASE}-{QUOTE}-SWAP (e.g., BTC-USDT-SWAP)
+/// - FUTURES: {BASE}-{QUOTE}-{YYMMDD} (e.g., BTC-USDT-250328)
+/// - OPTION: {BASE}-{QUOTE}-{YYMMDD}-{STRIKE}-{C/P} (e.g., BTC-USD-250328-50000-C)
+pub fn okx_instrument_type_from_symbol(symbol: &str) -> OKXInstrumentType {
+    // TODO: Improve efficiency of this
+    let parts: Vec<&str> = symbol.split('-').collect();
+
+    match parts.len() {
+        2 => OKXInstrumentType::Spot,
+        3 => {
+            let suffix = parts[2];
+            if suffix == "SWAP" {
+                OKXInstrumentType::Swap
+            } else if suffix.len() == 6 && suffix.chars().all(|c| c.is_ascii_digit()) {
+                // Date format YYMMDD
+                OKXInstrumentType::Futures
+            } else {
+                OKXInstrumentType::Spot
+            }
+        }
+        5 => OKXInstrumentType::Option,
+        _ => OKXInstrumentType::Spot, // Default fallback
     }
 }
 
@@ -587,6 +619,19 @@ pub fn parse_order_status_report(
 
 /// Parses an OKX position into a Nautilus [`PositionStatusReport`].
 ///
+/// # Position Mode Handling
+///
+/// OKX returns position data differently based on the account's position mode:
+///
+/// - **Net mode** (`posSide="net"`): The `pos` field uses signed quantities where
+///   positive = long, negative = short. Position side is derived from the sign.
+///
+/// - **Long/Short mode** (`posSide="long"` or `"short"`): The `pos` field is always
+///   positive regardless of side. Position side is determined from the `posSide` field.
+///   Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness.
+///
+/// See: <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
+///
 /// # Errors
 ///
 /// Returns an error if any numeric fields cannot be parsed into their target types.
@@ -609,9 +654,12 @@ pub fn parse_position_status_report(
         )
     });
 
-    // For Net position mode, determine side based on position sign
+    // Determine position side based on OKX position mode:
+    // - Net mode: posSide="net", uses signed quantities (positive=long, negative=short)
+    // - Long/Short mode: posSide="long"/"short", quantities are always positive, side from field
     let position_side = match position.pos_side {
         OKXPositionSide::Net => {
+            // Net mode: derive side from signed quantity
             if pos_value > 0.0 {
                 PositionSide::Long
             } else if pos_value < 0.0 {
@@ -620,14 +668,51 @@ pub fn parse_position_status_report(
                 PositionSide::Flat
             }
         }
-        _ => position.pos_side.into(),
+        OKXPositionSide::Long => {
+            // Long/Short mode: trust the pos_side field
+            PositionSide::Long
+        }
+        OKXPositionSide::Short => {
+            // Long/Short mode: trust the pos_side field
+            PositionSide::Short
+        }
+        OKXPositionSide::None => {
+            // Fallback: use signed quantity (same as Net mode logic)
+            if pos_value > 0.0 {
+                PositionSide::Long
+            } else if pos_value < 0.0 {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            }
+        }
     }
     .as_specified();
 
     // Convert to absolute quantity (positions are always positive in Nautilus)
     let quantity = Quantity::new(pos_value.abs(), size_precision);
-    let venue_position_id = None; // TODO: Only support netting for now
-    // let venue_position_id = Some(PositionId::new(position.pos_id));
+
+    // Generate venue position ID only for Long/Short mode (hedging)
+    // In Net mode, venue_position_id must be None to signal NETTING OMS behavior
+    let venue_position_id = match position.pos_side {
+        OKXPositionSide::Long => {
+            // Long/Short mode - Long leg: append "-LONG"
+            position
+                .pos_id
+                .map(|pos_id| PositionId::new(format!("{pos_id}-LONG")))
+        }
+        OKXPositionSide::Short => {
+            // Long/Short mode - Short leg: append "-SHORT"
+            position
+                .pos_id
+                .map(|pos_id| PositionId::new(format!("{pos_id}-SHORT")))
+        }
+        OKXPositionSide::Net | OKXPositionSide::None => {
+            // Net mode: None signals NETTING OMS (Nautilus uses its own position IDs)
+            None
+        }
+    };
+
     let avg_px_open = if position.avg_px.is_empty() {
         None
     } else {
@@ -1425,17 +1510,8 @@ pub fn parse_account_state(
             continue;
         }
 
-        // Attempt to parse the currency, skip if invalid
-        let currency = match Currency::from_str(ccy_str) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    "Skipping balance detail with invalid currency code '{ccy_str}': {e} | raw_data={:?}",
-                    b
-                );
-                continue;
-            }
-        };
+        // Get or create currency (consistent with instrument parsing)
+        let currency = get_currency_with_context(ccy_str, Some("balance detail"));
 
         // Parse balance values, skip if invalid
         let Some(total) = parse_balance_field(&b.cash_bal, "cash_bal", currency, ccy_str) else {
@@ -1527,11 +1603,12 @@ pub fn parse_account_state(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::Instrument;
+    use nautilus_model::{identifiers::PositionId, instruments::Instrument};
     use rstest::rstest;
 
     use super::*;
     use crate::{
+        OKXPositionSide,
         common::{enums::OKXMarginMode, testing::load_test_json},
         http::{
             client::OKXResponse,
@@ -2715,5 +2792,353 @@ mod tests {
         let json = r#"{"level":"5"}"#;
         let result: TestFeeRate = serde_json::from_str(json).unwrap();
         assert_eq!(result.level, OKXVipLevel::Vip5);
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_net_mode_long() {
+        // Test Net mode: positive quantity = Long position
+        let position = OKXPosition {
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("12345")),
+            pos_side: OKXPositionSide::Net, // Net mode
+            pos: "1.5".to_string(),         // Positive = Long
+            base_bal: "1.5".to_string(),
+            ccy: "BTC".to_string(),
+            fee: "0.01".to_string(),
+            lever: "10.0".to_string(),
+            last: "50000".to_string(),
+            mark_px: "50000".to_string(),
+            liq_px: "45000".to_string(),
+            mmr: "0.1".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("111"),
+            notional_usd: "75000".to_string(),
+            avg_px: "50000".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "0.5".to_string(),
+            mgn_ratio: "0.01".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "1.5".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "BTC".to_string(),
+            quote_bal: "75000".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: "BTC".to_string(),
+            usd_px: "50000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.quantity, Quantity::from("1.5"));
+        // Net mode: venue_position_id is None (signals NETTING OMS)
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_net_mode_short() {
+        // Test Net mode: negative quantity = Short position
+        let position = OKXPosition {
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            mgn_mode: OKXMarginMode::Isolated,
+            pos_id: Some(Ustr::from("67890")),
+            pos_side: OKXPositionSide::Net, // Net mode
+            pos: "-2.3".to_string(),        // Negative = Short
+            base_bal: "2.3".to_string(),
+            ccy: "BTC".to_string(),
+            fee: "0.02".to_string(),
+            lever: "5.0".to_string(),
+            last: "50000".to_string(),
+            mark_px: "50000".to_string(),
+            liq_px: "55000".to_string(),
+            mmr: "0.2".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("222"),
+            notional_usd: "115000".to_string(),
+            avg_px: "50000".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "1.0".to_string(),
+            mgn_ratio: "0.02".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "2.3".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "BTC".to_string(),
+            quote_bal: "115000".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: "BTC".to_string(),
+            usd_px: "50000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity, Quantity::from("2.3")); // Absolute value
+        // Net mode: venue_position_id is None (signals NETTING OMS)
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_net_mode_flat() {
+        // Test Net mode: zero quantity = Flat position
+        let position = OKXPosition {
+            inst_id: Ustr::from("ETH-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("99999")),
+            pos_side: OKXPositionSide::Net, // Net mode
+            pos: "0".to_string(),           // Zero = Flat
+            base_bal: "0".to_string(),
+            ccy: "ETH".to_string(),
+            fee: "0".to_string(),
+            lever: "10.0".to_string(),
+            last: "3000".to_string(),
+            mark_px: "3000".to_string(),
+            liq_px: "0".to_string(),
+            mmr: "0".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("333"),
+            notional_usd: "0".to_string(),
+            avg_px: "".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "0".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "ETH".to_string(),
+            quote_bal: "0".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: "ETH".to_string(),
+            usd_px: "3000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Flat.as_specified());
+        assert_eq!(report.quantity, Quantity::from("0"));
+        // Net mode: venue_position_id is None (signals NETTING OMS)
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_long_short_mode_long() {
+        // Test Long/Short mode: posSide="long" with positive quantity
+        let position = OKXPosition {
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("11111")),
+            pos_side: OKXPositionSide::Long, // Long/Short mode - Long leg
+            pos: "3.2".to_string(),          // Positive quantity (always positive in this mode)
+            base_bal: "3.2".to_string(),
+            ccy: "BTC".to_string(),
+            fee: "0.01".to_string(),
+            lever: "10.0".to_string(),
+            last: "50000".to_string(),
+            mark_px: "50000".to_string(),
+            liq_px: "45000".to_string(),
+            mmr: "0.1".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("444"),
+            notional_usd: "160000".to_string(),
+            avg_px: "50000".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "1.6".to_string(),
+            mgn_ratio: "0.01".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "3.2".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "BTC".to_string(),
+            quote_bal: "160000".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: "BTC".to_string(),
+            usd_px: "50000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.quantity, Quantity::from("3.2"));
+        // Long/Short mode - Long leg: "-LONG" suffix
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::new("11111-LONG"))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_long_short_mode_short() {
+        // Test Long/Short mode: posSide="short" with positive quantity
+        // This is the critical test - positive quantity but SHORT side!
+        let position = OKXPosition {
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("22222")),
+            pos_side: OKXPositionSide::Short, // Long/Short mode - Short leg
+            pos: "1.8".to_string(),           // Positive quantity (always positive in this mode)
+            base_bal: "1.8".to_string(),
+            ccy: "BTC".to_string(),
+            fee: "0.02".to_string(),
+            lever: "10.0".to_string(),
+            last: "50000".to_string(),
+            mark_px: "50000".to_string(),
+            liq_px: "55000".to_string(),
+            mmr: "0.2".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("555"),
+            notional_usd: "90000".to_string(),
+            avg_px: "50000".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "0.9".to_string(),
+            mgn_ratio: "0.02".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "1.8".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "BTC".to_string(),
+            quote_bal: "90000".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: "BTC".to_string(),
+            usd_px: "50000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        // This is the critical assertion: positive quantity but SHORT side
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity, Quantity::from("1.8"));
+        // Long/Short mode - Short leg: "-SHORT" suffix
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::new("22222-SHORT"))
+        );
     }
 }

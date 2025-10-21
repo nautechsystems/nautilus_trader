@@ -88,7 +88,7 @@ use crate::{
         credential::Credential,
         enums::{
             OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXSide,
-            OKXTradeMode, OKXTriggerType, OKXVipLevel,
+            OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -1145,97 +1145,6 @@ impl OKXHttpClient {
         let account_state = parse_account_state(raw, account_id, ts_init)?;
 
         Ok(account_state)
-    }
-
-    /// Requests the fee rates and VIP level from OKX.
-    ///
-    /// Returns the VIP level (0-9) from the fee rate response.
-    /// Returns `None` if the fee rates cannot be retrieved.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails.
-    pub async fn request_vip_level(&self) -> anyhow::Result<Option<OKXVipLevel>> {
-        // VIP level is account-wide, try SPOT first (most common)
-        let params = GetTradeFeeParams {
-            inst_type: OKXInstrumentType::Spot,
-            inst_family: None,
-            uly: None,
-        };
-
-        match self.inner.http_get_trade_fee(params).await {
-            Ok(resp) => {
-                if let Some(fee_rate) = resp.first() {
-                    tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
-                    return Ok(Some(fee_rate.level));
-                }
-            }
-            Err(e) => {
-                tracing::debug!("Failed to query SPOT fee rates: {e}, trying other types");
-            }
-        }
-
-        // Try MARGIN for accounts with spot disabled but margin enabled
-        let params = GetTradeFeeParams {
-            inst_type: OKXInstrumentType::Margin,
-            inst_family: None,
-            uly: None,
-        };
-
-        match self.inner.http_get_trade_fee(params).await {
-            Ok(resp) => {
-                if let Some(fee_rate) = resp.first() {
-                    tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
-                    return Ok(Some(fee_rate.level));
-                }
-            }
-            Err(e) => {
-                tracing::debug!("Failed to query MARGIN fee rates: {e}, trying derivatives");
-            }
-        }
-
-        // Fallback to derivatives for accounts with spot/margin disabled.
-        // OKX sub-accounts can have selective permissions (e.g., USDT-margined only,
-        // inverse only, or specific instrument types), so we probe multiple common
-        // instrument families to find one that works for the account configuration.
-        let derivatives_types = [
-            (OKXInstrumentType::Swap, None),
-            (OKXInstrumentType::Swap, Some("BTC-USDT")),
-            (OKXInstrumentType::Swap, Some("ETH-USDT")),
-            (OKXInstrumentType::Swap, Some("BTC-USD")),
-            (OKXInstrumentType::Swap, Some("ETH-USD")),
-            (OKXInstrumentType::Futures, Some("BTC-USDT")),
-            (OKXInstrumentType::Futures, Some("ETH-USDT")),
-            (OKXInstrumentType::Futures, Some("BTC-USD")),
-            (OKXInstrumentType::Futures, Some("ETH-USD")),
-            (OKXInstrumentType::Option, Some("BTC-USD")),
-            (OKXInstrumentType::Option, Some("ETH-USD")),
-        ];
-
-        for (inst_type, inst_family) in derivatives_types {
-            let params = GetTradeFeeParams {
-                inst_type,
-                inst_family: inst_family.map(String::from),
-                uly: None,
-            };
-
-            match self.inner.http_get_trade_fee(params).await {
-                Ok(resp) => {
-                    if let Some(fee_rate) = resp.first() {
-                        tracing::info!("Detected OKX VIP level: {}", fee_rate.level);
-                        return Ok(Some(fee_rate.level));
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        "Failed to query {inst_type:?} fee rates (family: {inst_family:?}): {e}"
-                    );
-                }
-            }
-        }
-
-        tracing::warn!("Unable to query VIP level from any instrument type");
-        Ok(None)
     }
 
     /// Sets the position mode for the account.
@@ -2314,13 +2223,30 @@ impl OKXHttpClient {
 
     /// Requests current position status reports for the given parameters.
     ///
+    /// # Position Modes
+    ///
+    /// OKX supports two position modes, which affects how position data is returned:
+    ///
+    /// ## Net Mode (One-way)
+    /// - `posSide` field will be `"net"`
+    /// - `pos` field uses **signed quantities**:
+    ///   - Positive value = Long position
+    ///   - Negative value = Short position
+    ///   - Zero = Flat/no position
+    ///
+    /// ## Long/Short Mode (Hedge/Dual-side)
+    /// - `posSide` field will be `"long"` or `"short"`
+    /// - `pos` field is **always positive** (use `posSide` to determine actual side)
+    /// - Allows holding simultaneous long and short positions on the same instrument
+    /// - Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness
+    ///
     /// # Errors
     ///
     /// Returns an error if the request fails.
     ///
     /// # References
     ///
-    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>.
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,

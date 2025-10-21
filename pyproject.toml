@@ -33,7 +33,7 @@ dependencies = [
   "pyarrow>=21.0.0",
   "pytz>=2025.2.0",
   "tqdm>=4.67.1,<5.0.0",
-  "uvloop==0.21.0,<1.0.0; sys_platform != \"win32\"", # Pinned to v0.21.0 due breaking loop semantics
+  "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned for stability
 ]
 
 [project.urls]
@@ -110,7 +110,7 @@ test = [
   "coverage>=7.11.0,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
-  "pytest-asyncio==0.21.1", # Pinned to 0.21.1 for stability
+  "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
   "pytest-benchmark==5.0.1", # Pinned to 5.0.1 due pytest 8.x requirement
   "pytest-codspeed==4.0.0", # Pinned to 4.0.0 due to packaging bug in 4.1.0
   "pytest-cov==6.3.0", # Pinned to 6.3.0 due pytest 8.x requirement
@@ -269,6 +269,7 @@ module = [
 testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""
 asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
 filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]
 
 [tool.coverage.run]

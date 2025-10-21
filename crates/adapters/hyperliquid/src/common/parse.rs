@@ -313,18 +313,30 @@ pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
     };
 
     // Convert symbol like "BTC" to asset index
-    // Updated asset indices from testnet (as of October 2025)
+    // Asset indices from Hyperliquid testnet meta endpoint (as of October 2025)
+    // Source: https://api.hyperliquid-testnet.xyz/info
+    //
+    // NOTE: These indices may change. For production, consider querying the meta endpoint
+    // dynamically during initialization to avoid hardcoded mappings.
     Ok(match base {
-        "BTC" => 3, // Updated from 0 to 3
-        "ETH" => 1,
-        "DOGE" => 3,
-        "SOL" => 4,
-        "WIF" => 8,
-        "SHIB" => 10,
-        "PEPE" => 11,
+        "SOL" => 0,    // Solana
+        "APT" => 1,    // Aptos
+        "ATOM" => 2,   // Cosmos
+        "BTC" => 3,    // Bitcoin
+        "ETH" => 4,    // Ethereum
+        "MATIC" => 5,  // Polygon
+        "BNB" => 6,    // Binance Coin
+        "AVAX" => 7,   // Avalanche
+        "DYDX" => 9,   // dYdX
+        "APE" => 10,   // ApeCoin
+        "OP" => 11,    // Optimism
+        "kPEPE" => 12, // Pepe (1k units)
+        "ARB" => 13,   // Arbitrum
+        "kSHIB" => 29, // Shiba Inu (1k units)
+        "WIF" => 78,   // Dogwifhat
+        "DOGE" => 173, // Dogecoin
         _ => {
-            // For unknown assets, we'll need to query the meta endpoint
-            // For now, return a placeholder that will need to be resolved
+            // For unknown assets, query the meta endpoint or add to this mapping
             anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
         }
     })
@@ -634,13 +646,6 @@ pub fn client_order_id_to_cancel_request(
     })?;
 
     Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
-}
-
-/// Creates a JSON value representing cancel requests for the Hyperliquid exchange action.
-pub fn cancel_requests_to_hyperliquid_action_value(
-    requests: &[HyperliquidExecCancelByCloidRequest],
-) -> anyhow::Result<Value> {
-    serde_json::to_value(requests).context("Failed to serialize cancel requests to JSON")
 }
 
 /// Checks if a Hyperliquid exchange response indicates success.

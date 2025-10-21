@@ -312,6 +312,26 @@ impl BlockchainCacheDatabase {
         copy_handler.copy_blocks(chain_id, blocks).await
     }
 
+    /// Inserts tokens using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn add_tokens_copy(&self, chain_id: u32, tokens: &[Token]) -> anyhow::Result<()> {
+        let copy_handler = PostgresCopyHandler::new(&self.pool);
+        copy_handler.copy_tokens(chain_id, tokens).await
+    }
+
+    /// Inserts pools using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn add_pools_copy(&self, chain_id: u32, pools: &[Pool]) -> anyhow::Result<()> {
+        let copy_handler = PostgresCopyHandler::new(&self.pool);
+        copy_handler.copy_pools(chain_id, pools).await
+    }
+
     /// Inserts pool swaps using PostgreSQL COPY BINARY for maximum performance.
     ///
     /// This method is significantly faster than INSERT for bulk operations as it bypasses
@@ -1629,14 +1649,6 @@ impl BlockchainCacheDatabase {
                 total_burns: row.get::<i32, _>("total_burns") as u64,
                 total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
                 total_flashes: row.get::<i32, _>("total_flashes") as u64,
-                #[cfg(debug_assertions)]
-                swap_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                mint_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                burn_processing_time: std::time::Duration::ZERO,
-                #[cfg(debug_assertions)]
-                collect_processing_time: std::time::Duration::ZERO,
             };
 
             // Load positions and ticks

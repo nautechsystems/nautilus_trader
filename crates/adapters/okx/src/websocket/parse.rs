@@ -44,7 +44,10 @@ use super::{
 use crate::{
     common::{
         consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
-        enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType, OKXTriggerType},
+        enums::{
+            OKXBookAction, OKXCandleConfirm, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
+            OKXTriggerType,
+        },
         models::OKXInstrument,
         parse::{
             okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_fee_currency,
@@ -811,6 +814,32 @@ pub fn parse_order_status_report(
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
     let ts_last = parse_millisecond_timestamp(msg.u_time);
 
+    let is_liquidation = matches!(
+        msg.category,
+        OKXOrderCategory::FullLiquidation | OKXOrderCategory::PartialLiquidation
+    );
+
+    let is_adl = msg.category == OKXOrderCategory::Adl;
+
+    if is_liquidation {
+        tracing::warn!(
+            order_id = msg.ord_id.as_str(),
+            category = ?msg.category,
+            inst_id = msg.inst_id.as_str(),
+            state = ?msg.state,
+            "Liquidation order status update"
+        );
+    }
+
+    if is_adl {
+        tracing::warn!(
+            order_id = msg.ord_id.as_str(),
+            inst_id = msg.inst_id.as_str(),
+            state = ?msg.state,
+            "ADL (Auto-Deleveraging) order status update"
+        );
+    }
+
     let mut report = OrderStatusReport::new(
         account_id,
         instrument.id(),
@@ -1014,6 +1043,36 @@ pub fn parse_fill_report(
     let liquidity_side: LiquiditySide = msg.exec_type.into();
     let ts_event = parse_millisecond_timestamp(msg.fill_time);
 
+    let is_liquidation = matches!(
+        msg.category,
+        OKXOrderCategory::FullLiquidation | OKXOrderCategory::PartialLiquidation
+    );
+
+    let is_adl = msg.category == OKXOrderCategory::Adl;
+
+    if is_liquidation {
+        tracing::warn!(
+            order_id = msg.ord_id.as_str(),
+            category = ?msg.category,
+            inst_id = msg.inst_id.as_str(),
+            side = ?msg.side,
+            fill_sz = %msg.fill_sz,
+            fill_px = %msg.fill_px,
+            "Liquidation order detected"
+        );
+    }
+
+    if is_adl {
+        tracing::warn!(
+            order_id = msg.ord_id.as_str(),
+            inst_id = msg.inst_id.as_str(),
+            side = ?msg.side,
+            fill_sz = %msg.fill_sz,
+            fill_px = %msg.fill_px,
+            "ADL (Auto-Deleveraging) order detected"
+        );
+    }
+
     let report = FillReport::new(
         account_id,
         instrument.id(),
@@ -1168,7 +1227,11 @@ mod tests {
     use super::*;
     use crate::{
         OKXPositionSide,
-        common::{enums::OKXTradeMode, parse::parse_account_state, testing::load_test_json},
+        common::{
+            enums::{OKXExecType, OKXInstrumentType, OKXOrderType, OKXSide, OKXTradeMode},
+            parse::parse_account_state,
+            testing::load_test_json,
+        },
         http::models::OKXAccount,
         websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
     };
@@ -1869,7 +1932,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             algo_cl_ord_id: None,
@@ -1915,7 +1978,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             algo_cl_ord_id: None,
@@ -1997,7 +2060,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_rebate".to_string(),
             algo_cl_ord_id: None,
@@ -2043,7 +2106,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_rebate".to_string(),
             algo_cl_ord_id: None,
@@ -2123,7 +2186,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_transition".to_string(),
             algo_cl_ord_id: None,
@@ -2171,7 +2234,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_transition".to_string(),
             algo_cl_ord_id: None,
@@ -2252,7 +2315,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_neg_inc".to_string(),
             algo_cl_ord_id: None,
@@ -2298,7 +2361,7 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_neg_inc".to_string(),
             algo_cl_ord_id: None,
@@ -2587,6 +2650,267 @@ mod tests {
             assert_eq!(fill_report.last_px, Price::from("101950.00"));
         } else {
             panic!("Expected Fill report for filled trigger order");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_liquidation_order() {
+        let json_data = load_test_json("ws_orders_liquidation.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Test liquidation order
+        let msg = &data[0];
+        assert_eq!(msg.category, OKXOrderCategory::FullLiquidation);
+        assert_eq!(msg.state, OKXOrderStatus::Filled);
+        assert_eq!(msg.inst_id.as_str(), "BTC-USDT-SWAP");
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        // Create mock instrument
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(), // ts_event
+            0.into(), // ts_init
+        );
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+        let fee_cache = AHashMap::new();
+
+        let result = parse_order_msg_vec(
+            vec![msg.clone()],
+            account_id,
+            &instruments,
+            &fee_cache,
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_ok());
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+
+        // Verify it's a fill report for a liquidation
+        if let ExecutionReport::Fill(fill_report) = &reports[0] {
+            assert_eq!(fill_report.order_side, OrderSide::Sell);
+            assert_eq!(fill_report.last_qty, Quantity::from("0.50000000"));
+            assert_eq!(fill_report.last_px, Price::from("40000.00"));
+            assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+        } else {
+            panic!("Expected Fill report for liquidation order");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_adl_order() {
+        let json_data = load_test_json("ws_orders_adl.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Test ADL order
+        let msg = &data[0];
+        assert_eq!(msg.category, OKXOrderCategory::Adl);
+        assert_eq!(msg.state, OKXOrderStatus::Filled);
+        assert_eq!(msg.inst_id.as_str(), "ETH-USDT-SWAP");
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        // Create mock instrument
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("ETH-USDT-SWAP"),
+            Currency::ETH(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(), // ts_event
+            0.into(), // ts_init
+        );
+        instruments.insert(
+            Ustr::from("ETH-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+        let fee_cache = AHashMap::new();
+
+        let result = parse_order_msg_vec(
+            vec![msg.clone()],
+            account_id,
+            &instruments,
+            &fee_cache,
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_ok());
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+
+        // Verify it's a fill report for ADL
+        if let ExecutionReport::Fill(fill_report) = &reports[0] {
+            assert_eq!(fill_report.order_side, OrderSide::Buy);
+            assert_eq!(fill_report.last_qty, Quantity::from("0.30000000"));
+            assert_eq!(fill_report.last_px, Price::from("41000.00"));
+            assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+        } else {
+            panic!("Expected Fill report for ADL order");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_unknown_category_graceful_fallback() {
+        // Test that unknown/future category values deserialize as Other instead of failing
+        let json_with_unknown_category = r#"{
+            "category": "some_future_category_we_dont_know"
+        }"#;
+
+        let result: Result<serde_json::Value, _> = serde_json::from_str(json_with_unknown_category);
+        assert!(result.is_ok());
+
+        // Test deserialization of the category field directly
+        let category_result: Result<OKXOrderCategory, _> =
+            serde_json::from_str(r#""some_future_category""#);
+        assert!(category_result.is_ok());
+        assert_eq!(category_result.unwrap(), OKXOrderCategory::Other);
+
+        // Verify known categories still work
+        let normal: OKXOrderCategory = serde_json::from_str(r#""normal""#).unwrap();
+        assert_eq!(normal, OKXOrderCategory::Normal);
+
+        let twap: OKXOrderCategory = serde_json::from_str(r#""twap""#).unwrap();
+        assert_eq!(twap, OKXOrderCategory::Twap);
+    }
+
+    #[rstest]
+    fn test_parse_partial_liquidation_order() {
+        // Create a test message with partial liquidation category
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let partial_liq_msg = OKXOrderMsg {
+            acc_fill_sz: Some("0.25".to_string()),
+            avg_px: "39000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: OKXOrderCategory::PartialLiquidation,
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "".to_string(),
+            algo_cl_ord_id: None,
+            fee: Some("-9.75".to_string()),
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: "39000.0".to_string(),
+            fill_sz: "0.25".to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            lever: "10.0".to_string(),
+            ord_id: Ustr::from("2497956918703120888"),
+            ord_type: OKXOrderType::Market,
+            pnl: "-2500".to_string(),
+            pos_side: OKXPositionSide::Long,
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: OKXSide::Sell,
+            state: OKXOrderStatus::Filled,
+            exec_type: OKXExecType::Taker,
+            sz: "0.25".to_string(),
+            td_mode: OKXTradeMode::Isolated,
+            trade_id: "1518905888".to_string(),
+            u_time: 1746947317402,
+        };
+
+        let fee_cache = AHashMap::new();
+        let result = parse_order_msg(
+            &partial_liq_msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+
+        // Verify it's a fill report for partial liquidation
+        if let ExecutionReport::Fill(fill_report) = report {
+            assert_eq!(fill_report.order_side, OrderSide::Sell);
+            assert_eq!(fill_report.last_qty, Quantity::from("0.25000000"));
+            assert_eq!(fill_report.last_px, Price::from("39000.00"));
+        } else {
+            panic!("Expected Fill report for partial liquidation order");
         }
     }
 }

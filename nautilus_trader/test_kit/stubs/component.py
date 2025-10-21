@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -23,6 +22,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -80,8 +80,10 @@ class TestComponentStubs:
 
     @staticmethod
     def mock_live_data_engine() -> MockLiveDataEngine:
+        loop = get_event_loop()
+
         return MockLiveDataEngine(
-            loop=asyncio.get_event_loop(),
+            loop=loop,
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
             clock=TestComponentStubs.clock(),
@@ -89,8 +91,10 @@ class TestComponentStubs:
 
     @staticmethod
     def mock_live_exec_engine() -> MockLiveExecutionEngine:
+        loop = get_event_loop()
+
         return MockLiveExecutionEngine(
-            loop=asyncio.get_event_loop(),
+            loop=loop,
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
             clock=TestComponentStubs.clock(),
@@ -98,8 +102,10 @@ class TestComponentStubs:
 
     @staticmethod
     def mock_live_risk_engine() -> MockLiveRiskEngine:
+        loop = get_event_loop()
+
         return MockLiveRiskEngine(
-            loop=asyncio.get_event_loop(),
+            loop=loop,
             portfolio=TestComponentStubs.portfolio(),
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),

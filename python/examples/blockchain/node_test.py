@@ -25,6 +25,8 @@ mirroring the capabilities shown in crates/adapters/blockchain/bin/node_test.rs
 
 import os
 
+from dotenv import load_dotenv
+
 from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
 from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
@@ -38,6 +40,9 @@ from nautilus_trader.model import DexType  # type: ignore[attr-defined]
 
 
 def main() -> None:
+    # Load environment variables from .env file
+    load_dotenv()
+
     # Environment setup
     environment = Environment.LIVE
     trader_id = TraderId("TESTER-001")

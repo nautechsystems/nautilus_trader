@@ -17,6 +17,7 @@ This will be the final release with support for Python 3.11.
 - Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
 - Added `fs_rust_storage_options` to Python catalog (#3008), thanks @faysou and @Johnkhk
 - Added matching engine fallback to default order book for custom fill models (#3039), thanks @Hamish-Leahy
+- Added filesystem parameter to parquet in the consolidate functions (#3097), thanks @huracosunah
 - Added Binance BBO `price_match` parameter support for order submission
 - Added BitMEX conditional orders support
 - Added BitMEX batch cancel support
@@ -34,12 +35,12 @@ This will be the final release with support for Python 3.11.
 - Added OKX trade mode per order via `params` using `td_mode` key
 - Added OKX margin configuration and spot margin support
 - Added OKX demo account support
+- Added OKX batch cancel support
 - Added Polymarket native market orders support
 
 ### Breaking Changes
 - Removed `nautilus_trader.analysis.statistics` subpackage - all statistics are now implemented in Rust and must be imported from `nautilus_trader.analysis` (e.g., `from nautilus_trader.analysis import WinRate`)
 - Removed partial bar functionality from bar aggregators and subscription APIs (#3020), thanks @faysou
-- Removed OKX `vip_level` config option as now redundant with detection through account query
 - Renamed `nautilus-cli` crate feature flag from `hypersync` to `defi` (gates blockchain/DeFi commands)
 - Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
 
@@ -60,6 +61,7 @@ This will be the final release with support for Python 3.11.
 - Fixed `serialization` crate bugs and improve error handling
 - Fixed PyO3 interpreter lifecycle for async shutdown preventing edge case `"interpreter not initialized"` panics during shutdown
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
+- Fixed `RiskEngine` quote quantity validation
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed handling of asyncio.CancelledError in execution reconciliation (#3073), thanks @dinana
 - Fixed edge case where rejected orders can remain in own order book
@@ -77,6 +79,7 @@ This will be the final release with support for Python 3.11.
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed return type annotation for `ArrowSerializer.deserialize` (#3076), thanks @MK27MK
+- Fixed initializing of sqrt price setting flow when `Pool` profiling (#3100), thanks @filipmacek
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
@@ -144,17 +147,21 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid execution reconciliation (#3041), thanks @nicolad
 - Implemented Hyperliquid execution client order submission (#3050), thanks @nicolad
 - Implemented Hyperliquid LiveExecutionClientExt trait (#3075), thanks @nicolad
+- Implemented Hyperliquid typed enums and optimize WebSocket lookups (#3089), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
 - Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
+- Improved `ActorExecutor` lifecycle and concurrency handling
 - Improved order books error handling, state integrity, and pprint/display
 - Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved socket client URL parsing
 - Improved compatibility of Makefile for Windows git-bash (#3066), thanks @faysou
 - Improved Blockchain adapter shutdown with cancellation token
+- Improved Blockchain adapter `node_test` script (#3092), thanks @filipmacek
+- Improved and optimize AMM pool profiling (#3098), thanks @filipmacek
 - Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
 - Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
 - Improved BitMEX REST rate limits configuration
@@ -162,6 +169,8 @@ This will be the final release with support for Python 3.11.
 - Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
 - Improved Binance fill handling when instrument not cached with clearer error log
 - Improved OKX trade mode detection and fee currency parsing
+- Improved OKX client connection reliability
+- Improved OKX liquidation and ADL fill handling and logging
 - Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined setting of flags in Makefile (#3060), thanks @faysou
@@ -179,6 +188,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
 - Upgraded `tokio` crate to v1.48.0
+- Upgraded `uvloop` to v0.22.1 (upgrades libuv to v1.49.0)
 
 ### Documentation Updates
 - Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International

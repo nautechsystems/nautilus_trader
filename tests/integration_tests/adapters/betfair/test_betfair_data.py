@@ -73,7 +73,9 @@ def instrument_list(mock_load_markets_metadata):
     global INSTRUMENTS
 
     # Setup
-    loop = asyncio.get_event_loop()
+    # Get the running loop from pytest-asyncio (session-scoped)
+    loop = asyncio.get_running_loop()
+
     client = BetfairTestStubs.betfair_client(loop=loop)
     market_ids = BetfairDataProvider.market_ids()
     config = BetfairInstrumentProviderConfig(market_ids=market_ids, account_currency="GBP")
@@ -90,6 +92,8 @@ def instrument_list(mock_load_markets_metadata):
     # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_all())
     assert INSTRUMENTS  # TODO: Fix Betfair symbology
+    yield
+    # pytest-asyncio manages loop lifecycle, no need to close
 
 
 @pytest.mark.asyncio()

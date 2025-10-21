@@ -436,7 +436,7 @@ impl WebSocketClientInner {
         let addr = format!("{host}:{port}");
 
         // Use the connector to get a turmoil-compatible stream
-        let connector = crate::net::RealTcpConnector::default();
+        let connector = crate::net::RealTcpConnector;
         let tcp_stream = connector.connect(&addr).await?;
 
         // Wrap stream appropriately based on scheme

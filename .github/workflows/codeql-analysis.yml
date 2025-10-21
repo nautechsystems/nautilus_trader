@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['python']
+        language: ['python', 'rust']
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -32,6 +32,20 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Get Rust toolchain version
+        if: matrix.language == 'rust'
+        id: rust-toolchain
+        run: |
+          echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@ac90e63697ac2784f4ecfe2964e1a285c304003a # v1.14.1
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
         uses: github/codeql-action/init@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
@@ -41,6 +55,11 @@ jobs:
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
           # queries: ./path/to/local/query, your-org/your-repo/queries@main
+
+      # https://github.com/github/codeql-action
+      - name: Autobuild
+        if: matrix.language == 'rust'
+        uses: github/codeql-action/autobuild@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action

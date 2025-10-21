@@ -139,30 +139,30 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
         let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
 
         // Accept first connection
-        if let Ok((stream, _)) = listener.accept().await {
-            if let Ok(mut ws) = accept_async(stream).await {
-                // Send one message then close
-                let _ = ws.send(Message::Text("first".to_string().into())).await;
-                drop(ws);
-            }
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            // Send one message then close
+            let _ = ws.send(Message::Text("first".to_string().into())).await;
+            drop(ws);
         }
 
         // Wait a bit before accepting second connection
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Accept second connection and run echo server
-        if let Ok((stream, _)) = listener.accept().await {
-            if let Ok(mut ws) = accept_async(stream).await {
-                while let Some(msg) = ws.next().await {
-                    match msg {
-                        Ok(Message::Text(text)) if text == "close_me" => break,
-                        Ok(msg) => {
-                            if ws.send(msg).await.is_err() {
-                                break;
-                            }
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            while let Some(msg) = ws.next().await {
+                match msg {
+                    Ok(Message::Text(text)) if text == "close_me" => break,
+                    Ok(msg) => {
+                        if ws.send(msg).await.is_err() {
+                            break;
                         }
-                        Err(_) => break,
                     }
+                    Err(_) => break,
                 }
             }
         }

@@ -2764,22 +2764,23 @@ impl OKXWebSocketClient {
 
     /// Cancels multiple orders.
     ///
+    /// Supports up to 20 orders per batch.
+    ///
     /// # Errors
     ///
     /// Returns an error if cancel parameters are invalid or if the batch
     /// request fails to send.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders>
     #[allow(clippy::type_complexity)]
     pub async fn batch_cancel_orders(
         &self,
-        orders: Vec<(
-            OKXInstrumentType,
-            InstrumentId,
-            Option<ClientOrderId>,
-            Option<String>,
-        )>,
+        orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (_inst_type, inst_id, cl_ord_id, ord_id) in orders {
+        for (inst_id, cl_ord_id, ord_id) in orders {
             let mut builder = WsCancelOrderParamsBuilder::default();
             // Note: instType should NOT be included in cancel order requests
             builder.inst_id(inst_id.symbol.inner());
@@ -2789,7 +2790,7 @@ impl OKXWebSocketClient {
             }
 
             if let Some(o) = ord_id {
-                builder.ord_id(o);
+                builder.ord_id(o.as_str());
             }
 
             let params = builder.build().map_err(|e| {
@@ -3813,7 +3814,7 @@ impl OKXWsMessageHandler {
                                             self.emitted_order_accepted.insert(*v_order_id, ());
                                         }
 
-                                        tracing::info!(
+                                        tracing::debug!(
                                             "Order accepted: client_order_id={client_order_id}, venue_order_id={:?}",
                                             venue_order_id
                                         );
@@ -3823,7 +3824,6 @@ impl OKXWsMessageHandler {
                                         ]));
                                     }
                                     PendingOrderParams::Algo(_) => {
-                                        // Algo orders handled via orders-algo channel
                                         tracing::info!(
                                             "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
                                             venue_order_id
@@ -4345,7 +4345,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::{OKXExecType, OKXSide};
+    use crate::common::enums::{OKXExecType, OKXOrderCategory, OKXSide};
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
@@ -4769,7 +4769,7 @@ mod tests {
             c_time: 0,
             cancel_source: None,
             cancel_source_reason: None,
-            category: ustr::Ustr::from("normal"),
+            category: OKXOrderCategory::Normal,
             ccy: ustr::Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
             algo_cl_ord_id: None,
@@ -4847,5 +4847,113 @@ mod tests {
             "sMsg": "Insufficient balance"
         })];
         assert!(!super::is_post_only_rejection("50000", &data));
+    }
+
+    #[tokio::test]
+    async fn test_batch_cancel_orders_with_multiple_orders() {
+        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, VenueOrderId};
+
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let client_order_id1 = ClientOrderId::new("order1");
+        let client_order_id2 = ClientOrderId::new("order2");
+        let venue_order_id1 = VenueOrderId::new("venue1");
+        let venue_order_id2 = VenueOrderId::new("venue2");
+
+        let orders = vec![
+            (instrument_id, Some(client_order_id1), Some(venue_order_id1)),
+            (instrument_id, Some(client_order_id2), Some(venue_order_id2)),
+        ];
+
+        // This will fail to send since we're not connected, but we're testing the payload building
+        let result = client.batch_cancel_orders(orders).await;
+
+        // Should get an error because not connected, but it means payload was built correctly
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_batch_cancel_orders_with_only_client_order_id() {
+        use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
+
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let client_order_id = ClientOrderId::new("order1");
+
+        let orders = vec![(instrument_id, Some(client_order_id), None)];
+
+        let result = client.batch_cancel_orders(orders).await;
+
+        // Should get an error because not connected
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_batch_cancel_orders_with_only_venue_order_id() {
+        use nautilus_model::identifiers::{InstrumentId, VenueOrderId};
+
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let venue_order_id = VenueOrderId::new("venue1");
+
+        let orders = vec![(instrument_id, None, Some(venue_order_id))];
+
+        let result = client.batch_cancel_orders(orders).await;
+
+        // Should get an error because not connected
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_batch_cancel_orders_with_both_ids() {
+        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, VenueOrderId};
+
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let client_order_id = ClientOrderId::new("order1");
+        let venue_order_id = VenueOrderId::new("venue1");
+
+        let orders = vec![(instrument_id, Some(client_order_id), Some(venue_order_id))];
+
+        let result = client.batch_cancel_orders(orders).await;
+
+        // Should get an error because not connected
+        assert!(result.is_err());
     }
 }

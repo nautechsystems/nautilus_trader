@@ -605,7 +605,6 @@ catalog = ParquetDataCatalog(
     fs_storage_options={
         "key": "your-access-key-id",
         "secret": "your-secret-access-key",
-        "region": "us-east-1",
         "endpoint_url": "https://s3.amazonaws.com",  # Optional custom endpoint
     }
 )
@@ -624,12 +623,28 @@ catalog = ParquetDataCatalog(
 )
 ```
 
-**Azure Blob Storage (`abfs`):**
+**Azure Blob Storage :**
+
+`abfs` protocol
 
 ```python
 catalog = ParquetDataCatalog(
     path="abfs://container@account.dfs.core.windows.net/nautilus-data/",
     fs_protocol="abfs",
+    fs_storage_options={
+        "account_name": "your-storage-account",
+        "account_key": "your-account-key",
+        # Or use SAS token: "sas_token": "your-sas-token"
+    }
+)
+```
+
+`az` protocol
+
+```python
+catalog = ParquetDataCatalog(
+    path="az://container/nautilus-data/",
+    fs_protocol="az",
     fs_storage_options={
         "account_name": "your-storage-account",
         "account_key": "your-account-key",
@@ -653,7 +668,6 @@ catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
 catalog = ParquetDataCatalog.from_uri(
     "s3://my-bucket/nautilus-data/",
     storage_options={
-        "region": "us-east-1",
         "access_key_id": "your-key",
         "secret_access_key": "your-secret"
     }

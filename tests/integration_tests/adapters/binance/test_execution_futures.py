@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 
 import pytest
@@ -55,9 +54,10 @@ ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestBinanceFuturesExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -131,6 +131,8 @@ class TestBinanceFuturesExecutionClient:
             cache=self.cache,
             clock=self.clock,
         )
+
+        yield
 
     @pytest.mark.asyncio()
     @pytest.mark.parametrize(

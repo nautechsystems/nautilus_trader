@@ -30,7 +30,8 @@ use crate::{
     common::{
         enums::{
             OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType,
-            OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode,
+            OKXTriggerType,
         },
         parse::{deserialize_empty_string_as_none, deserialize_string_to_u64},
     },
@@ -487,8 +488,8 @@ pub struct OKXOrderMsg {
     /// Cancel source reason.
     #[serde(default)]
     pub cancel_source_reason: Option<String>,
-    /// Category.
-    pub category: Ustr,
+    /// Order category (normal, liquidation, ADL, etc.).
+    pub category: OKXOrderCategory,
     /// Currency.
     pub ccy: Ustr,
     /// Client order ID.

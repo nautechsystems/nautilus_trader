@@ -36,6 +36,31 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      # https://github.com/EmbarkStudios/cargo-deny-action
+      # NOTE: License checking is disabled due to implied-vol crate not declaring
+      # its license in Cargo.toml (has MIT LICENSE file but shows as "unlicensed").
+      # License compliance is verified manually until this is resolved upstream.
+      # See deny.toml for documented exception and tracking.
+      - name: Run cargo-deny (advisories, sources, bans)
+        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+        with:
+          arguments: --all-features
+          command: check advisories sources bans
+
   build-linux-x86:
     strategy:
       fail-fast: false
@@ -52,6 +77,7 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
+      - cargo-deny
       - pre-commit
     env:
       BUILD_MODE: release
@@ -147,6 +173,7 @@ jobs:
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -237,6 +264,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -293,6 +321,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       HIGH_PRECISION: false
@@ -342,6 +371,8 @@ jobs:
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-macos
@@ -377,6 +408,12 @@ jobs:
           pattern: "*.whl"
           merge-multiple: true
 
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.whl'
+
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
@@ -394,6 +431,8 @@ jobs:
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -429,6 +468,12 @@ jobs:
           pattern: "*.whl"
           merge-multiple: true
 
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.whl'
+
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
@@ -445,6 +490,8 @@ jobs:
     permissions:
       contents: write # Required for uploading release assets
       actions: write  # Required for deleting artifacts
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -493,6 +540,12 @@ jobs:
           path: dist
           pattern: "*.whl"
           merge-multiple: true
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -623,6 +676,8 @@ jobs:
     environment: release
     permissions:
       contents: write # Required for uploading release assets
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
@@ -651,6 +706,12 @@ jobs:
       - name: Build sdist
         run: |
           uv build --sdist
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest sdist provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.tar.gz'
 
       - name: Set release output
         id: vars

@@ -50,6 +50,41 @@ pub enum DexPoolData {
     Flash(PoolFlash),
 }
 
+impl DexPoolData {
+    /// Returns the block number associated with this pool event.
+    #[must_use]
+    pub fn block_number(&self) -> u64 {
+        match self {
+            Self::Swap(s) => s.block,
+            Self::LiquidityUpdate(u) => u.block,
+            Self::FeeCollect(c) => c.block,
+            Self::Flash(f) => f.block,
+        }
+    }
+
+    /// Returns the transaction index associated with this pool event.
+    #[must_use]
+    pub fn transaction_index(&self) -> u32 {
+        match self {
+            Self::Swap(s) => s.transaction_index,
+            Self::LiquidityUpdate(u) => u.transaction_index,
+            Self::FeeCollect(c) => c.transaction_index,
+            Self::Flash(f) => f.transaction_index,
+        }
+    }
+
+    /// Returns the log index associated with this pool event.
+    #[must_use]
+    pub fn log_index(&self) -> u32 {
+        match self {
+            Self::Swap(s) => s.log_index,
+            Self::LiquidityUpdate(u) => u.log_index,
+            Self::FeeCollect(c) => c.log_index,
+            Self::Flash(f) => f.log_index,
+        }
+    }
+}
+
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
 #[cfg_attr(
     feature = "python",

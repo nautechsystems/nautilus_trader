@@ -211,6 +211,10 @@ security-audit: check-audit-installed  #-- Run security audit for Rust and Pytho
 	@printf "\n$(YELLOW)Note: For comprehensive Python vulnerability scanning, install and run:$(RESET)\n"
 	@printf "  pip install pip-audit && pip-audit\n"
 
+.PHONY: cargo-deny
+cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
+	cargo deny --all-features check
+
 #== Documentation
 
 .PHONY: docs
@@ -251,6 +255,13 @@ cargo-check:  #-- Check Rust code without building
 check-audit-installed:  #-- Verify cargo-audit is installed
 	@if ! cargo audit --version >/dev/null 2>&1; then \
 		echo "cargo-audit is not installed. You can install it using 'cargo install cargo-audit'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-deny-installed
+check-deny-installed:  #-- Verify cargo-deny is installed
+	@if ! cargo deny --version >/dev/null 2>&1; then \
+		echo "cargo-deny is not installed. You can install it using 'cargo install cargo-deny'"; \
 		exit 1; \
 	fi
 

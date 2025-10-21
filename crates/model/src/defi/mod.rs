@@ -31,6 +31,7 @@ pub mod data;
 pub mod dex;
 pub mod hex;
 pub mod pool_analysis;
+pub mod reporting;
 pub mod rpc;
 pub mod tick_map;
 pub mod token;

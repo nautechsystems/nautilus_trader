@@ -139,13 +139,12 @@ def fixture_instrument_provider():
 
 
 @pytest.fixture(name="exec_client")
-def fixture_exec_client(msgbus, cache, clock, instrument_provider):
+def fixture_exec_client(event_loop, msgbus, cache, clock, instrument_provider):
     """
     Create a mock live execution client.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     return MockLiveExecutionClient(
-        loop=loop,
+        loop=event_loop,
         client_id=ClientId(SIM.value),
         venue=SIM,
         account_type=AccountType.CASH,
@@ -158,13 +157,12 @@ def fixture_exec_client(msgbus, cache, clock, instrument_provider):
 
 
 @pytest.fixture(name="exec_engine")
-def fixture_exec_engine(msgbus, cache, clock, exec_client, portfolio):
+def fixture_exec_engine(event_loop, msgbus, cache, clock, exec_client, portfolio):
     """
     Create a live execution engine configured for reconciliation testing.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,

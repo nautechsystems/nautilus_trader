@@ -65,8 +65,9 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderStatus,
-        OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory,
+        OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+        OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -505,8 +506,8 @@ pub struct OKXOrderHistory {
     /// Fee discount (optional).
     #[serde(default)]
     pub fee_discount: Option<String>,
-    /// Category (optional).
-    pub category: String,
+    /// Order category (normal, liquidation, ADL, etc.).
+    pub category: OKXOrderCategory,
     /// Last update time, Unix timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub u_time: u64,

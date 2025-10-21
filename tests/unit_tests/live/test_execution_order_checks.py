@@ -117,13 +117,12 @@ def fixture_instrument_provider():
 
 
 @pytest.fixture(name="exec_client")
-def fixture_exec_client(msgbus, cache, clock, instrument_provider):
+def fixture_exec_client(event_loop, msgbus, cache, clock, instrument_provider):
     """
     Create a mock live execution client.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     client = MockLiveExecutionClient(
-        loop=loop,
+        loop=event_loop,
         client_id=ClientId(SIM.value),
         venue=SIM,
         account_type=AccountType.CASH,
@@ -137,13 +136,12 @@ def fixture_exec_client(msgbus, cache, clock, instrument_provider):
 
 
 @pytest.fixture(name="exec_engine_open_check")
-def fixture_exec_engine_open_check(msgbus, cache, clock, exec_client):
+def fixture_exec_engine_open_check(event_loop, msgbus, cache, clock, exec_client):
     """
     Create an execution engine configured for open order checking.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -162,13 +160,12 @@ def fixture_exec_engine_open_check(msgbus, cache, clock, exec_client):
 
 
 @pytest.fixture(name="exec_engine_inflight_check")
-def fixture_exec_engine_inflight_check(msgbus, cache, clock, exec_client):
+def fixture_exec_engine_inflight_check(event_loop, msgbus, cache, clock, exec_client):
     """
     Create an execution engine configured for inflight order checking.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -188,13 +185,12 @@ def fixture_exec_engine_inflight_check(msgbus, cache, clock, exec_client):
 
 
 @pytest.fixture(name="exec_engine_basic")
-def fixture_exec_engine_basic(msgbus, cache, clock):
+def fixture_exec_engine_basic(event_loop, msgbus, cache, clock):
     """
     Create a basic execution engine without client.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -215,13 +211,12 @@ def fixture_exec_engine_alias(exec_engine_continuous):
 
 
 @pytest.fixture(name="exec_engine_combined")
-def fixture_exec_engine_combined(msgbus, cache, clock, exec_client):
+def fixture_exec_engine_combined(event_loop, msgbus, cache, clock, exec_client):
     """
     Create an execution engine for combined reconciliation scenarios.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -241,13 +236,12 @@ def fixture_exec_engine_combined(msgbus, cache, clock, exec_client):
 
 
 @pytest.fixture(name="exec_engine_open_check_custom_threshold")
-def fixture_exec_engine_open_check_custom_threshold(msgbus, cache, clock, exec_client):
+def fixture_exec_engine_open_check_custom_threshold(event_loop, msgbus, cache, clock, exec_client):
     """
     Create an execution engine with a custom open check threshold.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -1094,13 +1088,12 @@ async def test_reconcile_order_without_client_order_id(
 
 
 @pytest.fixture(name="exec_engine_continuous")
-def fixture_exec_engine_continuous(msgbus, cache, clock, exec_client):
+def fixture_exec_engine_continuous(event_loop, msgbus, cache, clock, exec_client):
     """
     Create an execution engine configured for continuous reconciliation.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
     exec_engine = LiveExecutionEngine(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,

@@ -131,8 +131,13 @@ node = TradingNode(config=config_node)
 strat_config = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
+    # subscribe_book=True,
+    subscribe_quotes=True,
+    subscribe_trades=True,
     order_qty=order_qty,
     # order_params={"price_match": "QUEUE_5"},
+    # enable_buys=False,
+    # enable_sells=False,
     open_position_on_start_qty=order_qty,
     # tob_offset_ticks=0,
     # use_batch_cancel_on_stop=True,

@@ -119,9 +119,15 @@ class OKXDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
+        self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
-        self._log.info(f"config.is_demo={config.is_demo}", LogColor.BLUE)
+        self._log.info(f"{config.is_demo=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.vip_level=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -147,6 +153,10 @@ class OKXDataClient(LiveMarketDataClient):
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
+        if config.vip_level is not None:
+            self._ws_client.set_vip_level(config.vip_level)
+            self._ws_business_client.set_vip_level(config.vip_level)
+
     @property
     def instrument_provider(self) -> OKXInstrumentProvider:
         return self._instrument_provider
@@ -156,17 +166,6 @@ class OKXDataClient(LiveMarketDataClient):
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        # Query VIP level if credentials are available
-        if self._http_client.api_key:
-            try:
-                vip_level_result = await self._http_client.request_vip_level()
-                if vip_level_result is not None:
-                    self._ws_client.set_vip_level(vip_level_result)
-                    self._ws_business_client.set_vip_level(vip_level_result)
-                    self._log.info(f"Detected OKX VIP level: {vip_level_result}", LogColor.BLUE)
-            except Exception as e:
-                self._log.warning(f"Failed to query VIP level: {e}")
-
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
@@ -175,7 +174,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to public websocket {self._ws_client.url}", LogColor.BLUE)
 
         await self._ws_business_client.connect(
@@ -184,7 +183,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         # Wait for connection to be established
-        await self._ws_business_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_business_client.wait_until_active(timeout_secs=30.0)
         self._log.info(
             f"Connected to business websocket {self._ws_business_client.url}",
             LogColor.BLUE,

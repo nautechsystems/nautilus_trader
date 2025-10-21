@@ -18,7 +18,9 @@
 //! This module provides utilities for using PostgreSQL's COPY command with binary format,
 //! which offers significantly better performance than standard INSERT operations for bulk data loading.
 
-use nautilus_model::defi::{Block, PoolLiquidityUpdate, PoolSwap, data::PoolFeeCollect};
+use nautilus_model::defi::{
+    Block, Pool, PoolLiquidityUpdate, PoolSwap, Token, data::PoolFeeCollect,
+};
 use sqlx::{PgPool, postgres::PgPoolCopyExt};
 
 // Helper to convert scientific notation to decimal
@@ -103,6 +105,77 @@ impl<'a> PostgresCopyHandler<'a> {
         self.write_copy_trailer(&mut copy_in).await?;
 
         // Finish the COPY operation
+        copy_in
+            .finish()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to finish COPY operation: {e}"))?;
+
+        Ok(())
+    }
+
+    /// Inserts tokens using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn copy_tokens(&self, chain_id: u32, tokens: &[Token]) -> anyhow::Result<()> {
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        let copy_statement = r"
+            COPY token (
+                chain_id, address, name, symbol, decimals
+            ) FROM STDIN WITH (FORMAT BINARY)";
+
+        let mut copy_in = self
+            .pool
+            .copy_in_raw(copy_statement)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start COPY operation: {e}"))?;
+
+        self.write_copy_header(&mut copy_in).await?;
+        for token in tokens {
+            self.write_token_binary(&mut copy_in, chain_id, token)
+                .await?;
+        }
+        self.write_copy_trailer(&mut copy_in).await?;
+        copy_in
+            .finish()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to finish COPY operation: {e}"))?;
+
+        Ok(())
+    }
+
+    /// Inserts pools using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn copy_pools(&self, chain_id: u32, pools: &[Pool]) -> anyhow::Result<()> {
+        if pools.is_empty() {
+            return Ok(());
+        }
+
+        let copy_statement = r"
+            COPY pool (
+                chain_id, dex_name, address, creation_block,
+                token0_chain, token0_address, token1_chain, token1_address,
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
+            ) FROM STDIN WITH (FORMAT BINARY)";
+
+        let mut copy_in = self
+            .pool
+            .copy_in_raw(copy_statement)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start COPY operation: {e}"))?;
+
+        self.write_copy_header(&mut copy_in).await?;
+        for pool in pools {
+            self.write_pool_binary(&mut copy_in, chain_id, pool).await?;
+        }
+        self.write_copy_trailer(&mut copy_in).await?;
         copy_in
             .finish()
             .await
@@ -760,6 +833,155 @@ impl<'a> PostgresCopyHandler<'a> {
             .send(row_data)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to write pool fee collect data: {e}"))?;
+        Ok(())
+    }
+
+    /// Writes a single token in PostgreSQL binary format.
+    ///
+    /// Each row in binary format consists of:
+    /// - 2-byte field count
+    /// - For each field: 4-byte length followed by data (or -1 for NULL)
+    async fn write_token_binary(
+        &self,
+        copy_in: &mut sqlx::postgres::PgCopyIn<sqlx::pool::PoolConnection<sqlx::Postgres>>,
+        chain_id: u32,
+        token: &Token,
+    ) -> anyhow::Result<()> {
+        use std::io::Write;
+        let mut row_data = Vec::new();
+
+        // Number of fields (5)
+        row_data.write_all(&5u16.to_be_bytes())?;
+
+        // Field 1: chain_id (INT4)
+        let chain_id_bytes = (chain_id as i32).to_be_bytes();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
+
+        // Field 2: address (TEXT)
+        let address_bytes = token.address.to_string().as_bytes().to_vec();
+        row_data.write_all(&(address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&address_bytes)?;
+
+        // Field 3: name (TEXT)
+        let name_bytes = token.name.as_bytes();
+        row_data.write_all(&(name_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(name_bytes)?;
+
+        // Field 4: symbol (TEXT)
+        let symbol_bytes = token.symbol.as_bytes();
+        row_data.write_all(&(symbol_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(symbol_bytes)?;
+
+        // Field 5: decimals (INT4)
+        let decimals_bytes = (i32::from(token.decimals)).to_be_bytes();
+        row_data.write_all(&(decimals_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&decimals_bytes)?;
+
+        copy_in
+            .send(row_data)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to write token data: {e}"))?;
+        Ok(())
+    }
+
+    /// Writes a single pool in PostgreSQL binary format.
+    ///
+    /// Each row in binary format consists of:
+    /// - 2-byte field count
+    /// - For each field: 4-byte length followed by data (or -1 for NULL)
+    async fn write_pool_binary(
+        &self,
+        copy_in: &mut sqlx::postgres::PgCopyIn<sqlx::pool::PoolConnection<sqlx::Postgres>>,
+        chain_id: u32,
+        pool: &Pool,
+    ) -> anyhow::Result<()> {
+        use std::io::Write;
+        let mut row_data = Vec::new();
+
+        // Number of fields (12)
+        row_data.write_all(&12u16.to_be_bytes())?;
+
+        // Field 1: chain_id (INT4)
+        let chain_id_bytes = (chain_id as i32).to_be_bytes();
+        row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&chain_id_bytes)?;
+
+        // Field 2: dex_name (TEXT)
+        let dex_name_bytes = pool.dex.name.to_string().as_bytes().to_vec();
+        row_data.write_all(&(dex_name_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&dex_name_bytes)?;
+
+        // Field 3: address (TEXT)
+        let address_bytes = pool.address.to_string().as_bytes().to_vec();
+        row_data.write_all(&(address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&address_bytes)?;
+
+        // Field 4: creation_block (INT8)
+        let creation_block_bytes = (pool.creation_block as i64).to_be_bytes();
+        row_data.write_all(&(creation_block_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&creation_block_bytes)?;
+
+        // Field 5: token0_chain (INT4)
+        let token0_chain_bytes = (pool.token0.chain.chain_id as i32).to_be_bytes();
+        row_data.write_all(&(token0_chain_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&token0_chain_bytes)?;
+
+        // Field 6: token0_address (TEXT)
+        let token0_address_bytes = pool.token0.address.to_string().as_bytes().to_vec();
+        row_data.write_all(&(token0_address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&token0_address_bytes)?;
+
+        // Field 7: token1_chain (INT4)
+        let token1_chain_bytes = (pool.token1.chain.chain_id as i32).to_be_bytes();
+        row_data.write_all(&(token1_chain_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&token1_chain_bytes)?;
+
+        // Field 8: token1_address (TEXT)
+        let token1_address_bytes = pool.token1.address.to_string().as_bytes().to_vec();
+        row_data.write_all(&(token1_address_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&token1_address_bytes)?;
+
+        // Field 9: fee (INT4, nullable)
+        if let Some(fee) = pool.fee {
+            let fee_bytes = (fee as i32).to_be_bytes();
+            row_data.write_all(&(fee_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&fee_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        // Field 10: tick_spacing (INT4, nullable)
+        if let Some(tick_spacing) = pool.tick_spacing {
+            let tick_spacing_bytes = (tick_spacing as i32).to_be_bytes();
+            row_data.write_all(&(tick_spacing_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&tick_spacing_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        // Field 11: initial_tick (INT4, nullable)
+        if let Some(initial_tick) = pool.initial_tick {
+            let initial_tick_bytes = initial_tick.to_be_bytes();
+            row_data.write_all(&(initial_tick_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&initial_tick_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        // Field 12: initial_sqrt_price_x96 (TEXT, nullable)
+        if let Some(ref initial_sqrt_price) = pool.initial_sqrt_price_x96 {
+            let sqrt_price_bytes = format_numeric(initial_sqrt_price).as_bytes().to_vec();
+            row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&sqrt_price_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        copy_in
+            .send(row_data)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to write pool data: {e}"))?;
         Ok(())
     }
 

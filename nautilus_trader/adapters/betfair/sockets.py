@@ -22,6 +22,7 @@ import msgspec
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.core.nautilus_pyo3 import SocketClient
 from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
@@ -56,7 +57,7 @@ class BetfairStreamClient:
         self.use_ssl = True
         self.certs_dir = certs_dir or os.environ.get("BETFAIR_CERTS_DIR")
 
-        self._loop = asyncio.get_event_loop()
+        self._loop = get_event_loop()
         self._http_client = http_client
         self._client: SocketClient | None = None
         self._log = Logger(type(self).__name__)
