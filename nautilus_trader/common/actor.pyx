@@ -728,7 +728,8 @@ cdef class Actor(Component):
         Condition.type(executor, Executor, "executor")
 
         self._executor = ActorExecutor(loop, executor, logger=self._log)
-        self._log.debug(f"Registered {executor}")
+        if self._log is not None:
+            self._log.debug(f"Registered {executor}")
 
     cpdef void register_warning_event(self, type event):
         """
@@ -757,7 +758,8 @@ cdef class Actor(Component):
         Condition.not_none(event, "event")
 
         self._warning_events.discard(event)
-        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
+        if self._log is not None:
+            self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -1008,9 +1010,10 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-        f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.info(
+                f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
 
         return task_id
 
@@ -1068,9 +1071,10 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.info(
+                f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
 
         return task_id
 
@@ -1157,7 +1161,8 @@ cdef class Actor(Component):
 
         """
         if self._executor is None:
-            self._log.warning(f"Executor: {task_id} not found")
+            if self._log is not None:
+                self._log.warning(f"Executor: {task_id} not found")
             return
 
         self._executor.cancel_task(task_id)
@@ -1185,10 +1190,12 @@ cdef class Actor(Component):
         cdef str name
 
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name})")
+            if self._log is not None:
+                self._log.info(f"Canceled Timer(name={name})")
 
         if self._executor is not None:
-            self._log.info(f"Canceling executor tasks")
+            if self._log is not None:
+                self._log.info(f"Canceling executor tasks")
             self._executor.cancel_all_tasks()
 
     cpdef void _resume(self):

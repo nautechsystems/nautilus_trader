@@ -180,7 +180,15 @@ Customize individual orders by supplying a `params` dictionary when calling `Str
 
 | Parameter       | Type   | Account types     | Description |
 |-----------------|--------|-------------------|-------------|
-| `price_match`   | `str`  | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see table below) to delegate price selection to the exchange. When provided, Nautilus omits the limit price in the API call so Binance can compute the working price. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
+| `price_match`   | `str`  | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see Price match section below) to delegate price selection to the exchange. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
+
+### Price match
+
+Binance Futures supports BBO (Best Bid/Offer) price matching via the `priceMatch` parameter, which delegates price selection to the exchange. This feature allows limit orders to dynamically join the order book at optimal prices without manually specifying the exact price level.
+
+When using `price_match`, you submit a limit order with a reference price (for local risk checks), but Binance determines the actual working price based on the current market state and the selected price match mode.
+
+#### Valid price match values
 
 Valid `priceMatch` values for Binance Futures:
 
@@ -199,14 +207,26 @@ Valid `priceMatch` values for Binance Futures:
 For more details, see the [official documentation](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api).
 :::
 
-#### Example: Futures BBO limit order
+#### Event sequence
+
+When an order is submitted with `price_match`, the following sequence of events occurs:
+
+1. **Order submission**: Nautilus sends the order to Binance with the `priceMatch` parameter but omits the limit price in the API request.
+2. **Order acceptance**: Binance accepts the order and determines the actual working price based on the current market and the specified price match mode.
+3. **OrderAccepted event**: Nautilus generates an `OrderAccepted` event when the order is confirmed.
+4. **OrderUpdated event**: If the Binance-accepted price differs from the original reference price, Nautilus immediately generates an `OrderUpdated` event with the actual working price.
+5. **Price synchronization**: The order's limit price in the Nautilus cache is now synchronized with the actual price accepted by Binance.
+
+This ensures that the order price in your system accurately reflects what Binance has accepted, which is critical for position management, risk calculations, and strategy logic.
+
+#### Example
 
 ```python
 order = strategy.order_factory.limit(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(1),
-    price=Price.from_str("65000"),  # retained locally for risk management
+    price=Price.from_str("65000"),  # Reference price for local risk checks
 )
 
 strategy.submit_order(
@@ -216,7 +236,7 @@ strategy.submit_order(
 ```
 
 :::note
-`price_match` cannot be combined with `price` on the Binance API. Nautilus retains the limit price internally for validations, but the exchange receives only the price match mode described above.
+After submission, if Binance accepts the order at a different price (e.g., 64,995.50), you will receive both an `OrderAccepted` event followed by an `OrderUpdated` event with the new price.
 :::
 
 ### Trailing stops

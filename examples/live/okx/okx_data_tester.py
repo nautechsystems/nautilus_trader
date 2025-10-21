@@ -98,8 +98,8 @@ config_node = TradingNodeConfig(
             api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(
-                load_all=False,
-                load_ids=frozenset([spot_instrument_id, swap_instrument_id]),
+                load_all=True,
+                # load_ids=frozenset([spot_instrument_id, swap_instrument_id]),
             ),
             instrument_types=instrument_types,
             contract_types=contract_types,
@@ -109,7 +109,7 @@ config_node = TradingNodeConfig(
     },
     timeout_connection=20.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=2.0,
+    timeout_post_stop=5.0,
 )
 
 # Instantiate the node with a configuration

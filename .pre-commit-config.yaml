@@ -50,13 +50,53 @@ repos:
     hooks:
       - id: taplo-format
 
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint-docker
+        name: dockerfile-lint
+        description: Lint Dockerfiles for best practices and errors
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.38.1
+    hooks:
+      - id: typos
+        description: Checks for common typos.
+        args: ["--force-exclude"]
+        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
       - id: codespell
         description: Checks for common misspellings.
-        types_or: [python, cython, rst, markdown]
-        args: ["-L", "ACN,crate,ot,socio-economic,zar"]
+        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets scan)
+        description: Detects hard-coded secrets prior to commit.
+        args: ["--staged", "--redact"]
+
+  ##############################################################################
+  #  GitHub Actions linting (complementary tools covering different aspects)
+  ##############################################################################
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.8
+    hooks:
+      - id: actionlint-docker
+        name: actionlint (syntax/structure)
+        description: Checks GitHub Actions workflow syntax and structural correctness
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.15.2
+    hooks:
+      - id: zizmor
+        name: zizmor (security)
+        description: Scans GitHub Actions workflows for security misconfigurations
+        args: ["--no-online-audits", "--min-severity", "medium"]
 
   ##############################################################################
   #  Custom hooks
@@ -93,16 +133,6 @@ repos:
         language: script
         types: [text]
         pass_filenames: false
-
-      - id: zizmor
-        name: zizmor (audit GitHub actions)
-        description: Audit GitHub Actions workflows
-        language: python
-        additional_dependencies: [zizmor]
-        entry: zizmor
-        files: '^\.github/workflows/.*\.ya?ml$'
-        pass_filenames: false
-        args: ["--no-online-audits", "--min-severity", "medium", ".github/workflows"]
 
   ##############################################################################
   #  Rust formatting and linting

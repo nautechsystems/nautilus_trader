@@ -1852,7 +1852,7 @@ fn update_position(
             .collect()
     };
 
-    log::debug!("postion fresh from cache -> {positions_open:?}");
+    log::debug!("position fresh from cache -> {positions_open:?}");
 
     let mut portfolio_clone = Portfolio {
         clock: clock.clone(),

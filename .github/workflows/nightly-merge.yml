@@ -79,7 +79,7 @@ jobs:
           echo "$successful_workflow" | jq '.'
 
           develop_sha=$(echo "$successful_workflow" | jq -r '.head_sha')
-          echo "sha=$develop_sha" >> $GITHUB_OUTPUT
+          echo "sha=$develop_sha" >> "$GITHUB_OUTPUT"
           echo "Last successful develop commit: $develop_sha"
 
           # Check if there are changes between nightly and this develop commit
@@ -95,12 +95,12 @@ jobs:
 
           if [[ "$nightly_sha" == "$develop_sha" ]]; then
             echo "Nightly is already at the last successful develop commit"
-            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
             # Check if develop commit is ahead of nightly
             if git merge-base --is-ancestor "$nightly_sha" "$develop_sha"; then
               echo "Develop has new changes to merge"
-              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "has_changes=true" >> "$GITHUB_OUTPUT"
             else
               echo "ERROR: nightly branch has diverged from develop"
               echo "Nightly contains commits not in the develop chain"

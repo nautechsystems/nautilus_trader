@@ -616,7 +616,7 @@ impl OrderMatchingEngine {
                 }
             }
 
-            // Check fo valid order quantity precision
+            // Check for valid order quantity precision
             if order.quantity().precision != self.instrument.size_precision() {
                 self.generate_order_rejected(
                     order,

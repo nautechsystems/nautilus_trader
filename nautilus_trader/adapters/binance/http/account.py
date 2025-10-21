@@ -163,7 +163,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The client strategy ID for the request.
         strategyType : int, optional
             Only for SPOT/MARGIN orders
-            The client strategy type for thr request. Cannot be less than 1000000
+            The client strategy type for the request. Cannot be less than 1000000
         stopPrice : str, optional
             Mandatory for STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, TAKE_PROFIT_LIMIT,
             STOP, STOP_MARKET, TAKE_PROFIT_MARKET.
@@ -206,7 +206,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             All others default to ACK.
             FULL response only for SPOT/MARGIN orders.
         goodTillDate : int, optional
-            The order cancel time for timeInForce GTD, mandatory when timeInforce set to GTD;
+            The order cancel time for timeInForce GTD, mandatory when timeEnforce set to GTD;
             order the timestamp only retains second-level precision, ms part will be ignored.
             The goodTillDate timestamp must be greater than the current time plus 600 seconds and
             smaller than 253402300799000.

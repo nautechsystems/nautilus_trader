@@ -640,8 +640,8 @@ impl OrderCore {
 
         // Save current status as previous_status for ALL transitions except:
         // - Initialized (no prior state exists)
-        // - ModifyRejected/CancelRejected (need to preserve the pre-Pending state)
-        // - When already in Pending* state (avoid overwriting the pre-pending state when receiving multiple pending requests)
+        // - ModifyRejected/CancelRejected (need to preserve the pre Pending state)
+        // - When already in Pending* state (avoid overwriting the pre Pending state when receiving multiple pending requests)
         if !matches!(
             event,
             OrderEventAny::Initialized(_)

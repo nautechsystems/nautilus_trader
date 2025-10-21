@@ -3307,7 +3307,8 @@ struct OKXWsMessageHandler {
     emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     last_account_state: Option<AccountState>,
-    fee_cache: AHashMap<Ustr, Money>, // Key is order ID
+    fee_cache: AHashMap<Ustr, Money>,           // Key is order ID
+    filled_qty_cache: AHashMap<Ustr, Quantity>, // Key is order ID
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     auth_tracker: AuthTracker,
     pending_messages: VecDeque<NautilusWsMessage>,
@@ -3509,10 +3510,20 @@ impl OKXWsMessageHandler {
                     .unwrap_or_else(|| Money::new(0.0, fill_report.commission.currency));
                 let total_fee = current_fee + fill_report.commission;
                 self.fee_cache.insert(order_id, total_fee);
+
+                let current_filled_qty = self
+                    .filled_qty_cache
+                    .get(&order_id)
+                    .copied()
+                    .unwrap_or_else(|| Quantity::zero(fill_report.last_qty.precision));
+                let total_filled_qty = current_filled_qty + fill_report.last_qty;
+                self.filled_qty_cache.insert(order_id, total_filled_qty);
             }
             ExecutionReport::Order(status_report) => {
                 if matches!(status_report.order_status, OrderStatus::Filled) {
                     self.fee_cache.remove(&status_report.venue_order_id.inner());
+                    self.filled_qty_cache
+                        .remove(&status_report.venue_order_id.inner());
                 }
 
                 if matches!(
@@ -3570,6 +3581,7 @@ impl OKXWsMessageHandler {
             instruments_cache,
             last_account_state: None,
             fee_cache: AHashMap::new(),
+            filled_qty_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
             auth_tracker,
             pending_messages: VecDeque::new(),
@@ -4083,6 +4095,7 @@ impl OKXWsMessageHandler {
                                     self.account_id,
                                     &self.instruments_cache,
                                     &self.fee_cache,
+                                    &self.filled_qty_cache,
                                     ts_init,
                                 ) {
                                     Ok(report) => {
@@ -4247,6 +4260,7 @@ impl OKXWsMessageHandler {
                                 size_precision,
                                 ts_init,
                                 &mut self.funding_rate_cache,
+                                &self.instruments_cache,
                             ) {
                                 Ok(Some(msg)) => return Some(msg),
                                 Ok(None) => continue,

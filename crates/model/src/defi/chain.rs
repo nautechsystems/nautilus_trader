@@ -238,7 +238,7 @@ impl Chain {
             109 => Some(&chains::SONEIUM),
             138 => Some(&chains::SOPHON),
             139 => Some(&chains::SOPHON_TESTNET),
-            10001 => Some(&chains::SUPERSEED),
+            10001 => Some(&chains::SUPERSEDE),
             9999 => Some(&chains::UNICHAIN),
             9997 => Some(&chains::UNICHAIN_SEPOLIA),
             50 => Some(&chains::XDC),
@@ -329,7 +329,7 @@ impl Chain {
             Blockchain::Soneium => Some(&chains::SONEIUM),
             Blockchain::Sophon => Some(&chains::SOPHON),
             Blockchain::SophonTestnet => Some(&chains::SOPHON_TESTNET),
-            Blockchain::Superseed => Some(&chains::SUPERSEED),
+            Blockchain::Superseed => Some(&chains::SUPERSEDE),
             Blockchain::Unichain => Some(&chains::UNICHAIN),
             Blockchain::UnichainSepolia => Some(&chains::UNICHAIN_SEPOLIA),
             Blockchain::Xdc => Some(&chains::XDC),
@@ -470,7 +470,7 @@ pub mod chains {
     pub static SOPHON: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Sophon, 138));
     pub static SOPHON_TESTNET: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 139));
-    pub static SUPERSEED: LazyLock<Chain> =
+    pub static SUPERSEDE: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::Superseed, 10001));
     pub static UNICHAIN: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Unichain, 9999));
     pub static UNICHAIN_SEPOLIA: LazyLock<Chain> =

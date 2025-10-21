@@ -1307,7 +1307,7 @@ impl BlockchainDataClientCore {
                 profiler.initialize(initial_sqrt_price_x96);
             } else {
                 anyhow::bail!(
-                    "Pool is not initialized and it doesnt contain initial price, cannot bootstrap profiler"
+                    "Pool is not initialized and it doesn't contain initial price, cannot bootstrap profiler"
                 );
             }
         }

@@ -105,7 +105,7 @@ fn test_is_registered_when_no_registrations() {
 }
 
 #[rstest]
-fn test_regsiter_endpoint() {
+fn test_register_endpoint() {
     let msgbus = get_message_bus();
     let endpoint = "MyEndpoint".into();
     let handler = get_stub_shareable_handler(None);

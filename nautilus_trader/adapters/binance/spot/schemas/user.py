@@ -246,6 +246,27 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
+
+            # Check if price changed (for price_match orders)
+            order = exec_client._cache.order(client_order_id)
+            if order and order.has_price:
+                instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+                if instrument is not None:
+                    price_precision = instrument.price_precision
+                    binance_price = Price(float(self.p), price_precision)
+                    if binance_price != order.price:
+                        # Preserve trigger price for stop orders (priceMatch only affects limit price)
+                        trigger_price = order.trigger_price if order.has_trigger_price else None
+                        exec_client.generate_order_updated(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            quantity=order.quantity,
+                            price=binance_price,
+                            trigger_price=trigger_price,
+                            ts_event=ts_event,
+                        )
         elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
             if self.x == BinanceExecutionType.CALCULATED:
                 exec_client._log.info(

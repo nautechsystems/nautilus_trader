@@ -91,7 +91,7 @@ jobs:
       - name: Generate platform slug
         id: platform-slug
         run: |
-          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
+          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
 
       - name: Build nautilus_trader (push to local registry)
         # https://github.com/docker/build-push-action
@@ -342,12 +342,12 @@ jobs:
       - name: Get branch name
         id: branch-name
         run: |
-          echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          echo "current_branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
       - name: Generate platform slug
         id: platform-slug
         run: |
-          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
+          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Docker metadata
         id: meta
@@ -417,7 +417,7 @@ jobs:
       - name: Get branch name
         id: branch-name
         run: |
-          echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          echo "current_branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Docker metadata
         id: meta
@@ -431,16 +431,17 @@ jobs:
 
       - name: Create manifest list and push
         working-directory: /tmp/digests/nautilus_trader
+        shell: bash
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s ' *)
+          mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s\n' *)
+          docker buildx imagetools create "${tags[@]}" "${digests[@]}"
 
       - name: Inspect image
         run: |
           TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS"
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -519,20 +520,20 @@ jobs:
       - name: Get branch name
         id: branch-name
         run: |
-          echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          echo "current_branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
       - name: Generate platform slug
         id: platform-slug
         run: |
-          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
+          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
 
       - name: Determine image tag
         id: image-tag
         run: |
           if [ "${{ steps.branch-name.outputs.current_branch }}" = "master" ]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ steps.branch-name.outputs.current_branch }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ steps.branch-name.outputs.current_branch }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prepare Docker metadata
@@ -605,7 +606,7 @@ jobs:
       - name: Get branch name
         id: branch-name
         run: |
-          echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          echo "current_branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Docker metadata
         id: meta
@@ -619,13 +620,14 @@ jobs:
 
       - name: Create manifest list and push
         working-directory: /tmp/digests/jupyterlab
+        shell: bash
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s ' *)
+          mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s\n' *)
+          docker buildx imagetools create "${tags[@]}" "${digests[@]}"
 
       - name: Inspect image
         run: |
           TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS"

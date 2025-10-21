@@ -163,7 +163,7 @@ class ActorExecutor:
         # Drain the internal task queue (this will not execute the tasks)
         while not self._queue.empty():
             task_id, _, _, _ = self._queue.get_nowait()
-            self._log.info(f"Executor: Dequeued {task_id} prior to execution")
+            self._log.debug(f"Executor: Dequeued {task_id} prior to execution")
         self._queued_tasks.clear()
 
     def _add_active_task(self, task_id: TaskId, task: Future[Any]) -> None:
@@ -193,7 +193,7 @@ class ActorExecutor:
                     current_task = asyncio.current_task()
                     if current_task and current_task.cancelling() > 0:
                         raise  # Worker shutdown, propagate up
-                    self._log.info(f"Executor: Task {task_id} cancelled during execution")
+                    self._log.debug(f"Executor: Task {task_id} cancelled during execution")
                 finally:
                     # Only call task_done if we actually dequeued an item
                     if item_dequeued:
@@ -219,7 +219,7 @@ class ActorExecutor:
                 # Make this a warning level for now
                 self._log.warning(f"Executor: Canceled {task_id}")
                 return
-            self._log.info(f"Executor: Completed {task_id}")
+            self._log.debug(f"Executor: Completed {task_id}")
 
     def _submit_to_executor(
         self,
@@ -284,7 +284,7 @@ class ActorExecutor:
         TaskId
 
         """
-        self._log.info(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
+        self._log.debug(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
         task: Future = self._submit_to_executor(func, *args, **kwargs)
 
         task_id = TaskId.create()
@@ -352,7 +352,7 @@ class ActorExecutor:
         """
         if task_id in self._queued_tasks:
             self._queued_tasks.discard(task_id)
-            self._log.info(f"Executor: Canceled {task_id} prior to execution")
+            self._log.debug(f"Executor: Canceled {task_id} prior to execution")
             return
 
         task: Future | None = self._active_tasks.pop(task_id, None)
@@ -363,7 +363,7 @@ class ActorExecutor:
         self._future_index.pop(task, None)
 
         result = task.cancel()
-        self._log.info(f"Executor: Canceled {task_id} with result {result}")
+        self._log.debug(f"Executor: Canceled {task_id} with result {result}")
 
     def cancel_all_tasks(self) -> None:
         """

@@ -78,7 +78,7 @@ fn load_instruments_any() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            nautilus_okx::common::parse::parse_instrument_any(raw, ts_init)
+            nautilus_okx::common::parse::parse_instrument_any(raw, None, None, None, None, ts_init)
                 .ok()
                 .flatten()
         })

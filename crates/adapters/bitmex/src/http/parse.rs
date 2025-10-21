@@ -565,7 +565,7 @@ pub fn parse_trade_bin(
 /// the parser defensively infers the status from `leaves_qty` and `cum_qty`:
 /// - `leaves_qty=0, cum_qty>0` -> `Filled`
 /// - `leaves_qty=0, cum_qty<=0` -> `Canceled`
-/// - Otherwise -> Returns error (unparseable)
+/// - Otherwise -> Returns error (unparsable)
 ///
 /// # Errors
 ///

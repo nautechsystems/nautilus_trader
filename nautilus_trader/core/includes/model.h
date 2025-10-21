@@ -299,7 +299,7 @@ typedef enum BookType {
 } BookType;
 
 /**
- * The order contigency type which specifies the behavior of linked orders.
+ * The order contingency type which specifies the behavior of linked orders.
  *
  * [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
  */
@@ -410,7 +410,7 @@ typedef enum InstrumentCloseType {
 } InstrumentCloseType;
 
 /**
- * The liqudity side for a trade.
+ * The liquidity side for a trade.
  */
 typedef enum LiquiditySide {
     /**
@@ -418,11 +418,11 @@ typedef enum LiquiditySide {
      */
     NO_LIQUIDITY_SIDE = 0,
     /**
-     * The order passively provided liqudity to the market to complete the trade (made a market).
+     * The order passively provided liquidity to the market to complete the trade (made a market).
      */
     MAKER = 1,
     /**
-     * The order aggressively took liqudity from the market to complete the trade.
+     * The order aggressively took liquidity from the market to complete the trade.
      */
     TAKER = 2,
 } LiquiditySide;

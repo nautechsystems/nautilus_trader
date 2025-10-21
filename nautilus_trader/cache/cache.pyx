@@ -2833,7 +2833,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own order book to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
 
         Returns
         -------
@@ -2859,7 +2859,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
         accepted_buffer_ns : uint64_t, optional
@@ -2911,7 +2911,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
         accepted_buffer_ns : uint64_t, optional

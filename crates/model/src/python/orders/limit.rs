@@ -203,7 +203,7 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_accound_id(&self) -> Option<AccountId> {
+    fn py_account_id(&self) -> Option<AccountId> {
         self.account_id
     }
 

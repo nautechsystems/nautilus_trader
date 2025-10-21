@@ -330,7 +330,7 @@ cdef class CryptoOption(Instrument):
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
-        Return the contract expriation timestamp (UTC).
+        Return the contract expiration timestamp (UTC).
 
         Returns
         -------

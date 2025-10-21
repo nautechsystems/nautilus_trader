@@ -77,7 +77,7 @@ class DYDXAccountHttpAPI:
         self._endpoint_get_order = DYDXGetOrderEndpoint(client)
         self._endpoint_get_fills = DYDXGetFillsEndpoint(client)
 
-    async def get_adress_subaccounts(
+    async def get_address_subaccounts(
         self,
         address: str,
     ) -> DYDXAddressResponse | None:

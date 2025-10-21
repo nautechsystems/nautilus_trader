@@ -31,7 +31,7 @@ class ProductClass(enum.Enum):
     INDICES = "IND"
     STOCKS = "STK"
     OPTIONS = "OPTGRP"
-    WARRANTS = "WNT"
+    WARRANTS = "WANT"
 
 
 class Exchange(enum.Enum):

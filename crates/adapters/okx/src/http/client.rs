@@ -36,6 +36,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
+    str::FromStr,
     sync::{Arc, LazyLock, Mutex},
 };
 
@@ -59,6 +60,7 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
 };
 use reqwest::{Method, StatusCode, header::USER_AGENT};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -1196,7 +1198,7 @@ impl OKXHttpClient {
         let mut params = GetInstrumentsParamsBuilder::default();
         params.inst_type(instrument_type);
 
-        if let Some(family) = instrument_family {
+        if let Some(family) = instrument_family.clone() {
             params.inst_family(family);
         }
 
@@ -1208,11 +1210,57 @@ impl OKXHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
+        let fee_rate_opt = {
+            let fee_params = GetTradeFeeParams {
+                inst_type: instrument_type,
+                uly: None,
+                inst_family: instrument_family,
+            };
+
+            match self.inner.http_get_trade_fee(fee_params).await {
+                Ok(rates) => rates.into_iter().next(),
+                Err(OKXHttpError::MissingCredentials) => {
+                    log::debug!("Missing credentials for fee rates, using None");
+                    None
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch fee rates for {instrument_type}: {e}");
+                    None
+                }
+            }
+        };
+
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         for inst in &resp {
-            match parse_instrument_any(inst, ts_init) {
+            // Determine which fee fields to use based on contract type
+            let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
+                let is_usdt_margined =
+                    inst.ct_type == crate::common::enums::OKXContractType::Linear;
+                let (maker_str, taker_str) = if is_usdt_margined {
+                    (&fee_rate.maker_u, &fee_rate.taker_u)
+                } else {
+                    (&fee_rate.maker, &fee_rate.taker)
+                };
+
+                let maker = if !maker_str.is_empty() {
+                    Decimal::from_str(maker_str).ok()
+                } else {
+                    None
+                };
+                let taker = if !taker_str.is_empty() {
+                    Decimal::from_str(taker_str).ok()
+                } else {
+                    None
+                };
+
+                (maker, taker)
+            } else {
+                (None, None)
+            };
+
+            match parse_instrument_any(inst, None, None, maker_fee, taker_fee, ts_init) {
                 Ok(Some(instrument_any)) => {
                     instruments.push(instrument_any);
                 }

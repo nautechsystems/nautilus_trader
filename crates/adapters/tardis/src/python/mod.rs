@@ -67,6 +67,10 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(enums::py_tardis_exchange_to_venue_str, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        enums::py_tardis_exchange_is_option_exchange,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(enums::py_tardis_exchanges, m)?)?;
     m.add_function(wrap_pyfunction!(
         config::py_bar_spec_to_tardis_trade_bar_string,
