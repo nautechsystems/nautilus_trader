@@ -71,6 +71,21 @@ cdef extern from "../includes/common.h":
         # A trigger when the component has successfully faulted.
         FAULT_COMPLETED # = 15,
 
+    # The log level for log messages.
+    cpdef enum LogLevel:
+        # The **OFF** log level. A level lower than all other log levels (off).
+        OFF # = 0,
+        # The **TRACE** log level. Only available in Rust for debug/development builds.
+        TRACE # = 1,
+        # The **DEBUG** log level.
+        DEBUG # = 2,
+        # The **INFO** log level.
+        INFO # = 3,
+        # The **WARNING** log level.
+        WARNING # = 4,
+        # The **ERROR** log level.
+        ERROR # = 5,
+
     # The log color for log messages.
     cpdef enum LogColor:
         # The default/normal log color.
@@ -87,21 +102,6 @@ cdef extern from "../includes/common.h":
         YELLOW # = 5,
         # The red log color, typically used with [`LogLevel::Error`] level.
         RED # = 6,
-
-    # The log level for log messages.
-    cpdef enum LogLevel:
-        # The **OFF** log level. A level lower than all other log levels (off).
-        OFF # = 0,
-        # The **TRACE** log level. Only available in Rust for debug/development builds.
-        TRACE # = 1,
-        # The **DEBUG** log level.
-        DEBUG # = 2,
-        # The **INFO** log level.
-        INFO # = 3,
-        # The **WARNING** log level.
-        WARNING # = 4,
-        # The **ERROR** log level.
-        ERROR # = 5,
 
     # A real-time clock which uses system time.
     #

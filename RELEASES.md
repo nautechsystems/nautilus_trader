@@ -154,7 +154,8 @@ This will be the final release with support for Python 3.11.
 - Implemented Hyperliquid typed enums and optimize WebSocket lookups (#3089), thanks @nicolad
 - Refactored Hyperliquid adapter to push complexity to Rust layer (#3063), thanks @nicolad
 - Refactored streaming writer to support per-bar-type persistence (#3078), thanks @faysou
-- Relaxed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8 which fixes Binance compatibility with Chinese symbols
+- Changed `Symbol`, `Currency`, and `InstrumentId` string validation from ASCII to UTF-8, fixing Binance compatibility with Chinese symbols
+- Changed `PositionId` validation check from ASCII to UTF-8, fixing Binance compatibility with Chinese symbols (#3105), thanks @Osub
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved `ActorExecutor` lifecycle and concurrency handling
