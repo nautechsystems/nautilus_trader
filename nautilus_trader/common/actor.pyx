@@ -1011,7 +1011,7 @@ cdef class Actor(Component):
             )
 
         if self._log is not None:
-            self._log.info(
+            self._log.debug(
                 f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
             )
 
@@ -1072,7 +1072,7 @@ cdef class Actor(Component):
             )
 
         if self._log is not None:
-            self._log.info(
+            self._log.debug(
                 f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
             )
 

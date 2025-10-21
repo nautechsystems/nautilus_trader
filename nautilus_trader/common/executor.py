@@ -173,7 +173,9 @@ class ActorExecutor:
     async def _worker(self) -> None:
         try:
             while True:
+                task_id = None
                 item_dequeued = False
+
                 try:
                     task_id, func, args, kwargs = await self._queue.get()
                     item_dequeued = True
