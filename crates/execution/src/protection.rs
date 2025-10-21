@@ -33,7 +33,7 @@ use rust_decimal::{Decimal, prelude::*};
 ///
 /// # Panics
 ///
-/// Panics if the values requierd for calculation cannot be converted to a float.
+/// Panics if the values required for calculation cannot be converted to a float.
 pub fn protection_price_calculate(
     price_increment: Price,
     order: &OrderAny,

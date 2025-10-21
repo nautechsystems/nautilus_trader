@@ -2767,11 +2767,11 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let confing = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
+    let config = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
         .with_price_protection_points(Some(dec!(600)));
 
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -2837,7 +2837,7 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
 
     let event4 = saved_messages.get(3).unwrap();
 
-    //Aggressive order is parially filled
+    //Aggressive order is partially filled
     let filled = match event4 {
         OrderEventAny::Filled(filled) => filled,
         _ => panic!("Expected Filled event in fourth message"),
@@ -2856,11 +2856,11 @@ fn test_process_stop_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let confing = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
+    let config = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
         .with_price_protection_points(Some(dec!(600)));
 
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(confing), None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
