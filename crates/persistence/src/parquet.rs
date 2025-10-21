@@ -306,7 +306,7 @@ pub async fn min_max_from_parquet_metadata_object_store(
 /// Supports multiple cloud storage providers:
 /// - AWS S3: `s3://bucket/path`
 /// - Google Cloud Storage: `gs://bucket/path` or `gcs://bucket/path`
-/// - Azure Blob Storage: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`
+/// - Azure Blob Storage: `az://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`
 /// - HTTP/WebDAV: `http://` or `https://`
 /// - Local files: `file://path` or plain paths
 ///

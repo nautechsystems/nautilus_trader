@@ -203,7 +203,7 @@ impl ParquetDataCatalog {
     ///
     /// - **AWS S3**: `s3://bucket/path`.
     /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`.
-    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`.
+    /// - **Azure Blob Storage**: `az://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`.
     /// - **HTTP/WebDAV**: `http://` or `https://`.
     /// - **Local files**: `file://path` or plain paths.
     ///
@@ -251,7 +251,7 @@ impl ParquetDataCatalog {
     ///
     /// // Azure Blob Storage
     /// let azure_catalog = ParquetDataCatalog::from_uri(
-    ///     "azure://account/container/nautilus-data",
+    ///     "az://account/container/nautilus-data",
     ///     None, None, None, None
     /// )?;
     ///
@@ -852,7 +852,7 @@ impl ParquetDataCatalog {
         self.original_uri.starts_with("s3://")
             || self.original_uri.starts_with("gs://")
             || self.original_uri.starts_with("gcs://")
-            || self.original_uri.starts_with("azure://")
+            || self.original_uri.starts_with("az://")
             || self.original_uri.starts_with("abfs://")
             || self.original_uri.starts_with("http://")
             || self.original_uri.starts_with("https://")

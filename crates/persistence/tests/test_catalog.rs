@@ -1615,8 +1615,15 @@ fn test_is_remote_uri_extended_moved() {
     assert!(gcs2_catalog.is_remote_uri());
 
     // Test Azure URIs
+    let azure_test_options = Some(
+        [("account_name".to_string(), "test".to_string())]
+            .iter()
+            .cloned()
+            .collect(),
+    );
     let azure_catalog =
-        ParquetDataCatalog::from_uri("az://container/path", None, None, None, None).unwrap();
+        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
+            .unwrap();
     assert!(azure_catalog.is_remote_uri());
 
     let abfs_catalog = ParquetDataCatalog::from_uri(
@@ -1664,8 +1671,15 @@ fn test_reconstruct_full_uri_moved() {
     assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
 
     // Test Azure URI reconstruction
+    let azure_test_options = Some(
+        [("account_name".to_string(), "test".to_string())]
+            .iter()
+            .cloned()
+            .collect(),
+    );
     let azure_catalog =
-        ParquetDataCatalog::from_uri("az://container/path", None, None, None, None).unwrap();
+        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
+            .unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
     assert_eq!(reconstructed, "az://container/data/bars/file.parquet");
 
