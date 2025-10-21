@@ -1089,22 +1089,31 @@ struct MarginAndFees {
     taker_fee: Option<Decimal>,
 }
 
-/// Parses the contract multiplier field from OKX instrument data.
+/// Parses the multiplier as the product of ct_mult and ct_val.
 ///
-/// Returns `Some(Quantity)` if `ct_mult` is a valid non-empty numeric string,
-/// `None` for empty strings, or an error if parsing fails.
-///
-/// # Errors
-///
-/// Returns an error if `ct_mult` is non-empty but cannot be parsed as a valid quantity.
-fn parse_multiplier_optional(ct_mult: &str) -> anyhow::Result<Option<Quantity>> {
-    if ct_mult.is_empty() {
+/// For SPOT instruments where both fields are empty, returns None.
+/// For derivatives, multiplies the two fields to get the final multiplier.
+fn parse_multiplier_product(definition: &OKXInstrument) -> anyhow::Result<Option<Quantity>> {
+    if definition.ct_mult.is_empty() && definition.ct_val.is_empty() {
         return Ok(None);
     }
 
-    Quantity::from_str(ct_mult)
-        .map(Some)
-        .map_err(|e| anyhow::anyhow!("Failed to parse ct_mult '{ct_mult}': {e}"))
+    let mult_value = if definition.ct_mult.is_empty() {
+        Decimal::ONE
+    } else {
+        Decimal::from_str(&definition.ct_mult)
+            .map_err(|e| anyhow::anyhow!("Failed to parse ct_mult '{}': {e}", definition.ct_mult))?
+    };
+
+    let val_value = if definition.ct_val.is_empty() {
+        Decimal::ONE
+    } else {
+        Decimal::from_str(&definition.ct_val)
+            .map_err(|e| anyhow::anyhow!("Failed to parse ct_val '{}': {e}", definition.ct_val))?
+    };
+
+    let product = mult_value * val_value;
+    Ok(Some(Quantity::from(product.to_string().as_str())))
 }
 
 /// Trait for instrument-specific parsing logic.
@@ -1201,8 +1210,8 @@ impl InstrumentParser for SpotInstrumentParser {
         let base_currency = get_currency_with_context(&definition.base_ccy, Some(&context));
         let quote_currency = get_currency_with_context(&definition.quote_ccy, Some(&context));
 
-        // Parse multiplier from ct_mult if available, otherwise defaults to 1.0 in constructor
-        let multiplier = parse_multiplier_optional(&definition.ct_mult)?;
+        // Parse multiplier as product of ct_mult and ct_val
+        let multiplier = parse_multiplier_product(definition)?;
 
         let instrument = CurrencyPair::new(
             common.instrument_id,
@@ -1304,7 +1313,7 @@ pub fn parse_swap_instrument(
         }
     };
     let size_increment = Quantity::from(&definition.lot_sz);
-    let multiplier = Some(Quantity::from(&definition.ct_mult));
+    let multiplier = parse_multiplier_product(definition)?;
     let lot_size = Some(Quantity::from(&definition.lot_sz));
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
     let min_quantity = Some(Quantity::from(&definition.min_sz));
@@ -1404,7 +1413,7 @@ pub fn parse_futures_instrument(
 
     let price_increment = Price::from(definition.tick_sz.clone());
     let size_increment = Quantity::from(&definition.lot_sz);
-    let multiplier = Some(Quantity::from(&definition.ct_mult));
+    let multiplier = parse_multiplier_product(definition)?;
     let lot_size = Some(Quantity::from(&definition.lot_sz));
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
     let min_quantity = Some(Quantity::from(&definition.min_sz));
@@ -1491,7 +1500,7 @@ pub fn parse_option_instrument(
     }
 
     let price_increment = Price::from(definition.tick_sz.clone());
-    let multiplier = Quantity::from(&definition.ct_mult);
+    let multiplier = parse_multiplier_product(definition)?.unwrap_or_else(|| Quantity::from(1));
     let lot_size = Quantity::from(&definition.lot_sz);
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
     let min_quantity = Some(Quantity::from(&definition.min_sz));
@@ -2174,7 +2183,7 @@ mod tests {
         let json_data = load_test_json("http_get_instruments_spot.json");
         let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
 
-        // Modify ctMult to have a valid multiplier value
+        // Modify ctMult to have a valid multiplier value (ctVal is empty, defaults to 1)
         if let Some(inst) = response.data.first_mut() {
             inst.ct_mult = "0.01".to_string();
         }
@@ -2183,7 +2192,7 @@ mod tests {
         let instrument =
             parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
 
-        // Should parse the multiplier from ctMult
+        // Should parse the multiplier as product of ctMult * ctVal (0.01 * 1 = 0.01)
         if let InstrumentAny::CurrencyPair(pair) = instrument {
             assert_eq!(pair.multiplier, Quantity::from("0.01"));
         } else {

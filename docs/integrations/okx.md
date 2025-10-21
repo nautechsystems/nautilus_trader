@@ -27,6 +27,10 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 **Options support**: While you can subscribe to options market data and receive price updates, order execution for options is not yet implemented. You can use the symbology format shown above to subscribe to options data feeds.
 :::
 
+:::info
+**Instrument multipliers**: For derivatives (SWAP, FUTURES, OPTIONS), instrument multipliers are calculated as the product of OKX's `ctMult` (contract multiplier) and `ctVal` (contract value) fields. This ensures position sizing accurately reflects both the contract size and value.
+:::
+
 The OKX adapter includes multiple components, which can be used separately or together depending on your use case.
 
 - `OKXHttpClient`: Low-level HTTP API connectivity.

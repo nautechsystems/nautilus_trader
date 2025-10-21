@@ -197,6 +197,20 @@ pub enum TardisExchange {
 }
 
 impl TardisExchange {
+    /// Option-specific exchanges that should be filtered out when options are not requested.
+    pub const OPTION_EXCHANGES: &'static [Self] = &[
+        Self::BinanceOptions,
+        Self::BinanceEuropeanOptions,
+        Self::BybitOptions,
+        Self::OkexOptions,
+        Self::HuobiDmOptions,
+    ];
+
+    #[must_use]
+    pub fn is_option_exchange(&self) -> bool {
+        Self::OPTION_EXCHANGES.contains(self)
+    }
+
     #[must_use]
     pub fn from_venue_str(s: &str) -> Vec<Self> {
         let s = s.to_ascii_uppercase();
