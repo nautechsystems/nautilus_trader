@@ -939,11 +939,11 @@ cdef class BacktestEngine:
         time_range_generator: TimeRangeGenerator,
     ):
         """
-        Generator that yields data for subscription using a time generator.
+        Generator that yields a range of backtest data for a subscription using a time range generator.
         """
         def get_next_time_range(data_received):
             # Helper to get next time range with proper error handling, data_received is a signal sent to the time_range_generator
-            # to indicate if data has been received in the previous call to request_update_function
+            # to indicate if data has been received in the previous call to _update_subscription_data
             try:
                 return time_range_generator.send(data_received) if data_received is not None else next(time_range_generator)
             except StopIteration:

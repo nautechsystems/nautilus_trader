@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
@@ -2761,6 +2762,97 @@ cdef class RequestBars(RequestData):
         )
 
 
+cdef class RequestJoin(RequestData):
+    """
+    Represents a request to join multiple data requests.
+
+    Parameters
+    ----------
+    request_ids : tuple[UUID4]
+        The tuple of sub-request IDs to join.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        tuple request_ids not None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        callback: Callable[[Any], None] | None,
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+        UUID4 correlation_id = None,
+    ) -> None:
+        Condition.not_none(request_ids, "request_ids")
+        Condition.is_true(len(request_ids) > 0, "request_ids must not be empty")
+
+        super().__init__(
+            DataType(Data),  # Generic data type for join
+            None,  # No specific instrument_id for join
+            start,
+            end,
+            0,  # No limit for join
+            ClientId("join_request"),
+            None,
+            callback,
+            request_id,
+            ts_init,
+            params,
+            correlation_id,
+        )
+        self.request_ids = request_ids
+
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init, callback: Callable[[Any], None] | None = None):
+        return RequestJoin(
+            request_ids=self.request_ids,
+            start=start,
+            end=end,
+            callback=callback,
+            request_id=UUID4(),
+            ts_init=ts_init,
+            params=self.params.copy(),
+            correlation_id=self.id,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"request_ids={self.request_ids}, "
+            f"start={self.start}, "
+            f"end={self.end})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"request_ids={self.request_ids}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"callback={self.callback}, "
+            f"id={self.id}, "
+            f"correlation_id={self.correlation_id}{form_params_str(self.params)})"
+        )
+
+
 cdef class DataResponse(Response):
     """
     Represents a response with data.
@@ -2796,17 +2888,17 @@ cdef class DataResponse(Response):
     """
 
     def __init__(
-            self,
-            ClientId client_id: ClientId | None,
-            Venue venue: Venue | None,
-            DataType data_type,
-            data not None,
-            UUID4 correlation_id not None,
-            UUID4 response_id not None,
-            uint64_t ts_init,
-            datetime start,
-            datetime end,
-            dict[str, object] params: dict | None = None,
+        self,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        DataType data_type,
+        data not None,
+        UUID4 correlation_id not None,
+        UUID4 response_id not None,
+        uint64_t ts_init,
+        datetime start,
+        datetime end,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
