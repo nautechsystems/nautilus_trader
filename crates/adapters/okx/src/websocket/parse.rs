@@ -32,6 +32,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
@@ -57,6 +58,47 @@ use crate::{
     },
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
+
+/// Extracts fee rates from a cached instrument.
+///
+/// Returns a tuple of (margin_init, margin_maint, maker_fee, taker_fee).
+/// All values are None if the instrument type doesn't support fees.
+fn extract_fees_from_cached_instrument(
+    instrument: &InstrumentAny,
+) -> (
+    Option<Decimal>,
+    Option<Decimal>,
+    Option<Decimal>,
+    Option<Decimal>,
+) {
+    match instrument {
+        InstrumentAny::CurrencyPair(pair) => (
+            Some(pair.margin_init),
+            Some(pair.margin_maint),
+            Some(pair.maker_fee),
+            Some(pair.taker_fee),
+        ),
+        InstrumentAny::CryptoPerpetual(perp) => (
+            Some(perp.margin_init),
+            Some(perp.margin_maint),
+            Some(perp.maker_fee),
+            Some(perp.taker_fee),
+        ),
+        InstrumentAny::CryptoFuture(future) => (
+            Some(future.margin_init),
+            Some(future.margin_maint),
+            Some(future.maker_fee),
+            Some(future.taker_fee),
+        ),
+        InstrumentAny::OptionContract(option) => (
+            Some(option.margin_init),
+            Some(option.margin_maint),
+            Some(option.maker_fee),
+            Some(option.taker_fee),
+        ),
+        _ => (None, None, None, None),
+    }
+}
 
 /// Parses vector of OKX book messages into Nautilus order book deltas.
 ///
@@ -1105,6 +1147,7 @@ pub fn parse_fill_report(
 /// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
 /// `None` after a prior `is_some` check – an unreachable scenario indicating a
 /// logic error.
+#[allow(clippy::too_many_arguments)]
 pub fn parse_ws_message_data(
     channel: &OKXWsChannel,
     data: serde_json::Value,
@@ -1113,11 +1156,26 @@ pub fn parse_ws_message_data(
     size_precision: u8,
     ts_init: UnixNanos,
     funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
+    instruments_cache: &AHashMap<Ustr, InstrumentAny>,
 ) -> anyhow::Result<Option<NautilusWsMessage>> {
     match channel {
         OKXWsChannel::Instruments => {
             if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
-                match parse_instrument_any(&msg, ts_init)? {
+                // Look up cached instrument to extract existing fees
+                let (margin_init, margin_maint, maker_fee, taker_fee) =
+                    instruments_cache.get(&Ustr::from(&msg.inst_id)).map_or(
+                        (None, None, None, None),
+                        extract_fees_from_cached_instrument,
+                    );
+
+                match parse_instrument_any(
+                    &msg,
+                    margin_init,
+                    margin_maint,
+                    maker_fee,
+                    taker_fee,
+                    ts_init,
+                )? {
                     Some(inst_any) => Ok(Some(NautilusWsMessage::Instrument(Box::new(inst_any)))),
                     None => {
                         tracing::warn!("Empty instrument payload: {:?}", msg);
@@ -2911,6 +2969,152 @@ mod tests {
             assert_eq!(fill_report.last_px, Price::from("39000.00"));
         } else {
             panic!("Expected Fill report for partial liquidation order");
+        }
+    }
+
+    #[rstest]
+    fn test_websocket_instrument_update_preserves_cached_fees() {
+        use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+
+        use crate::common::{models::OKXInstrument, parse::parse_instrument_any};
+
+        let ts_init = UnixNanos::default();
+
+        // Create initial instrument with fees (simulating HTTP load)
+        let initial_fees = (
+            Some(Decimal::new(8, 4)),  // maker_fee = 0.0008
+            Some(Decimal::new(10, 4)), // taker_fee = 0.0010
+        );
+
+        // Deserialize initial instrument from JSON
+        let initial_inst_json = serde_json::json!({
+            "instType": "SPOT",
+            "instId": "BTC-USD",
+            "baseCcy": "BTC",
+            "quoteCcy": "USD",
+            "settleCcy": "",
+            "ctVal": "",
+            "ctMult": "",
+            "ctValCcy": "",
+            "optType": "",
+            "stk": "",
+            "listTime": "1733454000000",
+            "expTime": "",
+            "lever": "",
+            "tickSz": "0.1",
+            "lotSz": "0.00000001",
+            "minSz": "0.00001",
+            "ctType": "linear",
+            "alias": "",
+            "state": "live",
+            "maxLmtSz": "9999999999",
+            "maxMktSz": "1000000",
+            "maxTwapSz": "9999999999.0000000000000000",
+            "maxIcebergSz": "9999999999.0000000000000000",
+            "maxTriggerSz": "9999999999.0000000000000000",
+            "maxStopSz": "1000000",
+            "uly": "",
+            "instFamily": "",
+            "ruleType": "normal",
+            "maxLmtAmt": "20000000",
+            "maxMktAmt": "1000000"
+        });
+
+        let initial_inst: OKXInstrument = serde_json::from_value(initial_inst_json)
+            .expect("Failed to deserialize initial instrument");
+
+        // Parse initial instrument with fees
+        let parsed_initial = parse_instrument_any(
+            &initial_inst,
+            None,
+            None,
+            initial_fees.0,
+            initial_fees.1,
+            ts_init,
+        )
+        .expect("Failed to parse initial instrument")
+        .expect("Initial instrument should not be None");
+
+        // Verify fees were applied
+        if let InstrumentAny::CurrencyPair(ref pair) = parsed_initial {
+            assert_eq!(pair.maker_fee, Decimal::new(8, 4));
+            assert_eq!(pair.taker_fee, Decimal::new(10, 4));
+        } else {
+            panic!("Expected CurrencyPair instrument");
+        }
+
+        // Build instrument cache with the initial instrument
+        let mut instruments_cache = AHashMap::new();
+        instruments_cache.insert(Ustr::from("BTC-USD"), parsed_initial);
+
+        // Create WebSocket update message (same structure as initial, simulating a WebSocket update)
+        let ws_update = serde_json::json!({
+            "instType": "SPOT",
+            "instId": "BTC-USD",
+            "baseCcy": "BTC",
+            "quoteCcy": "USD",
+            "settleCcy": "",
+            "ctVal": "",
+            "ctMult": "",
+            "ctValCcy": "",
+            "optType": "",
+            "stk": "",
+            "listTime": "1733454000000",
+            "expTime": "",
+            "lever": "",
+            "tickSz": "0.1",
+            "lotSz": "0.00000001",
+            "minSz": "0.00001",
+            "ctType": "linear",
+            "alias": "",
+            "state": "live",
+            "maxLmtSz": "9999999999",
+            "maxMktSz": "1000000",
+            "maxTwapSz": "9999999999.0000000000000000",
+            "maxIcebergSz": "9999999999.0000000000000000",
+            "maxTriggerSz": "9999999999.0000000000000000",
+            "maxStopSz": "1000000",
+            "uly": "",
+            "instFamily": "",
+            "ruleType": "normal",
+            "maxLmtAmt": "20000000",
+            "maxMktAmt": "1000000"
+        });
+
+        let instrument_id = InstrumentId::from("BTC-USD.OKX");
+        let mut funding_cache = AHashMap::new();
+
+        // Parse WebSocket update with cache
+        let result = parse_ws_message_data(
+            &OKXWsChannel::Instruments,
+            ws_update,
+            &instrument_id,
+            2,
+            8,
+            ts_init,
+            &mut funding_cache,
+            &instruments_cache,
+        )
+        .expect("Failed to parse WebSocket instrument update");
+
+        // Verify the update preserves the cached fees
+        if let Some(NautilusWsMessage::Instrument(boxed_inst)) = result {
+            if let InstrumentAny::CurrencyPair(pair) = *boxed_inst {
+                assert_eq!(
+                    pair.maker_fee,
+                    Decimal::new(8, 4),
+                    "Maker fee should be preserved from cache"
+                );
+                assert_eq!(
+                    pair.taker_fee,
+                    Decimal::new(10, 4),
+                    "Taker fee should be preserved from cache"
+                );
+            } else {
+                panic!("Expected CurrencyPair instrument from WebSocket update");
+            }
+        } else {
+            panic!("Expected Instrument message from WebSocket update");
         }
     }
 }

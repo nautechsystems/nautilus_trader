@@ -1009,21 +1009,58 @@ pub fn okx_channel_to_bar_spec(channel: &OKXWsChannel) -> Option<BarSpecificatio
 /// Returns an error if the instrument definition cannot be parsed.
 pub fn parse_instrument_any(
     instrument: &OKXInstrument,
+    margin_init: Option<Decimal>,
+    margin_maint: Option<Decimal>,
+    maker_fee: Option<Decimal>,
+    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.inst_type {
-        OKXInstrumentType::Spot => {
-            parse_spot_instrument(instrument, None, None, None, None, ts_init).map(Some)
-        }
-        OKXInstrumentType::Swap => {
-            parse_swap_instrument(instrument, None, None, None, None, ts_init).map(Some)
-        }
-        OKXInstrumentType::Futures => {
-            parse_futures_instrument(instrument, None, None, None, None, ts_init).map(Some)
-        }
-        OKXInstrumentType::Option => {
-            parse_option_instrument(instrument, None, None, None, None, ts_init).map(Some)
-        }
+        OKXInstrumentType::Spot => parse_spot_instrument(
+            instrument,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        )
+        .map(Some),
+        OKXInstrumentType::Margin => parse_spot_instrument(
+            instrument,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        )
+        .map(Some),
+        OKXInstrumentType::Swap => parse_swap_instrument(
+            instrument,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        )
+        .map(Some),
+        OKXInstrumentType::Futures => parse_futures_instrument(
+            instrument,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        )
+        .map(Some),
+        OKXInstrumentType::Option => parse_option_instrument(
+            instrument,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        )
+        .map(Some),
         _ => Ok(None),
     }
 }
@@ -1052,6 +1089,24 @@ struct MarginAndFees {
     taker_fee: Option<Decimal>,
 }
 
+/// Parses the contract multiplier field from OKX instrument data.
+///
+/// Returns `Some(Quantity)` if `ct_mult` is a valid non-empty numeric string,
+/// `None` for empty strings, or an error if parsing fails.
+///
+/// # Errors
+///
+/// Returns an error if `ct_mult` is non-empty but cannot be parsed as a valid quantity.
+fn parse_multiplier_optional(ct_mult: &str) -> anyhow::Result<Option<Quantity>> {
+    if ct_mult.is_empty() {
+        return Ok(None);
+    }
+
+    Quantity::from_str(ct_mult)
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("Failed to parse ct_mult '{ct_mult}': {e}"))
+}
+
 /// Trait for instrument-specific parsing logic.
 trait InstrumentParser {
     /// Parses instrument-specific fields and creates the final instrument.
@@ -1078,9 +1133,8 @@ fn parse_common_instrument_data(
 
     let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
         anyhow::anyhow!(
-            "Failed to parse `tick_sz` '{}' into Price: {}",
+            "Failed to parse `tick_sz` '{}' into Price: {e}",
             definition.tick_sz,
-            e
         )
     })?;
 
@@ -1143,9 +1197,12 @@ impl InstrumentParser for SpotInstrumentParser {
         margin_fees: MarginAndFees,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny> {
-        let context = format!("SPOT instrument {}", definition.inst_id);
+        let context = format!("{} instrument {}", definition.inst_type, definition.inst_id);
         let base_currency = get_currency_with_context(&definition.base_ccy, Some(&context));
         let quote_currency = get_currency_with_context(&definition.quote_ccy, Some(&context));
+
+        // Parse multiplier from ct_mult if available, otherwise defaults to 1.0 in constructor
+        let multiplier = parse_multiplier_optional(&definition.ct_mult)?;
 
         let instrument = CurrencyPair::new(
             common.instrument_id,
@@ -1156,7 +1213,7 @@ impl InstrumentParser for SpotInstrumentParser {
             common.size_increment.precision,
             common.price_increment,
             common.size_increment,
-            None,
+            multiplier,
             common.lot_size,
             common.max_quantity,
             common.min_quantity,
@@ -2074,6 +2131,13 @@ mod tests {
         assert_eq!(instrument.size_precision(), 8);
         assert_eq!(instrument.price_increment(), Price::from("0.1"));
         assert_eq!(instrument.size_increment(), Quantity::from("0.00000001"));
+
+        // SPOT instruments with empty ctMult should default to 1.0
+        if let InstrumentAny::CurrencyPair(pair) = instrument {
+            assert_eq!(pair.multiplier, Quantity::from(1));
+        } else {
+            panic!("Expected CurrencyPair instrument");
+        }
     }
 
     #[rstest]
@@ -2097,6 +2161,85 @@ mod tests {
         assert_eq!(instrument.size_precision(), 8);
         assert_eq!(instrument.price_increment(), Price::from("0.1"));
         assert_eq!(instrument.size_increment(), Quantity::from("0.00000001"));
+
+        if let InstrumentAny::CurrencyPair(pair) = instrument {
+            assert_eq!(pair.multiplier, Quantity::from(1));
+        } else {
+            panic!("Expected CurrencyPair instrument");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_with_valid_ct_mult() {
+        let json_data = load_test_json("http_get_instruments_spot.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+
+        // Modify ctMult to have a valid multiplier value
+        if let Some(inst) = response.data.first_mut() {
+            inst.ct_mult = "0.01".to_string();
+        }
+
+        let okx_inst = response.data.first().unwrap();
+        let instrument =
+            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+
+        // Should parse the multiplier from ctMult
+        if let InstrumentAny::CurrencyPair(pair) = instrument {
+            assert_eq!(pair.multiplier, Quantity::from("0.01"));
+        } else {
+            panic!("Expected CurrencyPair instrument");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_with_invalid_ct_mult() {
+        let json_data = load_test_json("http_get_instruments_spot.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+
+        // Modify ctMult to be invalid
+        if let Some(inst) = response.data.first_mut() {
+            inst.ct_mult = "invalid_number".to_string();
+        }
+
+        let okx_inst = response.data.first().unwrap();
+        let result = parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default());
+
+        // Should error instead of silently defaulting to 1.0
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse ct_mult")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_with_fees() {
+        let json_data = load_test_json("http_get_instruments_spot.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst = response.data.first().unwrap();
+
+        let maker_fee = Some(Decimal::new(8, 4)); // 0.0008
+        let taker_fee = Some(Decimal::new(10, 4)); // 0.0010
+
+        let instrument = parse_spot_instrument(
+            okx_inst,
+            None,
+            None,
+            maker_fee,
+            taker_fee,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        // Should apply the provided fees to the instrument
+        if let InstrumentAny::CurrencyPair(pair) = instrument {
+            assert_eq!(pair.maker_fee, Decimal::new(8, 4));
+            assert_eq!(pair.taker_fee, Decimal::new(10, 4));
+        } else {
+            panic!("Expected CurrencyPair instrument");
+        }
     }
 
     #[rstest]
@@ -2120,6 +2263,51 @@ mod tests {
         assert_eq!(instrument.size_precision(), 0);
         assert_eq!(instrument.price_increment(), Price::from("0.1"));
         assert_eq!(instrument.size_increment(), Quantity::from(1));
+    }
+
+    #[rstest]
+    fn test_fee_field_selection_for_contract_types() {
+        use rust_decimal::Decimal;
+
+        // Mock OKXFeeRate with different values for crypto vs USDT-margined
+        let maker_crypto = "0.0002"; // Crypto-margined maker fee
+        let taker_crypto = "0.0005"; // Crypto-margined taker fee
+        let maker_usdt = "0.0008"; // USDT-margined maker fee
+        let taker_usdt = "0.0010"; // USDT-margined taker fee
+
+        // Test Linear (USDT-margined) - should use maker_u/taker_u
+        let is_usdt_margined = true;
+        let (maker_str, taker_str) = if is_usdt_margined {
+            (maker_usdt, taker_usdt)
+        } else {
+            (maker_crypto, taker_crypto)
+        };
+
+        assert_eq!(maker_str, "0.0008");
+        assert_eq!(taker_str, "0.0010");
+
+        let maker_fee = Decimal::from_str(maker_str).unwrap();
+        let taker_fee = Decimal::from_str(taker_str).unwrap();
+
+        assert_eq!(maker_fee, Decimal::new(8, 4));
+        assert_eq!(taker_fee, Decimal::new(10, 4));
+
+        // Test Inverse (crypto-margined) - should use maker/taker
+        let is_usdt_margined = false;
+        let (maker_str, taker_str) = if is_usdt_margined {
+            (maker_usdt, taker_usdt)
+        } else {
+            (maker_crypto, taker_crypto)
+        };
+
+        assert_eq!(maker_str, "0.0002");
+        assert_eq!(taker_str, "0.0005");
+
+        let maker_fee = Decimal::from_str(maker_str).unwrap();
+        let taker_fee = Decimal::from_str(taker_str).unwrap();
+
+        assert_eq!(maker_fee, Decimal::new(2, 4));
+        assert_eq!(taker_fee, Decimal::new(5, 4));
     }
 
     #[rstest]

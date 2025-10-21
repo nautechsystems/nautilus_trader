@@ -4247,6 +4247,7 @@ impl OKXWsMessageHandler {
                                 size_precision,
                                 ts_init,
                                 &mut self.funding_rate_cache,
+                                &self.instruments_cache,
                             ) {
                                 Ok(Some(msg)) => return Some(msg),
                                 Ok(None) => continue,

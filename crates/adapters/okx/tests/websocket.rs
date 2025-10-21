@@ -50,6 +50,8 @@ const TEXT_PING: &str = "ping";
 const TEXT_PONG: &str = "pong";
 const CONTROL_PING_PAYLOAD: &[u8] = b"server-control-ping";
 
+type SubscriptionEvent = (String, Option<String>, bool);
+
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<Mutex<usize>>,
@@ -62,7 +64,7 @@ struct TestServerState {
     received_text_pong: Arc<AtomicBool>,
     received_control_pong: Arc<Mutex<Option<Vec<u8>>>>,
     authenticated: Arc<AtomicBool>,
-    subscription_events: Arc<Mutex<Vec<(String, Option<String>, bool)>>>,
+    subscription_events: Arc<Mutex<Vec<SubscriptionEvent>>>,
     fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
     auth_response_delay_ms: Arc<Mutex<Option<u64>>>,
     suppress_login_ack: Arc<AtomicBool>,
@@ -90,7 +92,11 @@ fn load_instruments() -> Vec<nautilus_model::instruments::InstrumentAny> {
     response
         .data
         .iter()
-        .filter_map(|raw| parse_instrument_any(raw, ts_init).ok().flatten())
+        .filter_map(|raw| {
+            parse_instrument_any(raw, None, None, None, None, ts_init)
+                .ok()
+                .flatten()
+        })
         .collect()
 }
 
