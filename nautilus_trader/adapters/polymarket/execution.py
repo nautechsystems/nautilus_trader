@@ -208,10 +208,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 await self._ws_client.connect()
 
             await self._update_account_state()
-
-            # Wait for account to initialize
-            while self.get_account() is None:
-                await asyncio.sleep(0.01)
+            await self._await_account_registered()
         except PolyApiException as e:
             self._log.error(repr(e))
             if e.error_msg["error"] == POLYMARKET_INVALID_API_KEY:

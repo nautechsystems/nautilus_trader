@@ -150,6 +150,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         await self._cache_instruments()
         await self._update_account_state()
+        await self._await_account_registered()
 
         self._log.info(
             f"Logging on to FIX Drop Copy server: endpoint={self._fix_client.endpoint}, "

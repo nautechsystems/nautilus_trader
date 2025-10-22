@@ -175,8 +175,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             reported=True,
             ts_event=millis_to_nanos(account_info.updateTime),
         )
-        while self.get_account() is None:
-            await asyncio.sleep(0.1)
+
+        await self._await_account_registered(log_registered=False)
 
         if self._leverages:
             async with TaskGroup() as tg:

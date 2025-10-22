@@ -113,6 +113,8 @@ async def test_connect_success(exec_client_builder, monkeypatch):
         monkeypatch,
     )
 
+    monkeypatch.setattr(client, "_await_account_registered", AsyncMock())
+
     # Act
     await client._connect()
 

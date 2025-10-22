@@ -1370,6 +1370,7 @@ class TestBinanceFuturesExecutionClient:
         mock_account = mocker.Mock()
         mock_account.set_leverage = mocker.Mock()
         mocker.patch.object(self.exec_client, "get_account", return_value=mock_account)
+        mocker.patch.object(self.exec_client, "_await_account_registered", return_value=None)
 
         # Create multiple symbol configs (including symbols without positions)
         symbol_configs = [

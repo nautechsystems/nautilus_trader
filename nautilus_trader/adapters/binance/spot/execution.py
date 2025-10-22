@@ -152,8 +152,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             reported=True,
             ts_event=millis_to_nanos(account_info.updateTime),
         )
-        while self.get_account() is None:
-            await asyncio.sleep(0.1)
 
     async def _init_dual_side_position(self) -> None:
         self._is_dual_side_position = False

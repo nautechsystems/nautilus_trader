@@ -298,6 +298,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
             await self._update_account_state()
+            await self._await_account_registered()
             await self._init_dual_side_position()
 
             response: BinanceListenKey = await self._http_user.create_listen_key()
