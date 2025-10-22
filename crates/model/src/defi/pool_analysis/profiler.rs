@@ -977,6 +977,9 @@ impl PoolProfiler {
             position.collect_fees(collect.amount0, collect.amount1);
         }
 
+        // Cleanup position if it became empty after collecting all fees
+        self.cleanup_position_if_empty(&position_key);
+
         self.analytics.total_amount0_collected += U256::from(collect.amount0);
         self.analytics.total_amount1_collected += U256::from(collect.amount1);
 
@@ -1213,6 +1216,23 @@ impl PoolProfiler {
         }
 
         Ok(())
+    }
+
+    /// Removes position from tracking if it's completely empty.
+    ///
+    /// This prevents accumulation of positions in the memory that are not used anymore.
+    fn cleanup_position_if_empty(&mut self, position_key: &str) {
+        if let Some(position) = self.positions.get(position_key)
+            && position.is_empty()
+        {
+            tracing::debug!(
+                "CLEANING UP EMPTY POSITION: owner={}, ticks=[{}, {}]",
+                position.owner,
+                position.tick_lower,
+                position.tick_upper,
+            );
+            self.positions.remove(position_key);
+        }
     }
 
     /// Validates tick range for position operations.

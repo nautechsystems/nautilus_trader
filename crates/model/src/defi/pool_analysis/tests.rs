@@ -905,18 +905,15 @@ fn test_if_removing_of_liquidity_works_after_mint(mut uni_pool_profiler: PoolPro
         .process(&DexPoolData::FeeCollect(collect_event))
         .unwrap();
 
-    if let Some(position) = uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick) {
-        assert_eq!(position.liquidity, 0);
-        assert_eq!(position.total_amount0_deposited, 121);
-        assert_eq!(position.total_amount1_deposited, 0);
-        // Tokens are collected so we keep track of collects values and tokens_owned_* are zero
-        assert_eq!(position.total_amount0_collected, 120);
-        assert_eq!(position.total_amount1_collected, 0);
-        assert_eq!(position.tokens_owed_0, 0);
-        assert_eq!(position.tokens_owed_1, 0);
-    } else {
-        panic!("Position should exist");
-    }
+    // After collect, position should be cleaned up since it's completely empty
+    assert!(
+        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        "Position should be cleaned up after collecting all fees"
+    );
+
+    // Verify position is no longer counted
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1); // Only init position
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0); // Cleaned up
 }
 
 #[rstest]
@@ -1344,22 +1341,15 @@ fn test_mint_then_burning_and_collecting(mut uni_pool_profiler: PoolProfiler) {
         .process(&DexPoolData::FeeCollect(collect_event))
         .unwrap();
 
-    // One active(initial) and one inactive(this one which was minted and then burned)
-    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
-    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
+    // After collect, position should be cleaned up since it's completely empty
+    assert!(
+        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        "Position should be cleaned up after collecting all fees"
+    );
 
-    let position = uni_pool_profiler
-        .get_position(&lp_address(), lower_tick, upper_tick)
-        .expect("Position should exist");
-
-    assert_eq!(position.liquidity, 0);
-    assert_eq!(position.tick_lower, lower_tick);
-    assert_eq!(position.tick_upper, upper_tick);
-    // Tokens owned zero, and collected have target values
-    assert_eq!(position.tokens_owed_0, 0);
-    assert_eq!(position.tokens_owed_1, 0);
-    assert_eq!(position.total_amount0_collected, 316);
-    assert_eq!(position.total_amount1_collected, 31);
+    // Verify position is no longer counted
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1); // Only init position
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0); // Cleaned up
 }
 
 // ---------- TEST MINTS BELOW CURRENT PRICE ----------
@@ -1455,18 +1445,15 @@ fn test_if_mint_below_current_price_works_after_burn_and_fee_collect(
         .process(&DexPoolData::FeeCollect(collect_event))
         .unwrap();
 
-    if let Some(position) = uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick) {
-        assert_eq!(position.liquidity, 0);
-        // Round up to 4 for minting(adding liquidity), and round down to 3 for removing liquidity
-        assert_eq!(position.total_amount0_deposited, 0);
-        assert_eq!(position.total_amount1_deposited, 4);
-        assert_eq!(position.tokens_owed_0, 0);
-        assert_eq!(position.tokens_owed_1, 0);
-        assert_eq!(position.total_amount0_collected, 0);
-        assert_eq!(position.total_amount1_collected, 3);
-    } else {
-        panic!("Position should exist");
-    }
+    // After collect, position should be cleaned up since it's completely empty
+    assert!(
+        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        "Position should be cleaned up after collecting all fees"
+    );
+
+    // Verify position is no longer counted
+    assert_eq!(uni_pool_profiler.get_total_active_positions(), 1); // Only init position
+    assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0); // Cleaned up
 }
 
 #[rstest]
