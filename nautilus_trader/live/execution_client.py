@@ -35,6 +35,7 @@ from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import MILLISECONDS_IN_SECOND
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -526,7 +527,7 @@ class LiveExecutionClient(ExecutionClient):
 
     async def _await_account_registered(
         self,
-        timeout_secs: float = 5.0,
+        timeout_secs: float = 30.0,
         log_registered: bool = True,
     ) -> None:
         # This method polls the cache to ensure the account state event has been
@@ -545,8 +546,8 @@ class LiveExecutionClient(ExecutionClient):
             return
 
         interval_ms = 10  # Check every 10ms
-        interval_secs = interval_ms / 1000
-        max_attempts = int((timeout_secs * 1000) / interval_ms)
+        interval_secs = interval_ms / MILLISECONDS_IN_SECOND
+        max_attempts = int((timeout_secs * MILLISECONDS_IN_SECOND) / interval_ms)
 
         for _ in range(1, max_attempts + 1):
             if self._cache.account(self.account_id):
