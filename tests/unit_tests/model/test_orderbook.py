@@ -726,10 +726,10 @@ class TestOrderBook:
             book.apply_delta(delta)
 
         # Assert
-        assert len(data) == 74509  # No trades
+        assert len(data) == 74544  # Includes NoOrderSide deltas that are now decoded
         assert book.ts_last == 1703548799446821072
         assert book.sequence == 59585
-        assert book.update_count == 74509
+        assert book.update_count == 74537  # 28 NoOrderSide resolved, 7 skipped
         assert len(book.bids()) == 922
         assert len(book.asks()) == 565
         assert book.best_bid_price() == Price.from_str("4810.00")

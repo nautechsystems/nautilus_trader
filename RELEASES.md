@@ -159,7 +159,8 @@ This will be the final release with support for Python 3.11.
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved `ActorExecutor` lifecycle and concurrency handling
-- Improved order books error handling, state integrity, and pprint/display
+- Improved order book error handling, state integrity, and pprint/display
+- Improved order book handling of `NoOrderSide` deltas
 - Improved websocket reconnection sequence protections in stream mode
 - Improved socket reconnect sequence and tighten client setup and testing
 - Improved socket client URL parsing

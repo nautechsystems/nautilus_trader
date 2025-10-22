@@ -25,8 +25,8 @@ use crate::{
         order::BookOrder, stubs::*,
     },
     enums::{
-        AggressorSide, BookType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, RecordFlag,
-        TimeInForce,
+        AggressorSide, BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+        RecordFlag, TimeInForce,
     },
     identifiers::{ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     orderbook::{
@@ -5399,7 +5399,7 @@ fn test_apply_deltas_single_clear_no_f_last() {
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear_delta]);
 
     // Apply it - should not crash
-    book.apply_deltas(&deltas);
+    book.apply_deltas(&deltas).unwrap();
 
     // Book should be cleared
     assert_eq!(book.bids(None).count(), 0);
@@ -5422,9 +5422,210 @@ fn test_apply_deltas_empty_clear_to_empty_book() {
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear_delta]);
 
     // Apply it - should not crash
-    book.apply_deltas(&deltas);
+    book.apply_deltas(&deltas).unwrap();
 
     // Book should still be empty
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 0);
+}
+
+#[rstest]
+fn test_apply_delta_resolves_side_from_bids_cache() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Add a bid order first
+    let order1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        123,
+    );
+    let delta1 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        order1,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_delta(&delta1).unwrap();
+
+    // Now send an update with NoOrderSide - should resolve from bids cache
+    let order2 = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("5"),
+        123,
+    );
+    let delta2 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        order2,
+        0,
+        2,
+        0.into(),
+        0.into(),
+    );
+
+    // Should successfully resolve side from cache
+    book.apply_delta(&delta2).unwrap();
+
+    // Verify the order was updated
+    let top_bid = book.bids(Some(1)).next().unwrap();
+    assert_eq!(top_bid.price.value, Price::from("100.00"));
+    assert_eq!(top_bid.first().unwrap().size, Quantity::from("5"));
+}
+
+#[rstest]
+fn test_apply_delta_resolves_side_from_asks_cache() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Add an ask order first
+    let order1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        456,
+    );
+    let delta1 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        order1,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_delta(&delta1).unwrap();
+
+    // Now send a delete with NoOrderSide - should resolve from asks cache
+    let order2 = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        456,
+    );
+    let delta2 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        order2,
+        0,
+        2,
+        0.into(),
+        0.into(),
+    );
+
+    // Should successfully resolve side from cache
+    book.apply_delta(&delta2).unwrap();
+
+    // Verify the order was deleted
+    assert_eq!(book.asks(None).count(), 0);
+}
+
+#[rstest]
+fn test_apply_delta_error_when_order_not_found_for_side_resolution() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Try to add an order with NoOrderSide - should error
+    let order = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        999, // Non-existent order_id
+    );
+    let delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    );
+
+    // Should return error (can't add without knowing side)
+    let result = book.apply_delta(&delta);
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        BookIntegrityError::NoOrderSide
+    ));
+}
+
+#[rstest]
+fn test_apply_delta_skips_update_delete_when_order_not_found() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Try to update an order that doesn't exist with NoOrderSide - should skip
+    let order = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        999, // Non-existent order_id
+    );
+    let delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        order,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    );
+
+    // Should silently skip (book already consistent)
+    let result = book.apply_delta(&delta);
+    assert!(result.is_ok());
+
+    // Try delete as well - should also skip
+    let delta2 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        order,
+        0,
+        2,
+        0.into(),
+        0.into(),
+    );
+    let result2 = book.apply_delta(&delta2);
+    assert!(result2.is_ok());
+}
+
+#[rstest]
+fn test_apply_delta_no_order_side_with_zero_order_id_for_clear() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // Add some orders
+    let order1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        123,
+    );
+    let delta1 = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        order1,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_delta(&delta1).unwrap();
+
+    // Clear with NoOrderSide and order_id=0 should work
+    let delta_clear = OrderBookDelta::clear(instrument_id, 2, 0.into(), 0.into());
+
+    // Should work (no side resolution needed for Clear)
+    book.apply_delta(&delta_clear).unwrap();
+
+    // Book should be cleared
     assert_eq!(book.bids(None).count(), 0);
     assert_eq!(book.asks(None).count(), 0);
 }

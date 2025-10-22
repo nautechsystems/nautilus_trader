@@ -710,13 +710,17 @@ fn test_bid_ask_initialized(instrument_es: InstrumentAny) {
         .book_order(book_order_sell)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_buy);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_buy)
+        .unwrap();
     assert_eq!(engine_l2.core.bid, Some(Price::from("100")));
     assert!(engine_l2.core.is_bid_initialized);
     assert_eq!(engine_l2.core.ask, None);
     assert!(!engine_l2.core.is_ask_initialized);
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     assert_eq!(engine_l2.core.bid, Some(Price::from("100")));
     assert!(engine_l2.core.is_bid_initialized);
     assert_eq!(engine_l2.core.ask, Some(Price::from("101")));
@@ -757,7 +761,9 @@ fn test_not_enough_quantity_filled_fok_order(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut market_order, account_id);
 
     // We need to test that one OrderCanceled event was generated
@@ -817,8 +823,12 @@ fn test_valid_market_buy(
         .build();
 
     // Process orderbook deltas to add liquidity then process market order
-    engine_l2.process_order_book_delta(&orderbook_delta_sell_1);
-    engine_l2.process_order_book_delta(&orderbook_delta_sell_2);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell_1)
+        .unwrap();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell_2)
+        .unwrap();
     engine_l2.process_order(&mut market_order, account_id);
 
     // We need to test that two Order filled events were generated where with correct prices and quantities
@@ -877,7 +887,9 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut post_only_limit_order, account_id);
 
     // Test that one Order rejected event was generated
@@ -938,7 +950,9 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut limit_order, account_id);
 
     // Check we have received OrderAccepted and then OrderCanceled event
@@ -992,7 +1006,9 @@ fn test_process_limit_order_matched_immediate_fill(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut limit_order, account_id);
 
     // Check we have received first OrderAccepted and then OrderFilled event
@@ -1059,7 +1075,9 @@ fn test_process_stop_market_order_triggered_rejected(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
     // Check we have received OrderRejected event
@@ -1115,7 +1133,9 @@ fn test_process_stop_market_order_valid_trigger_filled(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
     // Check we have received OrderFilled event
@@ -1166,7 +1186,9 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
     // Check we have received OrderAccepted event
@@ -1217,7 +1239,9 @@ fn test_process_stop_limit_order_triggered_not_filled(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
     // Check we have received OrderAccepted and OrderTriggered
@@ -1275,7 +1299,9 @@ fn test_process_stop_limit_order_triggered_filled(
         .submit(true)
         .build();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
     // Check we have received OrderAccepted, OrderTriggered and finally OrderFilled event
@@ -1350,7 +1376,9 @@ fn test_process_cancel_command_valid(
     )
     .unwrap();
 
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
     engine_l2.process_order(&mut limit_order, account_id);
     engine_l2.process_cancel(&cancel_command, account_id);
 
@@ -1447,7 +1475,9 @@ fn test_process_cancel_all_command(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create 3 limit orders which are not filled (2 from the same instrument and 1 from different instrument)
     // and update the cache
@@ -1577,7 +1607,9 @@ fn test_process_batch_cancel_command(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create 2 limits order which will be canceled with batch cancel command
     let client_order_id_1 = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -1699,7 +1731,9 @@ fn test_expire_order(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create GTD LIMIT order which will expire after we process tick
     // that has higher timestamp than expire_time.
@@ -1820,7 +1854,9 @@ fn test_update_limit_order_post_only_matched(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create BUY LIMIT order post only which will won't be filled
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -1899,7 +1935,9 @@ fn test_update_limit_order_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create BUY LIMIT order post only which will won't be filled
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -1982,7 +2020,9 @@ fn test_update_stop_market_order_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create BUY STOP MARKET order which is not activated as trigger price of 1505.00 is above current ask of 1500.00
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -2119,7 +2159,9 @@ fn test_process_market_if_touched_order_already_triggered(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create MARKET IF TOUCHED order which is already activated as trigger price of 1500.00 is equal to current ask of 1500.00
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -2232,7 +2274,9 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create LIMIT IF TOUCHED order which is already activated as
     // trigger price of 1500.00 is equal to current ask of 1500.00
@@ -2299,7 +2343,9 @@ fn test_update_limit_if_touched_order_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create LIMIT IF TOUCHED order which is not activated as trigger price of 1498.00 is below current ask of 1500.00
     let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
@@ -2374,7 +2420,9 @@ fn test_process_market_to_limit_orders_not_fully_filled(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create MARKET TO LIMIT order with quantity of 2 which will be half filled
     // and order half will be accepted as limit order
@@ -2447,7 +2495,9 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create two trailing stop orders
     // 1. TrailingStopMarket BUY order with trigger price of 1498.00 which will be rejected as trigger price is below current ask
@@ -2527,7 +2577,9 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create TrailingStopMarket BUY order which is not triggered
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -2609,7 +2661,9 @@ fn test_updating_of_contingent_orders(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
 
     // Create primary limit order and StopMarket OUO orders
     // and link them together

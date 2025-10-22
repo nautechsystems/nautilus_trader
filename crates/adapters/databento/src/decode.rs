@@ -30,7 +30,10 @@ use nautilus_model::{
     instruments::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
-    types::{Currency, Price, Quantity, price::decode_raw_price_i64},
+    types::{
+        Currency, Price, Quantity,
+        price::{PRICE_UNDEF, decode_raw_price_i64},
+    },
 };
 use ustr::Ustr;
 
@@ -352,15 +355,19 @@ pub fn decode_mbo_msg(
     let side = parse_order_side(msg.side);
     if is_trade_msg(msg.action) {
         if include_trades && msg.size > 0 {
+            let price = Price::from_raw(decode_raw_price_i64(msg.price), price_precision);
+            let size = Quantity::from(msg.size);
+            let aggressor_side = parse_aggressor_side(msg.side);
+            let trade_id = TradeId::new(itoa::Buffer::new().format(msg.sequence));
             let ts_event = msg.ts_recv.into();
             let ts_init = ts_init.unwrap_or(ts_event);
 
             let trade = TradeTick::new(
                 instrument_id,
-                Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-                Quantity::from(msg.size),
-                parse_aggressor_side(msg.side),
-                TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+                price,
+                size,
+                aggressor_side,
+                trade_id,
                 ts_event,
                 ts_init,
             );
@@ -371,20 +378,14 @@ pub fn decode_mbo_msg(
     }
 
     let action = parse_book_action(msg.action)?;
+    let price = if msg.price == i64::MAX {
+        Price::from_raw(PRICE_UNDEF, 0)
+    } else {
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision)
+    };
+    let size = Quantity::from(msg.size);
+    let order = BookOrder::new(side, price, size, msg.order_id);
 
-    // Skip messages with NoOrderSide for non-Clear actions
-    // These are typically fill/modify messages that reference existing orders
-    // and cannot be represented as standalone order book deltas
-    if side == OrderSide::NoOrderSide && action != BookAction::Clear {
-        return Ok((None, None));
-    }
-
-    let order = BookOrder::new(
-        side,
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-        Quantity::from(msg.size),
-        msg.order_id,
-    );
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
@@ -1613,11 +1614,11 @@ mod tests {
         let ts_recv = 1_609_160_400_000_000_000;
         let msg = dbn::MboMsg {
             hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
-            order_id: 123_456_789,
-            price: 100_000_000_000, // $100.00 with precision 2
-            size: 0,                // Clear typically has size 0
+            order_id: 0,
+            price: i64::MAX,
+            size: 0,
             flags: dbn::FlagSet::empty(),
-            channel_id: 1,
+            channel_id: 0,
             action: 'R' as c_char,
             side: 'N' as c_char, // NoOrderSide for Clear
             ts_recv,
@@ -1635,18 +1636,17 @@ mod tests {
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.action, BookAction::Clear);
         assert_eq!(delta.order.side, OrderSide::NoOrderSide);
-        assert_eq!(delta.order.price, Price::from("100.00"));
         assert_eq!(delta.order.size, Quantity::from("0"));
-        assert_eq!(delta.order.order_id, 123_456_789);
+        assert_eq!(delta.order.order_id, 0);
         assert_eq!(delta.sequence, 1_000_000);
         assert_eq!(delta.ts_event, ts_recv);
         assert_eq!(delta.ts_init, 0);
     }
 
     #[rstest]
-    fn test_decode_mbo_msg_no_order_side_update_skipped() {
-        // MBO messages with NoOrderSide and non-Clear actions should be filtered out
-        // These are typically fill/modify messages that reference existing orders
+    fn test_decode_mbo_msg_no_order_side_update() {
+        // MBO messages with NoOrderSide are now passed through to the book
+        // The book will resolve the side from its cache using the order_id
         let ts_recv = 1_609_160_400_000_000_000;
         let msg = dbn::MboMsg {
             hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
@@ -1665,9 +1665,13 @@ mod tests {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
 
-        // Should be filtered out (no delta, no trade)
-        assert!(delta.is_none());
+        // Delta should be created with NoOrderSide (book will resolve it)
+        assert!(delta.is_some());
         assert!(trade.is_none());
+        let delta = delta.unwrap();
+        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.order_id, 123_456_789);
+        assert_eq!(delta.action, BookAction::Update);
     }
 
     #[rstest]

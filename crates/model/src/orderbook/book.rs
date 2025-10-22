@@ -29,7 +29,7 @@ use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
     identifiers::InstrumentId,
-    orderbook::{InvalidBookOperation, ladder::BookLadder},
+    orderbook::{BookIntegrityError, InvalidBookOperation, ladder::BookLadder},
     types::{
         Price, Quantity,
         price::{PRICE_ERROR, PRICE_UNDEF},
@@ -263,24 +263,64 @@ impl OrderBook {
     }
 
     /// Applies a single order book delta operation.
-    pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
-        let order = delta.order;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
+    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    pub fn apply_delta(&mut self, delta: &OrderBookDelta) -> Result<(), BookIntegrityError> {
+        let mut order = delta.order;
+
+        if order.side == OrderSide::NoOrderSide && order.order_id != 0 {
+            match self.resolve_no_side_order(order) {
+                Ok(resolved) => order = resolved,
+                Err(BookIntegrityError::OrderNotFoundForSideResolution(order_id)) => {
+                    match delta.action {
+                        BookAction::Add => return Err(BookIntegrityError::NoOrderSide),
+                        BookAction::Update | BookAction::Delete => {
+                            // Already consistent
+                            log::debug!(
+                                "Skipping {:?} for unknown order_id={order_id}",
+                                delta.action
+                            );
+                            return Ok(());
+                        }
+                        BookAction::Clear => {} // Won't hit this (order_id != 0)
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        if order.side == OrderSide::NoOrderSide && delta.action != BookAction::Clear {
+            return Err(BookIntegrityError::NoOrderSide);
+        }
+
         let flags = delta.flags;
         let sequence = delta.sequence;
         let ts_event = delta.ts_event;
+
         match delta.action {
             BookAction::Add => self.add(order, flags, sequence, ts_event),
             BookAction::Update => self.update(order, flags, sequence, ts_event),
             BookAction::Delete => self.delete(order, flags, sequence, ts_event),
             BookAction::Clear => self.clear(sequence, ts_event),
         }
+
+        Ok(())
     }
 
     /// Applies multiple order book delta operations.
-    pub fn apply_deltas(&mut self, deltas: &OrderBookDeltas) {
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error encountered when applying deltas.
+    pub fn apply_deltas(&mut self, deltas: &OrderBookDeltas) -> Result<(), BookIntegrityError> {
         for delta in &deltas.deltas {
-            self.apply_delta(delta);
+            self.apply_delta(delta)?;
         }
+        Ok(())
     }
 
     /// Replaces current book state with a depth snapshot.
@@ -323,6 +363,25 @@ impl OrderBook {
         }
 
         self.increment(depth.sequence, depth.ts_event);
+    }
+
+    fn resolve_no_side_order(&self, mut order: BookOrder) -> Result<BookOrder, BookIntegrityError> {
+        let resolved_side = self
+            .bids
+            .cache
+            .get(&order.order_id)
+            .or_else(|| self.asks.cache.get(&order.order_id))
+            .map(|book_price| match book_price.side {
+                OrderSideSpecified::Buy => OrderSide::Buy,
+                OrderSideSpecified::Sell => OrderSide::Sell,
+            })
+            .ok_or(BookIntegrityError::OrderNotFoundForSideResolution(
+                order.order_id,
+            ))?;
+
+        order.side = resolved_side;
+
+        Ok(order)
     }
 
     /// Returns an iterator over bid price levels.

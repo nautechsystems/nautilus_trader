@@ -247,24 +247,35 @@ impl OrderMatchingEngine {
     // -- DATA PROCESSING -------------------------------------------------------------------------
 
     /// Process the venues market for the given order book delta.
-    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the delta to the book fails.
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) -> anyhow::Result<()> {
         log::debug!("Processing {delta}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_delta(delta);
+            self.book.apply_delta(delta)?;
         }
 
         self.iterate(delta.ts_init);
+        Ok(())
     }
 
-    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+    /// Process the venues market for the given order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the deltas to the book fails.
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         log::debug!("Processing {deltas}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_deltas(deltas);
+            self.book.apply_deltas(deltas)?;
         }
 
         self.iterate(deltas.ts_init);
+        Ok(())
     }
 
     /// # Panics
