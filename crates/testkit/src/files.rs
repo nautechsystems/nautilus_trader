@@ -110,11 +110,13 @@ pub fn ensure_file_exists_or_download_http(
     checksums: Option<&Path>,
     timeout_secs: Option<u64>,
 ) -> anyhow::Result<()> {
-    ensure_file_exists_or_download_http_with_timeout(
+    ensure_file_exists_or_download_http_with_config(
         filepath,
         url,
         checksums,
         timeout_secs.unwrap_or(30),
+        None,
+        None,
     )
 }
 
@@ -131,6 +133,42 @@ pub fn ensure_file_exists_or_download_http_with_timeout(
     url: &str,
     checksums: Option<&Path>,
     timeout_secs: u64,
+) -> anyhow::Result<()> {
+    ensure_file_exists_or_download_http_with_config(
+        filepath,
+        url,
+        checksums,
+        timeout_secs,
+        None,
+        None,
+    )
+}
+
+/// Ensures that a file exists at the specified path by downloading it if necessary,
+/// with custom timeout, retry config, and initial jitter delay.
+///
+/// # Parameters
+///
+/// - `filepath`: The path where the file should exist.
+/// - `url`: The URL to download from if the file doesn't exist.
+/// - `checksums`: Optional path to checksums file for verification.
+/// - `timeout_secs`: Timeout in seconds for HTTP requests.
+/// - `retry_config`: Optional custom retry configuration (uses sensible defaults if None).
+/// - `initial_jitter_ms`: Optional initial jitter delay in milliseconds before download (defaults to 100-600ms if None).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request cannot be sent or returns a non-success status code after retries.
+/// - Any I/O operation fails during file creation, reading, or writing.
+/// - Checksum verification or JSON parsing fails.
+pub fn ensure_file_exists_or_download_http_with_config(
+    filepath: &Path,
+    url: &str,
+    checksums: Option<&Path>,
+    timeout_secs: u64,
+    retry_config: Option<RetryConfig>,
+    initial_jitter_ms: Option<u64>,
 ) -> anyhow::Result<()> {
     if filepath.exists() {
         println!("File already exists: {filepath:?}");
@@ -149,16 +187,21 @@ pub fn ensure_file_exists_or_download_http_with_timeout(
         return Ok(());
     }
 
-    // Add a small random delay (100–600 ms) to avoid bursting the remote server when
-    // many tests start concurrently. A true random jitter is preferred over a
-    // deterministic hash to prevent synchronized traffic spikes.
-    let jitter_delay = {
-        let mut r = rng();
-        Duration::from_millis(r.random_range(100..=600))
-    };
-    sleep(jitter_delay);
+    // Add a small random delay to avoid bursting the remote server when
+    // many downloads start concurrently. Can be disabled by passing Some(0).
+    if let Some(jitter_ms) = initial_jitter_ms {
+        if jitter_ms > 0 {
+            sleep(Duration::from_millis(jitter_ms));
+        }
+    } else {
+        let jitter_delay = {
+            let mut r = rng();
+            Duration::from_millis(r.random_range(100..=600))
+        };
+        sleep(jitter_delay);
+    }
 
-    download_file(filepath, url, timeout_secs)?;
+    download_file(filepath, url, timeout_secs, retry_config)?;
 
     if let Some(checksums_file) = checksums {
         let new_checksum = calculate_sha256(filepath)?;
@@ -168,7 +211,12 @@ pub fn ensure_file_exists_or_download_http_with_timeout(
     Ok(())
 }
 
-fn download_file(filepath: &Path, url: &str, timeout_secs: u64) -> anyhow::Result<()> {
+fn download_file(
+    filepath: &Path,
+    url: &str,
+    timeout_secs: u64,
+    retry_config: Option<RetryConfig>,
+) -> anyhow::Result<()> {
     println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
@@ -179,20 +227,25 @@ fn download_file(filepath: &Path, url: &str, timeout_secs: u64) -> anyhow::Resul
         .timeout(Duration::from_secs(timeout_secs))
         .build()?;
 
-    let max_retries = 5u32;
-    let op_timeout_ms = timeout_secs.saturating_mul(1000);
-    // Make the provided timeout a hard ceiling for total elapsed time.
-    // Split it across attempts (at least 1000 ms per attempt) and cap total at op_timeout_ms.
-    let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (max_retries as u64 + 1));
-    let cfg = RetryConfig {
-        max_retries,
-        initial_delay_ms: 1_000,
-        max_delay_ms: 10_000,
-        backoff_factor: 2.0,
-        jitter_ms: 1_000,
-        operation_timeout_ms: Some(per_attempt_ms),
-        immediate_first: false,
-        max_elapsed_ms: Some(op_timeout_ms),
+    let cfg = if let Some(config) = retry_config {
+        config
+    } else {
+        // Default production config
+        let max_retries = 5u32;
+        let op_timeout_ms = timeout_secs.saturating_mul(1000);
+        // Make the provided timeout a hard ceiling for total elapsed time.
+        // Split it across attempts (at least 1000 ms per attempt) and cap total at op_timeout_ms.
+        let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (max_retries as u64 + 1));
+        RetryConfig {
+            max_retries,
+            initial_delay_ms: 1_000,
+            max_delay_ms: 10_000,
+            backoff_factor: 2.0,
+            jitter_ms: 1_000,
+            operation_timeout_ms: Some(per_attempt_ms),
+            immediate_first: false,
+            max_elapsed_ms: Some(op_timeout_ms),
+        }
     };
 
     let op = || -> Result<(), DownloadError> {
@@ -327,6 +380,21 @@ mod tests {
 
     use super::*;
 
+    /// Creates a fast, deterministic retry config for tests.
+    /// Uses very short delays to make tests run quickly without introducing flakiness.
+    fn test_retry_config() -> RetryConfig {
+        RetryConfig {
+            max_retries: 5,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 5,
+            operation_timeout_ms: Some(500),
+            immediate_first: false,
+            max_elapsed_ms: Some(2000),
+        }
+    }
+
     async fn setup_test_server(
         server_content: Option<String>,
         status_code: StatusCode,
@@ -388,7 +456,14 @@ mod tests {
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -409,7 +484,14 @@ mod tests {
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http_with_timeout(&file_path, &url, None, 1)
+            ensure_file_exists_or_download_http_with_config(
+                &file_path,
+                &url,
+                None,
+                1,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -431,7 +513,14 @@ mod tests {
         let url = "http://127.0.0.1:0/testfile.txt".to_string();
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&file_path, &url, None, Some(2))
+            ensure_file_exists_or_download_http_with_config(
+                &file_path,
+                &url,
+                None,
+                2,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -478,7 +567,14 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -523,7 +619,14 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -564,7 +667,14 @@ mod tests {
 
         let url = format!("http://{addr}/testfile.txt");
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None, Some(5))
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
