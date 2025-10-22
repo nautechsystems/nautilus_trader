@@ -1639,9 +1639,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cbindgen"
-version = "0.29.1"
+version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e15883b68cadf400ed7bff323dc50be7ce77d9bb4b2c929e3be711e68e530ca3"
+checksum = "befbfd072a8e81c02f8c507aefce431fe5e7d051f83d48a23ffc9b9fe5a11799"
 dependencies = [
  "clap",
  "heck",
@@ -2275,9 +2275,9 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "databento"
-version = "0.34.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dc5435cd34e25c6f8ab2d88dd43e02233d7bef0497ed1c9e1914779c789084b"
+checksum = "1439d6ae8279b6eafea9522e7b3d7b368c451762a31c27e8b0ebc44ee393a198"
 dependencies = [
  "async-compression",
  "dbn",
@@ -2293,6 +2293,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "typed-builder",
+ "zstd",
 ]
 
 [[package]]
@@ -2898,9 +2899,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.42.0"
+version = "0.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fae2ff443e1ada6c0e3697ac904b8a0f236cdc33552ae494a63a74584d1a4ebe"
+checksum = "aed98340b0ccf8edf88ebc02fb37623d5c92d7c4d761177ba3fb1b5af3876484"
 dependencies = [
  "async-compression",
  "csv",
@@ -2919,9 +2920,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.42.0"
+version = "0.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f04599e0929d4fd660d6918a059706057bf4c2626273896d4c862fb18239860a"
+checksum = "5f6693f320415a70bf7d1d7b8acbbf7a923c0404783d411cae33a61181c685db"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -7436,9 +7437,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.15.0"
+version = "3.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6093cd8c01b25262b84927e0f7151692158fab02d961e04c979d3903eba7ecc5"
+checksum = "aa66c845eee442168b2c8134fec70ac50dc20e760769c8ba0ad1319ca1959b04"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7455,9 +7456,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.15.0"
+version = "3.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7e6c180db0816026a61afa1cff5344fb7ebded7e4d3062772179f2501481c27"
+checksum = "b91a903660542fced4e99881aa481bdbaec1634568ee02e0b8bd57c64cb38955"
 dependencies = [
  "darling 0.21.3",
  "proc-macro2",

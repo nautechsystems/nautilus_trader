@@ -127,7 +127,7 @@ clap = { version = "4.5.50", features = ["derive", "env"] }
 compare = "0.1.0"
 csv = "1.4.0"
 dashmap = "6.1.0"
-databento = { version = "0.34.1", default-features = false, features = [
+databento = { version = "0.35.0", default-features = false, features = [
   "historical",
   "live",
 ] }
@@ -329,7 +329,7 @@ turmoil = "0.6.6"
 # -----------------------------------------------------------------------------
 # Build dependencies
 # -----------------------------------------------------------------------------
-cbindgen = "0.29.1"
+cbindgen = "0.29.2"
 
 # -----------------------------------------------------------------------------
 # Profiles
