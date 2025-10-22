@@ -528,7 +528,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&delta.instrument_id) {
-            matching_engine.process_order_book_delta(&delta);
+            matching_engine.process_order_book_delta(&delta).unwrap();
         } else {
             panic!("Matching engine should be initialized");
         }
@@ -559,7 +559,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
-            matching_engine.process_order_book_deltas(&deltas);
+            matching_engine.process_order_book_deltas(&deltas).unwrap();
         } else {
             panic!("Matching engine should be initialized");
         }
