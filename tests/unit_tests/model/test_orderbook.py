@@ -21,7 +21,6 @@ import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
-from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -281,13 +280,15 @@ class TestOrderBook:
         assert book.midpoint() == 10.5
         assert len(book.bids()) == 1
         assert len(book.asks()) == 1
+        # For L2_MBP books, order_ids are deterministic hashes of the price
+        # These values are from price_to_order_id() using AHash with fixed seeds
         assert (
             repr(book.bids())
-            == f"[BookLevel(price=10.0, orders=[BookOrder(side=BUY, price=10.0, size=5, order_id={convert_to_raw_int(10, 0)})])]"
+            == "[BookLevel(price=10.0, orders=[BookOrder(side=BUY, price=10.0, size=5, order_id=16031577039610741223)])]"
         )
         assert (
             repr(book.asks())
-            == f"[BookLevel(price=11.0, orders=[BookOrder(side=SELL, price=11.0, size=6, order_id={convert_to_raw_int(11, 0)})])]"
+            == "[BookLevel(price=11.0, orders=[BookOrder(side=SELL, price=11.0, size=6, order_id=14219729556174192211)])]"
         )
         bid_level = book.bids()[0]
         ask_level = book.asks()[0]
