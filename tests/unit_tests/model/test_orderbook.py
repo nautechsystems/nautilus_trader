@@ -281,17 +281,18 @@ class TestOrderBook:
         assert len(book.bids()) == 1
         assert len(book.asks()) == 1
         # For L2_MBP books, order_ids are deterministic hashes of the price
-        # These values are from price_to_order_id() using AHash with fixed seeds
-        assert (
-            repr(book.bids())
-            == "[BookLevel(price=10.0, orders=[BookOrder(side=BUY, price=10.0, size=5, order_id=16031577039610741223)])]"
-        )
-        assert (
-            repr(book.asks())
-            == "[BookLevel(price=11.0, orders=[BookOrder(side=SELL, price=11.0, size=6, order_id=14219729556174192211)])]"
-        )
+        # NOTE: We test hash properties rather than exact values because AHash produces
+        # platform-specific results (different on Windows vs Unix due to architecture
+        # differences). The important properties are: determinism within a platform,
+        # non-zero values, and collision resistance (different prices -> different IDs).
         bid_level = book.bids()[0]
         ask_level = book.asks()[0]
+        bid_order_id = bid_level.orders()[0].order_id
+        ask_order_id = ask_level.orders()[0].order_id
+        # Verify order_ids are non-zero and different
+        assert bid_order_id > 0, "Bid order_id should be non-zero"
+        assert ask_order_id > 0, "Ask order_id should be non-zero"
+        assert bid_order_id != ask_order_id, "Different prices should produce different order_ids"
         assert bid_level.side == OrderSide.BUY
         assert ask_level.side == OrderSide.SELL
         assert len(bid_level.orders()) == 1
