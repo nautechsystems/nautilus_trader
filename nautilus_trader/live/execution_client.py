@@ -524,6 +524,44 @@ class LiveExecutionClient(ExecutionClient):
 
         self._send_order_status_report(report)
 
+    async def _await_account_registered(
+        self,
+        timeout_secs: float = 5.0,
+        log_registered: bool = True,
+    ) -> None:
+        # This method polls the cache to ensure the account state event has been
+        # processed and the account is available. This prevents race conditions
+        # during startup where strategies or portfolio calculations may try to
+        # access the account before it's registered.
+
+        if not self.account_id:
+            self._log.warning("Cannot await account registration: account_id not set")
+            return
+
+        # Check if account already registered first
+        if self._cache.account(self.account_id):
+            if log_registered:
+                self._log_account_registered()
+            return
+
+        interval_ms = 10  # Check every 10ms
+        interval_secs = interval_ms / 1000
+        max_attempts = int((timeout_secs * 1000) / interval_ms)
+
+        for _ in range(1, max_attempts + 1):
+            if self._cache.account(self.account_id):
+                if log_registered:
+                    self._log_account_registered()
+                return
+            await asyncio.sleep(interval_secs)
+
+        raise RuntimeError(
+            f"Account {self.account_id} not registered in cache after {timeout_secs}s timeout",
+        )
+
+    def _log_account_registered(self) -> None:
+        self._log.info(f"Account {self.account_id} registered in cache", LogColor.GREEN)
+
     ############################################################################
     # Coroutines to implement
     ############################################################################

@@ -196,6 +196,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         await self._update_account_state()
+        await self._await_account_registered()
 
         # Check BitMEX-Nautilus clock sync
         server_time: int = await self._http_client.http_get_server_time()

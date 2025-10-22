@@ -220,6 +220,7 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._instrument_provider.initialize()
         await self._cache_instruments()
         await self._update_account_state()
+        await self._await_account_registered()
 
         self.create_task(self._check_clock_sync())
 
