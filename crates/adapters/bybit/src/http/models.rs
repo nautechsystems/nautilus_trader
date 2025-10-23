@@ -524,6 +524,10 @@ pub struct BybitCoinBalance {
     pub collateral_switch: bool,
     pub margin_collateral: bool,
     pub coin: Ustr,
+    #[serde(default)]
+    pub spot_hedging_qty: Option<String>,
+    #[serde(default)]
+    pub spot_borrow: Option<String>,
 }
 
 /// Wallet balance snapshot containing per-coin balances.
@@ -751,6 +755,8 @@ pub type BybitPositionListResponse = BybitCursorListResponse<BybitPosition>;
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
 
     use super::*;
@@ -869,5 +875,33 @@ mod tests {
         assert_eq!(usdt.total_order_im, None);
         assert_eq!(usdt.total_position_mm, None);
         assert_eq!(usdt.total_position_im, None);
+        assert_eq!(btc.spot_borrow, Some("0".to_string()));
+        assert_eq!(usdt.spot_borrow, Some("0".to_string()));
+    }
+
+    #[rstest]
+    fn test_parse_wallet_balance_with_spot_borrow() {
+        let json = include_str!("../../test_data/http_get_wallet_balance_with_spot_borrow.json");
+        let response: BybitWalletBalanceResponse =
+            serde_json::from_str(json).expect("Failed to parse wallet balance with spotBorrow");
+
+        let wallet = &response.result.list[0];
+        let usdt = &wallet.coin[0];
+
+        assert_eq!(usdt.coin.as_str(), "USDT");
+        assert_eq!(usdt.wallet_balance, "1200.00");
+        assert_eq!(usdt.spot_borrow, Some("200.00".to_string()));
+        assert_eq!(usdt.borrow_amount, "200.00");
+
+        // Verify calculation: actual_balance = walletBalance - spotBorrow = 1200 - 200 = 1000
+        let account_id = crate::common::parse::parse_account_state(
+            wallet,
+            AccountId::new("BYBIT-001"),
+            UnixNanos::default(),
+        )
+        .expect("Failed to parse account state");
+
+        let balance = &account_id.balances[0];
+        assert_eq!(balance.total.as_f64(), 1000.0);
     }
 }

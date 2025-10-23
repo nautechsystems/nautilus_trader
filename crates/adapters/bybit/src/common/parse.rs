@@ -723,11 +723,24 @@ pub fn parse_account_state(
     for coin in &wallet_balance.coin {
         let currency = Currency::from_str(&coin.coin)?;
 
-        let total_f64 = if coin.wallet_balance.is_empty() {
+        let wallet_balance_f64 = if coin.wallet_balance.is_empty() {
             0.0
         } else {
             coin.wallet_balance.parse::<f64>()?
         };
+
+        // TODO: extract this logic to a function
+        let spot_borrow_f64 = if let Some(ref spot_borrow) = coin.spot_borrow {
+            if spot_borrow.is_empty() {
+                0.0
+            } else {
+                spot_borrow.parse::<f64>()?
+            }
+        } else {
+            0.0
+        };
+
+        let total_f64 = wallet_balance_f64 - spot_borrow_f64;
 
         let locked_f64 = if coin.locked.is_empty() {
             0.0
