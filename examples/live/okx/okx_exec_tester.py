@@ -84,7 +84,6 @@ instrument_id = InstrumentId.from_str(f"{symbol}.{OKX}")
 # Setup instruments and types based on instrument_type
 instrument_types: tuple[OKXInstrumentType, ...]
 if instrument_type in (OKXInstrumentType.SPOT, OKXInstrumentType.SWAP):
-    # Use dual spot and swap instruments for reconciliation (matching wingman setup)
     spot_instrument_id = InstrumentId.from_str(f"{token}-USDT.{OKX}")
     swap_instrument_id = InstrumentId.from_str(f"{token}-USDT-SWAP.{OKX}")
     reconciliation_instrument_ids = [spot_instrument_id, swap_instrument_id]
@@ -118,7 +117,7 @@ config_node = TradingNodeConfig(
         convert_quote_qty_to_base=False,
         reconciliation=True,
         reconciliation_instrument_ids=reconciliation_instrument_ids,
-        reconciliation_lookback_mins=60,  # Limiting to 1-day for testing
+        # reconciliation_lookback_mins=60,
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,
@@ -204,7 +203,7 @@ config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=external_order_claims,
     use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
-    subscribe_quotes=True,  # Needed for SPOT margin MARKET BUY orders
+    # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
     enable_buys=True,

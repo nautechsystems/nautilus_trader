@@ -165,6 +165,44 @@ use_hyphens_in_client_order_ids=False
 **Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, and `LIMIT_IF_TOUCHED` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources.
 :::
 
+### Quantity semantics for spot margin trading
+
+When using spot margin trading (`use_spot_margin=True`), OKX interprets order quantities differently depending on the order side:
+
+- **Limit** orders interpret `quantity` as the number of base currency units.
+- **Market SELL** orders also use base-unit quantities.
+- **Market BUY** orders interpret `quantity` as quote notional (e.g., USDT).
+
+:::warning
+**When submitting spot margin market BUY orders, you must**:
+
+1. Set `quote_quantity=True` on the order (or pre-compute the quote-denominated amount).
+2. Configure the execution engine with `convert_quote_quantity_to_base=False` so the quote amount reaches the adapter unchanged.
+
+The OKX execution client will deny base-denominated market buy orders for spot margin to prevent unintended fills.
+
+**On the first fill**, the order quantity will be automatically updated from the quote quantity to the actual base quantity received,
+reflecting the executed trade.
+:::
+
+```python
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.execution.engine import ExecutionEngine
+
+# Disable automatic conversion for quote quantities
+config = ExecEngineConfig(convert_quote_qty_to_base=False)
+engine = ExecutionEngine(msgbus=msgbus, cache=cache, clock=clock, config=config)
+
+# Correct: Spot margin market BUY with quote quantity (spend $100 USDT)
+order = strategy.order_factory.market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100.0),
+    quote_quantity=True,  # Interpret as USDT notional
+)
+strategy.submit_order(order)
+```
+
 ### Execution instructions
 
 | Instruction    | Linear Perpetual Swap | Notes                  |
@@ -200,9 +238,20 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 | Feature           | Linear Perpetual Swap | Notes                                                |
 |-------------------|-----------------------|------------------------------------------------------|
 | Query positions   | ✓                     | Real-time position updates.                          |
-| Position mode     | ✓                     | Net vs Long/Short mode.                              |
+| Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
 | Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
+
+#### Position modes
+
+OKX supports two position modes for derivatives trading:
+
+- **Net mode** (Netting): Single position per instrument that can be positive (LONG) or negative (SHORT). Buy and sell orders net against each other. This is the default and recommended for most traders.
+- **Long/Short mode** (Hedging): Separate long and short positions for the same instrument. Allows simultaneous long and short positions, useful for hedging strategies.
+
+:::note
+Position mode must be configured via the OKX Web/App interface and applies account-wide. The adapter automatically detects the current position mode and handles position reporting accordingly.
+:::
 
 ### Trade modes and margin configuration
 
@@ -379,6 +428,21 @@ stop_order = order_factory.stop_market(
 )
 strategy.submit_order(stop_order)
 ```
+
+## Risk management
+
+### Liquidation and ADL event handling
+
+The OKX adapter automatically detects and handles exchange-initiated risk management events:
+
+- **Liquidation orders**: When a position is liquidated by the exchange (full or partial), the adapter detects the liquidation category and logs warnings with order details. These orders are processed normally through the order and fill pipeline.
+- **Auto-Deleveraging (ADL)**: When your position is closed by the exchange to offset a counterparty's liquidation, the adapter detects and logs the ADL event with position details.
+
+:::info
+**Liquidation and ADL events are logged at WARNING level** with details including order ID, instrument, and state. Monitor your logs for these events as part of your risk management process.
+
+The adapter handles these exchange-generated orders seamlessly, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
+:::
 
 ## Authentication
 
