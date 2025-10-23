@@ -662,12 +662,26 @@ pub fn parse_ws_account_state(
     for coin_data in &wallet.coin {
         let currency = Currency::from(coin_data.coin.as_str());
 
-        let total_amount = coin_data.wallet_balance.parse::<f64>().with_context(|| {
+        let wallet_balance_amount = coin_data.wallet_balance.parse::<f64>().with_context(|| {
             format!(
                 "Failed to parse walletBalance='{}' as f64",
                 coin_data.wallet_balance
             )
         })?;
+
+        let spot_borrow_amount = if let Some(ref spot_borrow) = coin_data.spot_borrow {
+            if spot_borrow.is_empty() {
+                0.0
+            } else {
+                spot_borrow.parse::<f64>().with_context(|| {
+                    format!("Failed to parse spotBorrow='{}' as f64", spot_borrow)
+                })?
+            }
+        } else {
+            0.0
+        };
+
+        let total_amount = wallet_balance_amount - spot_borrow_amount;
 
         let free_amount = if coin_data.available_to_withdraw.is_empty() {
             0.0

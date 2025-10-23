@@ -33,7 +33,8 @@
                         "locked": "0",
                         "collateralSwitch": true,
                         "marginCollateral": true,
-                        "coin": "BTC"
+                        "coin": "BTC",
+                        "spotBorrow": "0"
                     },
                     {
                         "availableToBorrow": "5000",
@@ -49,7 +50,8 @@
                         "locked": "0",
                         "collateralSwitch": true,
                         "marginCollateral": true,
-                        "coin": "USDT"
+                        "coin": "USDT",
+                        "spotBorrow": "0"
                     }
                 ]
             }

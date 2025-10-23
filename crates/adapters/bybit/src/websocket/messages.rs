@@ -642,6 +642,8 @@ pub struct BybitWsAccountWalletCoin {
     #[serde(default, rename = "totalPositionMM")]
     pub total_position_mm: Option<String>,
     pub equity: String,
+    #[serde(default)]
+    pub spot_borrow: Option<String>,
 }
 
 /// Wallet summary payload covering all coins.

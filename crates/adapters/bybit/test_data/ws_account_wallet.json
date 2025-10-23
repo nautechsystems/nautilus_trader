@@ -25,7 +25,8 @@
           "accruedInterest": "0",
           "totalOrderIM": "0.00010000",
           "totalPositionIM": "0",
-          "totalPositionMM": "0"
+          "totalPositionMM": "0",
+          "spotBorrow": "0"
         },
         {
           "coin": "USDT",
@@ -37,7 +38,8 @@
           "accruedInterest": "0",
           "totalOrderIM": "0",
           "totalPositionIM": "127.8573161",
-          "totalPositionMM": "12.78573161"
+          "totalPositionMM": "12.78573161",
+          "spotBorrow": "0"
         }
       ]
     }
