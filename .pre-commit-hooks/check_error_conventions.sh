@@ -26,6 +26,19 @@ VIOLATIONS=0
 
 echo "Checking Rust error variable naming..."
 
+# Create a temporary file to store the search results
+rust_results=$(mktemp)
+trap 'rm -f "$rust_results"' EXIT
+
+# Search for Err( patterns in Rust files
+if command -v rg &> /dev/null; then
+  # Use ripgrep - look for Err( in Rust files
+  rg -n 'Err\(' crates --type rust 2> /dev/null > "$rust_results" || true
+else
+  # Fall back to grep + find
+  find crates -name '*.rs' -type f -exec grep -Hn 'Err(' {} + 2> /dev/null > "$rust_results" || true
+fi
+
 while IFS=: read -r file line_num line_content; do
   # Skip empty lines
   [[ -z "$file" ]] && continue
@@ -48,15 +61,7 @@ while IFS=: read -r file line_num line_content; do
     echo
     VIOLATIONS=$((VIOLATIONS + 1))
   fi
-done < <(
-  if command -v rg &> /dev/null; then
-    # Use ripgrep - look for Err( in Rust files
-    rg -n 'Err\(' crates --type rust 2> /dev/null || true
-  else
-    # Fall back to grep + find
-    find crates -name '*.rs' -type f -exec grep -Hn 'Err(' {} + 2> /dev/null || true
-  fi
-)
+done < "$rust_results"
 
 ################################################################################
 # Check Python files for 'except ... as variable:' patterns (all exception types)
@@ -70,6 +75,10 @@ if ! command -v rg &> /dev/null; then
   exit 0
 fi
 
+# Create a temporary file to store the search results
+python_results=$(mktemp)
+trap 'rm -f "$rust_results" "$python_results"' EXIT
+
 # Search for except blocks with 'as xxx:' where xxx is not 'e'
 # Checks single-line except blocks (except ExceptionType as xxx:)
 # Also handles tuples on one line: except (Type1, Type2) as xxx:
@@ -77,6 +86,13 @@ fi
 #   except (
 #       ValueError,
 #   ) as xxx:
+# Pattern matches except blocks where 'except' and 'as xxx:' are on the same line
+rg -H -n '^[[:space:]]*except[*]?.*[[:space:]]as[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*:' \
+  --type py \
+  --type-add 'pyx:*.pyx' \
+  --type pyx \
+  . 2> /dev/null > "$python_results" || true
+
 while IFS= read -r line; do
   # Skip empty lines
   [[ -z "$line" ]] && continue
@@ -100,14 +116,7 @@ while IFS= read -r line; do
     echo
     VIOLATIONS=$((VIOLATIONS + 1))
   fi
-done < <(
-  # Pattern matches except blocks where 'except' and 'as xxx:' are on the same line
-  rg -H -n '^[[:space:]]*except[*]?.*[[:space:]]as[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*:' \
-    --type py \
-    --type-add 'pyx:*.pyx' \
-    --type pyx \
-    . 2> /dev/null || true
-)
+done < "$python_results"
 
 ################################################################################
 # Report results
