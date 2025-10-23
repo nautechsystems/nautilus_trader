@@ -108,6 +108,25 @@ where
     Ok(opt.filter(|s| !s.is_empty()))
 }
 
+/// Deserializes a string into `Option<OKXTargetCurrency>`, treating empty strings as `None`.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into an `OKXTargetCurrency`.
+pub fn deserialize_target_currency_as_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<crate::common::enums::OKXTargetCurrency>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        s.parse().map(Some).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Deserializes a numeric string into a `u64`.
 ///
 /// # Errors

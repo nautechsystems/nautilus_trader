@@ -18,7 +18,10 @@
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::parse::{deserialize_empty_string_as_none, deserialize_empty_ustr_as_none};
+use crate::common::parse::{
+    deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+    deserialize_target_currency_as_none,
+};
 
 /// Represents a trade tick from the GET /api/v5/market/trades endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,8 +69,8 @@ pub struct OKXCandlestick(
 use crate::common::{
     enums::{
         OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory,
-        OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
-        OKXVipLevel,
+        OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode,
+        OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -421,8 +424,8 @@ pub struct OKXPlaceOrderResponse {
     #[serde(default)]
     pub reduce_only: Option<String>,
     /// Target currency (optional).
-    #[serde(default)]
-    pub tgt_ccy: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Creation time.
     #[serde(default)]
     pub c_time: Option<String>,
@@ -471,7 +474,8 @@ pub struct OKXOrderHistory {
     /// Reduce-only flag.
     pub reduce_only: String,
     /// Target currency (optional).
-    pub tgt_ccy: String,
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Order state.
     pub state: OKXOrderStatus,
     /// Average price (optional).
@@ -719,7 +723,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub trigger_px_type: Option<OKXTriggerType>,
     /// Target currency (base_ccy or quote_ccy).
     #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
-    pub tgt_ccy: Option<String>,
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Position side (net, long, short).
     #[serde(rename = "posSide", skip_serializing_if = "Option::is_none")]
     pub pos_side: Option<OKXPositionSide>,
@@ -881,7 +885,7 @@ mod tests {
             trigger_px: Some("50000".to_string()),
             order_px: Some("49900".to_string()),
             trigger_px_type: Some(OKXTriggerType::Mark),
-            tgt_ccy: Some("base_ccy".to_string()),
+            tgt_ccy: Some(OKXTargetCurrency::BaseCcy),
             pos_side: Some(OKXPositionSide::Net),
             close_position: None,
             tag: None,

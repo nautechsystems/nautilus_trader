@@ -573,6 +573,30 @@ impl From<TriggerType> for OKXTriggerType {
     }
 }
 
+/// Represents the target currency for order quantity.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum OKXTargetCurrency {
+    /// Base currency.
+    BaseCcy,
+    /// Quote currency.
+    QuoteCcy,
+}
+
 /// Represents an OKX order book channel.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum OKXBookChannel {

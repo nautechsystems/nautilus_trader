@@ -108,6 +108,7 @@ This will be the final release with support for Python 3.11.
 - Fixed Interactive Brokers bars response handling by removing partial bar (#3040), thanks @sunlei
 - Fixed Interactive Brokers account summary handling (#3052), thanks @shinhwasbiz02
 - Fixed Interactive Brokers account balance calculation (#3064), thanks @sunlei
+- Fixed OKX spot margin quote quantity order handling
 - Fixed OKX API credentials handling to allow passing explicitly
 - Fixed OKX fee calculations to account for negative fees
 - Fixed OKX parsing for `tick_sz` across instrument types

@@ -30,10 +30,13 @@ use crate::{
     common::{
         enums::{
             OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType,
-            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode,
-            OKXTriggerType,
+            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
-        parse::{deserialize_empty_string_as_none, deserialize_string_to_u64},
+        parse::{
+            deserialize_empty_string_as_none, deserialize_string_to_u64,
+            deserialize_target_currency_as_none,
+        },
     },
     websocket::enums::OKXSubscriptionEvent,
 };
@@ -538,6 +541,9 @@ pub struct OKXOrderMsg {
     pub sz: String,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
+    /// Target currency (base_ccy or quote_ccy). Empty for margin modes.
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Trade ID.
     pub trade_id: String,
     /// Last update time, Unix timestamp in milliseconds.
@@ -645,7 +651,7 @@ pub struct WsPostOrderParams {
     /// Target currency for net orders.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tgt_ccy: Option<String>,
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Order tag for categorization.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

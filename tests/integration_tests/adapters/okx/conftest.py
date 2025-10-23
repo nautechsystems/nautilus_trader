@@ -95,6 +95,39 @@ def instrument() -> CurrencyPair:
 
 
 @pytest.fixture()
+def eth_usdt_instrument() -> CurrencyPair:
+    eth = _create_currency(
+        "ETH",
+        precision=8,
+        iso4217=0,
+        name="Ethereum",
+        currency_type=CurrencyType.CRYPTO,
+    )
+    usdt = _create_currency(
+        "USDT",
+        precision=8,
+        iso4217=0,
+        name="Tether",
+        currency_type=CurrencyType.CRYPTO,
+    )
+
+    return CurrencyPair(
+        instrument_id=InstrumentId(Symbol("ETH-USDT"), OKX_VENUE),
+        raw_symbol=Symbol("ETH-USDT"),
+        base_currency=eth,
+        quote_currency=usdt,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("-0.0002"),
+        taker_fee=Decimal("0.0005"),
+    )
+
+
+@pytest.fixture()
 def account_state(account_id) -> AccountState:
     usd_currency = USD
 

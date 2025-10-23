@@ -894,6 +894,7 @@ pub fn parse_order_status_report(
     let size_precision = instrument.size_precision();
     let quantity = parse_quantity(&msg.sz, size_precision)?;
     let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
     let ts_last = parse_millisecond_timestamp(msg.u_time);
 
@@ -1415,6 +1416,7 @@ mod tests {
             exec_type: OKXExecType::Taker,
             sz: "0.03".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: trade_id.to_string(),
             u_time: 1746947317402,
         }
@@ -2148,6 +2150,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.03".to_string(), // Total order size
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_1".to_string(),
             u_time: 1746947317402,
         };
@@ -2195,6 +2198,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.03".to_string(), // Same total order size
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_2".to_string(),
             u_time: 1746947317403,
         };
@@ -2278,6 +2282,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_rebate_1".to_string(),
             u_time: 1746947317402,
         };
@@ -2325,6 +2330,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_rebate_2".to_string(),
             u_time: 1746947317403,
         };
@@ -2406,6 +2412,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_transition_1".to_string(),
             u_time: 1746947317402,
         };
@@ -2455,6 +2462,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Taker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_transition_2".to_string(),
             u_time: 1746947317403,
         };
@@ -2537,6 +2545,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Taker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_neg_inc_1".to_string(),
             u_time: 1746947317402,
         };
@@ -2584,6 +2593,7 @@ mod tests {
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "trade_neg_inc_2".to_string(),
             u_time: 1746947317403,
         };
@@ -3258,6 +3268,7 @@ mod tests {
             exec_type: OKXExecType::Taker,
             sz: "0.25".to_string(),
             td_mode: OKXTradeMode::Isolated,
+            tgt_ccy: None,
             trade_id: "1518905888".to_string(),
             u_time: 1746947317402,
         };

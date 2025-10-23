@@ -31,6 +31,8 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -41,6 +43,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -845,3 +848,488 @@ async def test_cancel_all_orders_handles_mixed_regular_and_algo_orders(
 
     # Assert - algo orders should be cancelled via REST API (2 calls)
     assert http_client.cancel_algo_order.call_count == 2
+
+
+# =====================================================================================
+# Quote Quantity Order Tests
+# =====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_spot_margin_market_buy_denies_order_without_quote_quantity(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    # Create market buy order without quote_quantity
+    order = TestExecStubs.market_order(
+        instrument=instrument,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("20.0"),  # Base quantity without quote_quantity=True
+    )
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    from nautilus_trader.execution.messages import SubmitOrder
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order=order,
+        position_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await client._submit_order(command)
+
+    # Assert
+    assert any(isinstance(event, OrderDenied) for event in emitted_events)
+    denied_event = next(event for event in emitted_events if isinstance(event, OrderDenied))
+    assert "quote-denominated quantities" in denied_event.reason
+
+
+@pytest.mark.asyncio
+async def test_spot_margin_market_buy_quote_quantity_converts_on_first_fill(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    # Create market buy order with quote_quantity=True
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-quote-qty"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("20.0"),  # 20 USDT
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=True,  # Key: quote quantity order
+    )
+
+    # Simulate order submission and acceptance
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("venue-123"),
+    )
+    order.apply(accepted)
+
+    client._cache.add_order(order, None, None)
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    # Create fill report: gross = 0.005230 ETH, commission = 0.00000523 ETH
+    # Net = 0.005230 - 0.00000523 = 0.00522477 ETH
+    fill_report = SimpleNamespace(
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=Quantity.from_str("0.005230"),  # Gross fill in base currency
+        last_px=Price.from_str("3825.25"),
+        commission=Money.from_str("0.00000523 ETH"),  # Fee in base currency
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456789,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report,
+    )
+
+    # Act
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert
+    # Should generate OrderUpdated with net quantity
+    assert any(isinstance(event, OrderUpdated) for event in emitted_events)
+    updated_event = next(event for event in emitted_events if isinstance(event, OrderUpdated))
+    # Net quantity = 0.005230 - 0.00000523 ≈ 0.005225 (rounded to precision 6)
+    assert updated_event.quantity == Quantity.from_str("0.005225")
+
+    # Should generate OrderFilled with net last_qty
+    assert any(isinstance(event, OrderFilled) for event in emitted_events)
+    filled_event = next(event for event in emitted_events if isinstance(event, OrderFilled))
+    assert filled_event.last_qty == Quantity.from_str("0.005225")
+
+    # Order should no longer be quote_quantity
+    assert not order.is_quote_quantity
+
+
+@pytest.mark.asyncio
+async def test_spot_margin_market_buy_quote_quantity_handles_quote_currency_commission(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-quote-qty-2"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("20.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=True,
+    )
+
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("venue-456"),
+    )
+    order.apply(accepted)
+
+    client._cache.add_order(order, None, None)
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    # Create fill with commission in QUOTE currency (unusual but possible)
+    fill_report = SimpleNamespace(
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=Quantity.from_str("0.005230"),
+        last_px=Price.from_str("3825.25"),
+        commission=Money.from_str("0.02 USDT"),  # Fee in QUOTE currency
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456789,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report,
+    )
+
+    # Act
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert
+    # Should generate OrderUpdated but NOT subtract commission (different currency)
+    assert any(isinstance(event, OrderUpdated) for event in emitted_events)
+    updated_event = next(event for event in emitted_events if isinstance(event, OrderUpdated))
+    # Quantity should be gross (not adjusted for commission)
+    assert updated_event.quantity == Quantity.from_str("0.005230")
+
+    # OrderFilled should also have gross last_qty
+    assert any(isinstance(event, OrderFilled) for event in emitted_events)
+    filled_event = next(event for event in emitted_events if isinstance(event, OrderFilled))
+    assert filled_event.last_qty == Quantity.from_str("0.005230")
+
+
+@pytest.mark.asyncio
+async def test_regular_market_buy_not_affected_by_quote_quantity_logic(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange - without use_spot_margin, should not trigger quote quantity validation
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": False,  # Regular spot trading
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    # Market buy order WITHOUT quote_quantity should be allowed for regular spot
+    order = TestExecStubs.market_order(
+        instrument=instrument,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.1"),  # Base quantity
+    )
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    from nautilus_trader.execution.messages import SubmitOrder
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order=order,
+        position_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await client._submit_order(command)
+
+    # Assert - should not be denied
+    assert not any(isinstance(event, OrderDenied) for event in emitted_events)
+
+
+@pytest.mark.asyncio
+async def test_spot_margin_market_buy_quote_quantity_handles_partial_fills(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    # Create market buy order with quote_quantity=True for 20 USDT
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-partial-fills"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("20.0"),  # 20 USDT
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=True,
+    )
+
+    # Simulate order submission and acceptance
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("venue-partial"),
+    )
+    order.apply(accepted)
+
+    client._cache.add_order(order, None, None)
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    # First partial fill: 10 USDT worth = 0.002615 ETH @ 3825.25, commission = 0.00000261 ETH
+    # Net = 0.002615 - 0.00000261 = 0.00261239 ETH
+    fill_report_1 = SimpleNamespace(
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=Quantity.from_str("0.002615"),  # Gross fill in base currency
+        last_px=Price.from_str("3825.25"),
+        commission=Money.from_str("0.00000261 ETH"),  # Fee in base currency
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456789,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report_1,
+    )
+
+    # Act - First fill
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert - First fill should generate OrderUpdated with net quantity
+    assert any(isinstance(event, OrderUpdated) for event in emitted_events)
+    updated_event = next(event for event in emitted_events if isinstance(event, OrderUpdated))
+    assert updated_event.quantity == Quantity.from_str("0.002612")  # Net rounded to precision 6
+
+    # First fill should have net last_qty
+    filled_events = [e for e in emitted_events if isinstance(e, OrderFilled)]
+    assert len(filled_events) == 1
+    assert filled_events[0].last_qty == Quantity.from_str("0.002612")
+
+    # Clear events for second fill
+    emitted_events.clear()
+
+    # Second partial fill: Another 10 USDT worth = 0.002615 ETH @ 3825.25, commission = 0.00000261 ETH
+    # Net should also be = 0.002615 - 0.00000261 = 0.00261239 ETH
+    fill_report_2 = SimpleNamespace(
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=Quantity.from_str("0.002615"),  # Gross fill in base currency
+        last_px=Price.from_str("3825.25"),
+        commission=Money.from_str("0.00000261 ETH"),  # Fee in base currency
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456790,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report_2,
+    )
+
+    # Act - Second fill
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert - Second fill should NOT generate OrderUpdated (already converted)
+    assert not any(isinstance(event, OrderUpdated) for event in emitted_events)
+
+    # CRITICAL: Second fill should ALSO have net last_qty (adjusted for commission)
+    filled_events = [e for e in emitted_events if isinstance(e, OrderFilled)]
+    assert len(filled_events) == 1
+    # This should be NET (0.002615 - 0.00000261 = 0.00261239 ≈ 0.002612)
+    # NOT gross (0.002615)
+    assert filled_events[0].last_qty == Quantity.from_str("0.002612")
+
+
+@pytest.mark.asyncio
+async def test_fill_with_changed_venue_order_id_generates_update(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Test that when a fill arrives with a different venue_order_id (e.g., algo order
+    # transitions to live order), we correctly generate OrderUpdated with venue_order_id_modified=True
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    # Create and accept order with initial venue_order_id
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-venue-change"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("20.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=True,
+    )
+
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("algo-123"),  # Initial algo order ID
+    )
+    order.apply(accepted)
+
+    client._cache.add_order(order, None, None)
+
+    emitted_events: list = []
+
+    def _capture(event):
+        emitted_events.append(event)
+
+    monkeypatch.setattr(client, "_send_order_event", _capture)
+
+    # Fill arrives with DIFFERENT venue_order_id (algo transitioned to live)
+    fill_report = SimpleNamespace(
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("live-456"),  # Different venue ID
+        venue_position_id=None,
+        trade_id=TestIdStubs.trade_id(),
+        last_qty=Quantity.from_str("0.005230"),
+        last_px=Price.from_str("3825.25"),
+        commission=Money.from_str("0.00000523 ETH"),
+        liquidity_side=LiquiditySide.TAKER,
+        ts_event=123456789,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.FillReport.from_pyo3",
+        lambda _obj: fill_report,
+    )
+
+    # Act
+    client._handle_fill_report_pyo3(MagicMock())
+
+    # Assert
+    # Should generate ONE OrderUpdated event that handles both:
+    # 1. Quote quantity conversion (quantity updated)
+    # 2. Venue order ID change (venue_order_id updated with venue_order_id_modified=True)
+    updated_events = [e for e in emitted_events if isinstance(e, OrderUpdated)]
+    assert len(updated_events) == 1
+
+    # The single update should have the new venue_order_id
+    assert updated_events[0].venue_order_id == VenueOrderId("live-456")
+    # And the net quantity from the quote quantity conversion
+    assert updated_events[0].quantity == Quantity.from_str("0.005225")
+
+    # Should also generate OrderFilled with correct venue_order_id
+    filled_events = [e for e in emitted_events if isinstance(e, OrderFilled)]
+    assert len(filled_events) == 1
+    assert filled_events[0].venue_order_id == VenueOrderId("live-456")
+    # And net last_qty (commission adjusted)
+    assert filled_events[0].last_qty == Quantity.from_str("0.005225")
