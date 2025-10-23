@@ -95,7 +95,7 @@ def account_state(account_id) -> AccountState:
     return AccountState(
         account_id=account_id,
         account_type=AccountType.MARGIN,
-        base_currency=xbt_currency,
+        base_currency=None,  # Multi-currency account
         reported=True,
         balances=[
             AccountBalance(
@@ -139,9 +139,16 @@ def mock_http_client():
         return_value={
             "account_id": "BITMEX-1234567",
             "account_type": "MARGIN",
-            "base_currency": "XBt",
+            "base_currency": None,
             "reported": True,
-            "balances": [],
+            "balances": [
+                {
+                    "currency": "XBt",
+                    "total": "1000000.0",
+                    "locked": "0.0",
+                    "free": "1000000.0",
+                },
+            ],
             "margins": [],
             "info": {},
             "event_id": str(TestIdStubs.uuid()),

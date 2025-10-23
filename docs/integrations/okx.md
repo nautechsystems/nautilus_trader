@@ -177,7 +177,7 @@ When using spot margin trading (`use_spot_margin=True`), OKX interprets order qu
 **When submitting spot margin market BUY orders, you must**:
 
 1. Set `quote_quantity=True` on the order (or pre-compute the quote-denominated amount).
-2. Configure the execution engine with `convert_quote_quantity_to_base=False` so the quote amount reaches the adapter unchanged.
+2. Configure the execution engine with `convert_quote_qty_to_base=False` so the quote amount reaches the adapter unchanged.
 
 The OKX execution client will deny base-denominated market buy orders for spot margin to prevent unintended fills.
 

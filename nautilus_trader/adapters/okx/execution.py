@@ -223,6 +223,8 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._update_account_state()
         await self._await_account_registered()
 
+        self._log.info("OKX API key authenticated", LogColor.GREEN)
+
         self.create_task(self._check_clock_sync())
 
         await self._ws_client.connect(
@@ -334,18 +336,20 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
     async def _update_account_state(self) -> None:
-        try:
-            pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
-            account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+        pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
-            self.generate_account_state(
-                balances=account_state.balances,
-                margins=account_state.margins,
-                reported=True,
-                ts_event=self._clock.timestamp_ns(),
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        if account_state.balances:
+            self._log.info(
+                f"Generated account state with {len(account_state.balances)} balance(s)",
             )
-        except Exception as e:
-            self._log.error(f"Failed to update account state: {e}")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -810,7 +814,6 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
     async def _query_account(self, _command: QueryAccount) -> None:
-        # TODO: Specific account ID (sub account) not yet supported
         await self._update_account_state()
 
     async def _submit_order(self, command: SubmitOrder) -> None:

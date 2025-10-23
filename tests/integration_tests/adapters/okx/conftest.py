@@ -134,7 +134,7 @@ def account_state(account_id) -> AccountState:
     return AccountState(
         account_id=account_id,
         account_type=AccountType.CASH,
-        base_currency=usd_currency,
+        base_currency=None,  # Multi-currency account
         reported=True,
         balances=[
             AccountBalance(
@@ -169,9 +169,16 @@ def mock_http_client():
         return_value={
             "account_id": "OKX-123",
             "account_type": "CASH",
-            "base_currency": "USD",
+            "base_currency": None,
             "reported": True,
-            "balances": [],
+            "balances": [
+                {
+                    "currency": "USD",
+                    "total": "100000.0",
+                    "locked": "0.0",
+                    "free": "100000.0",
+                },
+            ],
             "margins": [],
             "info": {},
             "event_id": str(TestIdStubs.uuid()),

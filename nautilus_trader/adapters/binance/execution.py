@@ -295,32 +295,27 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._log.error(message)
 
     async def _connect(self) -> None:
-        try:
-            await self._instrument_provider.initialize()
-            await self._update_account_state()
-            await self._await_account_registered()
-            await self._init_dual_side_position()
+        await self._instrument_provider.initialize()
+        await self._update_account_state()
+        await self._await_account_registered()
+        await self._init_dual_side_position()
 
-            response: BinanceListenKey = await self._http_user.create_listen_key()
+        response: BinanceListenKey = await self._http_user.create_listen_key()
 
-            # Check Binance-Nautilus clock sync
-            server_time: int = await self._http_market.request_server_time()
-            self._log.info(f"Binance server time {server_time} UNIX (ms)")
+        # Check Binance-Nautilus clock sync
+        server_time: int = await self._http_market.request_server_time()
+        self._log.info(f"Binance server time {server_time} UNIX (ms)")
 
-            nautilus_time: int = self._clock.timestamp_ms()
-            self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
 
-            # Set up WebSocket listen key
-            self._listen_key = response.listenKey
-            self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
-            self._log.info(f"Listen key {self._listen_key}")
-            self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
+        # Set up WebSocket listen key
+        self._listen_key = response.listenKey
+        self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
+        self._log.info(f"Listen key {self._listen_key}")
+        self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
-            # Connect WebSocket client
-            await self._ws_client.subscribe_listen_key(self._listen_key)
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+        await self._ws_client.subscribe_listen_key(self._listen_key)
 
     async def _update_account_state(self) -> None:
         # Replace method in child class
@@ -806,7 +801,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return position_side
 
     async def _query_account(self, _command: QueryAccount) -> None:
-        # Specific account ID (sub account) not yet supported
         await self._update_account_state()
 
     async def _submit_order(self, command: SubmitOrder) -> None:
