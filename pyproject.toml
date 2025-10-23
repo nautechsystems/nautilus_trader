@@ -86,7 +86,7 @@ dydx = [
   "pycryptodome>=3.20.0,<4.0.0",
 ]
 polymarket = [
-  "py-clob-client==0.25.0,<1.0.0", # Pinned to 0.25.0 for stability
+  "py-clob-client==0.28.0,<1.0.0", # Pinned to 0.28.0 for stability
 ]
 
 [dependency-groups]
