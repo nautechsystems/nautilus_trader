@@ -54,6 +54,97 @@ Each `BacktestRunConfig` object consists of the following:
 - An optional `ImportableControllerConfig` object.
 - An optional `BacktestEngineConfig` object, with a default configuration if not specified.
 
+## Repeated runs
+
+When conducting multiple backtest runs, it's important to understand how components reset to avoid unexpected behavior.
+
+### BacktestEngine.reset()
+
+The `.reset()` method returns all stateful fields to their **initial value**, except for data and instruments which persist.
+
+**What gets reset:**
+
+- All trading state (orders, positions, account balances)
+- Strategy state
+- Engine counters and timestamps
+
+**What persists:**
+
+- Data added via `.add_data()` (use `.clear_data()` to drop it)
+- Instruments (required to match the persisted data)
+- Venue configurations
+
+**Instrument handling:**
+
+For `BacktestEngine`, instruments persist across resets by default (because data persists and instruments must match data).
+This is configured via `CacheConfig.drop_instruments_on_reset=False` in the default `BacktestEngineConfig`.
+
+### Approaches for multiple backtest runs
+
+There are two main approaches for running multiple backtests:
+
+#### 1. Use BacktestNode (recommended for production)
+
+The high-level API is designed for multiple backtest runs with different configurations:
+
+```python
+from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config import BacktestRunConfig
+
+# Define multiple run configurations
+configs = [
+    BacktestRunConfig(...),  # Run 1
+    BacktestRunConfig(...),  # Run 2
+    BacktestRunConfig(...),  # Run 3
+]
+
+# Execute all runs
+node = BacktestNode(configs=configs)
+results = node.run()
+```
+
+Each run gets a fresh engine with clean state - no reset() needed.
+
+#### 2. Use BacktestEngine.reset()
+
+For fine-grained control with the low-level API:
+
+```python
+from nautilus_trader.backtest.engine import BacktestEngine
+
+engine = BacktestEngine()
+
+# Setup once
+engine.add_venue(...)
+engine.add_instrument(ETHUSDT)
+engine.add_data(data)
+
+# Run 1
+engine.add_strategy(strategy1)
+engine.run()
+
+# Reset and run 2 - instruments and data persist
+engine.reset()
+engine.add_strategy(strategy2)
+engine.run()
+
+# Reset and run 3
+engine.reset()
+engine.add_strategy(strategy3)
+engine.run()
+```
+
+:::note
+Instruments and data persist across resets by default for `BacktestEngine`, making parameter optimizations straightforward.
+:::
+
+:::tip Best practices
+
+- **For production backtesting:** Use `BacktestNode` with configuration objects.
+- **For parameter optimizations:** Use `BacktestEngine.reset()` to run multiple strategies against the same data.
+- **For quick experiments:** Either approach works - choose based on individual use case.
+:::
+
 ## Data
 
 Data provided for backtesting drives the execution flow. Since a variety of data types can be used,

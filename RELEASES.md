@@ -63,6 +63,7 @@ This will be the final release with support for Python 3.11.
 - Fixed PyO3 interpreter lifecycle for async shutdown preventing edge case `"interpreter not initialized"` panics during shutdown
 - Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
 - Fixed `RiskEngine` quote quantity validation
+- Fixed `BacktestEngine` to retain instruments on reset (#3096), thanks for reporting @woung717
 - Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
 - Fixed handling of asyncio.CancelledError in execution reconciliation (#3073), thanks @dinana
 - Fixed edge case where rejected orders can remain in own order book

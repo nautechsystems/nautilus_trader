@@ -21,6 +21,7 @@ from typing import Any
 import msgspec
 import pandas as pd
 
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -402,9 +403,10 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     environment: Environment = Environment.BACKTEST
     trader_id: TraderId = "BACKTESTER-001"
-    data_engine: DataEngineConfig = DataEngineConfig()
-    risk_engine: RiskEngineConfig = RiskEngineConfig()
-    exec_engine: ExecEngineConfig = ExecEngineConfig()
+    cache: CacheConfig | None = CacheConfig(drop_instruments_on_reset=False)
+    data_engine: DataEngineConfig | None = DataEngineConfig()
+    risk_engine: RiskEngineConfig | None = RiskEngineConfig()
+    exec_engine: ExecEngineConfig | None = ExecEngineConfig()
     run_analysis: bool = True
 
     def __post_init__(self):

@@ -1137,10 +1137,16 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        All stateful fields are reset to their initial value.
+        All stateful fields are reset to their initial value, except for data and instruments which persist.
 
-        Note: instruments and data are not dropped/reset, this can be done through a
-        separate call to `.clear_data()` if desired.
+        Notes
+        -----
+        Data and instruments are retained across resets by default to enable repeated runs
+        with different strategies or parameters against the same dataset.
+
+        See Also
+        --------
+        https://nautilustrader.io/docs/concepts/backtesting#repeated-runs
 
         """
         self._log.debug(f"Resetting")
