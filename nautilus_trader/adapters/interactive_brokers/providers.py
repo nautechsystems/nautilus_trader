@@ -76,6 +76,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._cache_validity_days = config.cache_validity_days
         self._convert_exchange_to_mic_venue = config.convert_exchange_to_mic_venue
         self._symbol_to_mic_venue = config.symbol_to_mic_venue
+        self._filter_sec_types = set(config.filter_sec_types)
         # TODO: If cache_validity_days > 0 and Catalog is provided
 
         self._client = client
@@ -96,7 +97,23 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._loading = False
             self._loaded = True
 
-    async def get_instrument(self, contract: IBContract) -> Instrument:
+    def _is_filtered_sec_type(self, sec_type: str | None) -> bool:
+        return bool(sec_type and sec_type in self._filter_sec_types)
+
+    @property
+    def filter_sec_types(self) -> set[str]:
+        """
+        Return the set of filtered security types.
+        """
+        return self._filter_sec_types
+
+    async def get_instrument(self, contract: IBContract) -> Instrument | None:
+        if self._is_filtered_sec_type(contract.secType):
+            self._log.warning(
+                f"Skipping filtered {contract.secType=} for contract {contract}",
+            )
+            return None
+
         contract_id = contract.conId
         instrument_id = self.contract_id_to_instrument_id.get(contract_id)
 
@@ -121,7 +138,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         instrument = self.find(instrument_id)
 
-        # If instrument is still None, it means loading failed
         if instrument is None:
             self._log.error(f"Failed to load instrument for contract {contract}")
             raise ValueError(f"Instrument not found for contract {contract}")
@@ -702,6 +718,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             if not isinstance(details, IBContractDetails):
                 details = IBContractDetails(**details.__dict__)
+
+            sec_type = details.contract.secType
+
+            if self._is_filtered_sec_type(sec_type):
+                self._log.warning(
+                    f"Skipping filtered {sec_type=} for contract {details.contract}",
+                )
+                continue
 
             self._log.debug(f"Attempting to create instrument from {details}")
 

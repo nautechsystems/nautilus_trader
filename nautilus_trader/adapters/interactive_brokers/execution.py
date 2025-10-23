@@ -195,6 +195,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             config=config,
         )
 
+        self._filter_sec_types = instrument_provider.filter_sec_types
+
         # Track known positions to detect external changes (like option exercises)
         self._known_positions: dict[int, Decimal] = {}  # conId -> quantity
         self._connection_timeout = connection_timeout
@@ -437,9 +439,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.get_instrument(position.contract)
 
             if instrument is None:
-                self._log.error(
-                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
-                )
+                if position.contract.secType in self._filter_sec_types:
+                    self._log.warning(
+                        f"Skipping reconciliation for filtered contract: {position.contract}",
+                    )
+                else:
+                    self._log.error(
+                        f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                    )
                 continue
 
             contract_details = self.instrument_provider.contract_details[instrument.id]
@@ -683,9 +690,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.get_instrument(position.contract)
 
             if instrument is None:
-                self._log.error(
-                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
-                )
+                if position.contract.secType in self._filter_sec_types:
+                    self._log.warning(
+                        f"Skipping reconciliation for filtered contract: {position.contract}",
+                    )
+                else:
+                    self._log.error(
+                        f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                    )
                 continue
 
             if not self._cache.instrument(instrument.id):
