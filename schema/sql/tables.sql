@@ -457,6 +457,7 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     total_burns INTEGER NOT NULL DEFAULT 0,
     total_flashes INTEGER NOT NULL DEFAULT 0,
     total_fee_collects INTEGER NOT NULL,
+    liquidity_utilization_rate  DOUBLE PRECISION DEFAULT 0,
     is_valid BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (chain_id, pool_address, block, transaction_index, log_index),
