@@ -40,7 +40,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -o Acquire::Retries=5
-        sudo apt-get install -y curl clang git make pkg-config -o Acquire::Retries=5
+        sudo apt-get install -y curl clang git make pkg-config ripgrep -o Acquire::Retries=5
         sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
         sudo apt-get install -y capnproto libcapnp-dev -o Acquire::Retries=5
         sudo apt-get clean
@@ -51,17 +51,17 @@ runs:
       shell: bash
       run: |
         brew update || { sleep 5; brew update; }
-        brew install capnp || { sleep 5; brew install capnp; }
+        brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
     - name: Install capnproto (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        choco install capnproto -y || {
-          echo "capnproto install via choco failed or unavailable"
+        choco install capnproto ripgrep -y || {
+          echo "capnproto/ripgrep install via choco failed or unavailable"
           sleep 5
-          choco install capnproto -y || true
+          choco install capnproto ripgrep -y || true
         }
 
     # > --------------------------------------------------

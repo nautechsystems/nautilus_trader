@@ -66,9 +66,8 @@ echo "Checking Python exception variable naming..."
 
 # Require ripgrep for Python checks (complexity requires multiline mode)
 if ! command -v rg &> /dev/null; then
-  echo -e "${RED}Error:${NC} ripgrep is required for Python exception checks but not found"
-  echo "Install ripgrep: https://github.com/BurntSushi/ripgrep#installation"
-  exit 1
+  echo "WARNING: ripgrep not found, skipping Python exception checks"
+  exit 0
 fi
 
 # Search for except blocks with 'as xxx:' where xxx is not 'e'
