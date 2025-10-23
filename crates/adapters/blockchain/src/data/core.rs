@@ -1562,7 +1562,7 @@ impl BlockchainDataClientCore {
                     &profiler.pool.address,
                     profiler.pool.instrument_id,
                     profiler.get_active_tick_values().as_slice(),
-                    &profiler.get_active_position_keys(),
+                    &profiler.get_all_position_keys(),
                     last_processed_event,
                 )
                 .await?;
