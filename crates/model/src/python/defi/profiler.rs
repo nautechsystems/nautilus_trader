@@ -130,4 +130,14 @@ impl PoolProfiler {
     fn py_estimate_balance_of_token1(&self) -> String {
         self.estimate_balance_of_token1().to_string()
     }
+
+    #[pyo3(name = "get_total_liquidity")]
+    fn py_get_total_liquidity_all_positions(&self) -> String {
+        self.get_total_liquidity().to_string()
+    }
+
+    #[pyo3(name = "liquidity_utilization_rate")]
+    fn py_liquidity_utilization_rate(&self) -> f64 {
+        self.liquidity_utilization_rate()
+    }
 }

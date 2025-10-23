@@ -157,6 +157,8 @@ pub struct PoolAnalytics {
     pub total_fee_collects: u64,
     /// Total number of flash events processed.
     pub total_flashes: u64,
+    /// Liquidity utilization rate (active liquidity / total liquidity)
+    pub liquidity_utilization_rate: f64,
 }
 
 impl Default for PoolAnalytics {
@@ -171,6 +173,7 @@ impl Default for PoolAnalytics {
             total_burns: 0,
             total_fee_collects: 0,
             total_flashes: 0,
+            liquidity_utilization_rate: 0.0,
         }
     }
 }
