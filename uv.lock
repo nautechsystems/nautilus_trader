@@ -1496,7 +1496,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.3,<3.0.0" },
     { name = "portion", specifier = ">=2.6.1" },
     { name = "protobuf", marker = "extra == 'dydx'", specifier = "==5.29.1" },
-    { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = "==0.25.0,<1.0.0" },
+    { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = "==0.28.0,<1.0.0" },
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pycryptodome", marker = "extra == 'dydx'", specifier = ">=3.20.0,<4.0.0" },
     { name = "pytz", specifier = ">=2025.2.0" },
@@ -1865,20 +1865,34 @@ wheels = [
 ]
 
 [[package]]
+name = "py-builder-signing-sdk"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dotenv" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/18/e3/fab3253021a4d766345f491f00e40d89c7c5640bf6d20d9f5a3182b482de/py_builder_signing_sdk-0.0.2.tar.gz", hash = "sha256:27fa4401944220c51809f549a263c6e53b5cd981fca98eda7ef6f21944e6bf94", size = 6411, upload-time = "2025-10-20T22:17:56.658Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/fb/23c68c8f6356a50f959e2df2ae80e8344c3ff8ccca92943848a57a495928/py_builder_signing_sdk-0.0.2-py3-none-any.whl", hash = "sha256:114b9d57bec228177d759ce15c475589f47db2252ed1fd67cac3c9b0640abe76", size = 9082, upload-time = "2025-10-20T22:17:55.629Z" },
+]
+
+[[package]]
 name = "py-clob-client"
-version = "0.25.0"
+version = "0.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eth-account" },
     { name = "eth-utils" },
     { name = "poly-eip712-structs" },
+    { name = "py-builder-signing-sdk" },
     { name = "py-order-utils" },
     { name = "python-dotenv" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/24/92eb4ccf28d492649b1636ad6c15311067eef34a23720b10a43ad2db0846/py_clob_client-0.25.0.tar.gz", hash = "sha256:f6d111f9b8155c1f43e5156e87e6d2088b38d6f8844f1fb435c91fbb1cfc0df1", size = 27263, upload-time = "2025-08-27T20:04:46.048Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/08/2057c28fdcbf5ff88443d3f121439144ba878c598aa0e50dfaeef4c8adce/py_clob_client-0.28.0.tar.gz", hash = "sha256:b9e621f5dd0f82065e18fd12653b4432f2d7a3c136cf3e85bd8c3071ca5f396c", size = 27874, upload-time = "2025-10-22T16:16:17.398Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/c9/3ded150e22cdfeba55fac38919d257bdcb091153a49aab70ccd12a2e99de/py_clob_client-0.25.0-py3-none-any.whl", hash = "sha256:ab66c50a17850889fdfcccb9f469358b14b9d59bcbf3fe6f07394bb8e8c4feac", size = 31018, upload-time = "2025-08-27T20:04:44.756Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/ce/8e76cf0bde5f732b8b7a2d6b6844f5474e5beadf640f25b238ddcebda2af/py_clob_client-0.28.0-py3-none-any.whl", hash = "sha256:33d765ed15918e2b9a2ab0619e01acdf8eb92d55a8a8ebc49ca84263827274ce", size = 31589, upload-time = "2025-10-22T16:16:16.193Z" },
 ]
 
 [[package]]
