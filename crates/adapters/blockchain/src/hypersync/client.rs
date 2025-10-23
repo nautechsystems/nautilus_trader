@@ -135,10 +135,13 @@ impl HyperSyncClient {
         let cancellation_token = self.cancellation_token.clone();
 
         let _task = get_runtime().spawn(async move {
-            let mut rx = client
-                .stream(query, Default::default())
-                .await
-                .expect("Failed to create stream");
+            let mut rx = match client.stream(query, Default::default()).await {
+                Ok(rx) => rx,
+                Err(e) => {
+                    tracing::error!("Failed to create DEX event stream: {e}");
+                    return;
+                }
+            };
 
             loop {
                 tokio::select! {
@@ -150,7 +153,14 @@ impl HyperSyncClient {
                         let Some(response) = response else {
                             break;
                         };
-                        let response = response.unwrap();
+
+                        let response = match response {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                tracing::error!("Failed to receive DEX event stream response: {e}");
+                                break;
+                            }
+                        };
 
                         for batch in response.data.logs {
                             for log in batch {
@@ -166,14 +176,12 @@ impl HyperSyncClient {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::SwapEvent(swap_event))
                                             {
-                                                tracing::error!("Failed to send swap event: {}", e);
+                                                tracing::error!("Failed to send swap event: {e}");
                                             }
                                         }
                                         Err(e) => {
                                             tracing::error!(
-                                                "Failed to parse swap with error '{:?}' for event: {:?}",
-                                                e,
-                                                log
+                                                "Failed to parse swap with error '{e:?}' for event: {log:?}",
                                             );
                                             continue;
                                         }
@@ -184,14 +192,12 @@ impl HyperSyncClient {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::MintEvent(swap_event))
                                             {
-                                                tracing::error!("Failed to send mint event: {}", e);
+                                                tracing::error!("Failed to send mint event: {e}");
                                             }
                                         }
                                         Err(e) => {
                                             tracing::error!(
-                                                "Failed to parse mint with error '{:?}' for event: {:?}",
-                                                e,
-                                                log
+                                                "Failed to parse mint with error '{e:?}' for event: {log:?}",
                                             );
                                             continue;
                                         }
@@ -202,20 +208,18 @@ impl HyperSyncClient {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::BurnEvent(swap_event))
                                             {
-                                                tracing::error!("Failed to send burn event: {}", e);
+                                                tracing::error!("Failed to send burn event: {e}");
                                             }
                                         }
                                         Err(e) => {
                                             tracing::error!(
-                                                "Failed to parse burn with error '{:?}' for event: {:?}",
-                                                e,
-                                                log
+                                                "Failed to parse burn with error '{e:?}' for event: {log:?}",
                                             );
                                             continue;
                                         }
                                     }
                                 } else {
-                                    tracing::error!("Unknown event signature: {}", event_signature);
+                                    tracing::error!("Unknown event signature: {event_signature}");
                                     continue;
                                 }
                             }
@@ -225,7 +229,8 @@ impl HyperSyncClient {
             }
         });
 
-        // Task is fire-and-forget; it will self-clean when cancellation_token is cancelled
+        // Fire-and-forget: task is short-lived (processes one block), errors are logged,
+        // and it responds to cancellation_token for graceful shutdown
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
@@ -297,7 +302,7 @@ impl HyperSyncClient {
             }
         }
 
-        // DEX event tasks are short-lived per-block tasks that self-clean via cancellation_token
+        // DEX event tasks are short-lived and self-clean via cancellation_token
 
         tracing::debug!("HyperSync client disconnected");
     }
