@@ -193,10 +193,10 @@ class BitmexExecutionClient(LiveExecutionClient):
         await self._instrument_provider.initialize()
         self._cache_instruments()
 
-        instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
-
         await self._update_account_state()
         await self._await_account_registered()
+
+        self._log.info("BitMEX API key authenticated", LogColor.GREEN)
 
         # Check BitMEX-Nautilus clock sync
         server_time: int = await self._http_client.http_get_server_time()
@@ -206,6 +206,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
 
         self._ws_client.set_account_id(self.pyo3_account_id)
+
+        instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         await self._ws_client.connect(
             instruments,
@@ -230,29 +232,31 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to subscribe to authenticated channels: {e}")
 
     async def _update_account_state(self) -> None:
-        try:
-            # First get the margin data to extract the actual account number
-            account_number = await self._http_client.http_get_margin("XBt")
+        # First get the margin data to extract the actual account number
+        account_number = await self._http_client.http_get_margin("XBt")
 
-            # Update account ID with actual account number from BitMEX
-            if account_number:
-                actual_account_id = AccountId(f"{self._account_id_prefix}-{account_number}")
-                self._set_account_id(actual_account_id)
-                self.pyo3_account_id = nautilus_pyo3.AccountId(actual_account_id.value)
-                self._log.info(f"Updated account ID to {actual_account_id}", LogColor.BLUE)
+        # Update account ID with actual account number from BitMEX
+        if account_number:
+            actual_account_id = AccountId(f"{self._account_id_prefix}-{account_number}")
+            self._set_account_id(actual_account_id)
+            self.pyo3_account_id = nautilus_pyo3.AccountId(actual_account_id.value)
+            self._log.info(f"Updated account ID to {actual_account_id}", LogColor.BLUE)
 
-            # Now request the account state with the correct account ID
-            pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
-            account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+        # Now request the account state with the correct account ID
+        pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
-            self.generate_account_state(
-                balances=account_state.balances,
-                margins=account_state.margins,
-                reported=True,
-                ts_event=self._clock.timestamp_ns(),
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        if account_state.balances:
+            self._log.info(
+                f"Generated account state with {len(account_state.balances)} balance(s)",
             )
-        except Exception as e:
-            self._log.error(f"Failed to update account state: {e}")
 
     async def _disconnect(self) -> None:
         await self._canceller.stop()

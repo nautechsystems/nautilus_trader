@@ -152,6 +152,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         await self._update_account_state()
         await self._await_account_registered()
 
+        self._log.info("Coinbase INTX API key authenticated", LogColor.GREEN)
+
         self._log.info(
             f"Logging on to FIX Drop Copy server: endpoint={self._fix_client.endpoint}, "
             f"target_comp_id={self._fix_client.target_comp_id}, "
@@ -203,12 +205,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
     async def _update_account_state(self) -> None:
-        try:
-            pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
-        except ValueError as e:
-            self._log.error(str(e))
-            return
-
+        pyo3_account_state = await self._http_client.request_account_state(self.pyo3_account_id)
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
         self.generate_account_state(
@@ -217,6 +214,11 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             reported=True,
             ts_event=account_state.ts_event,
         )
+
+        if account_state.balances:
+            self._log.info(
+                f"Generated account state with {len(account_state.balances)} balance(s)",
+            )
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
