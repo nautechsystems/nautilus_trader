@@ -123,8 +123,13 @@ class BlockchainActor(DataActor):
             total_ticks = pool.get_active_tick_count()
             total_positions = pool.get_total_active_positions()
             liquidity = pool.get_active_liquidity()
+            liquidity_utilization_rate = pool.liquidity_utilization_rate()
             self.log.info(
                 f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                LogColor.BLUE,
+            )
+            self.log.info(
+                f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%",
                 LogColor.BLUE,
             )
 

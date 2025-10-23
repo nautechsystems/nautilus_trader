@@ -130,5 +130,9 @@ pub async fn run_analyze_pool(
     data_client
         .check_snapshot_validity(&profiler, already_valid)
         .await?;
+    log::info!(
+        "Pool liquidity utilization rate is {:.4}%",
+        profiler.liquidity_utilization_rate() * 100.0
+    );
     Ok(())
 }
