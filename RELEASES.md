@@ -7,6 +7,7 @@ This will be the final release with support for Python 3.11.
 ### Enhancements
 - Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
 - Added support for quotes from book depths (#2977), thanks @faysou
+- Added support for quotes from order book deltas updates (#3106), thanks @faysou
 - Added execution engine rate limiting for single-order reconciliation queries
 - Added `subscribe_order_fills(...)` and `unsubscribe_order_fills(...)` for `Actor` allowing to subscribe to all fills for an instrument ID
 - Added `on_order_filled(...)` for `Actor`

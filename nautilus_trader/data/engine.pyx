@@ -207,8 +207,8 @@ cdef class DataEngine(Component):
         self._time_bars_build_delay = config.time_bars_build_delay
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
-        self._emit_quotes_from_book_depths = config.emit_quotes_from_book_depths
         self._emit_quotes_from_book = config.emit_quotes_from_book
+        self._emit_quotes_from_book_depths = config.emit_quotes_from_book_depths
 
         if config.external_clients:
             self._external_clients = set(config.external_clients)
@@ -1798,9 +1798,9 @@ cdef class DataEngine(Component):
             msg=depth,
         )
 
-        cdef QuoteTick quote_tick
-        cdef QuoteTick last_quote
-
+        cdef:
+            QuoteTick quote_tick
+            QuoteTick last_quote
         if self._emit_quotes_from_book_depths:
             quote_tick = depth.to_quote_tick()
             if quote_tick is not None:
@@ -2369,9 +2369,9 @@ cdef class DataEngine(Component):
 
         order_book.apply(data)
 
-        cdef QuoteTick quote_tick
-        cdef QuoteTick last_quote
-
+        cdef:
+            QuoteTick quote_tick
+            QuoteTick last_quote
         if self._emit_quotes_from_book:
             quote_tick = order_book.to_quote_tick()
             if quote_tick is not None:

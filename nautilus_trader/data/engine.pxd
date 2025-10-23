@@ -126,8 +126,8 @@ cdef class DataEngine(Component):
     cdef readonly int _time_bars_build_delay
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
-    cdef readonly bint _emit_quotes_from_book_depths
     cdef readonly bint _emit_quotes_from_book
+    cdef readonly bint _emit_quotes_from_book_depths
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
