@@ -208,6 +208,7 @@ cdef class DataEngine(Component):
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
         self._emit_quotes_from_book_depths = config.emit_quotes_from_book_depths
+        self._emit_quotes_from_book = config.emit_quotes_from_book
 
         if config.external_clients:
             self._external_clients = set(config.external_clients)
@@ -1798,11 +1799,20 @@ cdef class DataEngine(Component):
         )
 
         cdef QuoteTick quote_tick
+        cdef QuoteTick last_quote
 
         if self._emit_quotes_from_book_depths:
             quote_tick = depth.to_quote_tick()
             if quote_tick is not None:
-                self._handle_quote_tick(quote_tick)
+                # Check if top of book has changed
+                last_quote = self._cache.quote_tick(depth.instrument_id)
+                if last_quote is None or (
+                    quote_tick.bid_price != last_quote.bid_price or
+                    quote_tick.ask_price != last_quote.ask_price or
+                    quote_tick.bid_size != last_quote.bid_size or
+                    quote_tick.ask_size != last_quote.ask_size
+                ):
+                    self._handle_quote_tick(quote_tick)
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)
@@ -2358,6 +2368,22 @@ cdef class DataEngine(Component):
             return
 
         order_book.apply(data)
+
+        cdef QuoteTick quote_tick
+        cdef QuoteTick last_quote
+
+        if self._emit_quotes_from_book:
+            quote_tick = order_book.to_quote_tick()
+            if quote_tick is not None:
+                # Check if top of book has changed
+                last_quote = self._cache.quote_tick(data.instrument_id)
+                if last_quote is None or (
+                    quote_tick.bid_price != last_quote.bid_price or
+                    quote_tick.ask_price != last_quote.ask_price or
+                    quote_tick.bid_size != last_quote.bid_size or
+                    quote_tick.ask_size != last_quote.ask_size
+                ):
+                    self._handle_quote_tick(quote_tick)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
         if self.debug:

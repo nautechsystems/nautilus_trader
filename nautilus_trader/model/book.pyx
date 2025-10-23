@@ -718,6 +718,45 @@ cdef class OrderBook(Data):
 
         orderbook_update_trade_tick(&self._mem, &tick._mem)
 
+    cpdef QuoteTick to_quote_tick(self):
+        """
+        Return a `QuoteTick` created from the top of book levels.
+
+        Returns ``None`` when the top-of-book bid or ask is missing or invalid
+        (zero size).
+
+        Returns
+        -------
+        QuoteTick or ``None``
+
+        """
+        # Get the best bid and ask prices and sizes
+        cdef Price bid_price = self.best_bid_price()
+        cdef Price ask_price = self.best_ask_price()
+
+        if bid_price is None or ask_price is None:
+            return None
+
+        cdef Quantity bid_size = self.best_bid_size()
+        cdef Quantity ask_size = self.best_ask_size()
+
+        if bid_size is None or ask_size is None:
+            return None
+
+        # Check for zero sizes
+        if bid_size._mem.raw == 0 or ask_size._mem.raw == 0:
+            return None
+
+        return QuoteTick(
+            instrument_id=self.instrument_id,
+            bid_price=bid_price,
+            ask_price=ask_price,
+            bid_size=bid_size,
+            ask_size=ask_size,
+            ts_event=self.ts_last,
+            ts_init=self.ts_last,
+        )
+
     cpdef str pprint(self, int num_levels=3):
         """
         Return a string representation of the order book in a human-readable table format.

@@ -48,6 +48,8 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
     emit_quotes_from_book_depths : bool, default False
         If order book depths should be emitted as quotes.
+    emit_quotes_from_book : bool, default False
+        If order books should be emitted as quotes when updated.
     external_clients : list[ClientId], optional
         Client IDs representing external data streams.
         Commands with these client IDs will be published on the message bus only;
@@ -66,5 +68,6 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
     emit_quotes_from_book_depths: bool = False
+    emit_quotes_from_book: bool = False
     external_clients: list[ClientId] | None = None
     debug: bool = False

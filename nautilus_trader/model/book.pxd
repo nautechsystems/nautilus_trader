@@ -65,6 +65,7 @@ cdef class OrderBook(Data):
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, uint8_t size_prec, bint is_aggressive)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
+    cpdef QuoteTick to_quote_tick(self)
     cpdef str pprint(self, int num_levels=*)
 
 
