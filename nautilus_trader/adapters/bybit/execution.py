@@ -653,8 +653,10 @@ class BybitExecutionClient(LiveExecutionClient):
             for wallet in balances:
                 for coin_balance in wallet.coin:
                     wallet_balance = Decimal(coin_balance.walletBalance or "0")
+                    spot_borrow = Decimal(coin_balance.spotBorrow or "0")
+                    actual_balance = wallet_balance - spot_borrow
                     wallet_by_coin[coin_balance.coin] = (
-                        wallet_by_coin.get(coin_balance.coin, Decimal(0)) + wallet_balance
+                        wallet_by_coin.get(coin_balance.coin, Decimal(0)) + actual_balance
                     )
 
             if instrument_id:
