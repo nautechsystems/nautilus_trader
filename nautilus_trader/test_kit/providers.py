@@ -627,9 +627,11 @@ class TestInstrumentProvider:
     def es_future(
         expiry_year: int,
         expiry_month: int,
+        venue: Venue | None = None,
     ) -> FuturesContract:
         activation_date = first_friday_two_years_six_months_ago(expiry_year, expiry_month)
         expiration_date = third_friday_of_month(expiry_year, expiry_month)
+        venue = venue or Venue("GLBX")
 
         activation_time = pd.Timedelta(hours=21, minutes=30)
         expiration_time = pd.Timedelta(hours=14, minutes=30)
@@ -639,7 +641,7 @@ class TestInstrumentProvider:
         raw_symbol = f"ES{get_contract_month_code(expiry_month)}{expiry_year % 10}"
 
         return FuturesContract(
-            instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=Venue("GLBX")),
+            instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=venue),
             raw_symbol=Symbol(raw_symbol),
             asset_class=AssetClass.INDEX,
             exchange="XCME",
