@@ -294,6 +294,7 @@ impl PoolProfiler {
             swap.log_index,
         ));
         self.update_reporter_if_enabled(swap.block);
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -747,6 +748,7 @@ impl PoolProfiler {
             update.log_index,
         ));
         self.update_reporter_if_enabled(update.block);
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -877,6 +879,7 @@ impl PoolProfiler {
             update.log_index,
         ));
         self.update_reporter_if_enabled(update.block);
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -977,6 +980,9 @@ impl PoolProfiler {
             position.collect_fees(collect.amount0, collect.amount1);
         }
 
+        // Cleanup position if it became empty after collecting all fees
+        self.cleanup_position_if_empty(&position_key);
+
         self.analytics.total_amount0_collected += U256::from(collect.amount0);
         self.analytics.total_amount1_collected += U256::from(collect.amount1);
 
@@ -988,6 +994,7 @@ impl PoolProfiler {
             collect.log_index,
         ));
         self.update_reporter_if_enabled(collect.block);
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -1019,6 +1026,7 @@ impl PoolProfiler {
             flash.log_index,
         ));
         self.update_reporter_if_enabled(flash.block);
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -1215,6 +1223,49 @@ impl PoolProfiler {
         Ok(())
     }
 
+    /// Removes position from tracking if it's completely empty.
+    ///
+    /// This prevents accumulation of positions in the memory that are not used anymore.
+    fn cleanup_position_if_empty(&mut self, position_key: &str) {
+        if let Some(position) = self.positions.get(position_key)
+            && position.is_empty()
+        {
+            tracing::debug!(
+                "CLEANING UP EMPTY POSITION: owner={}, ticks=[{}, {}]",
+                position.owner,
+                position.tick_lower,
+                position.tick_upper,
+            );
+            self.positions.remove(position_key);
+        }
+    }
+
+    /// Calculates the liquidity utilization rate for the pool.
+    ///
+    /// The utilization rate measures what percentage of total deployed liquidity
+    /// is currently active (in-range and earning fees) at the current price tick.
+    pub fn liquidity_utilization_rate(&self) -> f64 {
+        let total_liquidity = self.get_total_liquidity();
+        let active_liquidity = self.get_active_liquidity();
+
+        if total_liquidity == U256::ZERO {
+            return 0.0;
+        }
+
+        // 6 decimal places
+        const PRECISION: u32 = 1_000_000;
+        let ratio = FullMath::mul_div(
+            U256::from(active_liquidity),
+            U256::from(PRECISION),
+            total_liquidity,
+        )
+        .unwrap_or(U256::ZERO);
+
+        // Safe to cast to u64: Since active_liquidity <= total_liquidity,
+        // the ratio is guaranteed to be <= PRECISION (1_000_000), which fits in u64
+        ratio.to::<u64>() as f64 / PRECISION as f64
+    }
+
     /// Validates tick range for position operations.
     ///
     /// Ensures ticks are properly ordered, aligned to tick spacing, and within
@@ -1247,6 +1298,11 @@ impl PoolProfiler {
         Ok(())
     }
 
+    /// Updates all liquidity analytics.
+    fn update_liquidity_analytics(&mut self) {
+        self.analytics.liquidity_utilization_rate = self.liquidity_utilization_rate();
+    }
+
     /// Returns the pool's active liquidity tracked by the tick map.
     ///
     /// This represents the effective liquidity available for trading at the current price.
@@ -1276,6 +1332,15 @@ impl PoolProfiler {
             })
             .map(|position| position.liquidity)
             .sum()
+    }
+
+    /// Calculates total liquidity across all positions, regardless of range status.
+    #[must_use]
+    pub fn get_total_liquidity(&self) -> U256 {
+        self.positions
+            .values()
+            .map(|position| U256::from(position.liquidity))
+            .fold(U256::ZERO, |acc, liq| acc + liq)
     }
 
     /// Restores the profiler state from a saved snapshot.
@@ -1337,6 +1402,9 @@ impl PoolProfiler {
 
         // Mark as initialized
         self.is_initialized = true;
+
+        // Recalculate analytics
+        self.update_liquidity_analytics();
 
         Ok(())
     }
@@ -1422,14 +1490,6 @@ impl PoolProfiler {
             .collect()
     }
 
-    /// Returns position keys for all currently active positions.
-    pub fn get_active_position_keys(&self) -> Vec<(Address, i32, i32)> {
-        self.get_active_positions()
-            .iter()
-            .map(|position| (position.owner, position.tick_lower, position.tick_upper))
-            .collect()
-    }
-
     /// Returns a list of all positions tracked by the profiler.
     ///
     /// This includes both active and inactive positions, regardless of their
@@ -1440,6 +1500,14 @@ impl PoolProfiler {
     /// A vector of references to all [`PoolPosition`] objects.
     pub fn get_all_positions(&self) -> Vec<&PoolPosition> {
         self.positions.values().collect()
+    }
+
+    /// Returns position keys for all tracked positions.
+    pub fn get_all_position_keys(&self) -> Vec<(Address, i32, i32)> {
+        self.get_all_positions()
+            .iter()
+            .map(|position| (position.owner, position.tick_lower, position.tick_upper))
+            .collect()
     }
 
     /// Extracts a complete snapshot of the current pool state.

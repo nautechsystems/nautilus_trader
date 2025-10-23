@@ -263,8 +263,14 @@ impl DataActor for BlockchainSubscriberActor {
                     let total_ticks = pool_profiler.get_active_tick_count();
                     let total_positions = pool_profiler.get_total_active_positions();
                     let liquidity = pool_profiler.get_active_liquidity();
+                    let liquidity_utilization_rate = pool_profiler.liquidity_utilization_rate();
                     log_info!(
                         "Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                        color = LogColor::Magenta
+                    );
+                    log_info!(
+                        "Pool {pool_id} has a liquidity utilization rate of {:.4}%",
+                        liquidity_utilization_rate * 100.0,
                         color = LogColor::Magenta
                     );
                 } else {

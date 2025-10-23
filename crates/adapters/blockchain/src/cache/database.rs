@@ -1329,12 +1329,13 @@ impl BlockchainCacheDatabase {
                 fee_growth_global_0, fee_growth_global_1,
                 total_amount0_deposited, total_amount1_deposited,
                 total_amount0_collected, total_amount1_collected,
-                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes
+                total_swaps, total_mints, total_burns, total_fee_collects, total_flashes,
+                liquidity_utilization_rate
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8::U160, $9::U128, $10::U256, $11::U256, $12,
                 $13::U256, $14::U256, $15::U256, $16::U256, $17::U256, $18::U256,
-                $19, $20, $21, $22, $23
+                $19, $20, $21, $22, $23, $24
             )
             ON CONFLICT (chain_id, pool_address, block, transaction_index, log_index)
             DO NOTHING
@@ -1363,6 +1364,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.analytics.total_burns as i32)
         .bind(snapshot.analytics.total_fee_collects as i32)
         .bind(snapshot.analytics.total_flashes as i32)
+        .bind(snapshot.analytics.liquidity_utilization_rate)
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -1601,6 +1603,7 @@ impl BlockchainCacheDatabase {
                 total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
                 total_amount0_collected::TEXT, total_amount1_collected::TEXT,
                 total_swaps, total_mints, total_burns, total_fee_collects, total_flashes,
+                liquidity_utilization_rate,
                 (SELECT dex_name FROM pool WHERE chain_id = $1 AND address = $2) as dex_name
             FROM pool_snapshot
             WHERE chain_id = $1 AND pool_address = $2 AND is_valid = TRUE
@@ -1649,6 +1652,7 @@ impl BlockchainCacheDatabase {
                 total_burns: row.get::<i32, _>("total_burns") as u64,
                 total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
                 total_flashes: row.get::<i32, _>("total_flashes") as u64,
+                liquidity_utilization_rate: row.get::<f64, _>("liquidity_utilization_rate"),
             };
 
             // Load positions and ticks
