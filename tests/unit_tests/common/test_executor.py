@@ -393,3 +393,74 @@ async def test_shutdown_does_not_block_event_loop(actor_executor: ActorExecutor)
     # Assert: Concurrent coroutine completed and made progress during shutdown
     assert completed, "Concurrent coroutine should complete"
     assert len(concurrent_executed) == 5, "All iterations should execute"
+
+
+@pytest.mark.asyncio
+async def test_exception_logged_with_traceback(logger: Mock) -> None:
+    # Arrange
+    loop = asyncio.get_event_loop()
+    thread_pool = ThreadPoolExecutor(max_workers=1)
+    actor_executor = ActorExecutor(loop=loop, executor=thread_pool, logger=logger)
+
+    def failing_func():
+        def inner_func():
+            raise ValueError("Test exception with traceback")
+
+        inner_func()
+
+    # Act
+    task_id = actor_executor.run_in_executor(failing_func)
+    await eventually(lambda: task_id not in actor_executor.active_task_ids())
+
+    # Assert
+    await actor_executor.shutdown()
+    assert logger.exception.call_count == 1
+    call_args = logger.exception.call_args[0]
+    error_message = call_args[0]
+    exception_arg = call_args[1]
+
+    assert "Executor: Exception in" in error_message
+    assert isinstance(exception_arg, ValueError)
+    assert "Test exception with traceback" in str(exception_arg)
+
+
+@pytest.mark.asyncio
+async def test_queued_exception_logged_with_traceback(logger: Mock) -> None:
+    # Arrange
+    loop = asyncio.get_event_loop()
+    thread_pool = ThreadPoolExecutor(max_workers=1)
+    actor_executor = ActorExecutor(loop=loop, executor=thread_pool, logger=logger)
+
+    def process_signal_data(data):
+        # Simulate nested call stack like real user code
+        def validate_data(d):
+            if d is None:
+                raise ValueError(f"Invalid signal data: {d}")
+            return d
+
+        def transform_data(d):
+            return validate_data(d)
+
+        transform_data(data)
+
+    # Act
+    task_id = actor_executor.queue_for_executor(process_signal_data, None)
+    await eventually(lambda: task_id not in actor_executor.queued_task_ids())
+    await eventually(lambda: task_id not in actor_executor.active_task_ids())
+
+    # Assert
+    await eventually(lambda: logger.exception.called)
+
+    try:
+        await actor_executor.shutdown()
+    except ValueError:
+        pass  # Expected - worker was processing when shutdown was called
+
+    assert logger.exception.call_count == 1
+    call_args = logger.exception.call_args[0]
+    error_message = call_args[0]
+    exception_arg = call_args[1]
+
+    assert "Executor: Exception in" in error_message
+    assert isinstance(exception_arg, ValueError)
+    assert "Invalid signal data" in str(exception_arg)

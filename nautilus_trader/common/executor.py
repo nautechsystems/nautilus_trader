@@ -215,12 +215,12 @@ class ActorExecutor:
         if task.done():
             try:
                 if task.exception() is not None:
-                    self._log.error(f"Executor: Exception in {task_id}: {task.exception()}")
+                    self._log.exception(f"Executor: Exception in {task_id}", task.exception())
                     return
             except asyncio.CancelledError:
-                # Make this a warning level for now
                 self._log.warning(f"Executor: Canceled {task_id}")
                 return
+
             self._log.debug(f"Executor: Completed {task_id}")
 
     def _submit_to_executor(
