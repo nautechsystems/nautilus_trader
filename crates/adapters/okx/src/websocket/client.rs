@@ -89,13 +89,13 @@ use crate::{
         consts::{
             OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_TARGET_CCY_BASE, OKX_TARGET_CCY_QUOTE, OKX_WS_PUBLIC_URL, should_retry_error_code,
+            OKX_WS_PUBLIC_URL, should_retry_error_code,
         },
         credential::Credential,
         enums::{
             OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXTradeMode, OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type,
-            is_conditional_order,
+            OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+            conditional_order_to_algo_type, is_conditional_order,
         },
         parse::{
             bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
@@ -2396,12 +2396,12 @@ impl OKXWebSocketClient {
             }
         };
 
-        // For SPOT market orders, handle tgtCcy parameter
+        // For SPOT market orders in Cash mode, handle tgtCcy parameter
         // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
         // OKX API default behavior for SPOT market orders:
         // - BUY orders default to tgtCcy=quote_ccy (sz represents quote currency amount)
         // - SELL orders default to tgtCcy=base_ccy (sz represents base currency amount)
-        // Note: tgtCcy is only supported for cash (non-margin) trading
+        // Note: tgtCcy is ONLY supported for Cash trading mode, not for margin modes (Cross/Isolated)
         if instrument_type == OKXInstrumentType::Spot
             && order_type == OrderType::Market
             && td_mode == OKXTradeMode::Cash
@@ -2409,12 +2409,12 @@ impl OKXWebSocketClient {
             match quote_quantity {
                 Some(true) => {
                     // Explicitly request quote currency sizing
-                    builder.tgt_ccy(OKX_TARGET_CCY_QUOTE.to_string());
+                    builder.tgt_ccy(OKXTargetCurrency::QuoteCcy);
                 }
                 Some(false) => {
                     if order_side == OrderSide::Buy {
                         // For BUY orders, must explicitly set to base_ccy to override OKX default
-                        builder.tgt_ccy(OKX_TARGET_CCY_BASE.to_string());
+                        builder.tgt_ccy(OKXTargetCurrency::BaseCcy);
                     }
                     // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
                 }
@@ -2430,11 +2430,10 @@ impl OKXWebSocketClient {
             builder.pos_side(pos_side);
         };
 
-        // Determine OKX order type based on order type and post_only
-        let okx_ord_type = if post_only.unwrap_or(false) {
-            OKXOrderType::PostOnly
+        let (okx_ord_type, price) = if post_only.unwrap_or(false) {
+            (OKXOrderType::PostOnly, price)
         } else {
-            OKXOrderType::from(order_type)
+            (OKXOrderType::from(order_type), price)
         };
 
         log::debug!(
@@ -2459,9 +2458,6 @@ impl OKXWebSocketClient {
         let params = builder
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build order params error: {e}")))?;
-
-        // TODO: Log the full order parameters being sent (for development)
-        log::debug!("Sending order params to OKX: {:?}", params);
 
         let request_id = self.generate_unique_request_id();
 
@@ -3728,8 +3724,7 @@ impl OKXWsMessageHandler {
                                         // Check if this is an explicit quote-sized order
                                         let is_explicit_quote_sized = order_params
                                             .tgt_ccy
-                                            .as_ref()
-                                            .is_some_and(|tgt| tgt == OKX_TARGET_CCY_QUOTE);
+                                            .is_some_and(|tgt| tgt == OKXTargetCurrency::QuoteCcy);
 
                                         // Check if this is an implicit quote-sized order:
                                         // SPOT market BUY in cash mode with no tgt_ccy defaults to quote-sizing
@@ -4806,6 +4801,7 @@ mod tests {
             exec_type: OKXExecType::None,
             sz: "1".to_string(),
             td_mode: OKXTradeMode::Cross,
+            tgt_ccy: None,
             trade_id: String::new(),
             u_time: 0,
         }

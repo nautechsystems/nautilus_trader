@@ -326,6 +326,9 @@ cdef class Order:
         """
         raise NotImplementedError("method `to_dict` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void set_quote_quantity(self, bint value):
+        self.is_quote_quantity = value
+
     cdef void set_activated_c(self, Price activation_price):
         raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
 
