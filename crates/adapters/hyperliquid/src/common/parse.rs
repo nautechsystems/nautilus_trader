@@ -582,11 +582,11 @@ pub fn order_to_hyperliquid_request(
     // Convert client order ID to CLOID
     let cloid = match Cloid::from_hex(order.client_order_id()) {
         Ok(cloid) => Some(cloid),
-        Err(err) => {
+        Err(e) => {
             anyhow::bail!(
                 "Failed to convert client order ID '{}' to CLOID: {}",
                 order.client_order_id(),
-                err
+                e
             )
         }
     };

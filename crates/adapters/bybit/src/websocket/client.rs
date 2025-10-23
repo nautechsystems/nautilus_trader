@@ -305,8 +305,8 @@ impl BybitWebSocketClient {
                 let len = payload.len();
                 let guard = inner.read().await;
                 if let Some(client) = guard.as_ref() {
-                    if let Err(err) = client.send_pong(payload).await {
-                        tracing::warn!(error = %err, "Failed to send pong frame");
+                    if let Err(e) = client.send_pong(payload).await {
+                        tracing::warn!(error = %e, "Failed to send pong frame");
                     } else {
                         tracing::trace!("Sent pong frame ({len} bytes)");
                     }
@@ -420,14 +420,14 @@ impl BybitWebSocketClient {
                             quote_cache_for_task.write().await.clear();
 
                             // Resubscribe to all topics
-                            if let Err(err) = Self::resubscribe_all_inner(
+                            if let Err(e) = Self::resubscribe_all_inner(
                                 &inner_for_task,
                                 &subscriptions_for_task,
                             )
                             .await
                             {
-                                tracing::error!("Failed to restore subscriptions after reconnection: {err}");
-                                let error = BybitWebSocketError::from_message(err.to_string());
+                                tracing::error!("Failed to restore subscriptions after reconnection: {e}");
+                                let error = BybitWebSocketError::from_message(e.to_string());
                                 let _ = event_tx_for_task.send(BybitWebSocketMessage::Error(error));
                             } else {
                                 tracing::info!("Restored subscriptions after reconnection");
@@ -441,8 +441,8 @@ impl BybitWebSocketClient {
                         }
                     }
                     Ok(None) => {}
-                    Err(err) => {
-                        let error = BybitWebSocketError::from_message(err.to_string());
+                    Err(e) => {
+                        let error = BybitWebSocketError::from_message(e.to_string());
                         if event_tx.send(BybitWebSocketMessage::Error(error)).is_err() {
                             break;
                         }
@@ -475,9 +475,9 @@ impl BybitWebSocketClient {
         }
 
         if let Some(handle) = self.task_handle.take()
-            && let Err(err) = handle.await
+            && let Err(e) = handle.await
         {
-            tracing::error!(error = %err, "Bybit websocket task terminated with error");
+            tracing::error!(error = %e, "Bybit websocket task terminated with error");
         }
 
         self.rx = None;
@@ -1426,19 +1426,19 @@ impl BybitWebSocketClient {
                             }
                             _ => {}
                         }
-                    } else if let BybitWebSocketMessage::Error(err) = &event
+                    } else if let BybitWebSocketMessage::Error(e) = &event
                         && requires_auth
                         && !is_authenticated.load(Ordering::Relaxed)
                     {
-                        auth_tracker.fail(err.message.clone());
+                        auth_tracker.fail(e.message.clone());
                     }
-                    if let BybitWebSocketMessage::Error(err) = &event {
+                    if let BybitWebSocketMessage::Error(e) = &event {
                         tracing::warn!(
-                            code = err.code,
-                            message = %err.message,
-                            conn_id = ?err.conn_id,
-                            topic = ?err.topic,
-                            req_id = ?err.req_id,
+                            code = e.code,
+                            message = %e.message,
+                            conn_id = ?e.conn_id,
+                            topic = ?e.topic,
+                            req_id = ?e.req_id,
                             "Bybit websocket error"
                         );
                     }
@@ -1614,9 +1614,9 @@ impl BybitWebSocketClient {
 
         let payload = serde_json::to_string(&auth_request)?;
 
-        if let Err(err) = Self::send_text_inner(inner, &payload).await {
-            auth_tracker.fail(err.to_string());
-            return Err(err);
+        if let Err(e) = Self::send_text_inner(inner, &payload).await {
+            auth_tracker.fail(e.to_string());
+            return Err(e);
         }
 
         match auth_tracker
@@ -1627,9 +1627,9 @@ impl BybitWebSocketClient {
                 is_authenticated.store(true, Ordering::Relaxed);
                 Ok(())
             }
-            Err(err) => {
+            Err(e) => {
                 is_authenticated.store(false, Ordering::Relaxed);
-                Err(err)
+                Err(e)
             }
         }
     }

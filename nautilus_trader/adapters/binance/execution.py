@@ -828,8 +828,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         try:
             price_match = self._extract_price_match(order, params)
-        except ValueError as ex:
-            self._deny_order_pre_submit(order, str(ex))
+        except ValueError as e:
+            self._deny_order_pre_submit(order, str(e))
             return
 
         # Validate order before submission
@@ -861,8 +861,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if not retry_manager.result:
                 # Determine if the rejection was specifically due to a POST-ONLY order
                 # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
-                e = retry_manager.last_exception
-                due_post_only = _is_post_only_rejection(e) if isinstance(e, BinanceError) else False
+                last_exc = retry_manager.last_exception
+                due_post_only = (
+                    _is_post_only_rejection(last_exc)
+                    if isinstance(last_exc, BinanceError)
+                    else False
+                )
 
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,

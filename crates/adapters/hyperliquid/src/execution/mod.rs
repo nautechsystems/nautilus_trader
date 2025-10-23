@@ -287,8 +287,8 @@ impl HyperliquidExecutionClient {
     {
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::warn!("{description} failed: {err:?}");
+            if let Err(e) = fut.await {
+                tracing::warn!("{description} failed: {e:?}");
             }
         });
 
@@ -413,16 +413,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         // Validate order before submission
-        if let Err(err) = self.validate_order_submission(order) {
+        if let Err(e) = self.validate_order_submission(order) {
             self.core.generate_order_rejected(
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                &format!("validation-error: {err}"),
+                &format!("validation-error: {e}"),
                 command.ts_init,
                 false,
             );
-            return Err(err);
+            return Err(e);
         }
 
         self.core.generate_order_submitted(
@@ -456,14 +456,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 // Order rejection event will be generated from WebSocket updates
                             }
                         }
-                        Err(err) => {
-                            tracing::warn!("Order submission HTTP request failed: {err}");
+                        Err(e) => {
+                            tracing::warn!("Order submission HTTP request failed: {e}");
                             // WebSocket reconnection and order reconciliation will handle recovery
                         }
                     }
                 }
-                Err(err) => {
-                    tracing::warn!("Failed to convert order to Hyperliquid format: {err}");
+                Err(e) => {
+                    tracing::warn!("Failed to convert order to Hyperliquid format: {e}");
                     // This indicates a client-side bug or unsupported order configuration
                 }
             }
@@ -514,14 +514,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 // Individual order rejection events will be generated from WebSocket updates
                             }
                         }
-                        Err(err) => {
-                            tracing::warn!("Order list submission HTTP request failed: {err}");
+                        Err(e) => {
+                            tracing::warn!("Order list submission HTTP request failed: {e}");
                             // WebSocket reconciliation will handle recovery
                         }
                     }
                 }
-                Err(err) => {
-                    tracing::warn!("Failed to convert order list to Hyperliquid format: {err}");
+                Err(e) => {
+                    tracing::warn!("Failed to convert order list to Hyperliquid format: {e}");
                 }
             }
 
@@ -537,11 +537,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Parse venue_order_id as u64
         let oid: u64 = match command.venue_order_id.as_str().parse() {
             Ok(id) => id,
-            Err(err) => {
+            Err(e) => {
                 tracing::warn!(
                     "Failed to parse venue_order_id '{}' as u64: {}",
                     command.venue_order_id,
-                    err
+                    e
                 );
                 return Ok(());
             }
@@ -590,8 +590,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         // Order modify rejected events will be generated from WebSocket updates
                     }
                 }
-                Err(err) => {
-                    tracing::warn!("Order modification HTTP request failed: {err}");
+                Err(e) => {
+                    tracing::warn!("Order modification HTTP request failed: {e}");
                     // WebSocket reconciliation will handle recovery
                 }
             }
@@ -629,16 +629,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 // Order cancel rejected events will be generated from WebSocket updates
                             }
                         }
-                        Err(err) => {
-                            tracing::warn!("Order cancellation HTTP request failed: {err}");
+                        Err(e) => {
+                            tracing::warn!("Order cancellation HTTP request failed: {e}");
                             // WebSocket reconnection and reconciliation will handle recovery
                         }
                     }
                 }
-                Err(err) => {
+                Err(e) => {
                     tracing::warn!(
                         "Failed to convert order to Hyperliquid cancel format: {:?}",
-                        err
+                        e
                     );
                 }
             }

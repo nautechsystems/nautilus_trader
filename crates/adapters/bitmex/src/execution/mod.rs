@@ -121,8 +121,8 @@ impl BitmexExecutionClient {
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         let handle = tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::error!("{label}: {err:?}");
+            if let Err(e) = fut.await {
+                tracing::error!("{label}: {e:?}");
             }
         });
 
@@ -326,14 +326,14 @@ impl ExecutionClient for BitmexExecutionClient {
                 .await
             {
                 Ok(report) => dispatch_order_status_report(report),
-                Err(err) => {
+                Err(e) => {
                     let event = OrderRejected::new(
                         trader_id,
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         account_id,
-                        format!("submit-order-error: {err}").into(),
+                        format!("submit-order-error: {e}").into(),
                         UUID4::new(),
                         ts_event,
                         get_atomic_clock_realtime().get_time_ns(),
@@ -379,7 +379,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 .await
             {
                 Ok(report) => dispatch_order_status_report(report),
-                Err(err) => tracing::error!("BitMEX modify order failed: {err:?}"),
+                Err(e) => tracing::error!("BitMEX modify order failed: {e:?}"),
             }
             Ok(())
         });
@@ -399,7 +399,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 .await
             {
                 Ok(report) => dispatch_order_status_report(report),
-                Err(err) => tracing::error!("BitMEX cancel order failed: {err:?}"),
+                Err(e) => tracing::error!("BitMEX cancel order failed: {e:?}"),
             }
             Ok(())
         });
@@ -422,7 +422,7 @@ impl ExecutionClient for BitmexExecutionClient {
                         dispatch_order_status_report(report);
                     }
                 }
-                Err(err) => tracing::error!("BitMEX cancel all failed: {err:?}"),
+                Err(e) => tracing::error!("BitMEX cancel all failed: {e:?}"),
             }
             Ok(())
         });
@@ -449,7 +449,7 @@ impl ExecutionClient for BitmexExecutionClient {
                         dispatch_order_status_report(report);
                     }
                 }
-                Err(err) => tracing::error!("BitMEX batch cancel failed: {err:?}"),
+                Err(e) => tracing::error!("BitMEX batch cancel failed: {e:?}"),
             }
             Ok(())
         });
@@ -473,7 +473,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 .await
             {
                 Ok(report) => dispatch_order_status_report(report),
-                Err(err) => tracing::error!("BitMEX query order failed: {err:?}"),
+                Err(e) => tracing::error!("BitMEX query order failed: {e:?}"),
             }
             Ok(())
         });
@@ -498,8 +498,8 @@ impl LiveExecutionClient for BitmexExecutionClient {
         self.ws_client.subscribe_executions().await?;
         self.ws_client.subscribe_positions().await?;
         self.ws_client.subscribe_wallet().await?;
-        if let Err(err) = self.ws_client.subscribe_margin().await {
-            tracing::debug!("Margin subscription unavailable: {err:?}");
+        if let Err(e) = self.ws_client.subscribe_margin().await {
+            tracing::debug!("Margin subscription unavailable: {e:?}");
         }
 
         self.start_ws_stream()?;
@@ -517,8 +517,8 @@ impl LiveExecutionClient for BitmexExecutionClient {
         }
 
         self.http_client.cancel_all_requests();
-        if let Err(err) = self.ws_client.close().await {
-            tracing::warn!("Error while closing BitMEX execution websocket: {err:?}");
+        if let Err(e) = self.ws_client.close().await {
+            tracing::warn!("Error while closing BitMEX execution websocket: {e:?}");
         }
 
         if let Some(handle) = self.ws_stream_handle.take() {

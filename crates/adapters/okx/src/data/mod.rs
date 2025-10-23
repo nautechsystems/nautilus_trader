@@ -193,8 +193,8 @@ impl OKXDataClient {
     }
 
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(err) = sender.send(DataEvent::Data(data)) {
-            tracing::error!("Failed to emit data event: {err}");
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            tracing::error!("Failed to emit data event: {e}");
         }
     }
 
@@ -203,8 +203,8 @@ impl OKXDataClient {
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::error!("{context}: {err:?}");
+            if let Err(e) = fut.await {
+                tracing::error!("{context}: {e:?}");
             }
         });
     }
@@ -291,8 +291,8 @@ impl OKXDataClient {
             | NautilusWsMessage::ExecutionReports(_) => {
                 tracing::debug!("Ignoring trading message on data client");
             }
-            NautilusWsMessage::Error(err) => {
-                tracing::error!("OKX websocket error: {err:?}");
+            NautilusWsMessage::Error(e) => {
+                tracing::error!("OKX websocket error: {e:?}");
             }
             NautilusWsMessage::Raw(value) => {
                 tracing::debug!("Unhandled websocket payload: {value:?}");
@@ -400,8 +400,8 @@ impl OKXDataClient {
                                     instruments.retain(|instrument| contract_filter_with_config(&config, instrument));
                                     collected.extend(instruments);
                                 }
-                                Err(err) => {
-                                    tracing::warn!(client_id=%client_id, instrument_type=?inst_type, error=?err, "Failed to refresh OKX instruments for type");
+                                Err(e) => {
+                                    tracing::warn!(client_id=%client_id, instrument_type=?inst_type, error=?e, "Failed to refresh OKX instruments for type");
                                 }
                             }
                         }
@@ -602,8 +602,8 @@ impl DataClient for OKXDataClient {
         }
 
         for handle in self.tasks.drain(..) {
-            if let Err(err) = handle.await {
-                tracing::error!("Error joining websocket task: {err}");
+            if let Err(e) = handle.await {
+                tracing::error!("Error joining websocket task: {e}");
             }
         }
 
@@ -950,8 +950,8 @@ impl DataClient for OKXDataClient {
             request.params.clone(),
         ));
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instruments response: {err}");
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send instruments response: {e}");
         }
 
         Ok(())
@@ -980,8 +980,8 @@ impl DataClient for OKXDataClient {
             request.params.clone(),
         )));
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instrument response: {err}");
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send instrument response: {e}");
         }
 
         Ok(())
@@ -1018,11 +1018,11 @@ impl DataClient for OKXDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send trades response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send trades response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Trade request failed: {err:?}"),
+                Err(e) => tracing::error!("Trade request failed: {e:?}"),
             }
         });
 
@@ -1060,11 +1060,11 @@ impl DataClient for OKXDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send bars response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send bars response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Bar request failed: {err:?}"),
+                Err(e) => tracing::error!("Bar request failed: {e:?}"),
             }
         });
 

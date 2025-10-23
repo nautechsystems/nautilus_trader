@@ -434,8 +434,8 @@ async fn test_rate_limiting_returns_error() {
             .await
         {
             Ok(_) => continue,
-            Err(err) => {
-                last_error = Some(err);
+            Err(e) => {
+                last_error = Some(e);
                 break;
             }
         }

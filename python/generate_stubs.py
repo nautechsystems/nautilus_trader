@@ -54,10 +54,10 @@ def resolve_python_stub_root(pyproject: dict) -> Path:
     python_dir = Path(__file__).parent.resolve()
     try:
         dest_dir.relative_to(python_dir)
-    except ValueError as exc:  # pragma: no cover - defensive
+    except ValueError as e:  # pragma: no cover - defensive
         raise RuntimeError(
             "python-source must stay within the python/ package directory",
-        ) from exc
+        ) from e
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     return dest_dir

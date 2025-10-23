@@ -1280,9 +1280,9 @@ mod tests {
         let error_msg = NautilusWsMessage::Error(error);
 
         match error_msg {
-            NautilusWsMessage::Error(err) => {
-                assert_eq!(err.code, "60012");
-                assert_eq!(err.message, "Invalid request");
+            NautilusWsMessage::Error(e) => {
+                assert_eq!(e.code, "60012");
+                assert_eq!(e.message, "Invalid request");
             }
             _ => panic!("Expected Error variant"),
         }

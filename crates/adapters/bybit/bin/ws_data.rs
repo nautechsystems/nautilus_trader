@@ -82,8 +82,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     BybitWebSocketMessage::Auth(msg) => {
                         tracing::info!(op = %msg.op, "auth ack");
                     }
-                    BybitWebSocketMessage::Error(err) => {
-                        tracing::error!(code = err.code, message = %err.message, "bybit websocket error");
+                    BybitWebSocketMessage::Error(e) => {
+                        tracing::error!(code = e.code, message = %e.message, "bybit websocket error");
                     }
                     BybitWebSocketMessage::Raw(value) => {
                         tracing::debug!(payload = %value, "raw message");

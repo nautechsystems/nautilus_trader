@@ -316,8 +316,8 @@ impl OKXExecutionClient {
     {
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::warn!("{description} failed: {err:?}");
+            if let Err(e) = fut.await {
+                tracing::warn!("{description} failed: {e:?}");
             }
         });
 
@@ -429,16 +429,16 @@ impl ExecutionClient for OKXExecutionClient {
             self.submit_regular_order(cmd)
         };
 
-        if let Err(err) = result {
+        if let Err(e) = result {
             self.core.generate_order_rejected(
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                &format!("submit-order-error: {err}"),
+                &format!("submit-order-error: {e}"),
                 cmd.ts_init,
                 false,
             );
-            return Err(err);
+            return Err(e);
         }
 
         Ok(())
@@ -552,9 +552,9 @@ impl LiveExecutionClient for OKXExecutionClient {
             }
 
             if self.config.use_fills_channel
-                && let Err(err) = self.ws_client.subscribe_fills(inst_type).await
+                && let Err(e) = self.ws_client.subscribe_fills(inst_type).await
             {
-                tracing::warn!("Failed to subscribe to fills channel ({inst_type:?}): {err}");
+                tracing::warn!("Failed to subscribe to fills channel ({inst_type:?}): {e}");
             }
         }
 
@@ -575,8 +575,8 @@ impl LiveExecutionClient for OKXExecutionClient {
         }
 
         self.http_client.cancel_all_requests();
-        if let Err(err) = self.ws_client.close().await {
-            tracing::warn!("Error while closing OKX websocket: {err:?}");
+        if let Err(e) = self.ws_client.close().await {
+            tracing::warn!("Error while closing OKX websocket: {e:?}");
         }
 
         if let Some(handle) = self.ws_stream_handle.take() {
@@ -803,12 +803,12 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
         NautilusWsMessage::OrderModifyRejected(event) => {
             dispatch_order_event(OrderEventAny::ModifyRejected(event));
         }
-        NautilusWsMessage::Error(err) => {
+        NautilusWsMessage::Error(e) => {
             tracing::warn!(
                 "OKX websocket error: code={} message={} conn_id={:?}",
-                err.code,
-                err.message,
-                err.conn_id
+                e.code,
+                e.message,
+                e.conn_id
             );
         }
         NautilusWsMessage::Reconnected => {

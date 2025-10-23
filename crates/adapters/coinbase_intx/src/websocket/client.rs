@@ -352,8 +352,8 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = self.inner.read().await.as_ref() {
-            if let Err(err) = inner.send_text(json_txt, None).await {
-                tracing::error!("Error sending message: {err:?}");
+            if let Err(e) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {e:?}");
             }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
@@ -404,8 +404,8 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = self.inner.read().await.as_ref() {
-            if let Err(err) = inner.send_text(json_txt, None).await {
-                tracing::error!("Error sending message: {err:?}");
+            if let Err(e) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {e:?}");
             }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(

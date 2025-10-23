@@ -380,10 +380,10 @@ class BitmexDataClient(LiveMarketDataClient):
                 end=end,
                 limit=limit,
             )
-        except Exception as exc:  # pragma: no cover - network failures
+        except Exception as e:  # pragma: no cover - network failures
             self._log.exception(
                 f"Failed to request trades for {request.instrument_id}",
-                exc,
+                e,
             )
             return
 
@@ -446,8 +446,8 @@ class BitmexDataClient(LiveMarketDataClient):
                 limit=limit,
                 partial=partial,
             )
-        except Exception as exc:  # pragma: no cover - network failures
-            self._log.exception(f"Failed to request bars for {bar_type}", exc)
+        except Exception as e:  # pragma: no cover - network failures
+            self._log.exception(f"Failed to request bars for {bar_type}", e)
             return
 
         bars = Bar.from_pyo3_list(pyo3_bars)

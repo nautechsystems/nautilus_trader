@@ -219,13 +219,13 @@ impl Erc20Contract {
                         Ok(info) => {
                             token_infos.insert(*token_address, Ok(info));
                         }
-                        Err(err) => {
+                        Err(e) => {
                             tracing::debug!(
                                 "Token {} failed individual fetch (likely expired/broken): {}",
                                 token_address,
-                                err
+                                e
                             );
-                            token_infos.insert(*token_address, Err(err));
+                            token_infos.insert(*token_address, Err(e));
                         }
                     }
                 }

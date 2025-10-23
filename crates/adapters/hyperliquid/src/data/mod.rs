@@ -252,8 +252,8 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
 impl HyperliquidDataClient {
     #[allow(dead_code)]
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(err) = sender.send(DataEvent::Data(data)) {
-            tracing::error!("Failed to emit data event: {err}");
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            tracing::error!("Failed to emit data event: {e}");
         }
     }
 }
@@ -374,8 +374,8 @@ impl DataClient for HyperliquidDataClient {
             request.params.clone(),
         ));
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instruments response: {err}");
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send instruments response: {e}");
         }
 
         Ok(())
@@ -397,8 +397,8 @@ impl DataClient for HyperliquidDataClient {
             request.params.clone(),
         )));
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instrument response: {err}");
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send instrument response: {e}");
         }
 
         Ok(())
@@ -434,11 +434,11 @@ impl DataClient for HyperliquidDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send bars response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send bars response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Bar request failed: {err:?}"),
+                Err(e) => tracing::error!("Bar request failed: {e:?}"),
             }
         });
 
@@ -461,8 +461,8 @@ impl DataClient for HyperliquidDataClient {
             request.params.clone(),
         ));
 
-        if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send trades response: {err}");
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            tracing::error!("Failed to send trades response: {e}");
         }
 
         Ok(())
@@ -492,8 +492,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to subscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.subscribe_trades(coin).await {
-                tracing::error!("Failed to subscribe to trades: {err:?}");
+            if let Err(e) = ws.subscribe_trades(coin).await {
+                tracing::error!("Failed to subscribe to trades: {e:?}");
             }
         });
 
@@ -523,8 +523,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to unsubscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.unsubscribe_trades(coin).await {
-                tracing::error!("Failed to unsubscribe from trades: {err:?}");
+            if let Err(e) = ws.unsubscribe_trades(coin).await {
+                tracing::error!("Failed to unsubscribe from trades: {e:?}");
             }
         });
 
@@ -566,8 +566,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to subscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.subscribe_book(coin).await {
-                tracing::error!("Failed to subscribe to book deltas: {err:?}");
+            if let Err(e) = ws.subscribe_book(coin).await {
+                tracing::error!("Failed to subscribe to book deltas: {e:?}");
             }
         });
 
@@ -603,8 +603,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to unsubscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.unsubscribe_book(coin).await {
-                tracing::error!("Failed to unsubscribe from book deltas: {err:?}");
+            if let Err(e) = ws.unsubscribe_book(coin).await {
+                tracing::error!("Failed to unsubscribe from book deltas: {e:?}");
             }
         });
 
@@ -652,8 +652,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to subscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.subscribe_bbo(coin).await {
-                tracing::error!("Failed to subscribe to book snapshots: {err:?}");
+            if let Err(e) = ws.subscribe_bbo(coin).await {
+                tracing::error!("Failed to subscribe to book snapshots: {e:?}");
             }
         });
 
@@ -689,8 +689,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to unsubscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.unsubscribe_bbo(coin).await {
-                tracing::error!("Failed to unsubscribe from book snapshots: {err:?}");
+            if let Err(e) = ws.unsubscribe_bbo(coin).await {
+                tracing::error!("Failed to unsubscribe from book snapshots: {e:?}");
             }
         });
 
@@ -727,8 +727,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to subscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.subscribe_bbo(coin).await {
-                tracing::error!("Failed to subscribe to quotes: {err:?}");
+            if let Err(e) = ws.subscribe_bbo(coin).await {
+                tracing::error!("Failed to subscribe to quotes: {e:?}");
             }
         });
 
@@ -758,8 +758,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to unsubscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.unsubscribe_bbo(coin).await {
-                tracing::error!("Failed to unsubscribe from quotes: {err:?}");
+            if let Err(e) = ws.unsubscribe_bbo(coin).await {
+                tracing::error!("Failed to unsubscribe from quotes: {e:?}");
             }
         });
 
@@ -800,8 +800,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to subscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.subscribe_candle(coin, interval).await {
-                tracing::error!("Failed to subscribe to bars: {err:?}");
+            if let Err(e) = ws.subscribe_candle(coin, interval).await {
+                tracing::error!("Failed to subscribe to bars: {e:?}");
             }
         });
 
@@ -831,8 +831,8 @@ impl DataClient for HyperliquidDataClient {
 
         // Spawn async task to unsubscribe
         tokio::spawn(async move {
-            if let Err(err) = ws.unsubscribe_candle(coin, interval).await {
-                tracing::error!("Failed to unsubscribe from bars: {err:?}");
+            if let Err(e) = ws.unsubscribe_candle(coin, interval).await {
+                tracing::error!("Failed to unsubscribe from bars: {e:?}");
             }
         });
 

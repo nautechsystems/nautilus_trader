@@ -144,8 +144,8 @@ impl BitmexDataClient {
     }
 
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(err) = sender.send(DataEvent::Data(data)) {
-            tracing::error!("Failed to emit data event: {err}");
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            tracing::error!("Failed to emit data event: {e}");
         }
     }
 
@@ -154,8 +154,8 @@ impl BitmexDataClient {
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                tracing::error!("{context}: {err:?}");
+            if let Err(e) = fut.await {
+                tracing::error!("{context}: {e:?}");
             }
         });
     }
@@ -318,8 +318,8 @@ impl BitmexDataClient {
 
                                 tracing::debug!(client_id=%client_id, "BitMEX instruments refreshed");
                             }
-                            Err(err) => {
-                                tracing::warn!(client_id=%client_id, error=?err, "Failed to refresh BitMEX instruments");
+                            Err(e) => {
+                                tracing::warn!(client_id=%client_id, error=?e, "Failed to refresh BitMEX instruments");
                             }
                         }
                     }
@@ -427,14 +427,14 @@ impl DataClient for BitmexDataClient {
         self.cancellation_token.cancel();
 
         if let Some(ws) = self.ws_client.as_mut()
-            && let Err(err) = ws.close().await
+            && let Err(e) = ws.close().await
         {
-            tracing::warn!("Error while closing BitMEX websocket: {err:?}");
+            tracing::warn!("Error while closing BitMEX websocket: {e:?}");
         }
 
         for handle in self.tasks.drain(..) {
-            if let Err(err) = handle.await {
-                tracing::error!("Error joining websocket task: {err:?}");
+            if let Err(e) = handle.await {
+                tracing::error!("Error joining websocket task: {e:?}");
             }
         }
 
@@ -833,11 +833,11 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send instruments response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send instruments response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Instrument request failed: {err:?}"),
+                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
             }
         });
 
@@ -862,8 +862,8 @@ impl DataClient for BitmexDataClient {
                 self.clock.get_time_ns(),
                 request.params.clone(),
             )));
-            if let Err(err) = self.data_sender.send(DataEvent::Response(response)) {
-                tracing::error!("Failed to send instrument response: {err}");
+            if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+                tracing::error!("Failed to send instrument response: {e}");
             }
             return Ok(());
         }
@@ -904,12 +904,12 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     )));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send instrument response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send instrument response: {e}");
                     }
                 }
                 Ok(None) => tracing::warn!("BitMEX instrument {instrument_id} not found"),
-                Err(err) => tracing::error!("Instrument request failed: {err:?}"),
+                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
             }
         });
 
@@ -947,11 +947,11 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send trades response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send trades response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Trade request failed: {err:?}"),
+                Err(e) => tracing::error!("Trade request failed: {e:?}"),
             }
         });
 
@@ -989,11 +989,11 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
-                    if let Err(err) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send bars response: {err}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send bars response: {e}");
                     }
                 }
-                Err(err) => tracing::error!("Bar request failed: {err:?}"),
+                Err(e) => tracing::error!("Bar request failed: {e:?}"),
             }
         });
 

@@ -167,6 +167,15 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-error-conventions
+        name: check error conventions
+        description:
+          Enforces error variable naming conventions (Rust use Err(e), Python use as e:)
+        entry: .pre-commit-hooks/check_error_conventions.sh
+        language: script
+        types_or: [rust, python, cython]
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.

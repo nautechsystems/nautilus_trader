@@ -449,8 +449,8 @@ impl OKXWebSocketClient {
                 let guard = inner.read().await;
 
                 if let Some(client) = guard.as_ref() {
-                    if let Err(err) = client.send_pong(payload).await {
-                        tracing::warn!(error = %err, "Failed to send pong frame");
+                    if let Err(e) = client.send_pong(payload).await {
+                        tracing::warn!(error = %e, "Failed to send pong frame");
                     } else {
                         tracing::trace!("Sent pong frame ({len} bytes)");
                     }
@@ -3322,8 +3322,8 @@ impl OKXWsMessageHandler {
             let guard = inner.read().await;
 
             if let Some(client) = guard.as_ref() {
-                if let Err(err) = client.send_text(TEXT_PONG.to_string(), None).await {
-                    tracing::warn!(error = %err, "Failed to send pong response to OKX text ping");
+                if let Err(e) = client.send_text(TEXT_PONG.to_string(), None).await {
+                    tracing::warn!(error = %e, "Failed to send pong response to OKX text ping");
                 } else {
                     tracing::trace!("Sent pong response to OKX text ping");
                 }
@@ -4499,9 +4499,9 @@ mod tests {
 
         let nautilus_msg = NautilusWsMessage::Error(error);
         match nautilus_msg {
-            NautilusWsMessage::Error(err) => {
-                assert_eq!(err.code, "60012");
-                assert_eq!(err.message, "Invalid request");
+            NautilusWsMessage::Error(e) => {
+                assert_eq!(e.code, "60012");
+                assert_eq!(e.message, "Invalid request");
             }
             _ => panic!("Expected Error variant"),
         }
@@ -4658,10 +4658,10 @@ mod tests {
 
             let nautilus_msg = NautilusWsMessage::Error(error);
             match nautilus_msg {
-                NautilusWsMessage::Error(err) => {
-                    assert_eq!(err.code, code);
-                    assert_eq!(err.message, message);
-                    assert_eq!(err.conn_id, conn_id);
+                NautilusWsMessage::Error(e) => {
+                    assert_eq!(e.code, code);
+                    assert_eq!(e.message, message);
+                    assert_eq!(e.conn_id, conn_id);
                 }
                 _ => panic!("Expected Error variant"),
             }
