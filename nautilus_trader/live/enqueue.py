@@ -117,6 +117,7 @@ class ThrottledEnqueuer(Generic[T]):
             return
 
         task = self._loop.create_task(self._queue.put(msg))
+        task.add_done_callback(self._handle_task_exception)
         self._pending_tasks.add(task)
 
         # Throttle logging to once per second
@@ -140,6 +141,14 @@ class ThrottledEnqueuer(Generic[T]):
             if not task.done():
                 task.cancel()
 
+    def _handle_task_exception(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            self._log.error(f"Error putting message on {self._qname}: {exc!r}")
+
     def _enqueue_nowait_safely(self, queue: asyncio.Queue, msg: T) -> None:
         # Attempt put_nowait(msg) and if the queue is full,
         # schedule an async put() as a fallback.
@@ -147,11 +156,5 @@ class ThrottledEnqueuer(Generic[T]):
             queue.put_nowait(msg)
         except asyncio.QueueFull:
             task = asyncio.create_task(queue.put(msg))
+            task.add_done_callback(self._handle_task_exception)
             self._pending_tasks.add(task)
-            task.add_done_callback(
-                lambda t: (
-                    self._log.error(f"Error putting on queue: {t.exception()!r}")
-                    if t.exception()
-                    else None
-                ),
-            )
