@@ -744,6 +744,10 @@ fn test_uni_pool_profiler_initial_state(uni_pool_profiler: PoolProfiler) {
     );
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 0);
+
+    // Liquidity utilization should be 100% since all liquidity is in-range
+    assert_eq!(uni_pool_profiler.get_total_liquidity(), 3161);
+    assert_eq!(uni_pool_profiler.liquidity_utilization_rate(), 1.0);
 }
 
 // ---------- TEST MINTS ABOVE CURRENT PRICE ----------
@@ -907,7 +911,9 @@ fn test_if_removing_of_liquidity_works_after_mint(mut uni_pool_profiler: PoolPro
 
     // After collect, position should be cleaned up since it's completely empty
     assert!(
-        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        uni_pool_profiler
+            .get_position(&lp_address(), lower_tick, upper_tick)
+            .is_none(),
         "Position should be cleaned up after collecting all fees"
     );
 
@@ -1343,7 +1349,9 @@ fn test_mint_then_burning_and_collecting(mut uni_pool_profiler: PoolProfiler) {
 
     // After collect, position should be cleaned up since it's completely empty
     assert!(
-        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        uni_pool_profiler
+            .get_position(&lp_address(), lower_tick, upper_tick)
+            .is_none(),
         "Position should be cleaned up after collecting all fees"
     );
 
@@ -1447,7 +1455,9 @@ fn test_if_mint_below_current_price_works_after_burn_and_fee_collect(
 
     // After collect, position should be cleaned up since it's completely empty
     assert!(
-        uni_pool_profiler.get_position(&lp_address(), lower_tick, upper_tick).is_none(),
+        uni_pool_profiler
+            .get_position(&lp_address(), lower_tick, upper_tick)
+            .is_none(),
         "Position should be cleaned up after collecting all fees"
     );
 
@@ -1848,6 +1858,11 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
 
+    // Liquidity utilization before swap: active (3161) / total (3161 + 50000) = ~5.95%
+    assert_eq!(uni_pool_profiler.get_total_liquidity(), U256::from(53161));
+    let utilization_before = 3161.0 / 53161.0;
+    assert!((uni_pool_profiler.liquidity_utilization_rate() - utilization_before).abs() < 1e-6);
+
     // Execute swap: token0 for token1 to move price down into the position range
     let amount0_in = U256::from(expand_to_18_decimals(1));
     let _ = uni_pool_profiler
@@ -1914,6 +1929,11 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
     assert_eq!(uni_pool_profiler.get_active_liquidity(), initial_liquidity);
     assert_eq!(uni_pool_profiler.get_total_active_positions(), 1);
     assert_eq!(uni_pool_profiler.get_total_inactive_positions(), 1);
+
+    // Liquidity utilization before swap: active (3161) / total (3161 + 40000) = ~7.32%
+    assert_eq!(uni_pool_profiler.get_total_liquidity(), U256::from(43161));
+    let utilization_before = 3161.0 / 43161.0;
+    assert!((uni_pool_profiler.liquidity_utilization_rate() - utilization_before).abs() < 1e-6);
 
     // Execute large swap: token1 for token0 to move price up, crossing tick -22980
     let amount1_in = U256::from(expand_to_18_decimals(1000));
