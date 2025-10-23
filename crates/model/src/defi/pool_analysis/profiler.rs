@@ -1442,14 +1442,6 @@ impl PoolProfiler {
             .collect()
     }
 
-    /// Returns position keys for all currently active positions.
-    pub fn get_active_position_keys(&self) -> Vec<(Address, i32, i32)> {
-        self.get_active_positions()
-            .iter()
-            .map(|position| (position.owner, position.tick_lower, position.tick_upper))
-            .collect()
-    }
-
     /// Returns a list of all positions tracked by the profiler.
     ///
     /// This includes both active and inactive positions, regardless of their
@@ -1460,6 +1452,14 @@ impl PoolProfiler {
     /// A vector of references to all [`PoolPosition`] objects.
     pub fn get_all_positions(&self) -> Vec<&PoolPosition> {
         self.positions.values().collect()
+    }
+
+    /// Returns position keys for all tracked positions.
+    pub fn get_all_position_keys(&self) -> Vec<(Address, i32, i32)> {
+        self.get_all_positions()
+            .iter()
+            .map(|position| (position.owner, position.tick_lower, position.tick_upper))
+            .collect()
     }
 
     /// Extracts a complete snapshot of the current pool state.
