@@ -121,8 +121,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         except AttributeError:  # method missing (old wheel?)
             self._log.error("HyperliquidHttpClient is missing load_instrument_definitions")
             raise
-        except Exception as exc:  # pragma: no cover - defensive logging
-            self._log.exception("Failed to fetch Hyperliquid instrument metadata", exc)
+        except Exception as e:  # pragma: no cover - defensive logging
+            self._log.exception("Failed to fetch Hyperliquid instrument metadata", e)
             raise
 
     def _reset_caches(self) -> None:

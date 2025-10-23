@@ -1046,8 +1046,8 @@ impl DataEngine {
         // If we have an internal aggregator for this bar type, stop and remove it
         let bar_type = cmd.bar_type;
         if self.bar_aggregators.contains_key(&bar_type.standard()) {
-            if let Err(err) = self.stop_bar_aggregator(bar_type) {
-                log::error!("Error stopping bar aggregator for {bar_type}: {err}");
+            if let Err(e) = self.stop_bar_aggregator(bar_type) {
+                log::error!("Error stopping bar aggregator for {bar_type}: {e}");
             }
             self.bar_aggregators.remove(&bar_type.standard());
             log::debug!("Removed bar aggregator for {bar_type}");

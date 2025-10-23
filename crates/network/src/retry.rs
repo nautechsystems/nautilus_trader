@@ -137,14 +137,14 @@ where
             if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
                 let elapsed = start_time.elapsed();
                 if elapsed.as_millis() >= u128::from(max_elapsed_ms) {
-                    let timeout_error = create_error("Budget exceeded".to_string());
+                    let e = create_error("Budget exceeded".to_string());
                     tracing::trace!(
                         operation = %operation_name,
                         attempts = attempt + 1,
                         budget_ms = max_elapsed_ms,
                         "Retry budget exceeded"
                     );
-                    return Err(timeout_error);
+                    return Err(e);
                 }
             }
 
@@ -190,24 +190,24 @@ where
                     }
                     return Ok(success);
                 }
-                Ok(Err(error)) => {
-                    if !should_retry(&error) {
+                Ok(Err(e)) => {
+                    if !should_retry(&e) {
                         tracing::trace!(
                             operation = %operation_name,
-                            error = %error,
+                            error = %e,
                             "Non-retryable error"
                         );
-                        return Err(error);
+                        return Err(e);
                     }
 
                     if attempt >= self.config.max_retries {
                         tracing::trace!(
                             operation = %operation_name,
                             attempts = attempt + 1,
-                            error = %error,
+                            error = %e,
                             "Retries exhausted"
                         );
-                        return Err(error);
+                        return Err(e);
                     }
 
                     let mut delay = backoff.next_duration();
@@ -218,14 +218,14 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            let timeout_error = create_error("Budget exceeded".to_string());
+                            let e = create_error("Budget exceeded".to_string());
                             tracing::trace!(
                                 operation = %operation_name,
                                 attempts = attempt + 1,
                                 budget_ms = max_elapsed_ms,
                                 "Retry budget exceeded"
                             );
-                            return Err(timeout_error);
+                            return Err(e);
                         }
 
                         delay = delay.min(remaining);
@@ -235,7 +235,7 @@ where
                         operation = %operation_name,
                         attempt = attempt + 1,
                         delay_ms = delay.as_millis() as u64,
-                        error = %error,
+                        error = %e,
                         "Retrying after failure"
                     );
 
@@ -263,29 +263,29 @@ where
                     }
                     attempt += 1;
                 }
-                Err(_timeout) => {
-                    let timeout_error = create_error(format!(
+                Err(_) => {
+                    let e = create_error(format!(
                         "Timed out after {}ms",
                         self.config.operation_timeout_ms.unwrap_or(0)
                     ));
 
-                    if !should_retry(&timeout_error) {
+                    if !should_retry(&e) {
                         tracing::trace!(
                             operation = %operation_name,
-                            error = %timeout_error,
+                            error = %e,
                             "Non-retryable timeout"
                         );
-                        return Err(timeout_error);
+                        return Err(e);
                     }
 
                     if attempt >= self.config.max_retries {
                         tracing::trace!(
                             operation = %operation_name,
                             attempts = attempt + 1,
-                            error = %timeout_error,
+                            error = %e,
                             "Retries exhausted after timeout"
                         );
-                        return Err(timeout_error);
+                        return Err(e);
                     }
 
                     let mut delay = backoff.next_duration();
@@ -296,14 +296,14 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            let budget_error = create_error("Budget exceeded".to_string());
+                            let e = create_error("Budget exceeded".to_string());
                             tracing::trace!(
                                 operation = %operation_name,
                                 attempts = attempt + 1,
                                 budget_ms = max_elapsed_ms,
                                 "Retry budget exceeded"
                             );
-                            return Err(budget_error);
+                            return Err(e);
                         }
 
                         delay = delay.min(remaining);
@@ -313,7 +313,7 @@ where
                         operation = %operation_name,
                         attempt = attempt + 1,
                         delay_ms = delay.as_millis() as u64,
-                        error = %timeout_error,
+                        error = %e,
                         "Retrying after timeout"
                     );
 

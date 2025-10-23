@@ -182,10 +182,10 @@ impl HyperliquidWebSocketInnerClient {
                                     break;
                                 }
                             }
-                            Err(err) => {
+                            Err(e) => {
                                 tracing::error!(
                                     "Failed to decode Hyperliquid message: {} | text: {}",
-                                    err,
+                                    e,
                                     txt
                                 );
                             }

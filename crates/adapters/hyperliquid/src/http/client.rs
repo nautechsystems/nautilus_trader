@@ -410,12 +410,12 @@ impl HyperliquidHttpClient {
                     );
                     defs.extend(perp_defs);
                 }
-                Err(err) => {
-                    tracing::warn!(%err, "Failed to parse Hyperliquid perp instruments");
+                Err(e) => {
+                    tracing::warn!(%e, "Failed to parse Hyperliquid perp instruments");
                 }
             },
-            Err(err) => {
-                tracing::warn!(%err, "Failed to load Hyperliquid perp metadata");
+            Err(e) => {
+                tracing::warn!(%e, "Failed to load Hyperliquid perp metadata");
             }
         }
 
@@ -428,12 +428,12 @@ impl HyperliquidHttpClient {
                     );
                     defs.extend(spot_defs);
                 }
-                Err(err) => {
-                    tracing::warn!(%err, "Failed to parse Hyperliquid spot instruments");
+                Err(e) => {
+                    tracing::warn!(%e, "Failed to parse Hyperliquid spot instruments");
                 }
             },
-            Err(err) => {
-                tracing::warn!(%err, "Failed to load Hyperliquid spot metadata");
+            Err(e) => {
+                tracing::warn!(%e, "Failed to load Hyperliquid spot metadata");
             }
         }
 

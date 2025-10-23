@@ -440,8 +440,8 @@ impl BitmexWebSocketClient {
                 let guard = inner.read().await;
 
                 if let Some(client) = guard.as_ref() {
-                    if let Err(err) = client.send_pong(payload).await {
-                        tracing::warn!(error = %err, "Failed to send pong frame");
+                    if let Err(e) = client.send_pong(payload).await {
+                        tracing::warn!(error = %e, "Failed to send pong frame");
                     } else {
                         tracing::trace!("Sent pong frame ({len} bytes)");
                     }

@@ -2546,7 +2546,7 @@ impl OKXHttpClient {
             {
                 Vec::new()
             }
-            Err(error) => return Err(error.into()),
+            Err(e) => return Err(e.into()),
         };
         self.collect_algo_reports(
             account_id,
@@ -2565,7 +2565,7 @@ impl OKXHttpClient {
             {
                 Vec::new()
             }
-            Err(error) => return Err(error.into()),
+            Err(e) => return Err(e.into()),
         };
         self.collect_algo_reports(
             account_id,

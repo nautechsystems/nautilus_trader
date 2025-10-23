@@ -328,8 +328,8 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
     for _ in 0..5 {
         match client.http_get_instruments(params.clone()).await {
             Ok(_) => continue,
-            Err(err) => {
-                last_error = Some(err);
+            Err(e) => {
+                last_error = Some(e);
                 break;
             }
         }

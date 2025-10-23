@@ -381,11 +381,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._apply_client_order_alias(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as exc:
-            if "request canceled" in str(exc).lower():
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
                 self._log.debug("OrderStatusReports request cancelled during shutdown")
             else:
-                self._log.exception("Failed to generate OrderStatusReports", exc)
+                self._log.exception("Failed to generate OrderStatusReports", e)
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReports", e)
 
@@ -454,11 +454,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-        except ValueError as exc:
-            if "request canceled" in str(exc).lower():
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
                 self._log.debug("OrderStatusReport request cancelled during shutdown")
             else:
-                self._log.exception("Failed to generate OrderStatusReport", exc)
+                self._log.exception("Failed to generate OrderStatusReport", e)
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReport", e)
 
@@ -539,15 +539,15 @@ class OKXExecutionClient(LiveExecutionClient):
                 f"Resolved OKX algo order status via fallback for {query_client_order_id!r}",
             )
             return report
-        except ValueError as exc:
-            if "404" in str(exc) or "Not Found" in str(exc):
+        except ValueError as e:
+            if "404" in str(e) or "Not Found" in str(e):
                 self._log.debug(
                     f"OKX algo order status not found for {query_client_order_id!r} (404)",
                 )
             else:
-                self._log.exception("Failed to generate OKX algo OrderStatusReport", exc)
-        except Exception as exc:
-            self._log.exception("Failed to generate OKX algo OrderStatusReport", exc)
+                self._log.exception("Failed to generate OKX algo OrderStatusReport", e)
+        except Exception as e:
+            self._log.exception("Failed to generate OKX algo OrderStatusReport", e)
 
         return None
 
@@ -569,15 +569,15 @@ class OKXExecutionClient(LiveExecutionClient):
                     f"Resolved OKX algo order status via algo_id={algo_id}",
                 )
                 return report
-        except ValueError as exc:
-            if "404" in str(exc) or "Not Found" in str(exc):
+        except ValueError as e:
+            if "404" in str(e) or "Not Found" in str(e):
                 self._log.debug(
                     f"OKX algo order status not found for algo_id={algo_id} (404)",
                 )
             else:
-                self._log.exception("Failed to query OKX algo order by algo_id", exc)
-        except Exception as exc:
-            self._log.exception("Failed to query OKX algo order by algo_id", exc)
+                self._log.exception("Failed to query OKX algo order by algo_id", e)
+        except Exception as e:
+            self._log.exception("Failed to query OKX algo order by algo_id", e)
 
         return None
 
@@ -633,11 +633,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 if canonical_id is not None:
                     report.client_order_id = canonical_id
                 reports.append(report)
-        except ValueError as exc:
-            if "request canceled" in str(exc).lower():
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
                 self._log.debug("FillReports request cancelled during shutdown")
             else:
-                self._log.exception("Failed to generate FillReports", exc)
+                self._log.exception("Failed to generate FillReports", e)
         except Exception as e:
             self._log.exception("Failed to generate FillReports", e)
 
@@ -724,11 +724,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as exc:
-            if "request canceled" in str(exc).lower():
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
                 self._log.debug("PositionReports request cancelled during shutdown")
             else:
-                self._log.exception("Failed to generate PositionReports", exc)
+                self._log.exception("Failed to generate PositionReports", e)
         except Exception as e:
             self._log.exception("Failed to generate PositionReports", e)
 
@@ -1057,8 +1057,8 @@ class OKXExecutionClient(LiveExecutionClient):
                         instrument_id=pyo3_instrument_id,
                         algo_id=algo_id,
                     )
-                except ValueError as exc:
-                    message = str(exc)
+                except ValueError as e:
+                    message = str(e)
                     alias_text = str(alias_lookup_key) if alias_lookup_key is not None else ""
                     client_text = str(command.client_order_id) if command.client_order_id else ""
                     if (

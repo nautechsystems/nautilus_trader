@@ -451,9 +451,9 @@ def _ensure_windows_python_import_lib() -> None:
                     f"Creating missing Windows import lib {dst} (copying from {src})",
                 )
                 shutil.copyfile(src, dst)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as e:  # pragma: no cover - defensive
         # Never fail the build because of this helper, just show the warning
-        print(f"Warning: failed to create *t* suffixed Python import library: {exc}")
+        print(f"Warning: failed to create *t* suffixed Python import library: {e}")
 
 
 def _strip_unneeded_symbols() -> None:

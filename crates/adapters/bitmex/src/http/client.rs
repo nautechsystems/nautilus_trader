@@ -2085,8 +2085,8 @@ impl BitmexHttpClient {
 
             let instrument = match self.instrument_from_cache(symbol) {
                 Ok(instrument) => instrument,
-                Err(err) => {
-                    tracing::error!(symbol = %symbol_str, "Instrument not found in cache for execution parsing: {err}");
+                Err(e) => {
+                    tracing::error!(symbol = %symbol_str, "Instrument not found in cache for execution parsing: {e}");
                     continue;
                 }
             };
@@ -2133,10 +2133,10 @@ impl BitmexHttpClient {
             let symbol = Ustr::from(pos.symbol.as_str());
             let instrument = match self.instrument_from_cache(symbol) {
                 Ok(instrument) => instrument,
-                Err(err) => {
+                Err(e) => {
                     tracing::error!(
                         symbol = pos.symbol.as_str(),
-                        "Instrument not found in cache for position parsing: {err}"
+                        "Instrument not found in cache for position parsing: {e}"
                     );
                     continue;
                 }

@@ -86,8 +86,8 @@ class TestCachePostgresAdapter:
             self.database: CachePostgresAdapter = CachePostgresAdapter()
             # reset database
             self.database.flush()
-        except BaseException as exc:
-            message = str(exc)
+        except BaseException as e:
+            message = str(e)
             if (
                 "error communicating with database" in message
                 or "Operation not permitted" in message

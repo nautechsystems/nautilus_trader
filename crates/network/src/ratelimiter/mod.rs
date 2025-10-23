@@ -73,7 +73,7 @@ impl InMemoryState {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => return Ok(result),
-                Err(next_prev) => prev = next_prev, // Retry with value written by another thread
+                Err(e) => prev = e, // Retry with value written by another thread
             }
             decision = f(NonZeroU64::new(prev).map(|n| n.get().into()));
         }
@@ -229,8 +229,8 @@ where
                 Ok(()) => {
                     break;
                 }
-                Err(neg) => {
-                    sleep(neg.wait_time_from(self.clock.now())).await;
+                Err(e) => {
+                    sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }

@@ -625,7 +625,7 @@ mod tests {
             Err(HttpClientError::TimeoutError(msg)) => {
                 println!("Got expected timeout error: {msg}");
             }
-            Err(other) => panic!("Expected a timeout error, was: {other:?}"),
+            Err(e) => panic!("Expected a timeout error, was: {e:?}"),
             Ok(resp) => panic!("Expected a timeout error, but was a successful response: {resp:?}"),
         }
     }
