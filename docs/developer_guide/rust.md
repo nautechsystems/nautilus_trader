@@ -701,6 +701,26 @@ The project uses several tools for code quality:
 - **clippy**: Linting and best practices (see `clippy.toml`).
 - **cbindgen**: C header generation for FFI.
 
+## Rust version management
+
+The project pins to a specific Rust version via `rust-toolchain.toml`.
+
+**Keep your toolchain synchronized with CI:**
+
+```bash
+rustup update       # Update to latest stable Rust
+rustup show         # Verify correct toolchain is active
+```
+
+If pre-commit passes locally but fails in CI, clear the pre-commit cache and re-run:
+
+```bash
+pre-commit clean    # Clear cached environments
+make pre-commit     # Re-run all checks
+```
+
+This ensures you're using the same Rust and clippy versions as CI.
+
 ## Resources
 
 - [The Rustonomicon](https://doc.rust-lang.org/nomicon/) – The Dark Arts of Unsafe Rust.
