@@ -171,10 +171,13 @@ impl MarginAccount {
     ) -> PyResult<Money> {
         let instrument_type = pyobject_to_instrument_any(py, instrument)?;
         match instrument_type {
+            InstrumentAny::CryptoPerpetual(inst) => self
+                .calculate_initial_margin(inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
             InstrumentAny::CryptoFuture(inst) => self
                 .calculate_initial_margin(inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
-            InstrumentAny::CryptoPerpetual(inst) => self
+            InstrumentAny::CryptoOption(inst) => self
                 .calculate_initial_margin(inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CurrencyPair(inst) => self
@@ -215,6 +218,9 @@ impl MarginAccount {
                 .calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CryptoPerpetual(inst) => self
+                .calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoOption(inst) => self
                 .calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CurrencyPair(inst) => self

@@ -312,7 +312,7 @@ impl Instrument for CryptoOption {
     }
 
     fn is_inverse(&self) -> bool {
-        false
+        self.is_inverse
     }
 
     fn isin(&self) -> Option<Ustr> {
