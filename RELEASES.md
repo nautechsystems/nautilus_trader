@@ -83,6 +83,7 @@ This will be the final release with support for Python 3.11.
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed return type annotation for `ArrowSerializer.deserialize` (#3076), thanks @MK27MK
 - Fixed initializing of sqrt price setting flow when `Pool` profiling (#3100), thanks @filipmacek
+- Fixed Redis multi-stream consumer skipping messages (#3094), thanks for reporting @kirill-gr1
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
 - Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Binance order status parsing for external orders (#3006), thanks for reporting @bmlquant
