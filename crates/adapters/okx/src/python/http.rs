@@ -16,7 +16,7 @@
 //! Python bindings exposing OKX HTTP helper functions and data conversions.
 
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TriggerType},
@@ -32,7 +32,7 @@ use pyo3::{
 
 use crate::{
     common::enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
-    http::client::OKXHttpClient,
+    http::{client::OKXHttpClient, error::OKXHttpError},
 };
 
 #[pymethods]
@@ -538,5 +538,30 @@ impl OKXHttpClient {
 
             Python::attach(|py| timestamp.into_py_any(py))
         })
+    }
+}
+
+impl From<OKXHttpError> for PyErr {
+    fn from(error: OKXHttpError) -> Self {
+        match error {
+            // Runtime/operational errors
+            OKXHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
+            OKXHttpError::HttpClientError(e) => to_pyruntime_err(format!("Network error: {e}")),
+            OKXHttpError::UnexpectedStatus { status, body } => {
+                to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            // Validation/configuration errors
+            OKXHttpError::MissingCredentials => {
+                to_pyvalue_err("Missing credentials for authenticated request")
+            }
+            OKXHttpError::ValidationError(msg) => {
+                to_pyvalue_err(format!("Parameter validation error: {msg}"))
+            }
+            OKXHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            OKXHttpError::OkxError {
+                error_code,
+                message,
+            } => to_pyvalue_err(format!("OKX error {error_code}: {message}")),
+        }
     }
 }

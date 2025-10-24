@@ -361,7 +361,7 @@ impl BybitHttpInnerClient {
 
         let create_error = |msg: String| -> BybitHttpError {
             if msg == "canceled" {
-                BybitHttpError::NetworkError("Request canceled".to_string())
+                BybitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
             } else {
                 BybitHttpError::NetworkError(msg)
             }

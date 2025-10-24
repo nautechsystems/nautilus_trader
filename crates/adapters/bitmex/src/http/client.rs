@@ -425,7 +425,7 @@ impl BitmexHttpInnerClient {
 
         let create_error = |msg: String| -> BitmexHttpError {
             if msg == "canceled" {
-                BitmexHttpError::NetworkError("Request canceled".to_string())
+                BitmexHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
             } else {
                 BitmexHttpError::NetworkError(msg)
             }

@@ -84,6 +84,9 @@ pub enum BybitHttpError {
     /// Build error for query parameters.
     #[error("Build error: {0}")]
     BuildError(#[from] BybitBuildError),
+    /// Request was canceled, typically due to shutdown or disconnect.
+    #[error("Request canceled: {0}")]
+    Canceled(String),
     /// Generic network error (for retries, cancellations, etc).
     #[error("Network error: {0}")]
     NetworkError(String),

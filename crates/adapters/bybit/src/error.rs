@@ -442,6 +442,7 @@ impl From<BybitHttpError> for BybitError {
                 Self::Config(format!("Validation error: {msg}"))
             }
             BybitHttpError::BuildError(e) => Self::Config(format!("Build error: {e}")),
+            BybitHttpError::Canceled(msg) => Self::Config(format!("Request canceled: {msg}")),
             BybitHttpError::NetworkError(msg) => Self::Config(format!("Network error: {msg}")),
             BybitHttpError::UnexpectedStatus { status, body } => Self::Json {
                 message: format!("HTTP {status}: {body}"),

@@ -512,7 +512,7 @@ impl OKXHttpInnerClient {
 
         let create_error = |msg: String| -> OKXHttpError {
             if msg == "canceled" {
-                OKXHttpError::ValidationError("Request canceled".to_string())
+                OKXHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
             } else {
                 OKXHttpError::ValidationError(msg)
             }
