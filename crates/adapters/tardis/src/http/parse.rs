@@ -945,7 +945,7 @@ mod tests {
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::BTC());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
-        assert!(!instrument.is_inverse());
+        assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 4);
         assert_eq!(instrument.size_precision(), 1); // from amountIncrement 0.1
         assert_eq!(instrument.price_increment(), Price::from("0.0001"));

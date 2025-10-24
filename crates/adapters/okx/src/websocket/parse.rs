@@ -90,7 +90,7 @@ fn extract_fees_from_cached_instrument(
             Some(future.maker_fee),
             Some(future.taker_fee),
         ),
-        InstrumentAny::OptionContract(option) => (
+        InstrumentAny::CryptoOption(option) => (
             Some(option.margin_init),
             Some(option.margin_maint),
             Some(option.maker_fee),
