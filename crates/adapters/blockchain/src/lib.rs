@@ -37,6 +37,7 @@
 //! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module (used with `python`).
+//! - `turmoil`: Enables integration tests with deterministic network simulation for testing reconnection logic.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
