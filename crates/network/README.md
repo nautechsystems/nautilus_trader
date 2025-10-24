@@ -40,13 +40,13 @@ The crate includes both standard integration tests and deterministic network sim
 To run standard tests:
 
 ```bash
-cargo test -p nautilus-network
+cargo nextest run -p nautilus-network
 ```
 
 To run turmoil network simulation tests:
 
 ```bash
-cargo test -p nautilus-network --features turmoil
+cargo nextest run -p nautilus-network --features turmoil
 ```
 
 The turmoil tests simulate various network conditions (reconnections, partitions, etc.) in a deterministic way,
