@@ -131,7 +131,7 @@ databento = { version = "0.35.0", default-features = false, features = [
   "historical",
   "live",
 ] }
-datafusion = { version = "50.2.0", default-features = false, features = [
+datafusion = { version = "50.3.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -145,7 +145,7 @@ ed25519-dalek = "2.2.0"
 enum_dispatch = "0.3.13"
 evalexpr = "=11.3.1" # Pinned to v11.3.1 for MIT licensing
 fallible-streaming-iterator = "0.1.9"
-flate2 = "1.1.4"
+flate2 = "1.1.5"
 futures = { version = "0.3.31", default-features = false, features = [
   "std",
   "async-await",

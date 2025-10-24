@@ -196,7 +196,7 @@ This will be the final release with support for Python 3.11.
 - Upgraded Rust (MSRV) to 1.90.0
 - Upgraded Cython to v3.1.5
 - Upgraded `databento` crate to v0.35.0
-- Upgraded `datafusion` crate to v50.2.0
+- Upgraded `datafusion` crate to v50.3.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 - Upgraded `redis` crate to v0.32.7
 - Upgraded `tokio` crate to v1.48.0
