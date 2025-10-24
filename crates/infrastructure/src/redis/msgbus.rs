@@ -924,7 +924,7 @@ mod serial_tests {
         let _: () = con
             .xadd(
                 &stream_key1,
-                &format!("{}", base_id + 100),
+                format!("{}", base_id + 100),
                 &[("topic", "stream1-first"), ("payload", "data")],
             )
             .await
@@ -940,7 +940,7 @@ mod serial_tests {
         let _: () = con
             .xadd(
                 &stream_key2,
-                &format!("{}", base_id + 50),
+                format!("{}", base_id + 50),
                 &[("topic", "stream2-second"), ("payload", "data")],
             )
             .await
@@ -999,7 +999,7 @@ mod serial_tests {
         let _: () = con
             .xadd(
                 &stream_key1,
-                &format!("{}", base_id + 100),
+                format!("{}", base_id + 100),
                 &[("topic", "s1m1"), ("payload", "data")],
             )
             .await
@@ -1014,7 +1014,7 @@ mod serial_tests {
         let _: () = con
             .xadd(
                 &stream_key2,
-                &format!("{}", base_id + 50),
+                format!("{}", base_id + 50),
                 &[("topic", "s2m1"), ("payload", "data")],
             )
             .await
@@ -1029,7 +1029,7 @@ mod serial_tests {
         let _: () = con
             .xadd(
                 &stream_key3,
-                &format!("{}", base_id + 25),
+                format!("{}", base_id + 25),
                 &[("topic", "s3m1"), ("payload", "data")],
             )
             .await
