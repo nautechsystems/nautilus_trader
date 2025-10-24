@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import traceback
 from collections import defaultdict
 
 from betfair_parser.exceptions import BetfairError
@@ -262,8 +261,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 # Session is invalid, need to reconnect
                 self._log.warning("Invalid session error, reconnecting...")
                 await self._reconnect()
-            except Exception:
-                self._log.error(f"Reconnection failed: {traceback.format_exc()}")
+            except Exception as e:
+                self._log.exception("Reconnection failed", e)
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
