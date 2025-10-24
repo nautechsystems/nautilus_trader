@@ -4719,6 +4719,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "tracing",
+ "turmoil",
  "ustr",
 ]
 

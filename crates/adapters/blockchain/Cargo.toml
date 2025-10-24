@@ -1,7 +1,6 @@
 [package]
 name = "nautilus-blockchain"
 readme = "README.md"
-publish = false # Do not publish to crates.io for now
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -40,6 +39,7 @@ python = [
   "pyo3",
   "pyo3-stub-gen",
 ]
+turmoil = ["dep:turmoil", "nautilus-network/turmoil"]
 
 [package.metadata.docs.rs]
 features = ["python"]
@@ -84,9 +84,11 @@ hypersync-client = { workspace = true, optional = true }
 hypersync-schema = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+turmoil = { workspace = true }
 
 [[bin]]
 name = "node_test"
