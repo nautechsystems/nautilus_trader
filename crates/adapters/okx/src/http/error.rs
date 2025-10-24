@@ -81,6 +81,9 @@ pub enum OKXHttpError {
     /// Parameter validation error.
     #[error("Parameter validation error: {0}")]
     ValidationError(String),
+    /// Request was canceled, typically due to shutdown or disconnect.
+    #[error("Request canceled: {0}")]
+    Canceled(String),
     /// Wrapping the underlying HttpClientError from the network crate.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),

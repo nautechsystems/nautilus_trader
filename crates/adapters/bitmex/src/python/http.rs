@@ -16,7 +16,7 @@
 //! Python bindings for the BitMEX HTTP client.
 
 use chrono::{DateTime, Utc};
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
@@ -26,7 +26,7 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::http::client::BitmexHttpClient;
+use crate::http::{client::BitmexHttpClient, error::BitmexHttpError};
 
 #[pymethods]
 impl BitmexHttpClient {
@@ -641,5 +641,31 @@ impl BitmexHttpClient {
 
             Python::attach(|py| timestamp.into_py_any(py))
         })
+    }
+}
+
+impl From<BitmexHttpError> for PyErr {
+    fn from(error: BitmexHttpError) -> Self {
+        match error {
+            // Runtime/operational errors
+            BitmexHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
+            BitmexHttpError::NetworkError(msg) => to_pyruntime_err(format!("Network error: {msg}")),
+            BitmexHttpError::UnexpectedStatus { status, body } => {
+                to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            // Validation/configuration errors
+            BitmexHttpError::MissingCredentials => {
+                to_pyvalue_err("Missing credentials for authenticated request")
+            }
+            BitmexHttpError::ValidationError(msg) => {
+                to_pyvalue_err(format!("Parameter validation error: {msg}"))
+            }
+            BitmexHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            BitmexHttpError::BuildError(e) => to_pyvalue_err(format!("Build error: {e}")),
+            BitmexHttpError::BitmexError {
+                error_name,
+                message,
+            } => to_pyvalue_err(format!("BitMEX error {error_name}: {message}")),
+        }
     }
 }

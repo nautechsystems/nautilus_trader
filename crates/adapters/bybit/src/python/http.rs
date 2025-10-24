@@ -15,7 +15,7 @@
 
 //! Python bindings for the Bybit HTTP client.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
@@ -24,7 +24,10 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::{common::enums::BybitProductType, http::client::BybitHttpClient};
+use crate::{
+    common::enums::BybitProductType,
+    http::{client::BybitHttpClient, error::BybitHttpError},
+};
 
 #[pymethods]
 impl BybitHttpClient {
@@ -488,5 +491,31 @@ impl BybitHttpClient {
                 Ok(pylist)
             })
         })
+    }
+}
+
+impl From<BybitHttpError> for PyErr {
+    fn from(error: BybitHttpError) -> Self {
+        match error {
+            // Runtime/operational errors
+            BybitHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
+            BybitHttpError::NetworkError(msg) => to_pyruntime_err(format!("Network error: {msg}")),
+            BybitHttpError::UnexpectedStatus { status, body } => {
+                to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            // Validation/configuration errors
+            BybitHttpError::MissingCredentials => {
+                to_pyvalue_err("Missing credentials for authenticated request")
+            }
+            BybitHttpError::ValidationError(msg) => {
+                to_pyvalue_err(format!("Parameter validation error: {msg}"))
+            }
+            BybitHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            BybitHttpError::BuildError(e) => to_pyvalue_err(format!("Build error: {e}")),
+            BybitHttpError::BybitError {
+                error_code,
+                message,
+            } => to_pyvalue_err(format!("Bybit error {error_code}: {message}")),
+        }
     }
 }
