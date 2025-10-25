@@ -386,6 +386,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      EXPECTED_WHEEL_COUNT: 9  # 3 Python versions × 3 platforms (ARM skipped on develop)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -405,8 +406,11 @@ jobs:
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -446,6 +450,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      EXPECTED_WHEEL_COUNT: 12  # 3 Python versions × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -465,8 +470,11 @@ jobs:
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -506,6 +514,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      EXPECTED_WHEEL_COUNT: 12  # 3 Python versions × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -538,8 +547,11 @@ jobs:
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
