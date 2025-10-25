@@ -17,6 +17,7 @@
 
 pub mod enums;
 pub mod http;
+pub mod models;
 pub mod urls;
 pub mod websocket;
 
@@ -32,6 +33,7 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::websocket::OKXWebSocketClient>()?;
     m.add_class::<super::websocket::messages::OKXWebSocketError>()?;
     m.add_class::<super::http::OKXHttpClient>()?;
+    m.add_class::<crate::http::models::OKXBalanceDetail>()?;
     m.add_class::<crate::common::enums::OKXInstrumentType>()?;
     m.add_class::<crate::common::enums::OKXContractType>()?;
     m.add_class::<crate::common::enums::OKXMarginMode>()?;

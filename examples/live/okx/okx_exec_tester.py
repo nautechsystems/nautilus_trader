@@ -41,7 +41,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # Configuration - Change instrument_type to switch between trading modes
 instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
-use_spot_margin = False
+use_spot_margin = True
 token = "ETH"
 
 # Symbol mapping based on instrument type
@@ -49,7 +49,7 @@ if instrument_type == OKXInstrumentType.SPOT:
     symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
     if use_spot_margin:
-        order_qty = Decimal("20.00")
+        order_qty = Decimal("10.00")
         use_quote_quantity = True
     else:
         order_qty = Decimal("0.01")
@@ -182,6 +182,7 @@ config_node = TradingNodeConfig(
             contract_types=contract_types,
             margin_mode=OKXMarginMode.CROSS,
             use_spot_margin=use_spot_margin,
+            # use_spot_cash_position_reports=True,  # Spot CASH position reports
             # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API
             use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
