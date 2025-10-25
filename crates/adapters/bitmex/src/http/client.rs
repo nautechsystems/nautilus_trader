@@ -31,7 +31,7 @@ use std::{
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos,
+    MUTEX_POISONED, UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
     env::get_env_var,
     time::get_atomic_clock_realtime,
@@ -1300,7 +1300,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the instruments cache mutex is poisoned.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        let cache = self.instruments_cache.lock().unwrap();
+        let cache = self.instruments_cache.lock().expect(MUTEX_POISONED);
         cache.get(&symbol).cloned().ok_or_else(|| {
             anyhow::anyhow!(
                 "Instrument {symbol} not found in cache, ensure instruments loaded first"

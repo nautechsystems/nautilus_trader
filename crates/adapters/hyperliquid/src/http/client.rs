@@ -1367,6 +1367,7 @@ impl HyperliquidHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::MUTEX_POISONED;
     use nautilus_model::instruments::{Instrument, InstrumentAny};
     use rstest::rstest;
     use ustr::Ustr;
@@ -1413,7 +1414,7 @@ mod tests {
 
         // Register the custom currency
         {
-            let mut currency_map = CURRENCY_MAP.lock().unwrap();
+            let mut currency_map = CURRENCY_MAP.lock().expect(MUTEX_POISONED);
             if !currency_map.contains_key(base_code) {
                 currency_map.insert(
                     base_code.to_string(),

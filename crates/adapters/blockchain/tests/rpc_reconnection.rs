@@ -173,57 +173,56 @@ fn test_rpc_reconnection_resubscribes() {
             && let Ok(mut ws) = accept_async(stream).await
         {
             while let Some(msg) = ws.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if json.get("method").and_then(|m| m.as_str()) == Some("eth_subscribe") {
-                            // Send subscription confirmation
-                            let response = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": json.get("id").unwrap(),
-                                "result": "0x1"
-                            });
-                            let _ = ws.send(Message::Text(response.to_string().into())).await;
+                if let Ok(Message::Text(text)) = msg
+                    && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+                    && json.get("method").and_then(|m| m.as_str()) == Some("eth_subscribe")
+                {
+                    // Send subscription confirmation
+                    let response = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": json.get("id").unwrap(),
+                        "result": "0x1"
+                    });
+                    let _ = ws.send(Message::Text(response.to_string().into())).await;
 
-                            // Send a block notification
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let notification = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "method": "eth_subscription",
-                                "params": {
-                                    "subscription": "0x1",
-                                    "result": {
-                                        "hash": "0xfirstblock",
-                                        "number": "0x1",
-                                        "timestamp": "0x64d5e3c0",
-                                        "parentHash": "0x0",
-                                        "nonce": "0x0",
-                                        "sha3Uncles": "0x0",
-                                        "logsBloom": "0x0",
-                                        "transactionsRoot": "0x0",
-                                        "stateRoot": "0x0",
-                                        "receiptsRoot": "0x0",
-                                        "miner": "0x0",
-                                        "difficulty": "0x0",
-                                        "totalDifficulty": "0x0",
-                                        "extraData": "0x0",
-                                        "size": "0x0",
-                                        "gasLimit": "0x0",
-                                        "gasUsed": "0x0",
-                                        "transactions": [],
-                                        "uncles": [],
-                                        "baseFeePerGas": "0x0"
-                                    }
-                                }
-                            });
-                            let _ = ws
-                                .send(Message::Text(notification.to_string().into()))
-                                .await;
-
-                            // Drop connection to trigger reconnect
-                            drop(ws);
-                            break;
+                    // Send a block notification
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let notification = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "eth_subscription",
+                        "params": {
+                            "subscription": "0x1",
+                            "result": {
+                                "hash": "0xfirstblock",
+                                "number": "0x1",
+                                "timestamp": "0x64d5e3c0",
+                                "parentHash": "0x0",
+                                "nonce": "0x0",
+                                "sha3Uncles": "0x0",
+                                "logsBloom": "0x0",
+                                "transactionsRoot": "0x0",
+                                "stateRoot": "0x0",
+                                "receiptsRoot": "0x0",
+                                "miner": "0x0",
+                                "difficulty": "0x0",
+                                "totalDifficulty": "0x0",
+                                "extraData": "0x0",
+                                "size": "0x0",
+                                "gasLimit": "0x0",
+                                "gasUsed": "0x0",
+                                "transactions": [],
+                                "uncles": [],
+                                "baseFeePerGas": "0x0"
+                            }
                         }
-                    }
+                    });
+                    let _ = ws
+                        .send(Message::Text(notification.to_string().into()))
+                        .await;
+
+                    // Drop connection to trigger reconnect
+                    drop(ws);
+                    break;
                 }
             }
         }
@@ -236,54 +235,53 @@ fn test_rpc_reconnection_resubscribes() {
             && let Ok(mut ws) = accept_async(stream).await
         {
             while let Some(msg) = ws.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if json.get("method").and_then(|m| m.as_str()) == Some("eth_subscribe") {
-                            // Send confirmation for resubscription
-                            let response = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": json.get("id").unwrap(),
-                                "result": "0x2"
-                            });
-                            let _ = ws.send(Message::Text(response.to_string().into())).await;
+                if let Ok(Message::Text(text)) = msg
+                    && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+                    && json.get("method").and_then(|m| m.as_str()) == Some("eth_subscribe")
+                {
+                    // Send confirmation for resubscription
+                    let response = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": json.get("id").unwrap(),
+                        "result": "0x2"
+                    });
+                    let _ = ws.send(Message::Text(response.to_string().into())).await;
 
-                            // Send block on reconnected subscription
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let notification = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "method": "eth_subscription",
-                                "params": {
-                                    "subscription": "0x2",
-                                    "result": {
-                                        "hash": "0xsecondblock",
-                                        "number": "0x2",
-                                        "timestamp": "0x64d5e3c1",
-                                        "parentHash": "0xfirstblock",
-                                        "nonce": "0x0",
-                                        "sha3Uncles": "0x0",
-                                        "logsBloom": "0x0",
-                                        "transactionsRoot": "0x0",
-                                        "stateRoot": "0x0",
-                                        "receiptsRoot": "0x0",
-                                        "miner": "0x0",
-                                        "difficulty": "0x0",
-                                        "totalDifficulty": "0x0",
-                                        "extraData": "0x0",
-                                        "size": "0x0",
-                                        "gasLimit": "0x0",
-                                        "gasUsed": "0x0",
-                                        "transactions": [],
-                                        "uncles": [],
-                                        "baseFeePerGas": "0x0"
-                                    }
-                                }
-                            });
-                            let _ = ws
-                                .send(Message::Text(notification.to_string().into()))
-                                .await;
-                            break;
+                    // Send block on reconnected subscription
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let notification = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "eth_subscription",
+                        "params": {
+                            "subscription": "0x2",
+                            "result": {
+                                "hash": "0xsecondblock",
+                                "number": "0x2",
+                                "timestamp": "0x64d5e3c1",
+                                "parentHash": "0xfirstblock",
+                                "nonce": "0x0",
+                                "sha3Uncles": "0x0",
+                                "logsBloom": "0x0",
+                                "transactionsRoot": "0x0",
+                                "stateRoot": "0x0",
+                                "receiptsRoot": "0x0",
+                                "miner": "0x0",
+                                "difficulty": "0x0",
+                                "totalDifficulty": "0x0",
+                                "extraData": "0x0",
+                                "size": "0x0",
+                                "gasLimit": "0x0",
+                                "gasUsed": "0x0",
+                                "transactions": [],
+                                "uncles": [],
+                                "baseFeePerGas": "0x0"
+                            }
                         }
-                    }
+                    });
+                    let _ = ws
+                        .send(Message::Text(notification.to_string().into()))
+                        .await;
+                    break;
                 }
             }
         }

@@ -129,6 +129,7 @@ fn find_message_end(buf: &[u8]) -> Option<usize> {
 mod process_fix_buffer_tests {
     use std::sync::{Arc, Mutex};
 
+    use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
     use crate::{fix::process_fix_buffer, socket::TcpMessageHandler};
@@ -140,13 +141,16 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // Buffer was empty, so no messages should be processed
-        assert!(received.lock().unwrap().is_empty());
+        assert!(received.lock().expect(MUTEX_POISONED).is_empty());
         assert!(buffer.is_empty());
     }
 
@@ -158,13 +162,16 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // No complete message, nothing should be processed
-        assert!(received.lock().unwrap().is_empty());
+        assert!(received.lock().expect(MUTEX_POISONED).is_empty());
         // Buffer should be preserved for more data
         assert_eq!(buffer, b"8=FIXT.1.1\x019=100\x0135=D\x01".to_vec());
     }
@@ -177,12 +184,15 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
-        assert!(buffer.is_empty() || received.lock().unwrap().len() == 1);
+        assert!(buffer.is_empty() || received.lock().expect(MUTEX_POISONED).len() == 1);
     }
 
     #[rstest]
@@ -193,12 +203,15 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
-        assert!(buffer.is_empty() || received.lock().unwrap().len() == 1);
+        assert!(buffer.is_empty() || received.lock().expect(MUTEX_POISONED).len() == 1);
     }
 
     #[rstest]
@@ -209,13 +222,16 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // No complete message, nothing should be processed
-        assert!(received.lock().unwrap().is_empty());
+        assert!(received.lock().expect(MUTEX_POISONED).is_empty());
         // Buffer should be preserved
         assert_eq!(buffer, b"8=FIXT.1.1\x019=100\x0135=D\x0110=123".to_vec());
     }
@@ -230,18 +246,21 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
-        assert_eq!(received.lock().unwrap().len(), 2);
+        assert_eq!(received.lock().expect(MUTEX_POISONED).len(), 2);
         assert_eq!(
-            received.lock().unwrap()[0],
+            received.lock().expect(MUTEX_POISONED)[0],
             b"8=FIXT.1.1\x019=100\x0135=D\x0110=123\x01".to_vec()
         );
         assert_eq!(
-            received.lock().unwrap()[1],
+            received.lock().expect(MUTEX_POISONED)[1],
             b"8=FIXT.1.1\x019=200\x0135=D\x0110=456\x01".to_vec()
         );
         assert!(buffer.is_empty());
@@ -255,13 +274,16 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // No message should be processed due to invalid checksum format
-        assert!(received.lock().unwrap().is_empty());
+        assert!(received.lock().expect(MUTEX_POISONED).is_empty());
         // Buffer should be preserved
         assert_eq!(
             buffer,
@@ -276,15 +298,18 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // One message processed, extra data retained
-        assert_eq!(received.lock().unwrap().len(), 1);
+        assert_eq!(received.lock().expect(MUTEX_POISONED).len(), 1);
         assert_eq!(
-            received.lock().unwrap()[0],
+            received.lock().expect(MUTEX_POISONED)[0],
             b"8=FIX.4.4\x019=100\x0110=123\x01".to_vec()
         );
         assert_eq!(buffer, b"10=456\x01".to_vec());
@@ -301,13 +326,16 @@ mod process_fix_buffer_tests {
         let received_clone = received.clone();
 
         let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone
+                .lock()
+                .expect(MUTEX_POISONED)
+                .push(data.to_vec());
         });
 
         process_fix_buffer(&mut buffer, &handler);
 
         // 1000 messages processed, buffer empty
-        assert_eq!(received.lock().unwrap().len(), 1000);
+        assert_eq!(received.lock().expect(MUTEX_POISONED).len(), 1000);
         assert!(buffer.is_empty());
     }
 }

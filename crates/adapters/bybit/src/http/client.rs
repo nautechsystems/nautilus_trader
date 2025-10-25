@@ -25,7 +25,7 @@ use std::{
 };
 
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    MUTEX_POISONED, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -678,7 +678,7 @@ impl BybitHttpInnerClient {
     ///
     /// Panics if the instruments cache mutex is poisoned.
     pub fn add_instrument(&self, instrument: InstrumentAny) {
-        let mut cache = self.instruments_cache.lock().unwrap();
+        let mut cache = self.instruments_cache.lock().expect(MUTEX_POISONED);
         let symbol = Ustr::from(instrument.id().symbol.as_str());
         cache.insert(symbol, instrument);
     }
@@ -693,7 +693,7 @@ impl BybitHttpInnerClient {
     ///
     /// Panics if the instruments cache mutex is poisoned.
     pub fn instrument_from_cache(&self, symbol: &Symbol) -> anyhow::Result<InstrumentAny> {
-        let cache = self.instruments_cache.lock().unwrap();
+        let cache = self.instruments_cache.lock().expect(MUTEX_POISONED);
         cache.get(&symbol.inner()).cloned().ok_or_else(|| {
             anyhow::anyhow!(
                 "Instrument {symbol} not found in cache, ensure instruments loaded first"

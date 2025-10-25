@@ -34,7 +34,7 @@ use nautilus_common::{
     runner::get_exec_event_sender,
     runtime::get_runtime,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{MUTEX_POISONED, UnixNanos};
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
@@ -321,13 +321,13 @@ impl OKXExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().unwrap();
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         tasks.retain(|handle| !handle.is_finished());
         tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().unwrap();
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         for handle in tasks.drain(..) {
             handle.abort();
         }

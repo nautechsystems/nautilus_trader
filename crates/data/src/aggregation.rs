@@ -1330,7 +1330,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use nautilus_common::clock::TestClock;
-    use nautilus_core::UUID4;
+    use nautilus_core::{MUTEX_POISONED, UUID4};
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
@@ -1612,7 +1612,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1620,7 +1620,7 @@ mod tests {
         let trade = TradeTick::default();
         aggregator.handle_trade(trade);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0);
     }
 
@@ -1637,7 +1637,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1647,7 +1647,7 @@ mod tests {
         aggregator.handle_trade(trade);
         aggregator.handle_trade(trade);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         let bar = handler_guard.first().unwrap();
         assert_eq!(handler_guard.len(), 1);
         assert_eq!(bar.open, trade.price);
@@ -1672,7 +1672,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1693,7 +1693,7 @@ mod tests {
             UnixNanos::from(2000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
 
         let bar = handler_guard.first().unwrap();
@@ -1717,7 +1717,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1743,7 +1743,7 @@ mod tests {
             UnixNanos::from(3000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
 
         let bar1 = &handler_guard[0];
@@ -1770,7 +1770,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1781,7 +1781,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
         let bar1 = &handler_guard[0];
         assert_eq!(bar1.volume, Quantity::from(10));
@@ -1802,7 +1802,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1819,7 +1819,7 @@ mod tests {
             UnixNanos::from(1000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
         let bar = handler_guard.first().unwrap();
         assert_eq!(bar.volume, Quantity::from(10));
@@ -1838,7 +1838,7 @@ mod tests {
             instrument.price_precision(),
             instrument.size_precision(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -1850,7 +1850,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
         let remaining_value = aggregator.get_cumulative_value();
         assert!(remaining_value < 1000.0); // Should be less than threshold
@@ -1872,7 +1872,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true,  // build_with_no_updates
@@ -1900,7 +1900,7 @@ mod tests {
         );
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
         let bar = handler_guard.first().unwrap();
         assert_eq!(bar.ts_event, UnixNanos::default());
@@ -1922,7 +1922,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true, // build_with_no_updates
@@ -1955,7 +1955,7 @@ mod tests {
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
 
         let bar1 = &handler_guard[0];
@@ -1982,7 +1982,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true, // build_with_no_updates
@@ -2015,7 +2015,7 @@ mod tests {
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
 
         let bar1 = &handler_guard[0];
@@ -2045,7 +2045,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             false, // build_with_no_updates disabled
@@ -2062,7 +2062,7 @@ mod tests {
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts1, ts1);
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0); // No bar should be built without updates
         drop(handler_guard);
 
@@ -2075,7 +2075,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true, // build_with_no_updates enabled
@@ -2104,7 +2104,7 @@ mod tests {
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2); // Both bars should be built
         let bar1 = &handler_guard[0];
         assert_eq!(bar1.close, Price::from("100.00"));
@@ -2127,7 +2127,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true, // build_with_no_updates
@@ -2148,7 +2148,7 @@ mod tests {
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
         aggregator.build_bar(event);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         let bar = handler_guard.first().unwrap();
         assert_eq!(bar.ts_event, UnixNanos::default());
         assert_eq!(bar.ts_init, ts2);
@@ -2169,7 +2169,7 @@ mod tests {
             instrument.size_precision(),
             clock.clone(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
             true, // build_with_no_updates
@@ -2188,7 +2188,7 @@ mod tests {
             initial_time.timestamp_nanos_opt().unwrap() as u64
         ));
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0);
     }
 
@@ -2210,7 +2210,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2236,7 +2236,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2253,7 +2253,7 @@ mod tests {
             UnixNanos::from(1000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0); // No bar created yet
     }
 
@@ -2271,7 +2271,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2288,7 +2288,7 @@ mod tests {
             UnixNanos::from(1000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
 
         let bar = handler_guard.first().unwrap();
@@ -2315,7 +2315,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2332,7 +2332,7 @@ mod tests {
             UnixNanos::from(1000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
 
         let bar1 = &handler_guard[0];
@@ -2362,7 +2362,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2379,7 +2379,7 @@ mod tests {
             UnixNanos::from(1000),
         );
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
 
         let bar = handler_guard.first().unwrap();
@@ -2404,7 +2404,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2427,7 +2427,7 @@ mod tests {
 
         aggregator.handle_bar(input_bar);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0); // No bar created yet
     }
 
@@ -2445,7 +2445,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2485,7 +2485,7 @@ mod tests {
         aggregator.handle_bar(bar1);
         aggregator.handle_bar(bar2);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
 
         let bar = handler_guard.first().unwrap();
@@ -2510,7 +2510,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2550,7 +2550,7 @@ mod tests {
         aggregator.handle_bar(bar1);
         aggregator.handle_bar(bar2);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 3);
 
         let bar1 = &handler_guard[0];
@@ -2580,7 +2580,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2620,7 +2620,7 @@ mod tests {
         aggregator.handle_bar(bar1);
         aggregator.handle_bar(bar2);
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
 
         let bar = handler_guard.first().unwrap();
@@ -2647,7 +2647,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |_bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(_bar);
             },
         );
@@ -2667,7 +2667,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |_bar: Bar| {
-                let mut handler_guard = handler2_clone.lock().unwrap();
+                let mut handler_guard = handler2_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(_bar);
             },
         );
@@ -2691,7 +2691,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2723,7 +2723,7 @@ mod tests {
             UnixNanos::from(5000),
         ); // Complete third brick
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 3);
 
         let bar1 = &handler_guard[0];
@@ -2753,7 +2753,7 @@ mod tests {
             instrument.size_precision(),
             instrument.price_increment(),
             move |bar: Bar| {
-                let mut handler_guard = handler_clone.lock().unwrap();
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
                 handler_guard.push(bar);
             },
         );
@@ -2775,7 +2775,7 @@ mod tests {
             UnixNanos::from(3000),
         ); // Down 2 bricks (20 pips)
 
-        let handler_guard = handler.lock().unwrap();
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 3);
 
         let bar1 = &handler_guard[0]; // Up brick
