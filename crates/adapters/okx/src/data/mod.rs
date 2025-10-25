@@ -43,7 +43,7 @@ use nautilus_common::{
     runner::get_data_event_sender,
 };
 use nautilus_core::{
-    UnixNanos,
+    MUTEX_POISONED, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
@@ -452,7 +452,7 @@ fn upsert_instrument(
     cache: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     instrument: InstrumentAny,
 ) {
-    let mut guard = cache.write().expect("instrument cache lock poisoned");
+    let mut guard = cache.write().expect(MUTEX_POISONED);
     guard.insert(instrument.id(), instrument);
 }
 
