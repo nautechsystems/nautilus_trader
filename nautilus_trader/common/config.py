@@ -105,8 +105,11 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
+    # Check for fully_qualified_name first, before generic type check
+    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
+        return obj.fully_qualified_name()
     if isinstance(obj, type):
-        return str(type)
+        return str(obj)
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
@@ -123,8 +126,6 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return obj.isoformat()
     if isinstance(obj, Environment):
         return obj.value
-    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
-        return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
