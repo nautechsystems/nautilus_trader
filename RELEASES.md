@@ -79,6 +79,7 @@ This will be the final release with support for Python 3.11.
 - Fixed `OptionSpread` Arrow schema missing max/min quantity and price fields
 - Fixed `Commodity` Arrow schema to match from_dict requirements
 - Fixed safe encoded symbols (#2964), thanks @ms32035
+- Fixed msgspec encoding for type objects with qualified names
 - Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969), thanks @learnerLj
 - Fixed fuzzy candlesticks indicator bugs (#3021), thanks @benhaben
 - Fixed return type annotation for `ArrowSerializer.deserialize` (#3076), thanks @MK27MK
