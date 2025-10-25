@@ -183,18 +183,15 @@ class InstrumentProvider:
                 self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
 
                 await self.load_ids_async(instrument_ids, self._filters)
-        except Exception as e:
-            # Catch unexpected exception to ensure that the self._loading flag
-            # is reset to False
-            self._log.exception("Failed to load instruments", e)
+        finally:
+            # Always reset loading flag
+            self._loading = False
 
         if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")
         else:
             self._log.warning("No instruments were loaded, verify config if this is unexpected")
 
-        # Set state flags
-        self._loading = False
         self._loaded = True
 
         self._log.info("Initialized instruments")
