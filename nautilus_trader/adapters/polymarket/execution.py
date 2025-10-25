@@ -539,6 +539,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params.market = condition_id
             params.asset_id = asset_id
 
+        if command.start is not None:
+            params.after = int(nanos_to_secs(command.start))
+        if command.end is not None:
+            params.before = int(nanos_to_secs(command.end))
+
         details = []
         if command.instrument_id:
             details.append(command.instrument_id)
@@ -573,6 +578,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         continue
 
                     venue_order_id = polymarket_trade.venue_order_id(self._wallet_address)
+
+                    if (
+                        command.venue_order_id is not None
+                        and venue_order_id != command.venue_order_id
+                    ):
+                        continue
+
                     client_order_id = self._cache.client_order_id(venue_order_id)
                     if client_order_id is None:
                         client_order_id = ClientOrderId(str(UUID4()))
@@ -755,6 +767,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # https://docs.polymarket.com/#cancel-orders
         await self._maintain_active_market(command.instrument_id)
 
+        # Polymarket API does not support side-specific cancellation
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Polymarket does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={command.order_side.name} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
@@ -802,19 +821,50 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if order.is_reduce_only:
-            self._log.error("Reduce-only orders not supported on Polymarket")
-            return  # TODO: Change to deny after next release
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: "
+                "Reduce-only orders not supported on Polymarket",
+                LogColor.RED,
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="REDUCE_ONLY_NOT_SUPPORTED",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
 
         if order.is_post_only:
-            self._log.error("Post-only orders not supported on Polymarket")
-            return  # TODO: Change to deny after next release
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: "
+                "Post-only orders not supported on Polymarket",
+                LogColor.RED,
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="POST_ONLY_NOT_SUPPORTED",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
 
         if order.time_in_force not in VALID_POLYMARKET_TIME_IN_FORCE:
             self._log.error(
-                f"Order time in force {order.tif_string()} not supported on Polymarket, "
+                f"Cannot submit order {order.client_order_id}: "
+                f"Order time in force {order.tif_string()} not supported on Polymarket; "
                 "use any of FOK, GTC, GTD, IOC",
+                LogColor.RED,
             )
-            return  # TODO: Change to deny after next release
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="UNSUPPORTED_TIME_IN_FORCE",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
 
         instrument = self._cache.instrument(order.instrument_id)
 
@@ -898,6 +948,20 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         order = command.order
 
+        if order.is_quote_quantity:
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: UNSUPPORTED_QUOTE_QUANTITY",
+                LogColor.RED,
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="UNSUPPORTED_QUOTE_QUANTITY",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Create signed Polymarket limit order
         order_args = OrderArgs(
             price=float(order.price),
@@ -948,10 +1012,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
-                self._log.info(
-                    f"Submitted {order.client_order_id!r} {venue_order_id!r}",
-                    LogColor.MAGENTA,
-                )
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
         finally:
             await self._retry_manager_pool.release(retry_manager)
