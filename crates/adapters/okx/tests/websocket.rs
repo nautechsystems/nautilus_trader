@@ -1364,8 +1364,22 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     )
     .await;
 
-    // Allow time for any subscription replay after login
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Wait for subscription replay after login to complete
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let subscriptions = state.subscriptions.lock().await;
+                let trades_count = subscriptions
+                    .iter()
+                    .filter(|value| value_matches_channel(value, "trades"))
+                    .count();
+                trades_count >= 2
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
 
     let subscriptions = state.subscriptions.lock().await;
     let orders_count = subscriptions
@@ -1798,8 +1812,26 @@ async fn test_reconnection_race_condition() {
     )
     .await;
 
-    // Give time for subscriptions to restore
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for subscriptions to restore
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let subscriptions = state.subscriptions.lock().await;
+                let trades_count = subscriptions
+                    .iter()
+                    .filter(|value| value_matches_channel(value, "trades"))
+                    .count();
+                let orders_count = subscriptions
+                    .iter()
+                    .filter(|value| value_matches_channel(value, "orders"))
+                    .count();
+                trades_count >= 1 && orders_count >= 1
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     // Verify subscriptions are restored
     let subscriptions = state.subscriptions.lock().await;

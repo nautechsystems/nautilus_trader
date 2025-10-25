@@ -825,7 +825,23 @@ async fn test_reconnection_scenario() {
     client.subscribe_positions().await.unwrap();
 
     // Wait for subscriptions to be established
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    client.wait_until_active(2.0).await.unwrap();
+
+    let events = wait_for_subscription_events(&state, Duration::from_secs(5), |events| {
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)
+            && events
+                .iter()
+                .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok)
+            && events.iter().any(|(topic, ok)| topic == "position" && *ok)
+    })
+    .await;
+
+    assert!(
+        events.iter().any(|(topic, ok)| topic == "position" && *ok),
+        "position subscription should be confirmed"
+    );
 
     // Verify initial connection
     assert!(client.is_active());
@@ -834,7 +850,7 @@ async fn test_reconnection_scenario() {
 
     // Force close the connection to simulate disconnection
     client.close().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
 
     // Check connection dropped
     assert!(!client.is_active());
@@ -843,16 +859,42 @@ async fn test_reconnection_scenario() {
 
     // Reconnect - this should restore all previous subscriptions
     client.connect().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    client.wait_until_active(10.0).await.unwrap();
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     // Verify reconnection successful
     assert!(client.is_active());
     let reconnected_count = *state.connection_count.lock().await;
     assert_eq!(reconnected_count, 1);
 
-    // The client should have re-subscribed to all channels automatically
-    // We can't directly check subscriptions, but if we got here without errors,
-    // the reconnection and re-subscription logic worked
+    // Verify subscriptions were restored
+    let events = wait_for_subscription_events(&state, Duration::from_secs(20), |events| {
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok)
+            && events
+                .iter()
+                .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok)
+            && events.iter().any(|(topic, ok)| topic == "position" && *ok)
+    })
+    .await;
+
+    assert!(
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "trade:XBTUSD" && *ok),
+        "trade:XBTUSD should be restored after reconnection"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(topic, ok)| topic == "orderBookL2:XBTUSD" && *ok),
+        "orderBookL2:XBTUSD should be restored after reconnection"
+    );
+    assert!(
+        events.iter().any(|(topic, ok)| topic == "position" && *ok),
+        "position should be restored after reconnection"
+    );
 
     // Clean up
     client.close().await.unwrap();
