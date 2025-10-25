@@ -333,7 +333,7 @@ class BacktestNode:
         ]
 
         if request_function not in compatible_request_functions:
-            self._engines["download"].logger.error(
+            raise ValueError(
                 f"{request_function} not supported by BacktestNode.download_data. "
                 f"Please use one of {compatible_request_functions}.",
             )
