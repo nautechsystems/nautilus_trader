@@ -111,7 +111,7 @@ test = [
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
   "pytest-benchmark==5.0.1", # Pinned to 5.0.1 due pytest 8.x requirement
-  "pytest-codspeed==4.0.0", # Pinned to 4.0.0 due to packaging bug in 4.1.0
+  "pytest-codspeed==4.2.0", # Pinned to 4.2.0 for stability
   "pytest-cov==6.3.0", # Pinned to 6.3.0 due pytest 8.x requirement
   "pytest-mock>=3.15.1,<4.0.0",
   "pytest-xdist[psutil]>=3.8.0,<4.0.0",
