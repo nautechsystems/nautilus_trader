@@ -87,6 +87,7 @@ mod tests {
         sync::{LazyLock, Mutex},
     };
 
+    use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
     use super::*;
@@ -330,7 +331,7 @@ mod tests {
         static SEEN: LazyLock<Mutex<HashSet<u64>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
         let id = price_to_order_id(price);
-        let mut seen = SEEN.lock().unwrap();
+        let mut seen = SEEN.lock().expect(MUTEX_POISONED);
         assert!(
             seen.insert(id),
             "Collision detected for extreme value: {price} (order_id: {id})"

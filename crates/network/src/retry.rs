@@ -483,6 +483,7 @@ mod tests {
         atomic::{AtomicU32, Ordering},
     };
 
+    use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
     use super::{test_utils::*, *};
@@ -809,7 +810,7 @@ mod tests {
                         move || {
                             let times = times_clone.clone();
                             async move {
-                                times.lock().unwrap().push(start.elapsed());
+                                times.lock().expect(MUTEX_POISONED).push(start.elapsed());
                                 Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                             }
                         },
@@ -821,18 +822,18 @@ mod tests {
         });
 
         // Allow initial attempt and immediate retry to run without advancing time
-        yield_until(|| attempt_times.lock().unwrap().len() >= 2).await;
+        yield_until(|| attempt_times.lock().expect(MUTEX_POISONED).len() >= 2).await;
 
         // Advance time for the next backoff interval
         tokio::time::advance(Duration::from_millis(100)).await;
         tokio::task::yield_now().await;
 
         // Wait for the final retry to be recorded
-        yield_until(|| attempt_times.lock().unwrap().len() >= 3).await;
+        yield_until(|| attempt_times.lock().expect(MUTEX_POISONED).len() >= 3).await;
 
         handle.await.unwrap();
 
-        let times = attempt_times.lock().unwrap();
+        let times = attempt_times.lock().expect(MUTEX_POISONED);
         assert_eq!(times.len(), 3); // Initial + 2 retries
 
         // First retry should be immediate (within 1ms tolerance)
@@ -944,12 +945,12 @@ mod tests {
                             async move {
                                 let now = tokio::time::Instant::now();
                                 let delay = {
-                                    let mut last = last_time.lock().unwrap();
+                                    let mut last = last_time.lock().expect(MUTEX_POISONED);
                                     let d = now.duration_since(*last);
                                     *last = now;
                                     d
                                 };
-                                delays.lock().unwrap().push(delay);
+                                delays.lock().expect(MUTEX_POISONED).push(delay);
                                 Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                             }
                         },
@@ -960,13 +961,13 @@ mod tests {
             }
         });
 
-        yield_until(|| !delays.lock().unwrap().is_empty()).await;
-        advance_until(|| delays.lock().unwrap().len() >= 2).await;
-        advance_until(|| delays.lock().unwrap().len() >= 3).await;
+        yield_until(|| !delays.lock().expect(MUTEX_POISONED).is_empty()).await;
+        advance_until(|| delays.lock().expect(MUTEX_POISONED).len() >= 2).await;
+        advance_until(|| delays.lock().expect(MUTEX_POISONED).len() >= 3).await;
 
         handle.await.unwrap();
 
-        let delays = delays.lock().unwrap();
+        let delays = delays.lock().expect(MUTEX_POISONED);
         // Skip the first delay (initial attempt)
         for delay in delays.iter().skip(1) {
             // Each delay should be at least the base delay (50ms for first retry)
@@ -1206,6 +1207,7 @@ mod proptest_tests {
         atomic::{AtomicU32, Ordering},
     };
 
+    use nautilus_core::MUTEX_POISONED;
     use proptest::prelude::*;
     // Import rstest attribute macro used within proptest! tests
     use rstest::rstest;
@@ -1446,14 +1448,14 @@ mod proptest_tests {
                     }
                 });
 
-                yield_until(|| !attempt_times_for_wait.lock().unwrap().is_empty()).await;
-                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 2).await;
-                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 3).await;
+                yield_until(|| !attempt_times_for_wait.lock().expect(MUTEX_POISONED).is_empty()).await;
+                advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 2).await;
+                advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 3).await;
 
                 handle.await.unwrap();
             });
 
-            let times = attempt_times.lock().unwrap();
+            let times = attempt_times.lock().expect(MUTEX_POISONED);
 
             // We expect at least 2 attempts total (initial + at least 1 retry)
             prop_assert!(times.len() >= 2);
@@ -1525,7 +1527,7 @@ mod proptest_tests {
                                     let attempt_times_inner = attempt_times_for_task.clone();
                                     async move {
                                         let elapsed = start.elapsed();
-                                        attempt_times_inner.lock().unwrap().push(elapsed);
+                                        attempt_times_inner.lock().expect(MUTEX_POISONED).push(elapsed);
                                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                                     }
                                 },
@@ -1536,14 +1538,14 @@ mod proptest_tests {
                     }
                 });
 
-                yield_until(|| !attempt_times_for_wait.lock().unwrap().is_empty()).await;
-                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 2).await;
-                advance_until(|| attempt_times_for_wait.lock().unwrap().len() >= 3).await;
+                yield_until(|| !attempt_times_for_wait.lock().expect(MUTEX_POISONED).is_empty()).await;
+                advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 2).await;
+                advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 3).await;
 
                 handle.await.unwrap();
             });
 
-            let times = attempt_times.lock().unwrap();
+            let times = attempt_times.lock().expect(MUTEX_POISONED);
             prop_assert!(times.len() >= 2);
 
             if immediate_first {

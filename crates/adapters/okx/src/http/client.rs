@@ -43,7 +43,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
+    MUTEX_POISONED, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -1008,7 +1009,7 @@ impl OKXHttpClient {
             OKXInstrumentType::Futures,
         ] {
             if let Ok(instruments) = self.request_instruments(group, None).await {
-                let mut guard = self.instruments_cache.lock().unwrap();
+                let mut guard = self.instruments_cache.lock().expect(MUTEX_POISONED);
                 for inst in instruments {
                     guard.insert(inst.raw_symbol().inner(), inst);
                 }

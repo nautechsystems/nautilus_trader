@@ -28,7 +28,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
+    MUTEX_POISONED, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -648,7 +649,12 @@ impl CoinbaseIntxHttpClient {
     }
 
     fn get_instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        match self.instruments_cache.lock().unwrap().get(&symbol) {
+        match self
+            .instruments_cache
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(&symbol)
+        {
             Some(inst) => Ok(inst.clone()), // TODO: Remove this clone
             None => anyhow::bail!("Unable to process request, instrument {symbol} not in cache"),
         }

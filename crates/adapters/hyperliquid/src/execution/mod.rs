@@ -30,7 +30,7 @@ use nautilus_common::{
     runner::get_exec_event_sender,
     runtime::get_runtime,
 };
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
@@ -292,13 +292,13 @@ impl HyperliquidExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().unwrap();
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         tasks.retain(|handle| !handle.is_finished());
         tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().unwrap();
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         for handle in tasks.drain(..) {
             handle.abort();
         }
@@ -380,7 +380,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         tracing::info!("Stopping Hyperliquid execution client");
 
         // Stop WebSocket stream
-        if let Some(handle) = self.ws_stream_handle.lock().unwrap().take() {
+        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
         }
 
@@ -1024,7 +1024,7 @@ impl LiveExecutionClientExt for HyperliquidExecutionClient {
 
 impl HyperliquidExecutionClient {
     fn start_ws_stream(&mut self) -> anyhow::Result<()> {
-        let mut handle_guard = self.ws_stream_handle.lock().unwrap();
+        let mut handle_guard = self.ws_stream_handle.lock().expect(MUTEX_POISONED);
         if handle_guard.is_some() {
             return Ok(());
         }

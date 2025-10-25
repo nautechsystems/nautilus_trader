@@ -1552,7 +1552,7 @@ mod tests {
     };
 
     use alloy_primitives::{I256, U160};
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::{
         AmmType, Block, Blockchain, Chain, Dex, DexType, Pool, PoolLiquidityUpdate, PoolSwap, Token,
@@ -1840,17 +1840,17 @@ mod tests {
         }
 
         fn track_call(&self, handler_name: &str) {
-            let mut tracker = CALL_TRACKER.lock().unwrap();
+            let mut tracker = CALL_TRACKER.lock().expect(MUTEX_POISONED);
             *tracker.entry(handler_name.to_string()).or_insert(0) += 1;
         }
 
         fn get_call_count(&self, handler_name: &str) -> i32 {
-            let tracker = CALL_TRACKER.lock().unwrap();
+            let tracker = CALL_TRACKER.lock().expect(MUTEX_POISONED);
             tracker.get(handler_name).copied().unwrap_or(0)
         }
 
         fn reset_tracker(&self) {
-            let mut tracker = CALL_TRACKER.lock().unwrap();
+            let mut tracker = CALL_TRACKER.lock().expect(MUTEX_POISONED);
             tracker.clear();
         }
     }
