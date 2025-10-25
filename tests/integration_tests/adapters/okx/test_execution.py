@@ -264,6 +264,50 @@ async def test_generate_position_status_reports_converts_results(exec_client_bui
 
 
 @pytest.mark.asyncio
+async def test_generate_position_status_reports_spot_margin_uses_margin_inst_type(
+    exec_client_builder,
+    monkeypatch,
+    eth_usdt_instrument,
+):
+    # Arrange - spot margin mode with specific instrument query
+    client, _, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "use_spot_margin": True,
+            "margin_mode": nautilus_pyo3.OKXMarginMode.CROSS,
+        },
+    )
+
+    instrument = eth_usdt_instrument
+    client._cache.add_instrument(instrument)
+
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.PositionStatusReport.from_pyo3",
+        lambda obj: expected_report,
+    )
+
+    http_client.request_position_status_reports.return_value = [MagicMock()]
+
+    command = GeneratePositionStatusReports(
+        instrument_id=instrument.id,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await client.generate_position_status_reports(command)
+
+    # Assert - verify MARGIN instType is used for spot margin positions
+    http_client.request_position_status_reports.assert_awaited_once()
+    call_args = http_client.request_position_status_reports.call_args
+    assert call_args.kwargs["instrument_type"] == nautilus_pyo3.OKXInstrumentType.MARGIN
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
 async def test_handle_fill_report_updates_venue_id_before_fill(exec_client_builder, monkeypatch):
     # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)

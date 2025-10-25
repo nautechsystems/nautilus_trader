@@ -839,6 +839,7 @@ class OKXExecutionClient(LiveExecutionClient):
                         response = await self._http_client.request_position_status_reports(
                             account_id=self.pyo3_account_id,
                             instrument_id=pyo3_instrument_id,
+                            instrument_type=OKXInstrumentType.MARGIN,
                         )
 
                         if not response:
