@@ -126,7 +126,7 @@ You can view all available versions of `nautilus_trader` on the [package index](
 To programmatically request and list available versions:
 
 ```bash
-curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href="))[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
 ```
 
 ### Branch updates
