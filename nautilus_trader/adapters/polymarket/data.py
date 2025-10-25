@@ -431,14 +431,16 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._handle_data(quote)
 
     def _handle_deltas(self, instrument: BinaryOption, deltas: OrderBookDeltas) -> None:
+        # Always maintain local book for quote generation
+        book_old = self._local_books.get(instrument.id)
+        book_new = OrderBook(instrument.id, book_type=BookType.L2_MBP)
+        book_new.apply_deltas(deltas)
+        self._local_books[instrument.id] = book_new
+
         if self._config.compute_effective_deltas:
             # Compute effective deltas (reduce snapshot based on old and new book states),
             # prioritizing a smaller data footprint over computational efficiency.
             t0 = self._clock.timestamp_ns()
-            book_old = self._local_books.get(instrument.id)
-            book_new = OrderBook(instrument.id, book_type=BookType.L2_MBP)
-            book_new.apply_deltas(deltas)
-            self._local_books[instrument.id] = book_new
             deltas = compute_effective_deltas(book_old, book_new, instrument)
 
             interval_ms = (self._clock.timestamp_ns() - t0) / 1_000_000

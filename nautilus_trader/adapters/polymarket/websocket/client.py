@@ -244,7 +244,7 @@ class PolymarketWebSocketClient:
         message = {
             "auth": self._auth,
             "type": "user",
-            "market": markets,
+            "markets": markets,
         }
         return message
 
