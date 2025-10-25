@@ -544,7 +544,7 @@ impl OKXWebSocketClient {
                 loop {
                     match handler.next().await {
                         Some(NautilusWsMessage::Reconnected) => {
-                            tracing::info!("Handling WebSocket reconnection");
+                            tracing::debug!("Handling WebSocket reconnection");
 
                             let auth_tracker_for_task = auth_tracker.clone();
                             let inner_client_for_task = inner_client.clone();
@@ -586,7 +586,7 @@ impl OKXWebSocketClient {
                                         );
                                         auth_tracker.fail(e.to_string());
                                     } else {
-                                        tracing::info!(
+                                        tracing::debug!(
                                             "Sent re-authentication request, waiting for response before resubscribing",
                                         );
                                     }
@@ -612,7 +612,7 @@ impl OKXWebSocketClient {
                                         .await
                                     {
                                         Ok(()) => {
-                                            tracing::info!(
+                                            tracing::debug!(
                                                 "Authentication successful after reconnect, proceeding with resubscription",
                                             );
                                             true
@@ -809,7 +809,7 @@ impl OKXWebSocketClient {
                                         }
                                     }
 
-                                    tracing::info!("Completed re-subscription after reconnect");
+                                    tracing::debug!("Completed re-subscription after reconnect");
                                 } else {
                                     tracing::warn!(
                                         "Skipping resubscription after reconnect: websocket client unavailable",
@@ -3145,7 +3145,7 @@ impl OKXFeedHandler {
 
                             // Check for reconnection signal
                             if text == RECONNECTED {
-                                tracing::info!("Received WebSocket reconnection signal");
+                                tracing::debug!("Received WebSocket reconnection signal");
                                 return Some(OKXWebSocketEvent::Reconnected);
                             }
                             tracing::trace!("Received WebSocket message: {text}");

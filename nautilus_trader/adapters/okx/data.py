@@ -141,6 +141,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_key=None,  # Public endpoints don't need authentication
             api_secret=None,
             api_passphrase=None,
+            heartbeat=20,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -150,6 +151,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_key=config.api_key,  # Business endpoint requires authentication
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
+            heartbeat=20,
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
