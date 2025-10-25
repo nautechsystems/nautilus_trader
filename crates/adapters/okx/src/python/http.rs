@@ -539,6 +539,29 @@ impl OKXHttpClient {
             Python::attach(|py| timestamp.into_py_any(py))
         })
     }
+
+    #[pyo3(name = "http_get_balance")]
+    fn py_http_get_balance<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let accounts = client
+                .inner
+                .http_get_balance()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let details: Vec<_> = accounts
+                .into_iter()
+                .flat_map(|account| account.details)
+                .collect();
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, details)?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
 }
 
 impl From<OKXHttpError> for PyErr {

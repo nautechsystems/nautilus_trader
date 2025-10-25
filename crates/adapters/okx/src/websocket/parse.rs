@@ -46,8 +46,8 @@ use crate::{
     common::{
         consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
         enums::{
-            OKXBookAction, OKXCandleConfirm, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
-            OKXTriggerType,
+            OKXBookAction, OKXCandleConfirm, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus,
+            OKXOrderType, OKXSide, OKXTargetCurrency, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -892,8 +892,77 @@ pub fn parse_order_status_report(
     };
 
     let size_precision = instrument.size_precision();
-    let quantity = parse_quantity(&msg.sz, size_precision)?;
-    let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+
+    // Parse quantities based on target currency
+    // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
+
+    // Determine if this is a quote-quantity order
+    // Method 1: Explicit tgt_ccy field set to QuoteCcy
+    let is_quote_qty_explicit = msg.tgt_ccy == Some(OKXTargetCurrency::QuoteCcy);
+
+    // Method 2: Use OKX defaults when tgt_ccy is None (old orders or missing field)
+    // OKX API defaults for SPOT market orders: BUY orders use quote_ccy, SELL orders use base_ccy
+    // Note: tgtCcy only applies to SPOT market orders (not limit orders)
+    // For limit orders, sz is always in base currency regardless of side
+    let is_quote_qty_heuristic = msg.tgt_ccy.is_none()
+        && (msg.inst_type == OKXInstrumentType::Spot || msg.inst_type == OKXInstrumentType::Margin)
+        && msg.side == OKXSide::Buy
+        && msg.ord_type == OKXOrderType::Market;
+
+    let (quantity, filled_qty) = if is_quote_qty_explicit || is_quote_qty_heuristic {
+        // Quote-quantity order: sz is in quote currency, need to convert to base
+        let sz_quote = msg.sz.parse::<f64>().map_err(|e| {
+            anyhow::anyhow!("Failed to parse sz='{}' as quote quantity: {}", msg.sz, e)
+        })?;
+
+        // Determine the price to use for conversion
+        // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
+        let conversion_price = if !msg.px.is_empty() && msg.px != "0" {
+            // Limit order: use the limit price (msg.px)
+            msg.px
+                .parse::<f64>()
+                .map_err(|e| anyhow::anyhow!("Failed to parse px='{}': {}", msg.px, e))?
+        } else if !msg.avg_px.is_empty() && msg.avg_px != "0" {
+            // Market order with fills: use average fill price
+            msg.avg_px
+                .parse::<f64>()
+                .map_err(|e| anyhow::anyhow!("Failed to parse avg_px='{}': {}", msg.avg_px, e))?
+        } else {
+            0.0
+        };
+
+        // Convert quote quantity to base: quantity_base = sz_quote / price
+        let quantity_base = if conversion_price > 0.0 {
+            Quantity::new(sz_quote / conversion_price, size_precision)
+        } else {
+            // No price available, can't convert - use sz as-is temporarily
+            // This will be corrected once the order gets filled and price is available
+            parse_quantity(&msg.sz, size_precision)?
+        };
+
+        let filled_qty =
+            parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+
+        (quantity_base, filled_qty)
+    } else {
+        // Base-quantity order: both sz and acc_fill_sz are in base currency
+        let quantity = parse_quantity(&msg.sz, size_precision)?;
+        let filled_qty =
+            parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+
+        (quantity, filled_qty)
+    };
+
+    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
+    // to avoid precision mismatches from quote-to-base conversion
+    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
+        && msg.state == OKXOrderStatus::Filled
+        && filled_qty.is_positive()
+    {
+        (filled_qty, filled_qty)
+    } else {
+        (quantity, filled_qty)
+    };
 
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
     let ts_last = parse_millisecond_timestamp(msg.u_time);

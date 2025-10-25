@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
@@ -31,6 +32,7 @@ from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -50,6 +52,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -143,6 +146,15 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
+        self._log.info(f"{config.use_spot_cash_position_reports=}", LogColor.BLUE)
+
+        if config.use_spot_cash_position_reports:
+            self._log.warning(
+                "SPOT CASH position reports enabled - positive wallet balances (cash_bal - liab) will be treated as LONG "
+                "positions and negative balances (borrowing) as SHORT positions; this may lead to unintended "
+                "liquidation of wallet assets if strategies are not designed to handle SPOT positions properly",
+                LogColor.YELLOW,
+            )
 
         # Set account ID
         account_id = AccountId(f"{name or OKX_VENUE.value}-master")
@@ -254,26 +266,32 @@ class OKXExecutionClient(LiveExecutionClient):
             LogColor.BLUE,
         )
 
+        subscribed_order_channels = set()
+        subscribed_fills_channels = set()
+
         for instrument_type in self._instrument_types:
-            # For spot margin trading, we need to subscribe to MARGIN instType, not SPOT
+            if instrument_type not in subscribed_order_channels:
+                self._log.info(
+                    f"Subscribing to orders channel for instrument type: {instrument_type}",
+                    LogColor.BLUE,
+                )
+                await self._ws_client.subscribe_orders(instrument_type)
+                subscribed_order_channels.add(instrument_type)
+
+            # For spot margin trading, also subscribe to MARGIN channel
             # OKX treats spot pairs with cross/isolated margin as MARGIN instrument type
-            orders_inst_type = instrument_type
             if (
                 instrument_type == OKXInstrumentType.SPOT
                 and self._config.use_spot_margin
                 and self._config.margin_mode in (OKXMarginMode.CROSS, OKXMarginMode.ISOLATED)
+                and OKXInstrumentType.MARGIN not in subscribed_order_channels
             ):
-                orders_inst_type = OKXInstrumentType.MARGIN
                 self._log.info(
-                    f"Using MARGIN instType for orders channel (spot margin mode: {self._config.margin_mode})",
+                    f"Also subscribing to MARGIN orders channel (spot margin mode: {self._config.margin_mode})",
                     LogColor.BLUE,
                 )
-
-            self._log.info(
-                f"Subscribing to orders channel for instrument type: {orders_inst_type}",
-                LogColor.BLUE,
-            )
-            await self._ws_client.subscribe_orders(orders_inst_type)
+                await self._ws_client.subscribe_orders(OKXInstrumentType.MARGIN)
+                subscribed_order_channels.add(OKXInstrumentType.MARGIN)
 
             # OKX doesn't support algo orders channel for OPTIONS
             if instrument_type != OKXInstrumentType.OPTION:
@@ -281,8 +299,27 @@ class OKXExecutionClient(LiveExecutionClient):
 
             # Only subscribe to fills channel if VIP5+ (configurable)
             if self._config.use_fills_channel:
-                self._log.info("Subscribing to fills channel", LogColor.BLUE)
-                await self._ws_client.subscribe_fills(orders_inst_type)
+                if instrument_type not in subscribed_fills_channels:
+                    self._log.info(
+                        f"Subscribing to fills channel for instrument type: {instrument_type}",
+                        LogColor.BLUE,
+                    )
+                    await self._ws_client.subscribe_fills(instrument_type)
+                    subscribed_fills_channels.add(instrument_type)
+
+                # Also subscribe to fills for MARGIN when spot margin is enabled
+                if (
+                    instrument_type == OKXInstrumentType.SPOT
+                    and self._config.use_spot_margin
+                    and self._config.margin_mode in (OKXMarginMode.CROSS, OKXMarginMode.ISOLATED)
+                    and OKXInstrumentType.MARGIN not in subscribed_fills_channels
+                ):
+                    self._log.info(
+                        f"Also subscribing to MARGIN fills channel (spot margin mode: {self._config.margin_mode})",
+                        LogColor.BLUE,
+                    )
+                    await self._ws_client.subscribe_fills(OKXInstrumentType.MARGIN)
+                    subscribed_fills_channels.add(OKXInstrumentType.MARGIN)
             else:
                 self._log.info(
                     "Using order status reports for fill information (standard for all users)",
@@ -423,7 +460,6 @@ class OKXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        # Check instruments are cached
         if not self._http_client.is_initialized():
             await self._cache_instruments()
 
@@ -666,11 +702,112 @@ class OKXExecutionClient(LiveExecutionClient):
 
         return reports
 
+    async def _generate_spot_position_reports_from_wallet(  # noqa: C901 (too complex)
+        self,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]:
+        reports: list[PositionStatusReport] = []
+
+        try:
+            okx_balance_details = await self._http_client.http_get_balance()
+
+            if not okx_balance_details:
+                self._log.warning("No OKX balance details returned from balance query")
+                return reports
+
+            # Calculate net balance: cash_bal - liab
+            wallet_by_currency: dict[str, Decimal] = {}
+
+            for detail in okx_balance_details:
+                currency_code = detail.ccy
+                cash_bal = Decimal(detail.cash_bal or "0")
+                liab = Decimal(detail.liab or "0")
+                net_balance = cash_bal - liab
+
+                wallet_by_currency[currency_code] = (
+                    wallet_by_currency.get(currency_code, Decimal(0)) + net_balance
+                )
+
+            if instrument_id:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is None:
+                    raise ValueError(
+                        f"Cannot generate SPOT position report: instrument not found for {instrument_id}",
+                    )
+
+                if not isinstance(instrument, CurrencyPair):
+                    raise ValueError(
+                        f"Cannot generate SPOT position report: {instrument_id} is not a CurrencyPair",
+                    )
+
+                currency_code = instrument.base_currency.code
+                wallet_balance = wallet_by_currency.get(currency_code, Decimal(0))
+
+                report = self._build_spot_position_report_from_wallet_balance(
+                    instrument,
+                    wallet_balance,
+                )
+                reports.append(report)
+            else:
+                for loaded in self._instrument_provider.get_all().values():
+                    if not isinstance(loaded, CurrencyPair):
+                        continue
+
+                    currency_code = loaded.base_currency.code
+                    wallet_balance = wallet_by_currency.get(currency_code, Decimal(0))
+                    if wallet_balance == 0:
+                        continue
+
+                    report = self._build_spot_position_report_from_wallet_balance(
+                        loaded,
+                        wallet_balance,
+                    )
+                    reports.append(report)
+        except Exception as e:
+            self._log.exception("Failed to generate SPOT position report(s) from wallet", e)
+
+        for report in reports:
+            self._log.debug(f"Generated SPOT position report from wallet: {report}")
+
+        return reports
+
+    def _build_spot_position_report_from_wallet_balance(
+        self,
+        instrument: CurrencyPair,
+        wallet_balance: Decimal,
+    ) -> PositionStatusReport:
+        position_side = PositionSide.LONG if wallet_balance > 0 else PositionSide.SHORT
+        abs_balance = abs(wallet_balance)
+
+        try:
+            quantity = instrument.make_qty(str(abs_balance), round_down=True)
+        except ValueError:
+            quantity = Quantity.zero(instrument.size_precision)
+
+        if quantity == 0:
+            return PositionStatusReport.create_flat(
+                account_id=self.account_id,
+                instrument_id=instrument.id,
+                size_precision=instrument.size_precision,
+                ts_init=self._clock.timestamp_ns(),
+                report_id=UUID4(),
+            )
+
+        return PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            position_side=position_side,
+            quantity=quantity,
+            avg_px_open=None,
+            report_id=UUID4(),
+            ts_last=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
     async def generate_position_status_reports(  # noqa: C901 (too complex)
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        # Check instruments are cached
         if not self._http_client.is_initialized():
             await self._cache_instruments()
 
@@ -691,17 +828,45 @@ class OKXExecutionClient(LiveExecutionClient):
                         f"Cannot create position report - instrument {command.instrument_id} not found in cache",
                     )
 
-                # SPOT instruments (CurrencyPair) don't have positions - return FLAT
+                # TODO: Refactor the below
                 if isinstance(instrument, CurrencyPair):
-                    report = PositionStatusReport.create_flat(
-                        account_id=self.account_id,
-                        instrument_id=command.instrument_id,
-                        size_precision=instrument.size_precision,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    reports.append(report)
+                    # SPOT instruments: check margin mode first
+                    if self._config.use_spot_margin:
+                        # SPOT MARGIN: Use positions API like SWAP/FUTURES (always)
+                        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                            command.instrument_id.value,
+                        )
+                        response = await self._http_client.request_position_status_reports(
+                            account_id=self.pyo3_account_id,
+                            instrument_id=pyo3_instrument_id,
+                        )
+
+                        if not response:
+                            report = PositionStatusReport.create_flat(
+                                account_id=self.account_id,
+                                instrument_id=command.instrument_id,
+                                size_precision=instrument.size_precision,
+                                ts_init=self._clock.timestamp_ns(),
+                            )
+                            reports.append(report)
+                        else:
+                            pyo3_reports.extend(response)
+                    elif self._config.use_spot_cash_position_reports:
+                        # SPOT CASH: Use wallet balance calculation
+                        spot_reports = await self._generate_spot_position_reports_from_wallet(
+                            command.instrument_id,
+                        )
+                        reports.extend(spot_reports)
+                    else:
+                        # SPOT CASH without position reports: Return FLAT
+                        report = PositionStatusReport.create_flat(
+                            account_id=self.account_id,
+                            instrument_id=command.instrument_id,
+                            size_precision=instrument.size_precision,
+                            ts_init=self._clock.timestamp_ns(),
+                        )
+                        reports.append(report)
                 else:
-                    # Derivatives have positions - query OKX
                     pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                         command.instrument_id.value,
                     )
@@ -711,7 +876,6 @@ class OKXExecutionClient(LiveExecutionClient):
                     )
 
                     if not response:
-                        # No position on OKX - create FLAT report
                         instrument = self._cache.instrument(command.instrument_id)
                         if instrument is None:
                             raise RuntimeError(
@@ -728,8 +892,20 @@ class OKXExecutionClient(LiveExecutionClient):
                         pyo3_reports.extend(response)
             else:
                 for instrument_type in self._config.instrument_types:
-                    # SPOT trading uses CASH account and doesn't have positions
                     if instrument_type == OKXInstrumentType.SPOT:
+                        # SPOT instruments: check margin mode first
+                        if self._config.use_spot_margin:
+                            # SPOT MARGIN: Use positions API like SWAP/FUTURES (always)
+                            response = await self._http_client.request_position_status_reports(
+                                account_id=self.pyo3_account_id,
+                                instrument_type=OKXInstrumentType.MARGIN,
+                            )
+                            pyo3_reports.extend(response)
+                        elif self._config.use_spot_cash_position_reports:
+                            # SPOT CASH: Use wallet balance calculation
+                            spot_reports = await self._generate_spot_position_reports_from_wallet()
+                            reports.extend(spot_reports)
+                        # If neither, skip SPOT entirely (no position reports)
                         continue
 
                     response = await self._http_client.request_position_status_reports(

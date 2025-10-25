@@ -59,7 +59,7 @@ use crate::{
         consts::OKX_VENUE,
         enums::{
             OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXVipLevel,
+            OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -532,18 +532,100 @@ pub fn parse_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderStatusReport {
-    let quantity = order
-        .sz
-        .parse::<f64>()
-        .ok()
-        .map(|v| Quantity::new(v, size_precision))
-        .unwrap_or_default();
-    let filled_qty = order
-        .acc_fill_sz
-        .parse::<f64>()
-        .ok()
-        .map(|v| Quantity::new(v, size_precision))
-        .unwrap_or_default();
+    // Parse quantities based on target currency
+    // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
+
+    // Determine if this is a quote-quantity order
+    // Method 1: Explicit tgt_ccy field set to QuoteCcy
+    let is_quote_qty_explicit = order.tgt_ccy == Some(OKXTargetCurrency::QuoteCcy);
+
+    // Method 2: Use OKX defaults when tgt_ccy is None (old orders or missing field)
+    // OKX API defaults for SPOT market orders: BUY orders use quote_ccy, SELL orders use base_ccy
+    // Note: tgtCcy only applies to SPOT market orders (not limit orders)
+    // For limit orders, sz is always in base currency regardless of side
+    let is_quote_qty_heuristic = order.tgt_ccy.is_none()
+        && (order.inst_type == OKXInstrumentType::Spot
+            || order.inst_type == OKXInstrumentType::Margin)
+        && order.side == OKXSide::Buy
+        && order.ord_type == OKXOrderType::Market;
+
+    let (quantity, filled_qty) = if is_quote_qty_explicit || is_quote_qty_heuristic {
+        // Quote-quantity order: sz is in quote currency, need to convert to base
+        let sz_quote = order.sz.parse::<f64>().unwrap_or(0.0);
+
+        // Determine the price to use for conversion
+        // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
+        let conversion_price = if !order.px.is_empty() && order.px != "0" {
+            // Limit order: use the limit price (order.px)
+            order.px.parse::<f64>().unwrap_or(0.0)
+        } else if !order.avg_px.is_empty() && order.avg_px != "0" {
+            // Market order with fills: use average fill price
+            order.avg_px.parse::<f64>().unwrap_or(0.0)
+        } else {
+            log::warn!(
+                "No price available for conversion: ord_id={}, px='{}', avg_px='{}'",
+                order.ord_id.as_str(),
+                order.px,
+                order.avg_px
+            );
+            0.0
+        };
+
+        // Convert quote quantity to base: quantity_base = sz_quote / price
+        let quantity_base = if conversion_price > 0.0 {
+            Quantity::new(sz_quote / conversion_price, size_precision)
+        } else {
+            // No price available, can't convert - use sz as-is temporarily
+            log::warn!(
+                "Cannot convert, using sz as-is: ord_id={}, sz={}",
+                order.ord_id.as_str(),
+                order.sz
+            );
+            order
+                .sz
+                .parse::<f64>()
+                .ok()
+                .map(|v| Quantity::new(v, size_precision))
+                .unwrap_or_default()
+        };
+
+        let filled_qty = order
+            .acc_fill_sz
+            .parse::<f64>()
+            .ok()
+            .map(|v| Quantity::new(v, size_precision))
+            .unwrap_or_default();
+
+        (quantity_base, filled_qty)
+    } else {
+        // Base-quantity order: both sz and acc_fill_sz are in base currency
+        let quantity = order
+            .sz
+            .parse::<f64>()
+            .ok()
+            .map(|v| Quantity::new(v, size_precision))
+            .unwrap_or_default();
+        let filled_qty = order
+            .acc_fill_sz
+            .parse::<f64>()
+            .ok()
+            .map(|v| Quantity::new(v, size_precision))
+            .unwrap_or_default();
+
+        (quantity, filled_qty)
+    };
+
+    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
+    // to avoid precision mismatches from quote-to-base conversion
+    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
+        && order.state == OKXOrderStatus::Filled
+        && filled_qty.is_positive()
+    {
+        (filled_qty, filled_qty)
+    } else {
+        (quantity, filled_qty)
+    };
+
     let order_side: OrderSide = order.side.into();
     let okx_status: OKXOrderStatus = order.state;
     let order_status: OrderStatus = okx_status.into();

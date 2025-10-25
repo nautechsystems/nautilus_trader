@@ -137,6 +137,12 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         If True, uses OKX's mass-cancel endpoint for cancel_all_orders operations.
         This endpoint is typically restricted to market makers and high-volume traders.
         If False, cancels orders individually (works for all users).
+    use_spot_cash_position_reports : bool, default False
+        If True, generates position reports for SPOT CASH instruments based on wallet balances.
+        Positive balances (cash_bal - liab) are treated as LONG positions, and negative balances
+        (borrowing) as SHORT positions. This may lead to unintended liquidation of wallet assets
+        if strategies are not designed to handle SPOT positions properly.
+        If False, SPOT instruments return FLAT position reports (default behavior).
 
     """
 
@@ -157,3 +163,4 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = 10_000
     use_fills_channel: bool = False
     use_mm_mass_cancel: bool = False
+    use_spot_cash_position_reports: bool = False
