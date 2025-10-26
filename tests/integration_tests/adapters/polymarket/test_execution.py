@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pkgutil
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -339,6 +340,45 @@ class TestPolymarketExecutionClient:
         """
         Test order acknowledgment timeout handling.
         """
+        # Create exec client with short timeout for fast test
+        fast_config = PolymarketExecClientConfig(ack_timeout_secs=0.1)
+        fast_exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=fast_config,
+            name=None,
+        )
+
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="order_placement.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = fast_exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+        venue_order_id = VenueOrderId(
+            "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
+        )
+
+        # Don't add venue_order_id to cache to simulate timeout
+
+        # Act
+        await fast_exec_client._wait_for_ack_order(msg, venue_order_id)
+
+        # Assert - should complete without raising exception
+        assert True
+
+    @pytest.mark.asyncio()
+    async def test_wait_for_ack_order_with_event_signal(self):
+        """
+        Test order acknowledgment via event signal (concurrent notification path).
+        """
         # Arrange
         raw_message = pkgutil.get_data(
             package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
@@ -351,13 +391,42 @@ class TestPolymarketExecutionClient:
             "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
         )
 
-        # Don't add venue_order_id to cache to simulate timeout
+        # Create an order and add to cache (but without venue_order_id mapping yet)
+        instrument_id_1 = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id_1,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.513"),
+        )
+        client_order_id = order.client_order_id
+        self.cache.add_order(order, None)
 
-        # Act
-        await self.exec_client._wait_for_ack_order(msg, venue_order_id)
+        # Start waiting in background task
+        wait_task = asyncio.create_task(
+            self.exec_client._wait_for_ack_order(msg, venue_order_id),
+        )
 
-        # Assert - should complete without raising exception
-        assert True
+        # Give the wait task time to set up the event
+        await asyncio.sleep(0.01)
+
+        # Simulate what _post_signed_order does: add venue_order_id and signal event
+        self.cache.add_venue_order_id(client_order_id, venue_order_id)
+        event = self.exec_client._ack_events_order.get(venue_order_id)
+        if event:
+            event.set()
+
+        # Act - wait for the task to complete
+        await asyncio.wait_for(wait_task, timeout=1.0)
+
+        # Assert - task should complete successfully without timeout
+        assert wait_task.done()
+        assert not wait_task.cancelled()
+        # Event should have been cleaned up
+        assert venue_order_id not in self.exec_client._ack_events_order
 
     @pytest.mark.asyncio()
     async def test_wait_for_ack_trade_success(self):
@@ -390,6 +459,45 @@ class TestPolymarketExecutionClient:
         """
         Test trade acknowledgment timeout handling.
         """
+        # Create exec client with short timeout for fast test
+        fast_config = PolymarketExecClientConfig(ack_timeout_secs=0.1)
+        fast_exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=fast_config,
+            name=None,
+        )
+
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade1.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = fast_exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+        venue_order_id = VenueOrderId(
+            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+        )
+
+        # Don't add venue_order_id to cache to simulate timeout
+
+        # Act
+        await fast_exec_client._wait_for_ack_trade(msg, venue_order_id)
+
+        # Assert - should complete without raising exception
+        assert True
+
+    @pytest.mark.asyncio()
+    async def test_wait_for_ack_trade_with_event_signal(self):
+        """
+        Test trade acknowledgment via event signal (concurrent notification path).
+        """
         # Arrange
         raw_message = pkgutil.get_data(
             package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
@@ -402,13 +510,42 @@ class TestPolymarketExecutionClient:
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
         )
 
-        # Don't add venue_order_id to cache to simulate timeout
+        # Create an order and add to cache (but without venue_order_id mapping yet)
+        instrument_id_1 = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id_1,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.513"),
+        )
+        client_order_id = order.client_order_id
+        self.cache.add_order(order, None)
 
-        # Act
-        await self.exec_client._wait_for_ack_trade(msg, venue_order_id)
+        # Start waiting in background task
+        wait_task = asyncio.create_task(
+            self.exec_client._wait_for_ack_trade(msg, venue_order_id),
+        )
 
-        # Assert - should complete without raising exception
-        assert True
+        # Give the wait task time to set up the event
+        await asyncio.sleep(0.01)
+
+        # Simulate what _post_signed_order does: add venue_order_id and signal event
+        self.cache.add_venue_order_id(client_order_id, venue_order_id)
+        event = self.exec_client._ack_events_trade.get(venue_order_id)
+        if event:
+            event.set()
+
+        # Act - wait for the task to complete
+        await asyncio.wait_for(wait_task, timeout=1.0)
+
+        # Assert - task should complete successfully without timeout
+        assert wait_task.done()
+        assert not wait_task.cancelled()
+        # Event should have been cleaned up
+        assert venue_order_id not in self.exec_client._ack_events_trade
 
     def test_handle_ws_message_invalid_json(self):
         """

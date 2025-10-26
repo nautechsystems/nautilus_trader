@@ -37,6 +37,21 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
+def validate_ethereum_address(address: str) -> None:
+    if not address.startswith("0x") or len(address) != 42:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Expected 0x prefix with 40 hexadecimal characters",
+        )
+    try:
+        int(address[2:], 16)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Address contains non-hexadecimal characters",
+        ) from e
+
+
 def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
     match order_side:
         case PolymarketOrderSide.BUY:

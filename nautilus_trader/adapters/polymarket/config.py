@@ -129,6 +129,8 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     log_raw_ws_messages : bool, default False
         If raw websocket messages should be logged with INFO level.
         Note: there will be a performance penalty parsing the JSON without an efficient msgspec decoder.
+    ack_timeout_secs : PositiveFloat, default 5.0
+        The timeout (seconds) to wait for order/trade acknowledgment from cache.
 
     """
 
@@ -146,3 +148,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = None
     generate_order_history_from_trades: bool = False
     log_raw_ws_messages: bool = False
+    ack_timeout_secs: PositiveFloat = 5.0
