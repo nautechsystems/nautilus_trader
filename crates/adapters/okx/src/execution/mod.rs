@@ -51,7 +51,7 @@ use tokio::task::JoinHandle;
 use crate::{
     common::{
         consts::{OKX_CONDITIONAL_ORDER_TYPES, OKX_VENUE},
-        enums::{OKXInstrumentType, OKXTradeMode},
+        enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode},
     },
     config::OKXExecClientConfig,
     http::client::OKXHttpClient,
@@ -116,10 +116,7 @@ impl OKXExecutionClient {
         )
         .context("failed to construct OKX execution websocket client")?;
 
-        let trade_mode = match core.account_type {
-            AccountType::Cash => OKXTradeMode::Cash,
-            _ => OKXTradeMode::Isolated,
-        };
+        let trade_mode = Self::derive_trade_mode(core.account_type, &config);
 
         Ok(Self {
             core,
@@ -133,6 +130,27 @@ impl OKXExecutionClient {
             ws_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
         })
+    }
+
+    fn derive_trade_mode(account_type: AccountType, config: &OKXExecClientConfig) -> OKXTradeMode {
+        let is_cross_margin = config.margin_mode == Some(OKXMarginMode::Cross);
+
+        if account_type == AccountType::Cash {
+            if !config.use_spot_margin {
+                return OKXTradeMode::Cash;
+            }
+            return if is_cross_margin {
+                OKXTradeMode::Cross
+            } else {
+                OKXTradeMode::Isolated
+            };
+        }
+
+        if is_cross_margin {
+            OKXTradeMode::Cross
+        } else {
+            OKXTradeMode::Isolated
+        }
     }
 
     fn instrument_types(&self) -> Vec<OKXInstrumentType> {

@@ -16,7 +16,7 @@
 //! Configuration structures for the OKX adapter.
 
 use crate::common::{
-    enums::{OKXContractType, OKXInstrumentType, OKXVipLevel},
+    enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
         get_ws_base_url_public,
@@ -49,6 +49,12 @@ pub struct OKXDataClientConfig {
     pub is_demo: bool,
     /// Optional HTTP timeout in seconds.
     pub http_timeout_secs: Option<u64>,
+    /// Optional maximum retry attempts for requests.
+    pub max_retries: Option<u32>,
+    /// Optional initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Optional maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
     /// Optional interval for refreshing instruments.
     pub update_instruments_interval_mins: Option<u64>,
     /// Optional VIP level that unlocks additional subscriptions.
@@ -69,6 +75,9 @@ impl Default for OKXDataClientConfig {
             base_url_ws_business: None,
             is_demo: false,
             http_timeout_secs: Some(60),
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(1_000),
+            retry_delay_max_ms: Some(10_000),
             update_instruments_interval_mins: Some(60),
             vip_level: None,
         }
@@ -153,6 +162,10 @@ pub struct OKXExecClientConfig {
     pub retry_delay_initial_ms: Option<u64>,
     /// Optional maximum retry delay in milliseconds.
     pub retry_delay_max_ms: Option<u64>,
+    /// Optional margin mode (CROSS or ISOLATED) for margin/derivative accounts.
+    pub margin_mode: Option<OKXMarginMode>,
+    /// Enables margin/leverage for SPOT trading when true.
+    pub use_spot_margin: bool,
 }
 
 impl Default for OKXExecClientConfig {
@@ -174,6 +187,8 @@ impl Default for OKXExecClientConfig {
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
             retry_delay_max_ms: Some(10_000),
+            margin_mode: None,
+            use_spot_margin: false,
         }
     }
 }

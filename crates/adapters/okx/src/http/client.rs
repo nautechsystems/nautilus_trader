@@ -1007,6 +1007,8 @@ impl OKXHttpClient {
             OKXInstrumentType::Spot,
             OKXInstrumentType::Margin,
             OKXInstrumentType::Futures,
+            OKXInstrumentType::Swap,
+            OKXInstrumentType::Option,
         ] {
             if let Ok(instruments) = self.request_instruments(group, None).await {
                 let mut guard = self.instruments_cache.lock().expect(MUTEX_POISONED);

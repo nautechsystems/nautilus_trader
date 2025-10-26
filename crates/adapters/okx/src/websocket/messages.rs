@@ -118,7 +118,7 @@ pub struct OKXSubscription {
     pub args: Vec<OKXSubscriptionArg>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXSubscriptionArg {
     pub channel: OKXWsChannel,

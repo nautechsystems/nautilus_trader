@@ -755,8 +755,9 @@ impl From<OKXOrderType> for OrderType {
             | OKXOrderType::PostOnly
             | OKXOrderType::OptimalLimitIoc
             | OKXOrderType::Mmp
-            | OKXOrderType::MmpAndPostOnly => Self::Limit,
-            OKXOrderType::Fok | OKXOrderType::Ioc => Self::MarketToLimit,
+            | OKXOrderType::MmpAndPostOnly
+            | OKXOrderType::Fok
+            | OKXOrderType::Ioc => Self::Limit,
             OKXOrderType::Trigger => Self::StopMarket,
         }
     }

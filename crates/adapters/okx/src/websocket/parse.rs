@@ -59,6 +59,17 @@ use crate::{
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
 
+/// Checks if a price string indicates market execution.
+///
+/// OKX uses special sentinel values for market price:
+/// - "" (empty string)
+/// - "0"
+/// - "-1" (market price)
+/// - "-2" (market price with protection)
+fn is_market_price(px: &str) -> bool {
+    px.is_empty() || px == "0" || px == "-1" || px == "-2"
+}
+
 /// Extracts fee rates from a cached instrument.
 ///
 /// Returns a tuple of (margin_init, margin_maint, maker_fee, taker_fee).
@@ -793,7 +804,7 @@ pub fn parse_algo_order_status_report(
     let order_side: OrderSide = msg.side.into();
 
     // Determine order type based on ord_px for conditional/stop orders
-    let order_type = if msg.ord_px == "-1" {
+    let order_type = if is_market_price(&msg.ord_px) {
         OrderType::StopMarket
     } else {
         OrderType::StopLimit
@@ -872,16 +883,29 @@ pub fn parse_order_status_report(
     let order_side: OrderSide = msg.side.into();
 
     let okx_order_type = msg.ord_type;
-    // For Trigger orders that come through regular orders channel (after being triggered),
-    // we determine the type based on whether they have a price
-    let order_type = if okx_order_type == OKXOrderType::Trigger {
-        if msg.px.is_empty() || msg.px == "0" {
-            OrderType::StopMarket
-        } else {
-            OrderType::StopLimit
+
+    // Determine order type based on presence of limit price for certain OKX order types
+    let order_type = match okx_order_type {
+        // Trigger orders: check if they have a price
+        OKXOrderType::Trigger => {
+            if is_market_price(&msg.px) {
+                OrderType::StopMarket
+            } else {
+                OrderType::StopLimit
+            }
         }
-    } else {
-        msg.ord_type.into()
+        // FOK/IOC orders: check if they have a price
+        // Without a price, they're market orders with TIF
+        // With a price, they're limit orders with TIF
+        OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
+            if is_market_price(&msg.px) {
+                OrderType::Market
+            } else {
+                OrderType::Limit
+            }
+        }
+        // All other order types use standard mapping
+        _ => msg.ord_type.into(),
     };
     let order_status: OrderStatus = msg.state.into();
 
@@ -917,7 +941,7 @@ pub fn parse_order_status_report(
 
         // Determine the price to use for conversion
         // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
-        let conversion_price = if !msg.px.is_empty() && msg.px != "0" {
+        let conversion_price = if !is_market_price(&msg.px) {
             // Limit order: use the limit price (msg.px)
             msg.px
                 .parse::<f64>()
@@ -1015,15 +1039,14 @@ pub fn parse_order_status_report(
     if okx_order_type == OKXOrderType::Trigger {
         // For triggered orders coming through regular orders channel,
         // set the price if it's a stop-limit order
-        if !msg.px.is_empty()
-            && msg.px != "0"
+        if !is_market_price(&msg.px)
             && let Ok(price) = parse_price(&msg.px, price_precision)
         {
             report = report.with_price(price);
         }
     } else {
         // For regular orders, use px field
-        if !msg.px.is_empty()
+        if !is_market_price(&msg.px)
             && let Ok(price) = parse_price(&msg.px, price_precision)
         {
             report = report.with_price(price);

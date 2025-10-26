@@ -100,18 +100,18 @@ impl OKXDataClient {
                 config.api_passphrase.clone(),
                 config.base_url_http.clone(),
                 config.http_timeout_secs,
-                None,
-                None,
-                None,
+                config.max_retries,
+                config.retry_delay_initial_ms,
+                config.retry_delay_max_ms,
                 config.is_demo,
             )?
         } else {
             OKXHttpClient::new(
                 config.base_url_http.clone(),
                 config.http_timeout_secs,
-                None,
-                None,
-                None,
+                config.max_retries,
+                config.retry_delay_initial_ms,
+                config.retry_delay_max_ms,
                 config.is_demo,
             )?
         };
@@ -593,6 +593,20 @@ impl DataClient for OKXDataClient {
         }
 
         self.cancellation_token.cancel();
+
+        if let Some(ws) = self.ws_public.as_ref()
+            && let Err(e) = ws.unsubscribe_all().await
+        {
+            tracing::warn!("Failed to unsubscribe all from public websocket: {e:?}");
+        }
+        if let Some(ws) = self.ws_business.as_ref()
+            && let Err(e) = ws.unsubscribe_all().await
+        {
+            tracing::warn!("Failed to unsubscribe all from business websocket: {e:?}");
+        }
+
+        // Brief delay to allow unsubscribe confirmations to be processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         if let Some(ws) = self.ws_public.as_mut() {
             let _ = ws.close().await;

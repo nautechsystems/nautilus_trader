@@ -137,15 +137,18 @@ type AmendRequestData = (
 );
 type MassCancelRequestData = InstrumentId;
 
-/// Default OKX WebSocket rate limit: 3 requests per second.
+/// Default OKX WebSocket connection rate limit: 3 requests per second.
 ///
-/// - Connection limit: 3 requests per second (per IP).
-/// - Subscription requests: 480 'subscribe/unsubscribe/login' requests per connection per hour.
-/// - 30 WebSocket connections max per specific channel per sub-account.
-///
-/// We use 3 requests per second as the base limit to respect the connection rate limit.
-pub static OKX_WS_QUOTA: LazyLock<Quota> =
+/// This applies to establishing WebSocket connections, not to subscribe/unsubscribe operations.
+pub static OKX_WS_CONNECTION_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(3).unwrap()));
+
+/// OKX WebSocket subscription rate limit: 480 requests per hour per connection.
+///
+/// This applies to subscribe/unsubscribe/login operations.
+/// 480 per hour = 8 per minute, but we use per-hour for accurate limiting.
+pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).unwrap()));
 
 /// Rate limit for order-related WebSocket operations: 250 requests per second.
 ///
@@ -476,7 +479,7 @@ impl OKXWebSocketClient {
 
         // Configure rate limits for different operation types
         let keyed_quotas = vec![
-            ("subscription".to_string(), *OKX_WS_QUOTA),
+            ("subscription".to_string(), *OKX_WS_SUBSCRIPTION_QUOTA),
             ("order".to_string(), *OKX_WS_ORDER_QUOTA),
             ("cancel".to_string(), *OKX_WS_ORDER_QUOTA),
             ("amend".to_string(), *OKX_WS_ORDER_QUOTA),
@@ -486,7 +489,7 @@ impl OKXWebSocketClient {
             config,
             None, // post_reconnection
             keyed_quotas,
-            Some(*OKX_WS_QUOTA), // Default quota for general operations
+            Some(*OKX_WS_CONNECTION_QUOTA), // Default quota for connection operations
         )
         .await?;
 
@@ -521,12 +524,13 @@ impl OKXWebSocketClient {
 
         let stream_handle = get_runtime().spawn({
             let auth_tracker = auth_tracker.clone();
+            let signal = signal.clone();
             async move {
                 let mut handler = OKXWsMessageHandler::new(
                     account_id,
                     instruments_cache,
                     reader,
-                    signal,
+                    signal.clone(),
                     inner_client.clone(),
                     tx,
                     pending_place_requests,
@@ -544,6 +548,11 @@ impl OKXWebSocketClient {
                 loop {
                     match handler.next().await {
                         Some(NautilusWsMessage::Reconnected) => {
+                            if signal.load(Ordering::Relaxed) {
+                                tracing::debug!("Skipping reconnection resubscription due to stop signal");
+                                continue;
+                            }
+
                             tracing::debug!("Handling WebSocket reconnection");
 
                             let auth_tracker_for_task = auth_tracker.clone();
@@ -1230,6 +1239,79 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
+    /// Unsubscribes from all active subscriptions in batched messages.
+    ///
+    /// Collects all confirmed subscriptions and sends unsubscribe requests in batches,
+    /// which is significantly more efficient than individual unsubscribes during disconnect.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails to send.
+    pub async fn unsubscribe_all(&self) -> Result<(), OKXWsError> {
+        let mut all_args = Vec::new();
+
+        for entry in self.subscriptions_inst_type.iter() {
+            let (channel, inst_types) = entry.pair();
+            for inst_type in inst_types.iter() {
+                all_args.push(OKXSubscriptionArg {
+                    channel: channel.clone(),
+                    inst_type: Some(*inst_type),
+                    inst_family: None,
+                    inst_id: None,
+                });
+            }
+        }
+
+        for entry in self.subscriptions_inst_family.iter() {
+            let (channel, inst_families) = entry.pair();
+            for inst_family in inst_families.iter() {
+                all_args.push(OKXSubscriptionArg {
+                    channel: channel.clone(),
+                    inst_type: None,
+                    inst_family: Some(*inst_family),
+                    inst_id: None,
+                });
+            }
+        }
+
+        for entry in self.subscriptions_inst_id.iter() {
+            let (channel, inst_ids) = entry.pair();
+            for inst_id in inst_ids.iter() {
+                all_args.push(OKXSubscriptionArg {
+                    channel: channel.clone(),
+                    inst_type: None,
+                    inst_family: None,
+                    inst_id: Some(*inst_id),
+                });
+            }
+        }
+
+        for entry in self.subscriptions_bare.iter() {
+            let channel = entry.key();
+            all_args.push(OKXSubscriptionArg {
+                channel: channel.clone(),
+                inst_type: None,
+                inst_family: None,
+                inst_id: None,
+            });
+        }
+
+        if all_args.is_empty() {
+            tracing::debug!("No active subscriptions to unsubscribe from");
+            return Ok(());
+        }
+
+        tracing::debug!("Batched unsubscribe from {} channels", all_args.len());
+
+        const BATCH_SIZE: usize = 256;
+
+        for chunk in all_args.chunks(BATCH_SIZE) {
+            self.unsubscribe(chunk.to_vec()).await?;
+        }
+
+        Ok(())
+    }
+
     #[allow(dead_code)]
     async fn resubscribe_all(&self) {
         // Collect bare channel subscriptions (e.g., Account)
@@ -1548,9 +1630,8 @@ impl OKXWebSocketClient {
 
     /// Subscribes to best bid/ask quote data for an instrument.
     ///
-    /// Provides tick-by-tick updates of the best bid and ask prices.
-    /// For derivatives (SWAP, FUTURES, OPTION), uses bbo-tbt channel.
-    /// For SPOT instruments, uses tickers channel as bbo-tbt is not supported.
+    /// Provides tick-by-tick updates of the best bid and ask prices using the bbo-tbt channel.
+    /// Supports all instrument types: SPOT, MARGIN, SWAP, FUTURES, OPTION.
     ///
     /// # Errors
     ///
@@ -1558,21 +1639,10 @@ impl OKXWebSocketClient {
     ///
     /// # References
     ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-bbo-tbt-channel>.
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-tickers-channel>.
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-best-bid-offer-channel>.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let (inst_type, _) = self.get_instrument_type_and_family(instrument_id.symbol.inner())?;
-
-        // Use tickers channel for SPOT instruments (bbo-tbt not supported)
-        // Use bbo-tbt for derivatives (SWAP, FUTURES, OPTION)
-        let channel = if inst_type == OKXInstrumentType::Spot {
-            OKXWsChannel::Tickers
-        } else {
-            OKXWsChannel::BboTbt
-        };
-
         let arg = OKXSubscriptionArg {
-            channel,
+            channel: OKXWsChannel::BboTbt,
             inst_type: None,
             inst_family: None,
             inst_id: Some(instrument_id.symbol.inner()),
@@ -1582,6 +1652,9 @@ impl OKXWebSocketClient {
 
     /// Subscribes to trade data for an instrument.
     ///
+    /// When `aggregated` is `false`, subscribes to the `trades` channel (per-match updates).
+    /// When `aggregated` is `true`, subscribes to the `trades-all` channel (aggregated updates).
+    ///
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
@@ -1589,16 +1662,17 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-trades-channel>.
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-all-trades-channel>.
     pub async fn subscribe_trades(
         &self,
         instrument_id: InstrumentId,
-        _aggregated: bool, // TODO: TBD?
+        aggregated: bool,
     ) -> Result<(), OKXWsError> {
-        // TODO: aggregated parameter is ignored, always uses 'trades' channel.
-        // let (symbol, _) = extract_okx_symbol_and_inst_type(&instrument_id);
-
-        // Use trades channel for all instruments (trades-all not available?)
-        let channel = OKXWsChannel::Trades;
+        let channel = if aggregated {
+            OKXWsChannel::TradesAll
+        } else {
+            OKXWsChannel::Trades
+        };
 
         let arg = OKXSubscriptionArg {
             channel,
@@ -1838,18 +1912,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let (inst_type, _) = self.get_instrument_type_and_family(instrument_id.symbol.inner())?;
-
-        // Use tickers channel for SPOT instruments (bbo-tbt not supported)
-        // Use bbo-tbt for derivatives (SWAP, FUTURES, OPTION)
-        let channel = if inst_type == OKXInstrumentType::Spot {
-            OKXWsChannel::Tickers
-        } else {
-            OKXWsChannel::BboTbt
-        };
-
         let arg = OKXSubscriptionArg {
-            channel,
+            channel: OKXWsChannel::BboTbt,
             inst_type: None,
             inst_family: None,
             inst_id: Some(instrument_id.symbol.inner()),
@@ -1934,10 +1998,13 @@ impl OKXWebSocketClient {
     pub async fn unsubscribe_trades(
         &self,
         instrument_id: InstrumentId,
-        _aggregated: bool,
+        aggregated: bool,
     ) -> Result<(), OKXWsError> {
-        // Use trades channel for all instruments (trades-all not available?)
-        let channel = OKXWsChannel::Trades;
+        let channel = if aggregated {
+            OKXWsChannel::TradesAll
+        } else {
+            OKXWsChannel::Trades
+        };
 
         let arg = OKXSubscriptionArg {
             channel,
@@ -3211,7 +3278,7 @@ impl OKXFeedHandler {
                                         id,
                                         op,
                                         code,
-                                        msg,
+                                        msg: _,
                                         data,
                                     } => {
                                         if code == "0" {
@@ -3228,16 +3295,6 @@ impl OKXFeedHandler {
                                                     .unwrap_or("Order operation successful");
                                                 tracing::debug!("Order success details: {success_msg}");
                                             }
-                                        } else {
-                                            // Extract error message
-                                            let error_msg = data
-                                                .first()
-                                                .and_then(|d| d.get("sMsg"))
-                                                .and_then(|s| s.as_str())
-                                                .unwrap_or(msg.as_str());
-                                            tracing::error!(
-                                                "Order operation failed: id={id:?}, op={op}, code={code}, error={error_msg}",
-                                            );
                                         }
                                         return Some(ws_event);
                                     }
@@ -3869,8 +3926,8 @@ impl OKXWsMessageHandler {
                         );
                     }
 
-                    tracing::error!(
-                        "Order operation failed: id={id:?} op={op} code={code} msg={msg}"
+                    tracing::warn!(
+                        "Order operation failed: id={id:?} op={op} code={code} msg={error_msg}"
                     );
 
                     if let Some(request_id) = &id {
