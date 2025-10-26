@@ -71,6 +71,7 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
+          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
@@ -383,7 +384,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 9  # 3 Python versions × 3 platforms (ARM skipped on develop)
+      EXPECTED_WHEEL_COUNT: 6  # 2 Python versions (3.12, 3.13) × 3 platforms (ARM skipped on develop)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -447,7 +448,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 12  # 3 Python versions × 4 platforms
+      EXPECTED_WHEEL_COUNT: 8  # 2 Python versions (3.12, 3.13) × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -511,7 +512,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 12  # 3 Python versions × 4 platforms
+      EXPECTED_WHEEL_COUNT: 8  # 2 Python versions (3.12, 3.13) × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
