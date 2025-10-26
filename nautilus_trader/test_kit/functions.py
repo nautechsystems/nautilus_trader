@@ -15,10 +15,6 @@
 
 import asyncio
 from collections.abc import Callable
-from typing import TypeVar
-
-
-T = TypeVar("T")
 
 
 async def eventually(condition: Callable, timeout: float = 2.0) -> None:
