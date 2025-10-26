@@ -643,17 +643,14 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          persist-credentials: false
+          persist-credentials: true  # Required for salsify action to push git tags
           fetch-depth: 2
 
-      - name: Common setup
-        uses: ./.github/actions/common-setup
+      - name: Set up Python environment
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.13"
-          free-disk-space: "true"
-
-      - name: Ensure script is executable
-        run: chmod +x scripts/package-version.sh
 
       - name: Create git tag
         # https://github.com/salsify/action-detect-and-tag-new-version
