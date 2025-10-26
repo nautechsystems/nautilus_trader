@@ -226,16 +226,26 @@ impl FileWriter {
             .append(true)
             .open(file_path.clone())
         {
-            Ok(file) => Some(Self {
-                json_format,
-                buf: BufWriter::new(file),
-                path: file_path,
-                file_config,
-                trader_id,
-                instance_id,
-                level: fileout_level,
-                cur_file_date: Utc::now().date_naive(),
-            }),
+            Ok(file) => {
+                // Seed cur_file_size from existing file length if rotation is enabled
+                let mut file_config = file_config;
+                if let Some(ref mut rotate_config) = file_config.file_rotate
+                    && let Ok(metadata) = file.metadata()
+                {
+                    rotate_config.cur_file_size = metadata.len();
+                }
+
+                Some(Self {
+                    json_format,
+                    buf: BufWriter::new(file),
+                    path: file_path,
+                    file_config,
+                    trader_id,
+                    instance_id,
+                    level: fileout_level,
+                    cur_file_date: Utc::now().date_naive(),
+                })
+            }
             Err(e) => {
                 tracing::error!("Error creating log file: {e}");
                 None
@@ -409,4 +419,73 @@ fn strip_ansi_codes(s: &str) -> String {
     let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1B\[[0-9;?=]*[A-Za-z]|\x1B\].*?\x07").unwrap());
     let no_controls = strip_nonprinting_except_newline(s);
     re.replace_all(&no_controls, "").to_string()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use log::LevelFilter;
+    use rstest::rstest;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[rstest]
+    fn test_file_writer_with_rotation_creates_new_timestamped_file() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: Some(FileRotateConfig::from((2000, 5))),
+        };
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+        )
+        .unwrap();
+
+        assert_eq!(
+            writer
+                .file_config
+                .file_rotate
+                .as_ref()
+                .unwrap()
+                .cur_file_size,
+            0
+        );
+        assert!(writer.path.to_str().unwrap().contains("test_"));
+    }
+
+    #[rstest]
+    #[case("Hello, World!", "Hello, World!")]
+    #[case("Line1\nLine2", "Line1\nLine2")]
+    #[case("Tab\there", "Tabhere")]
+    #[case("Null\0char", "Nullchar")]
+    #[case("DEL\u{7F}char", "DELchar")]
+    #[case("Bell\u{07}sound", "Bellsound")]
+    #[case("Mix\t\0\u{7F}ed", "Mixed")]
+    fn test_strip_nonprinting_except_newline(#[case] input: &str, #[case] expected: &str) {
+        let result = strip_nonprinting_except_newline(input);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("Plain text", "Plain text")]
+    #[case("\x1B[31mRed\x1B[0m", "[31mRed[0m")]
+    #[case("\x1B[1;32mBold Green\x1B[0m", "[1;32mBold Green[0m")]
+    #[case("Before\x1B[0mAfter", "Before[0mAfter")]
+    #[case("\x1B]0;Title\x07Content", "]0;TitleContent")]
+    #[case("Text\t\x1B[31mRed\x1B[0m", "Text[31mRed[0m")]
+    fn test_strip_ansi_codes(#[case] input: &str, #[case] expected: &str) {
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, expected);
+    }
 }
