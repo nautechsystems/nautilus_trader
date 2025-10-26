@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(unused_assignments)] // Fields are accessed via methods, false positive from nightly
+
 use std::{env, fmt, fs, path::Path};
 
 use serde::Deserialize;
