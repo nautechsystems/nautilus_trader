@@ -9,6 +9,10 @@ inputs:
     description: Free disk space
     required: false
     default: "false"
+  build-type:
+    description: Type of build (pre-commit, test, release)
+    required: false
+    default: "release"
 
 runs:
   using: "composite"
@@ -20,20 +24,24 @@ runs:
       # https://github.com/jlumbroso/free-disk-space
       uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
-        tool-cache: true
+        tool-cache: ${{ inputs.build-type != 'pre-commit' }}
         android: true
         dotnet: true
-        haskell: true
-        large-packages: true
+        haskell: ${{ inputs.build-type != 'pre-commit' }}
+        large-packages: ${{ inputs.build-type != 'pre-commit' }}
         docker-images: true
-        swap-storage: true
+        swap-storage: ${{ inputs.build-type != 'pre-commit' }}
 
     - name: Free disk space (Windows)
       if: inputs.free-disk-space == 'true' && runner.os == 'Windows'
       shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build-type }}
       run: |
         rm -rf "/c/Program Files/dotnet"
-        rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+        if [ "$BUILD_TYPE" != "pre-commit" ]; then
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+        fi
 
     - name: Install runner dependencies
       if: runner.os == 'Linux'
@@ -88,6 +96,7 @@ runs:
         override: true
 
     - name: Install cargo-nextest
+      if: inputs.build-type != 'pre-commit'
       # https://github.com/taiki-e/install-action # v2.53.2
       uses: taiki-e/install-action@d12e869b89167df346dd0ff65da342d1fb1202fb
       with:
@@ -96,6 +105,7 @@ runs:
     # > --------------------------------------------------
     # > sccache
     - name: Set sccache env vars (common)
+      if: inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
@@ -109,7 +119,7 @@ runs:
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     - name: Set sccache env vars (non-Windows)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
@@ -117,7 +127,7 @@ runs:
         echo "CXX=sccache clang++" >> $GITHUB_ENV
 
     - name: Set sccache env vars (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
@@ -125,6 +135,7 @@ runs:
         echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
     - name: Cached sccache
+      if: inputs.build-type != 'pre-commit'
       id: cached-sccache
       # https://github.com/actions/cache
       uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -139,6 +150,7 @@ runs:
           sccache-${{ runner.os }}-
 
     - name: Run sccache
+      if: inputs.build-type != 'pre-commit'
       # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
