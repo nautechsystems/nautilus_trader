@@ -23,7 +23,7 @@ from collections.abc import Iterator
 from decimal import Decimal
 from enum import Enum
 from os import PathLike
-from typing import Any, Final, TypeAlias, Union
+from typing import Any, Final, Union
 
 import numpy as np
 
@@ -655,7 +655,7 @@ class CashAccount:
         position: Position | None = None,
     ) -> list[Money]: ...
 
-Account: TypeAlias = Union[
+type Account = Union[
     CashAccount,
     MarginAccount
 ]
@@ -2037,7 +2037,7 @@ class TrailingStopMarketOrder:
     def create(cls, init: OrderInitialized) -> TrailingStopMarketOrder: ...
     def apply(self, event: object) -> None: ...
 
-Order: TypeAlias = Union[
+type Order = Union[
     LimitOrder,
     LimitIfTouchedOrder,
     MarketOrder,
@@ -3156,7 +3156,7 @@ class SyntheticInstrument:
     def ts_init(self) -> int: ...
     def to_dict(self) -> dict[str, Any]: ...
 
-Instrument: TypeAlias = Union[
+type Instrument = Union[
     CryptoFuture,
     CryptoPerpetual,
     CurrencyPair,

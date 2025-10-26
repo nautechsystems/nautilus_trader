@@ -69,7 +69,6 @@ jobs:
         os:
           - ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -160,7 +159,6 @@ jobs:
         os:
           - ubuntu-22.04-arm
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -255,7 +253,6 @@ jobs:
         os:
           - macos-latest
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -312,7 +309,6 @@ jobs:
         os:
           - windows-latest
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:

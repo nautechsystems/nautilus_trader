@@ -8,7 +8,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries",
@@ -22,7 +21,7 @@ classifiers = [
 ]
 license = { text = "LGPL-3.0-or-later" }
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
   "click>=8.0.0,<9.0.0",
   "fsspec>=2025.2.0,<2026.0.0",
@@ -125,7 +124,7 @@ docs = [
 ]
 
 [tool.isort] # Used by legacy isort for Cython modules
-py_version = "311"
+py_version = "312"
 skip_glob = ["**/core/rust/*"]
 combine_as_imports = true
 line_length = 100
@@ -138,7 +137,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py311", "py312", "py313"]
+target_version = ["py312", "py313"]
 line_length = 100
 
 [tool.docformatter]
@@ -150,7 +149,7 @@ recursive = true
 in-place = true
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 150 # Reduce to 100
 
 exclude = [
@@ -242,7 +241,7 @@ max-complexity = 10
 "test_perf_logger.py" = ["S311"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
