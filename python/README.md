@@ -48,7 +48,7 @@ All commands should be run from within this `python/` directory.
 ### Prerequisites
 
 - Rust toolchain (via `rustup`).
-- Python 3.11-3.13
+- Python 3.12-3.13
 - A virtual environment activated at the project root (e.g., `.venv`).
 - `patchelf` (Linux only) - required for setting rpath on the compiled extension. Install with `uv pip install patchelf`.
 
@@ -87,7 +87,7 @@ UUID4()
 
 ### From source
 
-To build and install from source, you need Rust and Python 3.11+ installed. You can use either uv or Poetry:
+To build and install from source, you need Rust and Python 3.12+ installed. You can use either uv or Poetry:
 
 **Using uv:**
 

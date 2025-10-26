@@ -8,7 +8,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
@@ -22,7 +21,7 @@ classifiers = [
 ]
 license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",
@@ -76,7 +75,7 @@ test = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 exclude = ["stubs/**", "../build", "../dist", "../target"]
 
@@ -153,7 +152,7 @@ lines-after-imports = 2
 max-complexity = 10
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true

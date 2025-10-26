@@ -2,7 +2,7 @@
 
 To get started with NautilusTrader, you will need:
 
-- A Python 3.11–3.13 environment with the `nautilus_trader` package installed.
+- A Python 3.12–3.13 environment with the `nautilus_trader` package installed.
 - A way to run Python scripts or Jupyter notebooks for backtesting and/or live trading.
 
 ## [Installation](installation.md)

@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 ### Breaking Changes
+- Dropped support for Python 3.11
 
 ### Security
 
