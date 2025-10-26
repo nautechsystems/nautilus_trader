@@ -14,8 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
@@ -37,30 +35,26 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configuration - Change instrument_type to switch between trading modes
-instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
+instrument_type = OKXInstrumentType.SPOT  # SPOT, MARGIN, SWAP, FUTURES, OPTION
 token = "ETH"
 
 # Symbol mapping based on instrument type
-if instrument_type == OKXInstrumentType.SPOT:
+if instrument_type in (OKXInstrumentType.SPOT, OKXInstrumentType.MARGIN):
     symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    trade_size = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = f"{token}-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR,)
-    trade_size = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Note: ETH-USD futures follow same pattern as BTC-USD
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
     symbol = f"{token}-USD-251226"  # ETH-USD futures expiring December 26, 2025
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
-    trade_size = Decimal(1)
 elif instrument_type == OKXInstrumentType.OPTION:
     symbol = (
         f"{token}-USD-251226-4000-C"  # Example: ETH-USD call option, strike $4000, exp 2025-12-26
     )
     contract_types = None  # OPTIONS don't use contract types in the same way
-    trade_size = Decimal(1)
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 

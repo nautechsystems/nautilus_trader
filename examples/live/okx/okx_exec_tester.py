@@ -40,21 +40,24 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configuration - Change instrument_type to switch between trading modes
-instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
-use_spot_margin = True
+instrument_type = OKXInstrumentType.SWAP  # SPOT, MARGIN, SWAP, FUTURES, OPTION
+use_spot_margin = False
 token = "ETH"
 
 # Symbol mapping based on instrument type
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    if use_spot_margin:
-        order_qty = Decimal("10.00")
-        use_quote_quantity = True
-    else:
-        order_qty = Decimal("0.01")
-        use_quote_quantity = False
+    order_qty = Decimal("10.00")
     enable_sells = False
+    use_quote_quantity = True
+elif instrument_type == OKXInstrumentType.MARGIN:
+    use_spot_margin = True
+    symbol = f"{token}-USDT"
+    contract_types = None  # MARGIN doesn't use contract types
+    order_qty = Decimal("10.00")
+    enable_sells = False
+    use_quote_quantity = True
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = f"{token}-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR,)

@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::time::Duration;
 
 use futures_util::StreamExt;

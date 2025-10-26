@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use futures_util::StreamExt;
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_okx::{
