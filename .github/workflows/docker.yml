@@ -82,7 +82,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -333,7 +333,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -381,7 +381,7 @@ jobs:
           touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
           path: /tmp/digests/nautilus_trader/*
@@ -396,7 +396,7 @@ jobs:
     needs: build-docker-images-nautilus-trader
     steps:
       - name: Download digests
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: /tmp/digests/nautilus_trader
           pattern: digests-nautilus_trader-*
@@ -408,7 +408,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -511,7 +511,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -570,7 +570,7 @@ jobs:
           touch "/tmp/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
           path: /tmp/digests/jupyterlab/*
@@ -585,7 +585,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       - name: Download digests
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: /tmp/digests/jupyterlab
           pattern: digests-jupyterlab-*
@@ -597,7 +597,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
