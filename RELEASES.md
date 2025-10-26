@@ -1,6 +1,6 @@
 # NautilusTrader 1.221.0 Beta
 
-Released on TBD (UTC).
+Released on 26th October 2025 (UTC).
 
 This will be the final release with support for Python 3.11.
 

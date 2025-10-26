@@ -136,7 +136,7 @@ datafusion = { version = "50.3.0", default-features = false, features = [
   "regex_expressions",
   "unicode_expressions",
 ] }
-deranged = "0.5.4"
+deranged = "0.5.5"
 derive_builder = { version = "0.20.2", default-features = false, features = [
   "alloc",
 ] }
