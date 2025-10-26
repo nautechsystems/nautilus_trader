@@ -37,6 +37,7 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
+          build-type: "pre-commit"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
