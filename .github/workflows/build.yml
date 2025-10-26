@@ -416,7 +416,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: 'dist/*.whl'
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -480,7 +480,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: 'dist/*.whl'
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -557,7 +557,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: 'dist/*.whl'
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -571,7 +571,7 @@ jobs:
           set +e
           success=false
           for i in {1..5}; do
-            gh release upload "$TAG_NAME" dist/*.whl --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG_NAME" dist/nautilus_trader-*.whl --clobber --repo "$GITHUB_REPOSITORY"
             status=$?
             if [ $status -eq 0 ]; then
               success=true

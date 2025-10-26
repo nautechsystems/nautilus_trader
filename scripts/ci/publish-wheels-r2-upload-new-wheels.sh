@@ -3,27 +3,18 @@ set -euo pipefail
 
 echo "Uploading new wheels to Cloudflare R2..."
 
-echo "Initial dist/ contents:"
+echo "dist/ contents:"
 ls -la dist/
-find dist/ -type f -name "*.whl" -ls
+find dist/ -type f -name "nautilus_trader-*.whl" -ls
 
-# Create clean directory for real files
-mkdir -p dist/all
-
-# Copy all files into dist/all/ to resolve symlinks
-find dist/ -type f -name "*.whl" -exec cp -L {} dist/all/ \;
-
-# First check for any wheels
-if ! find dist/all/ -type f -name "*.whl" > /dev/null 2>&1; then
-  echo "No wheels found in dist/all/, exiting"
+# Verify wheels exist
+if ! find dist/ -type f -name "nautilus_trader-*.whl" -print -quit | grep -q .; then
+  echo "ERROR: No wheels found in dist/"
   exit 1
 fi
 
-echo "Contents of dist/all/:"
-ls -la dist/all/
-
 wheel_count=0
-for file in dist/all/*.whl; do
+for file in dist/nautilus_trader-*.whl; do
   echo "File details for $file:"
   ls -l "$file"
   file "$file"

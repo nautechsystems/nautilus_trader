@@ -45,7 +45,7 @@ declare -A final_hashes=()
 
 # First, calculate hashes for all new/updated wheels
 # These will override any existing hashes for the same filename
-for file in dist/all/*.whl; do
+for file in dist/nautilus_trader-*.whl; do
   if [[ -f "$file" ]]; then
     filename=$(basename "$file")
     hash=$(sha256sum "$file" | awk '{print $1}')
@@ -55,7 +55,7 @@ for file in dist/all/*.whl; do
 done
 
 # Get list of all wheel files in bucket
-existing_files=$(aws s3 ls "${bucket_path}" --endpoint-url="${CLOUDFLARE_R2_URL}" | grep '\.whl$' | awk '{print $4}')
+existing_files=$(aws s3 ls "${bucket_path}" --endpoint-url="${CLOUDFLARE_R2_URL}" | grep 'nautilus_trader-.*\.whl$' | awk '{print $4}')
 
 # For existing files, use hash from index if we don't have a new one
 for file in $existing_files; do
