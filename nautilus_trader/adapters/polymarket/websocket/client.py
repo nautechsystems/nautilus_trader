@@ -174,12 +174,13 @@ class PolymarketWebSocketClient:
         """
         Reconnect the client to the server and resubscribe to all streams.
         """
-        if (self._channel == PolymarketWebSocketChannel.USER and not self._markets) or (
-            self._channel == PolymarketWebSocketChannel.MARKET and not self._assets
-        ):
-            if not self._markets:
-                self._log.error("Cannot reconnect: no streams for initial connection")
-                return
+        if self._channel == PolymarketWebSocketChannel.USER and not self._markets:
+            self._log.error("Cannot reconnect: no market streams for USER channel")
+            return
+
+        if self._channel == PolymarketWebSocketChannel.MARKET and not self._assets:
+            self._log.error("Cannot reconnect: no asset streams for MARKET channel")
+            return
 
         self._log.warning(f"Reconnected to {self._ws_url}")
 

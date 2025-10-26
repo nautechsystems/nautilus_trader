@@ -175,6 +175,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         if tasks:
             await asyncio.gather(*tasks)
 
+        self._cleanup_expired_books()
+
     def _create_websocket_client(self) -> PolymarketWebSocketClient:
         self._log.info("Creating new PolymarketWebSocketClient", LogColor.MAGENTA)
         return PolymarketWebSocketClient(
@@ -190,6 +192,21 @@ class PolymarketDataClient(LiveMarketDataClient):
         local_book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
         self._local_books[instrument_id] = local_book
         return local_book
+
+    def _cleanup_expired_books(self) -> None:
+        now_ns = self._clock.timestamp_ns()
+        expired_instruments = []
+
+        for instrument_id in list(self._local_books.keys()):
+            instrument = self._cache.instrument(instrument_id)
+            if instrument and instrument.expiration_ns < now_ns:
+                expired_instruments.append(instrument_id)
+
+        if expired_instruments:
+            for instrument_id in expired_instruments:
+                self._local_books.pop(instrument_id, None)
+                self._last_quotes.pop(instrument_id, None)
+            self._log.info(f"Cleaned up {len(expired_instruments)} expired book(s)")
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -242,6 +259,14 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._ws_client_pending_connection.subscribe_book(token_id)
 
         if create_connect_task:
+            # Cancel previous delayed connection task to prevent race condition
+            # where old task's finally block nulls out the new pending client
+            if (
+                self._delayed_ws_client_connection_task
+                and not self._delayed_ws_client_connection_task.done()
+            ):
+                self._delayed_ws_client_connection_task.cancel()
+
             self._delayed_ws_client_connection_task = self.create_task(
                 self._delayed_ws_client_connection(
                     self._ws_client_pending_connection,
@@ -437,7 +462,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         book_new.apply_deltas(deltas)
         self._local_books[instrument.id] = book_new
 
-        if self._config.compute_effective_deltas:
+        if self._config.compute_effective_deltas and book_old is not None:
             # Compute effective deltas (reduce snapshot based on old and new book states),
             # prioritizing a smaller data footprint over computational efficiency.
             t0 = self._clock.timestamp_ns()
@@ -572,9 +597,8 @@ class PolymarketDataClient(LiveMarketDataClient):
     ) -> None:
         now_ns = self._clock.timestamp_ns()
 
-        old_book = self._local_books.pop(instrument.id, None)
-        if old_book is not None:
-            self._last_quotes.pop(instrument.id, None)
+        old_book = self._local_books.get(instrument.id)
+        old_quote = self._last_quotes.get(instrument.id)
 
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
 
@@ -590,6 +614,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                 instrument=instrument,
                 change=ws_message,
                 old_book=old_book,
+                old_quote=old_quote,
                 ts_init=now_ns,
             )
 
@@ -598,6 +623,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         instrument: BinaryOption,
         change: PolymarketTickSizeChange,
         old_book: OrderBook,
+        old_quote: QuoteTick | None,
         ts_init: int,
     ) -> None:
         snapshot = self._build_snapshot_from_book(
@@ -609,7 +635,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=ts_init)
 
         if deltas is None:
-            # Skip empty snapshots (can occur near market resolution)
+            self._local_books.pop(instrument.id, None)
+            self._last_quotes.pop(instrument.id, None)
             return
 
         new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
@@ -632,6 +659,8 @@ class PolymarketDataClient(LiveMarketDataClient):
             if quote is not None:
                 self._last_quotes[instrument.id] = quote
                 self._handle_data(quote)
+            elif old_quote is None:
+                self._last_quotes.pop(instrument.id, None)
 
     def _build_snapshot_from_book(
         self,
