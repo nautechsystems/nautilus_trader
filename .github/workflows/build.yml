@@ -400,7 +400,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -464,7 +464,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -536,12 +536,12 @@ jobs:
           echo "UV_VERSION=$(cat uv-version)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
+        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Download built wheels for PyPI and GitHub release
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"

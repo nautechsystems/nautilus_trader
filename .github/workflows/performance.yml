@@ -127,7 +127,8 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@0010eb0ca6e89b80c88e8edaaa07cfe5f3e6664d # v3.5.0
+        uses: CodSpeedHQ/action@6b43a0cd438f6ca5ad26f9ed03ed159ed2df7da9 # v4.1.1
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
+          mode: instrumentation
           run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
