@@ -24,15 +24,21 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitIfTouchedOrder
 from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -323,6 +329,124 @@ def test_maintains_both_orders_on_quote_tick(
     assert tester.sell_order is not None
     assert tester.buy_order.side == OrderSide.BUY
     assert tester.sell_order.side == OrderSide.SELL
+
+
+def test_bracket_buy_order_on_quote_tick(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_buys=True,
+        enable_sells=False,
+        enable_brackets=True,
+        bracket_offset_ticks=5,
+        tob_offset_ticks=2,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_order.contingency_type == ContingencyType.OTO
+    order_list_id = tester.buy_order.order_list_id
+    assert order_list_id is not None
+
+    order_list = tester.cache.order_list(order_list_id)
+    assert order_list is not None
+    assert len(order_list.orders) == 3
+
+    tp_order = next(order for order in order_list.orders if "TAKE_PROFIT" in (order.tags or []))
+    sl_order = next(order for order in order_list.orders if "STOP_LOSS" in (order.tags or []))
+
+    expected_entry_price = instrument.make_price(Decimal("100.0") - tester.price_offset)
+    assert tester.buy_order.price == expected_entry_price
+
+    increment = instrument.price_increment
+    expected_tp_price = instrument.make_price(
+        Decimal(str(expected_entry_price)) + increment * config.bracket_offset_ticks,
+    )
+    expected_sl_trigger = instrument.make_price(
+        Decimal(str(expected_entry_price)) - increment * config.bracket_offset_ticks,
+    )
+
+    assert tp_order.price == expected_tp_price
+    assert tp_order.contingency_type == ContingencyType.OUO
+    assert sl_order.trigger_price == expected_sl_trigger
+    assert sl_order.contingency_type == ContingencyType.OUO
+
+
+def test_bracket_and_stop_orders_can_run_together(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_buys=True,
+        enable_sells=False,
+        enable_brackets=True,
+        enable_stop_buys=True,
+        bracket_offset_ticks=5,
+        stop_offset_ticks=3,
+        tob_offset_ticks=2,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.order_list_id is None
+
+    stop_offset = instrument.price_increment * config.stop_offset_ticks
+    expected_stop_trigger = instrument.make_price(Decimal("101.0") + stop_offset)
+    assert tester.buy_stop_order.trigger_price == expected_stop_trigger
 
 
 def test_post_only_with_test_reject(
@@ -2073,3 +2197,905 @@ def test_quote_quantity_amount_precision_validation(
     expected_qty = instrument.make_qty(1000.0)
     assert buy_order.quantity == expected_qty
     assert sell_order.quantity == expected_qty
+
+
+def test_stop_market_buy_order_creation(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop market buy orders are created correctly.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert isinstance(tester.buy_stop_order, StopMarketOrder)
+    assert tester.buy_stop_order.side == OrderSide.BUY
+    assert tester.buy_stop_order.quantity == Quantity.from_str("0.01")
+    # Stop buy should be above market
+    expected_trigger = instrument.make_price(Decimal("101.0") + (instrument.price_increment * 10))
+    assert tester.buy_stop_order.trigger_price == expected_trigger
+
+
+def test_stop_market_sell_order_creation(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop market sell orders are created correctly.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=False,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.sell_stop_order, StopMarketOrder)
+    assert tester.sell_stop_order.side == OrderSide.SELL
+    assert tester.sell_stop_order.quantity == Quantity.from_str("0.01")
+    # Stop sell should be below market
+    expected_trigger = instrument.make_price(Decimal("100.0") - (instrument.price_increment * 10))
+    assert tester.sell_stop_order.trigger_price == expected_trigger
+
+
+def test_stop_limit_order_with_limit_offset(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop limit orders use limit offset correctly.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_LIMIT,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert isinstance(tester.buy_stop_order, StopLimitOrder)
+    assert tester.buy_stop_order.side == OrderSide.BUY
+    # Trigger should be above market
+    expected_trigger = instrument.make_price(Decimal("101.0") + (instrument.price_increment * 10))
+    assert tester.buy_stop_order.trigger_price == expected_trigger
+    # Limit should be above trigger (worse price for stop)
+    expected_limit = instrument.make_price(expected_trigger + (instrument.price_increment * 5))
+    assert tester.buy_stop_order.price == expected_limit
+
+
+def test_market_if_touched_buy_order_below_market(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that MarketIfTouched buy orders are placed below market.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.MARKET_IF_TOUCHED,
+        stop_offset_ticks=10,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert isinstance(tester.buy_stop_order, MarketIfTouchedOrder)
+    assert tester.buy_stop_order.side == OrderSide.BUY
+    # IF_TOUCHED buy should be below market (buy on dip)
+    expected_trigger = instrument.make_price(Decimal("100.0") - (instrument.price_increment * 10))
+    assert tester.buy_stop_order.trigger_price == expected_trigger
+
+
+def test_market_if_touched_sell_order_above_market(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that MarketIfTouched sell orders are placed above market.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=False,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.MARKET_IF_TOUCHED,
+        stop_offset_ticks=10,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.sell_stop_order, MarketIfTouchedOrder)
+    assert tester.sell_stop_order.side == OrderSide.SELL
+    # IF_TOUCHED sell should be above market (sell on rally)
+    expected_trigger = instrument.make_price(Decimal("101.0") + (instrument.price_increment * 10))
+    assert tester.sell_stop_order.trigger_price == expected_trigger
+
+
+def test_limit_if_touched_order_with_limit_offset(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that LimitIfTouched orders use limit offset correctly.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=False,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.LIMIT_IF_TOUCHED,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.sell_stop_order, LimitIfTouchedOrder)
+    assert tester.sell_stop_order.side == OrderSide.SELL
+    # Trigger should be above market for sell
+    expected_trigger = instrument.make_price(Decimal("101.0") + (instrument.price_increment * 10))
+    assert tester.sell_stop_order.trigger_price == expected_trigger
+    # Limit should be above trigger (better price for IF_TOUCHED)
+    expected_limit = instrument.make_price(expected_trigger + (instrument.price_increment * 5))
+    assert tester.sell_stop_order.price == expected_limit
+
+
+def test_stop_order_with_trigger_type(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop orders use configured trigger type.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        stop_trigger_type="LAST_PRICE",
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.trigger_type == TriggerType.LAST_PRICE
+
+
+def test_stop_order_with_expiry_time(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop orders respect expiry time configuration.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        order_expire_time_delta_mins=30,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Freeze clock
+    start_time = pd.Timestamp("2024-01-01 10:00:00", tz="UTC")
+    clock.set_time(start_time.value)
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.time_in_force == TimeInForce.GTD
+    assert tester.buy_stop_order.expire_time is not None
+    expected_expire = start_time + pd.Timedelta(minutes=30)
+    time_diff = abs((tester.buy_stop_order.expire_time - expected_expire).total_seconds())
+    assert time_diff < 0.001
+
+
+def test_stop_orders_maintained_on_book_update(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop orders are maintained when order book updates.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    # Create order book
+    book = TestDataStubs.make_book(
+        instrument=instrument,
+        book_type=BookType.L2_MBP,
+        bids=[(100.0, 10.0), (99.5, 20.0)],
+        asks=[(101.0, 10.0), (101.5, 20.0)],
+    )
+
+    # Act
+    tester.on_order_book(book)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.buy_stop_order, StopMarketOrder)
+    assert isinstance(tester.sell_stop_order, StopMarketOrder)
+
+
+def test_stop_order_cancel_replace_on_price_move(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+    mocker,
+):
+    """
+    Test that stop orders are cancelled and replaced when price moves.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        cancel_replace_stop_orders_to_maintain_offset=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    cancel_spy = mocker.spy(tester, "cancel_order")
+
+    tester.on_start()
+
+    # Initial quote
+    quote1 = TestDataStubs.quote_tick(instrument, bid_price=100.0, ask_price=101.0)
+    tester.on_quote_tick(quote1)
+
+    initial_order = tester.buy_stop_order
+    # Simulate acceptance
+    initial_order.apply(TestEventStubs.order_submitted(initial_order))
+    initial_order.apply(
+        TestEventStubs.order_accepted(
+            initial_order,
+            venue_order_id=VenueOrderId("V-001"),
+        ),
+    )
+
+    # Act - price moves
+    quote2 = TestDataStubs.quote_tick(instrument, bid_price=102.0, ask_price=103.0)
+    tester.on_quote_tick(quote2)
+
+    # Assert
+    assert cancel_spy.call_count == 1
+    assert cancel_spy.call_args[0][0] == initial_order
+    # New order should be created
+    assert tester.buy_stop_order != initial_order
+    # Check new trigger price
+    expected_new_trigger = instrument.make_price(
+        Decimal("103.0") + (instrument.price_increment * 10),
+    )
+    assert tester.buy_stop_order.trigger_price == expected_new_trigger
+
+
+def test_stop_order_with_emulation_trigger(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that stop orders use emulation trigger when configured.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        emulation_trigger="BID_ASK",
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.emulation_trigger == TriggerType.BID_ASK
+
+
+def test_both_regular_and_stop_orders_together(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that both regular limit orders and stop orders work together.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_buys=True,
+        enable_sells=True,
+        enable_stop_buys=True,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=20,
+        tob_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert - all 4 orders should be created
+    assert tester.buy_order is not None
+    assert tester.sell_order is not None
+    assert tester.buy_stop_order is not None
+    assert tester.sell_stop_order is not None
+
+    # Check types
+    assert isinstance(tester.buy_order, LimitOrder)
+    assert isinstance(tester.sell_order, LimitOrder)
+    assert isinstance(tester.buy_stop_order, StopMarketOrder)
+    assert isinstance(tester.sell_stop_order, StopMarketOrder)
+
+    # Check placements
+    # Regular buy below bid
+    assert tester.buy_order.price < instrument.make_price(100.0)
+    # Regular sell above ask
+    assert tester.sell_order.price > instrument.make_price(101.0)
+    # Stop buy above ask
+    assert tester.buy_stop_order.trigger_price > instrument.make_price(101.0)
+    # Stop sell below bid
+    assert tester.sell_stop_order.trigger_price < instrument.make_price(100.0)
+
+
+@pytest.mark.parametrize(
+    "order_display_qty,expected_display",
+    [
+        (Decimal("0.25"), 0.25),  # Partial display (iceberg)
+        (Decimal("0"), 0),  # Hidden order (zero display)
+        (None, None),  # No display qty specified
+    ],
+)
+def test_order_display_qty_for_limit_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+    order_display_qty,
+    expected_display,
+):
+    """
+    Test that display_qty is set correctly for limit orders.
+
+    Tests iceberg orders, hidden orders (display_qty=0), and normal orders.
+
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.0"),
+        order_display_qty=order_display_qty,
+        enable_buys=True,
+        enable_sells=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_order is not None
+    assert tester.sell_order is not None
+
+    # Check display quantities are set correctly
+    if expected_display is None:
+        assert tester.buy_order.display_qty is None
+        assert tester.sell_order.display_qty is None
+    else:
+        expected_display_qty = instrument.make_qty(expected_display)
+        assert tester.buy_order.display_qty == expected_display_qty
+        assert tester.sell_order.display_qty == expected_display_qty
+
+    # Total quantities should always be the full amount
+    expected_total_qty = instrument.make_qty(1.0)
+    assert tester.buy_order.quantity == expected_total_qty
+    assert tester.sell_order.quantity == expected_total_qty
+
+
+def test_order_display_qty_for_stop_limit_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that display_qty (iceberg) is set correctly for stop limit orders.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("2.0"),
+        order_display_qty=Decimal("0.5"),  # Display only 0.5
+        enable_stop_buys=True,
+        enable_stop_sells=True,
+        stop_order_type=OrderType.STOP_LIMIT,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert tester.sell_stop_order is not None
+    assert isinstance(tester.buy_stop_order, StopLimitOrder)
+    assert isinstance(tester.sell_stop_order, StopLimitOrder)
+
+    # Check display quantities
+    expected_display_qty = instrument.make_qty(0.5)
+    assert tester.buy_stop_order.display_qty == expected_display_qty
+    assert tester.sell_stop_order.display_qty == expected_display_qty
+
+    # Total quantities should be full amount
+    expected_total_qty = instrument.make_qty(2.0)
+    assert tester.buy_stop_order.quantity == expected_total_qty
+    assert tester.sell_stop_order.quantity == expected_total_qty
+
+
+def test_order_display_qty_for_limit_if_touched_orders(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that display_qty (iceberg) is set correctly for limit if touched orders.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.5"),
+        order_display_qty=Decimal("0.3"),  # Display only 0.3 at a time
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.LIMIT_IF_TOUCHED,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_stop_order is not None
+    assert isinstance(tester.buy_stop_order, LimitIfTouchedOrder)
+
+    # Check display quantity
+    expected_display_qty = instrument.make_qty(0.3)
+    assert tester.buy_stop_order.display_qty == expected_display_qty
+
+    # Total quantity should be full amount
+    expected_total_qty = instrument.make_qty(1.5)
+    assert tester.buy_stop_order.quantity == expected_total_qty
+
+
+def test_order_without_display_qty(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that orders work correctly when display_qty is not configured.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("1.0"),
+        # order_display_qty not set - should be None
+        enable_buys=True,
+        enable_sells=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    # Act
+    tester.on_quote_tick(quote)
+
+    # Assert
+    assert tester.buy_order is not None
+    assert tester.sell_order is not None
+    assert tester.buy_order.display_qty is None
+    assert tester.sell_order.display_qty is None
+    expected_qty = instrument.make_qty(1.0)
+    assert tester.buy_order.quantity == expected_qty
+    assert tester.sell_order.quantity == expected_qty

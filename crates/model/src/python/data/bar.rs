@@ -380,7 +380,7 @@ impl Bar {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Bar` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::Bar(*self))
     }
 
@@ -431,8 +431,6 @@ mod tests {
         #[case] low: &str,
         #[case] close: &str,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
         let open = Price::from(open);
         let high = Price::from(high);
@@ -448,8 +446,6 @@ mod tests {
 
     #[rstest]
     fn test_bar_py_new() {
-        pyo3::prepare_freethreaded_python();
-
         let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
         let open = Price::from("1.00005");
         let high = Price::from("1.00010");
@@ -465,10 +461,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict() {
-        pyo3::prepare_freethreaded_python();
         let bar = Bar::default();
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = bar.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
             assert_eq!(dict_string, expected_string);
@@ -477,10 +473,10 @@ mod tests {
 
     #[rstest]
     fn test_as_from_dict() {
-        pyo3::prepare_freethreaded_python();
         let bar = Bar::default();
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = bar.py_to_dict(py).unwrap();
             let parsed = Bar::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, bar);
@@ -489,10 +485,10 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject() {
-        pyo3::prepare_freethreaded_python();
         let bar = Bar::default();
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let bar_pyobject = bar.into_py_any_unwrap(py);
             let parsed_bar = Bar::from_pyobject(bar_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_bar, bar);

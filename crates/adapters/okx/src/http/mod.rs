@@ -15,8 +15,7 @@
 
 //! HTTP/REST client implementation for the OKX v5 API.
 //!
-//! This module provides a strongly-typed HTTP client for interacting with OKX's REST endpoints,
-//! including:
+//! This module provides a HTTP client for interacting with OKX's REST endpoints, including:
 //!
 //! - Market data queries (instruments, trades, bars, tickers).
 //! - Account information and balances.

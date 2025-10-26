@@ -15,7 +15,11 @@
 
 //! Python bindings for the [`Cache`] component.
 
+use std::{cell::RefCell, rc::Rc};
+
 use nautilus_core::python::to_pyvalue_err;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
@@ -38,6 +42,77 @@ use crate::{
     cache::{Cache, CacheConfig},
     enums::SerializationEncoding,
 };
+
+/// Wrapper providing shared access to [`Cache`] from Python.
+///
+/// This wrapper holds an `Rc<RefCell<Cache>>` allowing actors to share
+/// the same cache instance. All methods delegate to the underlying cache.
+#[allow(non_camel_case_types)]
+#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", unsendable)]
+#[derive(Debug, Clone)]
+pub struct PyCache(Rc<RefCell<Cache>>);
+
+impl PyCache {
+    /// Creates a `PyCache` from an `Rc<RefCell<Cache>>`.
+    #[must_use]
+    pub fn from_rc(rc: Rc<RefCell<Cache>>) -> Self {
+        Self(rc)
+    }
+}
+
+#[pymethods]
+impl PyCache {
+    #[pyo3(name = "instrument")]
+    fn py_instrument(
+        &self,
+        py: Python,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let cache = self.0.borrow();
+        match cache.instrument(&instrument_id) {
+            Some(instrument) => Ok(Some(instrument_any_to_pyobject(py, instrument.clone())?)),
+            None => Ok(None),
+        }
+    }
+
+    #[pyo3(name = "quote")]
+    fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
+        self.0.borrow().quote(&instrument_id).copied()
+    }
+
+    #[pyo3(name = "trade")]
+    fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
+        self.0.borrow().trade(&instrument_id).copied()
+    }
+
+    #[pyo3(name = "bar")]
+    fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
+        self.0.borrow().bar(&bar_type).copied()
+    }
+
+    #[pyo3(name = "order_book")]
+    fn py_order_book(&self, instrument_id: InstrumentId) -> Option<OrderBook> {
+        self.0.borrow().order_book(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool")]
+    fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
+        self.0
+            .try_borrow()
+            .ok()
+            .and_then(|cache| cache.pool(&instrument_id).cloned())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler")]
+    fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
+        self.0
+            .try_borrow()
+            .ok()
+            .and_then(|cache| cache.pool_profiler(&instrument_id).cloned())
+    }
+}
 
 #[pymethods]
 impl CacheConfig {
@@ -156,13 +231,17 @@ impl Cache {
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(instrument_any).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "instrument")]
-    fn py_instrument(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Option<PyObject>> {
+    fn py_instrument(
+        &self,
+        py: Python,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<Py<PyAny>>> {
         match self.instrument(&instrument_id) {
             Some(instrument) => Ok(Some(instrument_any_to_pyobject(py, instrument.clone())?)),
             None => Ok(None),
@@ -173,12 +252,12 @@ impl Cache {
     fn py_instrument_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
         self.instrument_ids(venue.as_ref())
             .into_iter()
-            .cloned()
+            .copied()
             .collect()
     }
 
     #[pyo3(name = "instruments")]
-    fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<PyObject>> {
+    fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let mut py_instruments = Vec::new();
 
         match venue {
@@ -206,7 +285,7 @@ impl Cache {
     fn py_add_order(
         &mut self,
         py: Python,
-        order: PyObject,
+        order: Py<PyAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         replace_existing: Option<bool>,
@@ -222,7 +301,7 @@ impl Cache {
     }
 
     #[pyo3(name = "order")]
-    fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<PyObject>> {
+    fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
             Some(order) => Ok(Some(order_any_to_pyobject(py, order.clone())?)),
             None => Ok(None),
@@ -296,7 +375,7 @@ impl Cache {
     fn py_add_position(
         &mut self,
         py: Python,
-        position: PyObject,
+        position: Py<PyAny>,
         oms_type: OmsType,
     ) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
@@ -305,7 +384,7 @@ impl Cache {
     }
 
     #[pyo3(name = "position")]
-    fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<PyObject>> {
+    fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
             Some(position) => Ok(Some(position.clone().into_pyobject(py)?.into())),
             None => Ok(None),
@@ -392,32 +471,32 @@ impl Cache {
 
     #[pyo3(name = "quote")]
     fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
-        self.quote(&instrument_id).cloned()
+        self.quote(&instrument_id).copied()
     }
 
     #[pyo3(name = "trade")]
     fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
-        self.trade(&instrument_id).cloned()
+        self.trade(&instrument_id).copied()
     }
 
     #[pyo3(name = "bar")]
     fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
-        self.bar(&bar_type).cloned()
+        self.bar(&bar_type).copied()
     }
 
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
-        self.quotes(&instrument_id).map(|deque| deque.to_vec())
+        self.quotes(&instrument_id)
     }
 
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
-        self.trades(&instrument_id).map(|deque| deque.to_vec())
+        self.trades(&instrument_id)
     }
 
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
-        self.bars(&bar_type).map(|deque| deque.to_vec())
+        self.bars(&bar_type)
     }
 
     #[pyo3(name = "has_quote_ticks")]
@@ -452,7 +531,7 @@ impl Cache {
 
     #[pyo3(name = "mark_price")]
     fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
-        self.mark_price(&instrument_id).cloned()
+        self.mark_price(&instrument_id).copied()
     }
 
     #[pyo3(name = "mark_prices")]
@@ -462,7 +541,7 @@ impl Cache {
 
     #[pyo3(name = "index_price")]
     fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
-        self.index_price(&instrument_id).cloned()
+        self.index_price(&instrument_id).copied()
     }
 
     #[pyo3(name = "index_prices")]
@@ -472,7 +551,7 @@ impl Cache {
 
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
-        self.funding_rate(&instrument_id).cloned()
+        self.funding_rate(&instrument_id).copied()
     }
 
     #[pyo3(name = "order_book")]
@@ -498,5 +577,57 @@ impl Cache {
     #[pyo3(name = "synthetic_ids")]
     fn py_synthetic_ids(&self) -> Vec<InstrumentId> {
         self.synthetic_ids().into_iter().copied().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool")]
+    fn py_add_pool(&mut self, pool: Pool) -> PyResult<()> {
+        self.add_pool(pool).map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool")]
+    fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
+        self.pool(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_ids")]
+    fn py_pool_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pools")]
+    fn py_pools(&self, venue: Option<Venue>) -> Vec<Pool> {
+        self.pools(venue.as_ref()).into_iter().cloned().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool_profiler")]
+    fn py_add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> PyResult<()> {
+        self.add_pool_profiler(pool_profiler)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler")]
+    fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
+        self.pool_profiler(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler_ids")]
+    fn py_pool_profiler_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_profiler_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profilers")]
+    fn py_pool_profilers(&self, venue: Option<Venue>) -> Vec<PoolProfiler> {
+        self.pool_profilers(venue.as_ref())
+            .into_iter()
+            .cloned()
+            .collect()
     }
 }

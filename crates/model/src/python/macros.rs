@@ -33,12 +33,12 @@ macro_rules! identifier_for_python {
                 Ok(())
             }
 
-            fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+            fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
                 use pyo3::IntoPyObjectExt;
                 (self.to_string(),).into_py_any(py)
             }
 
-            fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+            fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
                 use pyo3::IntoPyObjectExt;
                 let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
                 let state = self.__getstate__(py)?;

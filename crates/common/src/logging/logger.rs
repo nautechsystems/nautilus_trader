@@ -297,7 +297,7 @@ impl Serialize for LogLineWrapper {
         json_obj.insert("level".to_string(), self.line.level.to_string());
         json_obj.insert("color".to_string(), self.line.color.to_string());
         json_obj.insert("component".to_string(), self.line.component.to_string());
-        json_obj.insert("message".to_string(), self.line.message.to_string());
+        json_obj.insert("message".to_string(), self.line.message.clone());
 
         json_obj.serialize(serializer)
     }
@@ -401,7 +401,7 @@ impl Logger {
         set_boxed_logger(Box::new(logger))?;
 
         // Store the sender globally so additional guards can be created
-        if LOGGER_TX.set(tx.clone()).is_err() {
+        if LOGGER_TX.set(tx).is_err() {
             debug_assert!(
                 false,
                 "LOGGER_TX already set - re-initialization not supported"
@@ -472,12 +472,7 @@ impl Logger {
         let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
         } else {
-            FileWriter::new(
-                trader_id.clone(),
-                instance_id.clone(),
-                file_config.clone(),
-                fileout_level,
-            )
+            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         };
 
         let process_event = |event: LogEvent,
@@ -587,9 +582,14 @@ impl Logger {
     }
 }
 
-/// Gracefully shuts down the logging subsystem by preventing new log events,
-/// signaling the logging thread to close, draining pending messages, and joining
-/// the logging thread.
+/// Gracefully shuts down the logging subsystem.
+///
+/// Performs the same shutdown sequence as dropping the last `LogGuard`, but can be called
+/// explicitly for deterministic shutdown timing (e.g., testing or Windows Python applications).
+///
+/// # Safety
+///
+/// Safe to call multiple times. Thread join is skipped if called from the logging thread.
 pub(crate) fn shutdown_graceful() {
     // Prevent further logging
     LOGGING_BYPASSED.store(true, Ordering::SeqCst);
@@ -648,6 +648,14 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 /// - All log messages are properly flushed when intermediate guards are dropped.
 /// - The logging thread is cleanly terminated and joined when the last guard is dropped.
 ///
+/// # Shutdown Behavior
+///
+/// When the last guard is dropped, the logging thread is signaled to close, drains pending
+/// messages, and is joined to ensure all logs are written before process termination.
+///
+/// **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
+/// occasionally prevent proper thread join, resulting in truncated logs.
+///
 /// # Limits
 ///
 /// The system supports a maximum of 255 concurrent `LogGuard` instances.
@@ -687,6 +695,10 @@ impl LogGuard {
 }
 
 impl Drop for LogGuard {
+    /// Handles cleanup when a `LogGuard` is dropped.
+    ///
+    /// Sends `Flush` if other guards remain active, otherwise sends `Close`, joins the
+    /// logging thread, and resets the subsystem state.
     fn drop(&mut self) {
         let previous_count = LOGGING_GUARDS_ACTIVE
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
@@ -880,7 +892,6 @@ mod tests {
                         .find(|entry| entry.path().is_file())
                         .expect("No files found in directory")
                         .path();
-                    dbg!(&log_file_path);
                     log_contents = std::fs::read_to_string(log_file_path)
                         .expect("Error while reading log file");
                     !log_contents.is_empty()

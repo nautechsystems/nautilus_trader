@@ -2,22 +2,13 @@
 
 Founded in 2017, Binance is one of the largest cryptocurrency exchanges in terms
 of daily trading volume, and open interest of crypto assets and crypto
-derivative products. This integration supports live market data ingest and order
-execution with Binance.
+derivative products.
 
-## Installation
+This integration supports live market data ingest and order execution for:
 
-To install NautilusTrader with Binance support:
-
-```bash
-pip install --upgrade "nautilus_trader[binance]"
-```
-
-To build from source with all extras (including Binance):
-
-```bash
-uv sync --all-extras
-```
+- **Binance Spot** (including Binance US)
+- **Binance USDT-Margined Futures** (perpetuals and delivery contracts)
+- **Binance Coin-Margined Futures**
 
 ## Examples
 
@@ -86,7 +77,7 @@ The following tables detail the order types, execution instructions, and time-in
 
 | Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
 |------------------------|------|--------|--------------|--------------|-------------------------|
-| `MARKET`               | ✓    | ✓      | ✓            | ✓            |                         |
+| `MARKET`               | ✓    | ✓      | ✓            | ✓            | Quote quantity support: Spot/Margin only. |
 | `LIMIT`                | ✓    | ✓      | ✓            | ✓            |                         |
 | `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
 | `STOP_LIMIT`           | ✓    | ✓      | ✓            | ✓            |                         |
@@ -137,68 +128,275 @@ Only *limit* order types support `post_only`.
 
 ### Position management
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|---------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                  |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                 |
 | Position mode       | -    | -      | ✓            | ✓            | One-Way vs Hedge mode (position IDs).       |
-| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.      |
+| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
 | Margin mode         | -    | ✓      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
+
+### Risk events
+
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
+|----------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Liquidation handling | -    | -      | ✓            | ✓            | Exchange-forced position closures.          |
+| ADL handling         | -    | -      | ✓            | ✓            | Auto-Deleveraging events.                   |
+
+Binance Futures can trigger exchange-generated orders in response to risk events:
+
+- **Liquidations**: When insufficient margin exists to maintain a position, Binance forcibly closes it at the bankruptcy price. These orders have client IDs starting with `autoclose-`.
+- **ADL (Auto-Deleveraging)**: When the insurance fund is depleted, Binance closes profitable positions to cover losses. These orders use client ID `adl_autoclose`.
+- **Settlements**: Quarterly contract deliveries use client IDs starting with `settlement_autoclose-`.
+
+The adapter detects these special order types via their client ID patterns and execution type (`CALCULATED`), then:
+
+1. Logs a warning with order details for monitoring.
+2. Generates an `OrderStatusReport` to seed the cache.
+3. Generates a `FillReport` with correct fill details and TAKER liquidity side.
+
+This ensures liquidation and ADL events are properly reflected in portfolio state and PnL calculations.
 
 ### Order querying
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|---------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                      |
-| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                       |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
+| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
 | Order status updates| ✓    | ✓      | ✓            | ✓            | Real-time order state changes.              |
 | Trade history       | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.                 |
 
 ### Contingent orders
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |---------------------|------|--------|--------------|--------------|----------------------------------------------|
 | Order lists         | -    | -      | -            | -            | *Not supported*.                             |
 | OCO orders          | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
-| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.       |
-| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.          |
+| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.        |
+| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.           |
 
-### Configuration options
+### Order parameters
 
-The following execution client configuration options affect order behavior:
+Customize individual orders by supplying a `params` dictionary when calling `Strategy.submit_order`. The Binance execution clients currently recognise:
 
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
-| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
-| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
-| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
-| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
-| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
+| Parameter       | Type   | Account types     | Description |
+|-----------------|--------|-------------------|-------------|
+| `price_match`   | `str`  | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see Price match section below) to delegate price selection to the exchange. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
+
+### Price match
+
+Binance Futures supports BBO (Best Bid/Offer) price matching via the `priceMatch` parameter, which delegates price selection to the exchange. This feature allows limit orders to dynamically join the order book at optimal prices without manually specifying the exact price level.
+
+When using `price_match`, you submit a limit order with a reference price (for local risk checks), but Binance determines the actual working price based on the current market state and the selected price match mode.
+
+#### Valid price match values
+
+Valid `priceMatch` values for Binance Futures:
+
+| Value         | Behaviour                                                      |
+|---------------|----------------------------------------------------------------|
+| `OPPONENT`    | Join the best price on the opposing side of the book.          |
+| `OPPONENT_5`  | Join the opposing side price but allow up to a 5-tick offset.  |
+| `OPPONENT_10` | Join the opposing side price but allow up to a 10-tick offset. |
+| `OPPONENT_20` | Join the opposing side price but allow up to a 20-tick offset. |
+| `QUEUE`       | Join the best price on the same side (stay maker).             |
+| `QUEUE_5`     | Join the same-side queue but offset up to 5 ticks.             |
+| `QUEUE_10`    | Join the same-side queue but offset up to 10 ticks.            |
+| `QUEUE_20`    | Join the same-side queue but offset up to 20 ticks.            |
+
+:::info
+For more details, see the [official documentation](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api).
+:::
+
+#### Event sequence
+
+When an order is submitted with `price_match`, the following sequence of events occurs:
+
+1. **Order submission**: Nautilus sends the order to Binance with the `priceMatch` parameter but omits the limit price in the API request.
+2. **Order acceptance**: Binance accepts the order and determines the actual working price based on the current market and the specified price match mode.
+3. **OrderAccepted event**: Nautilus generates an `OrderAccepted` event when the order is confirmed.
+4. **OrderUpdated event**: If the Binance-accepted price differs from the original reference price, Nautilus immediately generates an `OrderUpdated` event with the actual working price.
+5. **Price synchronization**: The order's limit price in the Nautilus cache is now synchronized with the actual price accepted by Binance.
+
+This ensures that the order price in your system accurately reflects what Binance has accepted, which is critical for position management, risk calculations, and strategy logic.
+
+#### Example
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("65000"),  # Reference price for local risk checks
+)
+
+strategy.submit_order(
+    order,
+    params={"price_match": "QUEUE"},
+)
+```
+
+:::note
+After submission, if Binance accepts the order at a different price (e.g., 64,995.50), you will receive both an `OrderAccepted` event followed by an `OrderUpdated` event with the new price.
+:::
 
 ### Trailing stops
 
-Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
-This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price should be set using the `activation_price` parameter.
+For trailing stop market orders on Binance:
 
-Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
-The activation price is the price at which the order will begin trailing based on the callback rate.
+- Use `activation_price` (optional) to specify when the trailing mechanism activates
+- When omitted, Binance uses the current market price at submission time
+- Use `trailing_offset` for the callback rate (in basis points)
 
 :::warning
-For Binance trailing stop orders, you must use `activation_price` instead of `trigger_price`. Using `trigger_price` will result in an order rejection.
+Do not use `trigger_price` for trailing stop orders - it will fail with an error. Use `activation_price` instead.
 :::
 
-When submitting trailing stop orders from your strategy, you have two options:
+## Order books
 
-1. Use the `activation_price` to manually set the activation price.
-2. Leave the `activation_price` as `None`, activating the trailing mechanism immediately.
+Order books can be maintained at full or partial depths depending on the
+subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
+Nautilus will use the highest streaming rate possible:
 
-You must also have at least *one* of the following:
+Order books can be maintained at full or partial depths based on the subscription settings.
+WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
+highest available streaming rate:
 
-- The `activation_price` for the order is set.
-- (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
-- (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
+- **Spot**: 100ms
+- **Futures**: 0ms (*unthrottled*)
+
+There is a limitation of one order book per instrument per trader instance.
+As stream subscriptions may vary, the latest order book data (deltas or snapshots)
+subscription will be used by the Binance data client.
+
+Order book snapshot rebuilds will be triggered on:
+
+- Initial subscription of the order book data.
+- Data websocket reconnects.
+
+The sequence of events is as follows:
+
+- Deltas will start buffered.
+- Snapshot is requested and awaited.
+- Snapshot response is parsed to `OrderBookDeltas`.
+- Snapshot deltas are sent to the `DataEngine`.
+- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
+- Deltas will stop buffering.
+- Remaining deltas are sent to the `DataEngine`.
+
+## Binance data differences
+
+The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
+where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
+
+## Binance specific data
+
+It's possible to subscribe to Binance specific data streams as they become available to the
+adapter over time.
+
+:::note
+Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
+As more adapters are built out which need for example mark price and funding rate updates, then these
+methods may eventually become first-class (not requiring custom/generic subscriptions as below).
+:::
+
+### `BinanceFuturesMarkPriceUpdate`
+
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
+data streams by subscribing in the following way from your actor or strategy:
+
+```python
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.model import DataType
+from nautilus_trader.model import ClientId
+
+# In your `on_start` method
+self.subscribe_data(
+    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
+    client_id=ClientId("BINANCE"),
+)
+```
+
+This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate`
+objects to your `on_data` method. You will need to check the type, as this
+method acts as a flexible handler for all custom/generic data.
+
+```python
+from nautilus_trader.core import Data
+
+def on_data(self, data: Data):
+    # First check the type of data
+    if isinstance(data, BinanceFuturesMarkPriceUpdate):
+        # Do something with the data
+```
+
+## Rate limiting
+
+Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (e.g., every minute resets at :00 seconds). The adapter uses token bucket rate limiters to approximate this behavior, helping to reduce the risk of quota violations while maintaining high throughput for normal trading operations.
+
+| Key / Endpoint        | Limit (weight/min) | Notes                                                 |
+|-----------------------|--------------------|-------------------------------------------------------|
+| `binance:global`      | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
+| `/api/v3/order`       | 3,000              | Spot order placement.                                 |
+| `/api/v3/allOrders`   | 150                | Spot all-orders endpoint (20× weight multiplier).     |
+| `/api/v3/klines`      | 600                | Spot historical klines.                               |
+| `/fapi/v1/order`      | 1,200              | Futures order placement.                              |
+| `/fapi/v1/allOrders`  | 60                 | Futures historical orders (20× multiplier).           |
+| `/fapi/v1/klines`     | 600                | Futures historical klines.                            |
+
+Binance assigns request weight dynamically (e.g. `/klines` scales with `limit`). The quotas above mirror the static limits but the client still draws a single token per call, so long history pulls may need manual pacing to respect the live `X-MBX-USED-WEIGHT-*` headers.
+
+:::warning
+Binance returns HTTP 429 when you exceed the allowed weight and repeated bursts can trigger temporary IP bans, so leave enough headroom between batches.
+:::
+
+:::info
+For more details on rate limiting, see the official documentation: <https://binance-docs.github.io/apidocs/futures/en/#limits>.
+:::
 
 ## Configuration
+
+### Data client configuration options
+
+| Option                             | Default | Description |
+|------------------------------------|---------|-------------|
+| `venue`                            | `BINANCE` | Venue identifier used when registering the client. |
+| `api_key`                          | `None`  | Binance API key; loaded from environment variables when omitted. |
+| `api_secret`                       | `None`  | Binance API secret; loaded from environment variables when omitted. |
+| `key_type`                         | `HMAC`  | Cryptographic key type (`HMAC`, `RSA`, or `ED25519`). |
+| `account_type`                     | `SPOT`  | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
+| `base_url_http`                    | `None`  | Override for the HTTP REST base URL. |
+| `base_url_ws`                      | `None`  | Override for the WebSocket base URL. |
+| `us`                               | `False` | Route requests to Binance US endpoints when `True`. |
+| `testnet`                          | `False` | Use Binance testnet endpoints when `True`. |
+| `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalogue refreshes. |
+| `use_agg_trade_ticks`              | `False` | When `True`, subscribe to aggregated trade ticks instead of raw trades. |
+
+### Execution client configuration options
+
+| Option                               | Default | Description |
+|--------------------------------------|---------|-------------|
+| `venue`                              | `BINANCE` | Venue identifier used when registering the client. |
+| `api_key`                            | `None`  | Binance API key; loaded from environment variables when omitted. |
+| `api_secret`                         | `None`  | Binance API secret; loaded from environment variables when omitted. |
+| `key_type`                           | `HMAC`  | Cryptographic key type (`HMAC`, `RSA`, or `ED25519`). |
+| `account_type`                       | `SPOT`  | Account type for order placement (spot, margin, USDT futures, coin futures). |
+| `base_url_http`                      | `None`  | Override for the HTTP REST base URL. |
+| `base_url_ws`                        | `None`  | Override for the WebSocket base URL. |
+| `us`                                 | `False` | Route requests to Binance US endpoints when `True`. |
+| `testnet`                            | `False` | Use Binance testnet endpoints when `True`. |
+| `use_gtd`                            | `True`  | When `False`, remaps GTD orders to GTC for local expiry management. |
+| `use_reduce_only`                    | `True`  | When `True`, passes through `reduce_only` instructions to Binance. |
+| `use_position_ids`                   | `True`  | Enable Binance hedging position IDs; set `False` for virtual hedging. |
+| `use_trade_lite`                     | `False` | Use TRADE_LITE execution events that include derived fees. |
+| `treat_expired_as_canceled`          | `False` | Treat `EXPIRED` execution types as `CANCELED` when `True`. |
+| `recv_window_ms`                     | `5,000` | Receive window (milliseconds) for signed REST requests. |
+| `max_retries`                        | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms`             | `None`  | Initial delay (milliseconds) between retry attempts. |
+| `retry_delay_max_ms`                 | `None`  | Maximum delay (milliseconds) between retry attempts. |
+| `futures_leverages`                  | `None`  | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
+| `futures_margin_types`               | `None`  | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
+| `listen_key_ping_max_failures`       | `3`     | Consecutive listen key ping failures allowed before recovery triggers. |
+| `log_rejected_due_post_only_as_warning` | `True` | Log post-only rejections as warnings when `True`; otherwise as errors. |
 
 The most common use case is to configure a live `TradingNode` to include Binance
 data and execution clients. To achieve this, add a `BINANCE` section to your client
@@ -462,80 +660,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             self.submit_order(order, position_id)
     ```
 
-## Order books
-
-Order books can be maintained at full or partial depths depending on the
-subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
-Nautilus will use the highest streaming rate possible:
-
-Order books can be maintained at full or partial depths based on the subscription settings.
-WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
-highest available streaming rate:
-
-- **Spot**: 100ms
-- **Futures**: 0ms (*unthrottled*)
-
-There is a limitation of one order book per instrument per trader instance.
-As stream subscriptions may vary, the latest order book data (deltas or snapshots)
-subscription will be used by the Binance data client.
-
-Order book snapshot rebuilds will be triggered on:
-
-- Initial subscription of the order book data.
-- Data websocket reconnects.
-
-The sequence of events is as follows:
-
-- Deltas will start buffered.
-- Snapshot is requested and awaited.
-- Snapshot response is parsed to `OrderBookDeltas`.
-- Snapshot deltas are sent to the `DataEngine`.
-- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
-- Deltas will stop buffering.
-- Remaining deltas are sent to the `DataEngine`.
-
-## Binance data differences
-
-The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
-where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
-
-## Binance specific data
-
-It's possible to subscribe to Binance specific data streams as they become available to the
-adapter over time.
-
-:::note
-Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
-As more adapters are built out which need for example mark price and funding rate updates, then these
-methods may eventually become first-class (not requiring custom/generic subscriptions as below).
+:::info
+For additional features or to contribute to the Binance adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
 :::
-
-### `BinanceFuturesMarkPriceUpdate`
-
-You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
-data streams by subscribing in the following way from your actor or strategy:
-
-```python
-from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.model import DataType
-from nautilus_trader.model import ClientId
-
-# In your `on_start` method
-self.subscribe_data(
-    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
-    client_id=ClientId("BINANCE"),
-)
-```
-
-This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate`
-objects to your `on_data` method. You will need to check the type, as this
-method acts as a flexible handler for all custom/generic data.
-
-```python
-from nautilus_trader.core import Data
-
-def on_data(self, data: Data):
-    # First check the type of data
-    if isinstance(data, BinanceFuturesMarkPriceUpdate):
-        # Do something with the data
-```

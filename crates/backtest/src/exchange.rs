@@ -49,7 +49,7 @@ use nautilus_model::{
     orders::PassiveOrderAny,
     types::{AccountBalance, Currency, Money, Price},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
 use crate::modules::SimulationModule;
 
@@ -518,7 +518,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&delta.instrument_id) {
-            matching_engine.process_order_book_delta(&delta);
+            matching_engine.process_order_book_delta(&delta).unwrap();
         } else {
             panic!("Matching engine should be initialized");
         }
@@ -549,7 +549,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
-            matching_engine.process_order_book_deltas(&deltas);
+            matching_engine.process_order_book_deltas(&deltas).unwrap();
         } else {
             panic!("Matching engine should be initialized");
         }
@@ -774,11 +774,11 @@ impl SimulatedExchange {
 
         // Set leverages
         if let Some(AccountAny::Margin(mut margin_account)) = self.get_account() {
-            margin_account.set_default_leverage(self.default_leverage.to_f64().unwrap());
+            margin_account.set_default_leverage(self.default_leverage);
 
             // Set instrument specific leverages
             for (instrument_id, leverage) in &self.leverages {
-                margin_account.set_leverage(*instrument_id, leverage.to_f64().unwrap());
+                margin_account.set_leverage(*instrument_id, *leverage);
             }
         }
     }

@@ -15,7 +15,9 @@ runs:
   steps:
     - name: Debug github_ref
       shell: bash
-      run: echo "Received github_ref:" ${{ inputs.github_ref }}
+      run: echo "Received github_ref:" "${INPUTS_GITHUB_REF}"
+      env:
+        INPUTS_GITHUB_REF: ${{ inputs.github_ref }}
 
     - name: Update version in pyproject.toml
       if: ${{ inputs.github_ref != 'refs/heads/master' }}
@@ -47,7 +49,7 @@ runs:
         export CARGO_BUILD_JOBS=1
         export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:$PYTHON_LIB_DIR:$LD_LIBRARY_PATH"
         export LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:$PYTHON_LIB_DIR:$LIBRARY_PATH"
-        export PYO3_PYTHON=$(which python${{ inputs.python-version }})
+        export PYO3_PYTHON=$(which "python${INPUTS_PYTHON_VERSION}")
         export RUSTFLAGS="-C link-arg=-L${PYTHON_LIB_DIR} -C link-arg=-lpython${PYTHON_VERSION}"
 
         echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
@@ -59,6 +61,8 @@ runs:
 
         uv build --wheel
         ls -lh dist/
+      env:
+        INPUTS_PYTHON_VERSION: ${{ inputs.python-version }}
 
     - name: Build Python wheel (Windows)
       if: runner.os == 'Windows'
@@ -72,7 +76,10 @@ runs:
       shell: bash
       run: |
         export PATH="$pythonLocation/bin:$PATH"
-        export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        export PYO3_PYTHON=$(
+          which "python${INPUTS_PYTHON_VERSION}" ||
+          echo "$pythonLocation/bin/python${INPUTS_PYTHON_VERSION}"
+        )
         export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
 
         PYTHON_LIB_DIR=$(dirname $(dirname $PYO3_PYTHON))/lib
@@ -86,6 +93,8 @@ runs:
 
         uv build --wheel
         ls -lh dist/
+      env:
+        INPUTS_PYTHON_VERSION: ${{ inputs.python-version }}
 
     - name: Install Python wheel
       shell: bash

@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Core live trading components and machinery for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_live"
@@ -27,13 +30,10 @@ extension-module = [
   "nautilus-model/extension-module",
   "nautilus-portfolio/extension-module",
   "nautilus-risk/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-]
+ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
@@ -65,11 +65,13 @@ nautilus-system = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

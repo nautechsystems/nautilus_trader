@@ -56,10 +56,12 @@ logs/
 .python-version
 .ruff_cache/
 *dask-worker-space*
+__pycache__/
 cython_debug/
 requirements*
 venv*/
-__pycache__/
+.venv*/
+python/nautilus_trader/_libnautilus.pyi
 
 # Build environment and temp
 _build/

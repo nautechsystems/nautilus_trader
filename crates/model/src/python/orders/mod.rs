@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
+use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
 use crate::{
     enums::OrderType,
@@ -39,7 +39,7 @@ pub mod trailing_stop_market;
 /// # Errors
 ///
 /// Returns a `PyErr` if extraction fails or the order type is unsupported.
-pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> {
+pub fn pyobject_to_order_any(py: Python, order: Py<PyAny>) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
     if order_type == OrderType::Limit {
         let limit = order.extract::<LimitOrder>(py)?;
@@ -78,7 +78,7 @@ pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> 
 /// # Errors
 ///
 /// Returns a `PyErr` if conversion to a Python object fails.
-pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<PyObject> {
+pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<Py<PyAny>> {
     match order {
         OrderAny::Limit(limit_order) => limit_order.into_py_any(py),
         OrderAny::LimitIfTouched(limit_if_touched_order) => limit_if_touched_order.into_py_any(py),

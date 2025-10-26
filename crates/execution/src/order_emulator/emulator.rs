@@ -32,7 +32,7 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
@@ -214,6 +214,9 @@ impl OrderEmulator {
         Ok(())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order cannot be converted to a passive order.
     pub fn on_event(&mut self, event: OrderEventAny) {
         log::info!("{RECV}{EVT} {event}");
 
@@ -222,7 +225,9 @@ impl OrderEmulator {
         if let Some(order) = self.cache.borrow().order(&event.client_order_id())
             && order.is_closed()
             && let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id())
-            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+            && let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            )
         {
             log::error!("Error deleting order: {e}");
         }
@@ -360,7 +365,10 @@ impl OrderEmulator {
         self.manager.cache_submit_order_command(command);
 
         // Check if immediately marketable
-        matching_core.match_order(&PassiveOrderAny::from(order.clone()), true);
+        matching_core.match_order(
+            &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            true,
+        );
 
         // Handle data subscriptions
         match emulation_trigger.unwrap() {
@@ -398,7 +406,9 @@ impl OrderEmulator {
         }
 
         // Hold in matching core
-        if let Err(e) = matching_core.add_order(PassiveOrderAny::from(order.clone())) {
+        if let Err(e) = matching_core
+            .add_order(PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"))
+        {
             log::error!("Cannot add order: {e:?}");
             return;
         }
@@ -505,7 +515,10 @@ impl OrderEmulator {
                 .unwrap_or_else(|| order.instrument_id());
 
             if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-                matching_core.match_order(&PassiveOrderAny::from(order.clone()), false);
+                matching_core.match_order(
+                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                    false,
+                );
             } else {
                 log::error!(
                     "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
@@ -706,6 +719,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order cannot be converted to a passive order.
     pub fn cancel_order(&mut self, order: &OrderAny) {
         log::info!("Canceling order {}", order.client_order_id());
 
@@ -717,7 +733,9 @@ impl OrderEmulator {
             .unwrap_or(order.instrument_id());
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
-            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+            && let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            )
         {
             log::error!("Cannot delete order: {e:?}");
         }
@@ -766,6 +784,35 @@ impl OrderEmulator {
         }
     }
 
+    /// Validates market data availability for order release.
+    ///
+    /// Returns `Some(released_price)` if market data is available, `None` otherwise.
+    /// Logs appropriate warnings when market data is not yet available.
+    ///
+    /// Does NOT pop the submit order command - caller must do that and handle missing command
+    /// according to their contract (panic for market orders, return for limit orders).
+    fn validate_release(
+        &self,
+        order: &OrderAny,
+        matching_core: &OrderMatchingCore,
+        trigger_instrument_id: InstrumentId,
+    ) -> Option<Price> {
+        let released_price = match order.order_side_specified() {
+            OrderSideSpecified::Buy => matching_core.ask,
+            OrderSideSpecified::Sell => matching_core.bid,
+        };
+
+        if released_price.is_none() {
+            log::warn!(
+                "Cannot release order {} yet: no market data available for {trigger_instrument_id}, will retry on next update",
+                order.client_order_id(),
+            );
+            return None;
+        }
+
+        Some(released_price.unwrap())
+    }
+
     /// # Panics
     ///
     /// Panics if the order type is invalid for a stop order.
@@ -790,7 +837,26 @@ impl OrderEmulator {
             return;
         }
 
-        // Fetch command
+        let trigger_instrument_id = order
+            .trigger_instrument_id()
+            .unwrap_or(order.instrument_id());
+
+        let matching_core = match self.matching_cores.get(&trigger_instrument_id) {
+            Some(core) => core,
+            None => {
+                log::error!(
+                    "Cannot fill limit order: no matching core for instrument {trigger_instrument_id}"
+                );
+                return; // Order stays queued for retry
+            }
+        };
+
+        let released_price =
+            match self.validate_release(order, matching_core, trigger_instrument_id) {
+                Some(price) => price,
+                None => return, // Order stays queued for retry
+            };
+
         let mut command = match self
             .manager
             .pop_submit_order_command(order.client_order_id())
@@ -799,12 +865,10 @@ impl OrderEmulator {
             None => return, // Order already released
         };
 
-        let trigger_instrument_id = order
-            .trigger_instrument_id()
-            .unwrap_or(order.instrument_id());
-
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+            if let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            ) {
                 log::error!("Error deleting order: {e:?}");
             }
 
@@ -874,20 +938,13 @@ impl OrderEmulator {
                 transformed.last_event(),
             );
 
-            // Determine triggered price
-            let released_price = match order.order_side() {
-                OrderSide::Buy => matching_core.ask,
-                OrderSide::Sell => matching_core.bid,
-                _ => panic!("invalid `OrderSide`"),
-            };
-
             // Generate event
             let event = OrderReleased::new(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                released_price.unwrap(),
+                released_price,
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
                 self.clock.borrow().timestamp_ns(),
@@ -921,10 +978,6 @@ impl OrderEmulator {
                 self.manager
                     .send_exec_command(TradingCommand::SubmitOrder(command));
             }
-        } else {
-            log::error!(
-                "Cannot fill limit order: no matching core for instrument {trigger_instrument_id}"
-            );
         }
     }
 
@@ -932,21 +985,35 @@ impl OrderEmulator {
     ///
     /// Panics if a market order command is missing.
     pub fn fill_market_order(&mut self, order: &mut OrderAny) {
-        // Fetch command
-        let mut command = match self
-            .manager
-            .pop_submit_order_command(order.client_order_id())
-        {
-            Some(command) => command,
-            None => panic!("invalid operation `_fill_market_order` with no command"),
-        };
-
         let trigger_instrument_id = order
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
 
+        let matching_core = match self.matching_cores.get(&trigger_instrument_id) {
+            Some(core) => core,
+            None => {
+                log::error!(
+                    "Cannot fill market order: no matching core for instrument {trigger_instrument_id}"
+                );
+                return; // Order stays queued for retry
+            }
+        };
+
+        let released_price =
+            match self.validate_release(order, matching_core, trigger_instrument_id) {
+                Some(price) => price,
+                None => return, // Order stays queued for retry
+            };
+
+        let mut command = self
+            .manager
+            .pop_submit_order_command(order.client_order_id())
+            .expect("invalid operation `fill_market_order` with no command");
+
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+            if let Err(e) = matching_core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            ) {
                 log::error!("Cannot delete order: {e:?}");
             }
 
@@ -998,14 +1065,6 @@ impl OrderEmulator {
                 transformed.last_event(),
             );
 
-            // Determine triggered price
-            // TODO: fix unwraps
-            let released_price = match order.order_side() {
-                OrderSide::Buy => matching_core.ask,
-                OrderSide::Sell => matching_core.bid,
-                _ => panic!("invalid `OrderSide`"),
-            };
-
             // Generate event
             let ts_now = self.clock.borrow().timestamp_ns();
             let event = OrderReleased::new(
@@ -1013,7 +1072,7 @@ impl OrderEmulator {
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                released_price.unwrap(),
+                released_price,
                 UUID4::new(),
                 ts_now,
                 ts_now,
@@ -1046,10 +1105,6 @@ impl OrderEmulator {
                 self.manager
                     .send_exec_command(TradingCommand::SubmitOrder(command));
             }
-        } else {
-            log::error!(
-                "Cannot fill limit order: no matching core for instrument {trigger_instrument_id}"
-            );
         }
     }
 

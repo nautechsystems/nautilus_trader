@@ -2165,7 +2165,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
     portfolio
         .cache
         .borrow_mut()
-        .add_position(position2.clone(), OmsType::Netting)
+        .add_position(position2, OmsType::Netting)
         .unwrap();
 
     // Calculate realized PnL - should include snapshot PnL

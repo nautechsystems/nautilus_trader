@@ -86,28 +86,28 @@ class TestReportProvider:
         # Assert
         assert len(report) == 1
 
-    def test_generate_orders_report_with_no_order_returns_emtpy_dataframe(self):
+    def test_generate_orders_report_with_no_order_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_orders_report([])
 
         # Assert
         assert report.empty
 
-    def test_generate_orders_fills_report_with_no_order_returns_emtpy_dataframe(self):
+    def test_generate_orders_fills_report_with_no_order_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_order_fills_report([])
 
         # Assert
         assert report.empty
 
-    def test_generate_fills_report_with_no_fills_returns_emtpy_dataframe(self):
+    def test_generate_fills_report_with_no_fills_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_fills_report([])
 
         # Assert
         assert report.empty
 
-    def test_generate_positions_report_with_no_positions_returns_emtpy_dataframe(self):
+    def test_generate_positions_report_with_no_positions_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_positions_report([])
 

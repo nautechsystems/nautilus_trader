@@ -171,7 +171,7 @@ class DYDXDataClient(LiveMarketDataClient):
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
-        self._update_orderbook_interval_secs: int = 60  # Once every 60 seconds (hard-coded for now)
+        self._update_orderbook_interval_secs: int = 60  # Once every 60 seconds (hardcoded for now)
         self._update_instruments_task: asyncio.Task | None = None
         self._fetch_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
@@ -1054,12 +1054,20 @@ class DYDXDataClient(LiveMarketDataClient):
             )
 
         if all_bars:
-            # For historical data, the last bar might be partial, don't include it
-            partial: Bar = all_bars.pop() if all_bars else None
+            # Filter out incomplete bars where close_time >= current_time
+            # dYdX may return the current forming bar which should be excluded from historical data
+            current_time_ns = self._clock.timestamp_ns()
+            complete_bars = [bar for bar in all_bars if bar.ts_event < current_time_ns]
+
+            if not complete_bars:
+                self._log.warning(
+                    f"No complete bars available for {request.bar_type} (all bars were incomplete)",
+                )
+                return
+
             self._handle_bars_py(
                 request.bar_type,
-                all_bars,
-                partial,
+                complete_bars,
                 request.id,
                 request.start,
                 request.end,

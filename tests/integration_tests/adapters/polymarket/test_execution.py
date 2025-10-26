@@ -27,6 +27,7 @@ from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWeb
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
+from nautilus_trader.adapters.polymarket.http.conversion import convert_tif_to_polymarket_order_type
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -62,9 +63,10 @@ ELECTION_INSTRUMENT = TestInstrumentProvider.binary_option()
 
 
 class TestPolymarketExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -188,6 +190,8 @@ class TestPolymarketExecutionClient:
             reported=True,
             ts_event=self.clock.timestamp_ns(),
         )
+
+        yield
 
     def _setup_test_order_with_venue_id(
         self,
@@ -317,7 +321,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
             "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
@@ -336,6 +340,20 @@ class TestPolymarketExecutionClient:
         """
         Test order acknowledgment timeout handling.
         """
+        # Create exec client with short timeout for fast test
+        fast_config = PolymarketExecClientConfig(ack_timeout_secs=0.1)
+        fast_exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=fast_config,
+            name=None,
+        )
+
         # Arrange
         raw_message = pkgutil.get_data(
             package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
@@ -343,7 +361,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = fast_exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
         venue_order_id = VenueOrderId(
             "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
         )
@@ -351,10 +369,64 @@ class TestPolymarketExecutionClient:
         # Don't add venue_order_id to cache to simulate timeout
 
         # Act
-        await self.exec_client._wait_for_ack_order(msg, venue_order_id)
+        await fast_exec_client._wait_for_ack_order(msg, venue_order_id)
 
         # Assert - should complete without raising exception
         assert True
+
+    @pytest.mark.asyncio()
+    async def test_wait_for_ack_order_with_event_signal(self):
+        """
+        Test order acknowledgment via event signal (concurrent notification path).
+        """
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="order_placement.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+        venue_order_id = VenueOrderId(
+            "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
+        )
+
+        # Create an order and add to cache (but without venue_order_id mapping yet)
+        instrument_id_1 = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id_1,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.513"),
+        )
+        client_order_id = order.client_order_id
+        self.cache.add_order(order, None)
+
+        # Start waiting in background task
+        wait_task = asyncio.create_task(
+            self.exec_client._wait_for_ack_order(msg, venue_order_id),
+        )
+
+        # Give the wait task time to set up the event
+        await asyncio.sleep(0.01)
+
+        # Simulate what _post_signed_order does: add venue_order_id and signal event
+        self.cache.add_venue_order_id(client_order_id, venue_order_id)
+        event = self.exec_client._ack_events_order.get(venue_order_id)
+        if event:
+            event.set()
+
+        # Act - wait for the task to complete
+        await asyncio.wait_for(wait_task, timeout=1.0)
+
+        # Assert - task should complete successfully without timeout
+        assert wait_task.done()
+        assert not wait_task.cancelled()
+        # Event should have been cleaned up
+        assert venue_order_id not in self.exec_client._ack_events_order
 
     @pytest.mark.asyncio()
     async def test_wait_for_ack_trade_success(self):
@@ -368,7 +440,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
@@ -387,6 +459,20 @@ class TestPolymarketExecutionClient:
         """
         Test trade acknowledgment timeout handling.
         """
+        # Create exec client with short timeout for fast test
+        fast_config = PolymarketExecClientConfig(ack_timeout_secs=0.1)
+        fast_exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=fast_config,
+            name=None,
+        )
+
         # Arrange
         raw_message = pkgutil.get_data(
             package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
@@ -394,7 +480,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = fast_exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
         venue_order_id = VenueOrderId(
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
         )
@@ -402,10 +488,64 @@ class TestPolymarketExecutionClient:
         # Don't add venue_order_id to cache to simulate timeout
 
         # Act
-        await self.exec_client._wait_for_ack_trade(msg, venue_order_id)
+        await fast_exec_client._wait_for_ack_trade(msg, venue_order_id)
 
         # Assert - should complete without raising exception
         assert True
+
+    @pytest.mark.asyncio()
+    async def test_wait_for_ack_trade_with_event_signal(self):
+        """
+        Test trade acknowledgment via event signal (concurrent notification path).
+        """
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade1.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+        venue_order_id = VenueOrderId(
+            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+        )
+
+        # Create an order and add to cache (but without venue_order_id mapping yet)
+        instrument_id_1 = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id_1,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.513"),
+        )
+        client_order_id = order.client_order_id
+        self.cache.add_order(order, None)
+
+        # Start waiting in background task
+        wait_task = asyncio.create_task(
+            self.exec_client._wait_for_ack_trade(msg, venue_order_id),
+        )
+
+        # Give the wait task time to set up the event
+        await asyncio.sleep(0.01)
+
+        # Simulate what _post_signed_order does: add venue_order_id and signal event
+        self.cache.add_venue_order_id(client_order_id, venue_order_id)
+        event = self.exec_client._ack_events_trade.get(venue_order_id)
+        if event:
+            event.set()
+
+        # Act - wait for the task to complete
+        await asyncio.wait_for(wait_task, timeout=1.0)
+
+        # Assert - task should complete successfully without timeout
+        assert wait_task.done()
+        assert not wait_task.cancelled()
+        # Event should have been cleaned up
+        assert venue_order_id not in self.exec_client._ack_events_trade
 
     def test_handle_ws_message_invalid_json(self):
         """
@@ -493,7 +633,7 @@ class TestPolymarketExecutionClient:
         )
 
         msg = msgspec.json.decode(raw_message)
-        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode([msg]))[0]
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
 
         # Act
         self.exec_client._add_trade_to_cache(msg, raw_message)
@@ -588,6 +728,79 @@ class TestPolymarketExecutionClient:
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id is None
 
+    @pytest.mark.asyncio()
+    async def test_submit_market_buy_without_quote_quantity_denied(self, mocker):
+        """
+        Market BUY orders must be quote-denominated; verify we emit OrderDenied instead
+        of submitting.
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),  # Base-denominated by default
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        denied_spy = mocker.spy(self.exec_client, "generate_order_denied")
+
+        await self.exec_client._submit_order(submit_order)
+
+        mock_create_market_order.assert_not_called()
+        mock_post_order.assert_not_called()
+        denied_spy.assert_called_once()
+        denied_kwargs = denied_spy.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert "quote-denominated quantities" in denied_kwargs["reason"]
+
+    @pytest.mark.asyncio()
+    async def test_submit_market_sell_with_quote_quantity_denied(self, mocker):
+        """
+        Market SELL orders must specify base quantity; quote-denominated orders are
+        denied.
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("10"),
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        denied_spy = mocker.spy(self.exec_client, "generate_order_denied")
+
+        await self.exec_client._submit_order(submit_order)
+
+        mock_create_market_order.assert_not_called()
+        mock_post_order.assert_not_called()
+        denied_spy.assert_called_once()
+        denied_kwargs = denied_spy.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert "base-denominated quantities" in denied_kwargs["reason"]
+
     def test_handle_unknown_instrument_gracefully(self):
         """
         Test handling websocket messages for unknown instruments gracefully.
@@ -628,7 +841,6 @@ class TestPolymarketExecutionClient:
         # Assert - no exception raised, warning logged
         # Test passes if we reach this point without exception
 
-    @pytest.mark.skip(reason="market orders WIP")
     @pytest.mark.asyncio()
     async def test_submit_market_order_success(self, mocker):
         """
@@ -646,6 +858,7 @@ class TestPolymarketExecutionClient:
             instrument_id=ELECTION_INSTRUMENT.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_str("10"),
+            quote_quantity=True,
             time_in_force=TimeInForce.IOC,  # Test IOC -> FAK mapping
         )
         self.cache.add_order(market_order, None)
@@ -670,15 +883,14 @@ class TestPolymarketExecutionClient:
         call_args = mock_create_market_order.call_args[0][0]  # First positional argument
         assert call_args.amount == 10.0
         assert call_args.side == "BUY"
-        assert call_args.price == 0  # Market order should have price 0
-        assert call_args.order_type == "FAK"  # IOC should map to FAK
+        assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
+        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.IOC)
 
         # Check that venue order ID was cached
         venue_order_id = VenueOrderId("test_market_order_id")
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id == market_order.client_order_id
 
-    @pytest.mark.skip(reason="market orders WIP")
     @pytest.mark.asyncio()
     async def test_submit_market_order_with_fok(self, mocker):
         """
@@ -720,7 +932,7 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 5.0
         assert call_args.side == "SELL"
         assert call_args.price == 0
-        assert call_args.order_type == "FOK"
+        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.FOK)
 
     @pytest.mark.asyncio()
     async def test_submit_limit_order_still_works(self, mocker):

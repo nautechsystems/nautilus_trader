@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Data persistence and storage for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_persistence"
@@ -23,12 +26,10 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
-ffi = [
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-]
+ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "nautilus-core/ffi",
   "nautilus-core/python",
@@ -54,8 +55,8 @@ nautilus-serialization = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 binary-heap-plus = { workspace = true }
-compare = { workspace = true }
 chrono = { workspace = true }
+compare = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
@@ -63,12 +64,13 @@ itertools = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
 parquet = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 unbounded-interval-tree = { workspace = true }
 url = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
@@ -79,9 +81,6 @@ proptest = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = { workspace = true }
 
 [[bench]]
 name = "persistence"

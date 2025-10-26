@@ -15,14 +15,8 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
-use pyo3::{
-    IntoPyObjectExt,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyInt, PyString, PyTuple},
-};
-use ustr::Ustr;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{enums::CurrencyType, types::Currency};
 
@@ -39,67 +33,29 @@ impl Currency {
         Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
-        self.code = Ustr::from(
-            py_tuple
-                .get_item(0)?
-                .downcast::<PyString>()?
-                .extract::<&str>()?,
-        );
-        self.precision = py_tuple.get_item(1)?.downcast::<PyInt>()?.extract::<u8>()?;
-        self.iso4217 = py_tuple
-            .get_item(2)?
-            .downcast::<PyInt>()?
-            .extract::<u16>()?;
-        self.name = Ustr::from(
-            py_tuple
-                .get_item(3)?
-                .downcast::<PyString>()?
-                .extract::<&str>()?,
-        );
-        self.currency_type = CurrencyType::from_str(
-            py_tuple
-                .get_item(4)?
-                .downcast::<PyString>()?
-                .extract::<&str>()?,
-        )
-        .map_err(to_pyvalue_err)?;
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        (
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let unpickle = py.get_type::<Self>().getattr("_unpickle")?;
+        let args = (
             self.code.to_string(),
             self.precision,
             self.iso4217,
             self.name.to_string(),
             self.currency_type.to_string(),
         )
-            .into_py_any(py)
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
+            .into_py_any(py)?;
+        (unpickle, args).into_py_any(py)
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::AUD()) // Safe default
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
-            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        self.code.precomputed_hash() as isize
+    fn _unpickle(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type_str: &str,
+    ) -> PyResult<Self> {
+        let currency_type = CurrencyType::from_str(currency_type_str).map_err(to_pyvalue_err)?;
+        Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

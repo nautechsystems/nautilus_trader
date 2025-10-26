@@ -244,8 +244,20 @@ impl OptionContract {
     }
 
     #[getter]
+    #[pyo3(name = "maker_fee")]
+    fn py_maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "taker_fee")]
+    fn py_taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
+    #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -268,7 +280,7 @@ impl OptionContract {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OptionContract))?;
         dict.set_item("id", self.id.to_string())?;

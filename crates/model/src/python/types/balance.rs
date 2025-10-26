@@ -15,10 +15,8 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::{
-    IntoPyObjectNautilusExt, parsing::get_required_string, to_pyvalue_err,
-};
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use nautilus_core::python::{parsing::get_required_string, to_pyvalue_err};
+use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
     identifiers::InstrumentId,
@@ -30,14 +28,6 @@ impl AccountBalance {
     #[new]
     fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
         Self::new_checked(total, locked, free).map_err(to_pyvalue_err)
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
-            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
-            _ => py.NotImplemented(),
-        }
     }
 
     fn __repr__(&self) -> String {
@@ -82,7 +72,7 @@ impl AccountBalance {
     ///
     /// Returns a `PyErr` if serialization fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountBalance))?;
         dict.set_item(
@@ -119,13 +109,6 @@ impl MarginBalance {
     #[new]
     fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> Self {
         Self::new(initial, maintenance, instrument)
-    }
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
-            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
-            _ => py.NotImplemented(),
-        }
     }
 
     fn __repr__(&self) -> String {
@@ -173,7 +156,7 @@ impl MarginBalance {
     ///
     /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(MarginBalance))?;
         dict.set_item(

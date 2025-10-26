@@ -16,7 +16,7 @@
 use indexmap::IndexMap;
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{
-    conversion::{IntoPyObject, IntoPyObjectExt},
+    conversion::IntoPyObjectExt,
     exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList, PyNone},
@@ -33,7 +33,7 @@ pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 #[pyclass]
 pub struct EnumIterator {
     // Type erasure for code reuse, generic types can't be exposed to Python
-    iter: Box<dyn Iterator<Item = PyObject> + Send + Sync>,
+    iter: Box<dyn Iterator<Item = Py<PyAny>> + Send + Sync>,
 }
 
 #[pymethods]
@@ -42,7 +42,7 @@ impl EnumIterator {
         slf
     }
 
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Py<PyAny>> {
         slf.iter.next()
     }
 }
@@ -56,7 +56,7 @@ impl EnumIterator {
     #[must_use]
     pub fn new<'py, E>(py: Python<'py>) -> Self
     where
-        E: strum::IntoEnumIterator + IntoPyObject<'py>,
+        E: strum::IntoEnumIterator + IntoPyObjectExt<'py>,
         <E as IntoEnumIterator>::Iterator: Send,
     {
         Self {
@@ -110,7 +110,7 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 /// Returns a `PyErr` if:
 /// - encountering an unsupported JSON number type.
 /// - conversion of nested arrays or objects fails.
-pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
+pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     match val {
         Value::Null => Ok(py.None()),
         Value::Bool(b) => b.into_py_any(py),
@@ -125,7 +125,8 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
             }
         }
         Value::Array(arr) => {
-            let py_list = PyList::new(py, &[] as &[PyObject]).expect("Invalid `ExactSizeIterator`");
+            let py_list =
+                PyList::new(py, &[] as &[Py<PyAny>]).expect("Invalid `ExactSizeIterator`");
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
@@ -170,14 +171,13 @@ pub fn commissions_from_indexmap(
     py: Python<'_>,
     commissions: IndexMap<Currency, Money>,
 ) -> PyResult<Bound<'_, PyAny>> {
-    commissions_from_vec(py, commissions.values().cloned().collect())
+    commissions_from_vec(py, commissions.values().copied().collect())
 }
 
 #[cfg(test)]
 mod tests {
     use pyo3::{
         prelude::*,
-        prepare_freethreaded_python,
         types::{PyBool, PyInt, PyString},
     };
     use rstest::rstest;
@@ -187,8 +187,8 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pydict() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let json_str = r#"
         {
             "type": "OrderAccepted",
@@ -234,8 +234,8 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_string() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let val = Value::String("Hello, world!".to_string());
             let py_obj = value_to_pyobject(py, &val).unwrap();
 
@@ -245,8 +245,8 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_bool() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let val = Value::Bool(true);
             let py_obj = value_to_pyobject(py, &val).unwrap();
 
@@ -256,8 +256,8 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_array() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let val = Value::Array(vec![
                 Value::String("item1".to_string()),
                 Value::String("item2".to_string()),

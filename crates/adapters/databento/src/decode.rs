@@ -30,7 +30,10 @@ use nautilus_model::{
     instruments::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
-    types::{Currency, Price, Quantity, price::decode_raw_price_i64},
+    types::{
+        Currency, Price, Quantity,
+        price::{PRICE_UNDEF, decode_raw_price_i64},
+    },
 };
 use ustr::Ustr;
 
@@ -330,8 +333,8 @@ pub fn decode_lot_size(value: i32) -> Quantity {
 }
 
 #[must_use]
-fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
-    order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
+fn is_trade_msg(action: c_char) -> bool {
+    action as u8 as char == 'T'
 }
 
 /// Decodes a Databento MBO (Market by Order) message into an order book delta or trade.
@@ -350,17 +353,21 @@ pub fn decode_mbo_msg(
     include_trades: bool,
 ) -> anyhow::Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
     let side = parse_order_side(msg.side);
-    if is_trade_msg(side, msg.action) {
+    if is_trade_msg(msg.action) {
         if include_trades && msg.size > 0 {
+            let price = Price::from_raw(decode_raw_price_i64(msg.price), price_precision);
+            let size = Quantity::from(msg.size);
+            let aggressor_side = parse_aggressor_side(msg.side);
+            let trade_id = TradeId::new(itoa::Buffer::new().format(msg.sequence));
             let ts_event = msg.ts_recv.into();
             let ts_init = ts_init.unwrap_or(ts_event);
 
             let trade = TradeTick::new(
                 instrument_id,
-                Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-                Quantity::from(msg.size),
-                parse_aggressor_side(msg.side),
-                TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+                price,
+                size,
+                aggressor_side,
+                trade_id,
                 ts_event,
                 ts_init,
             );
@@ -370,18 +377,21 @@ pub fn decode_mbo_msg(
         return Ok((None, None));
     }
 
-    let order = BookOrder::new(
-        side,
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-        Quantity::from(msg.size),
-        msg.order_id,
-    );
+    let action = parse_book_action(msg.action)?;
+    let price = if msg.price == i64::MAX {
+        Price::from_raw(PRICE_UNDEF, 0)
+    } else {
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision)
+    };
+    let size = Quantity::from(msg.size);
+    let order = BookOrder::new(side, price, size, msg.order_id);
+
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
     let delta = OrderBookDelta::new(
         instrument_id,
-        parse_book_action(msg.action)?,
+        action,
         order,
         msg.flags.raw(),
         msg.sequence.into(),
@@ -1380,6 +1390,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case('T' as c_char, true)]
+    #[case('A' as c_char, false)]
+    #[case('C' as c_char, false)]
+    #[case('F' as c_char, false)]
+    #[case('M' as c_char, false)]
+    #[case('R' as c_char, false)]
+    fn test_is_trade_msg(#[case] action: c_char, #[case] expected: bool) {
+        assert_eq!(is_trade_msg(action), expected);
+    }
+
+    #[rstest]
     #[case('A' as c_char, Ok(BookAction::Add))]
     #[case('C' as c_char, Ok(BookAction::Delete))]
     #[case('F' as c_char, Ok(BookAction::Update))]
@@ -1585,6 +1606,72 @@ mod tests {
         assert_eq!(delta.ts_event, msg.ts_recv);
         assert_eq!(delta.ts_event, 1_609_160_400_000_704_060);
         assert_eq!(delta.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_mbo_msg_clear_action() {
+        // Create an MBO message with Clear action (action='R', side='N')
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+            order_id: 0,
+            price: i64::MAX,
+            size: 0,
+            flags: dbn::FlagSet::empty(),
+            channel_id: 0,
+            action: 'R' as c_char,
+            side: 'N' as c_char, // NoOrderSide for Clear
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_000_000,
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+
+        // Clear messages should produce OrderBookDelta, not TradeTick
+        assert!(trade.is_none());
+        let delta = delta.expect("Clear action should produce OrderBookDelta");
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, BookAction::Clear);
+        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.size, Quantity::from("0"));
+        assert_eq!(delta.order.order_id, 0);
+        assert_eq!(delta.sequence, 1_000_000);
+        assert_eq!(delta.ts_event, ts_recv);
+        assert_eq!(delta.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_mbo_msg_no_order_side_update() {
+        // MBO messages with NoOrderSide are now passed through to the book
+        // The book will resolve the side from its cache using the order_id
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+            order_id: 123_456_789,
+            price: 4_800_250_000_000, // $4800.25 with precision 2
+            size: 1,
+            flags: dbn::FlagSet::empty(),
+            channel_id: 1,
+            action: 'M' as c_char, // Modify/Update action
+            side: 'N' as c_char,   // NoOrderSide
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_000_000,
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+
+        // Delta should be created with NoOrderSide (book will resolve it)
+        assert!(delta.is_some());
+        assert!(trade.is_none());
+        let delta = delta.unwrap();
+        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.order_id, 123_456_789);
+        assert_eq!(delta.action, BookAction::Update);
     }
 
     #[rstest]
@@ -1913,8 +2000,6 @@ mod tests {
 
     #[rstest]
     fn test_array_conversion_error_handling() {
-        use nautilus_model::{data::BookOrder, enums::OrderSide};
-
         let mut bids = Vec::new();
         let mut asks = Vec::new();
 

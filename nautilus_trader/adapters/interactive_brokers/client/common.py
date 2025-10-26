@@ -527,6 +527,7 @@ class BaseMixin:
     _reconnect_delay: int
     _max_reconnect_attempts: int
     _indefinite_reconnect: bool
+    _last_disconnection_ns: int | None
 
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]

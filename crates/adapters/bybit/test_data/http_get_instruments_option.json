@@ -1,0 +1,32 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": null,
+    "list": [
+      {
+        "symbol": "ETH-26JUN26-16000-P",
+        "status": "Trading",
+        "baseCoin": "ETH",
+        "quoteCoin": "USDC",
+        "settleCoin": "USDC",
+        "optionsType": "Put",
+        "launchTime": "1700005000000",
+        "deliveryTime": "1780005000000",
+        "deliveryFeeRate": "0.0002",
+        "priceFilter": {
+          "minPrice": "0.1",
+          "maxPrice": "5000",
+          "tickSize": "0.1"
+        },
+        "lotSizeFilter": {
+          "maxOrderQty": "100",
+          "minOrderQty": "1",
+          "qtyStep": "1"
+        }
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

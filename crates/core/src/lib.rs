@@ -90,3 +90,12 @@ pub use crate::{
     time::AtomicTime,
     uuid::UUID4,
 };
+
+/// Message for when a mutex guard cannot be acquired due to poisoning.
+///
+/// Mutex guards should use `expect` rather than handle poison errors.
+/// A poisoned mutex indicates a thread panicked while holding the lock,
+/// meaning protected data may be in an inconsistent state. Propagating
+/// the panic is the idiomatic and safe approach, as continuing with
+/// potentially corrupted data would violate safety invariants.
+pub const MUTEX_POISONED: &str = "Mutex poisoned";

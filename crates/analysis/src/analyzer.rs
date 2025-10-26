@@ -32,8 +32,8 @@ use crate::{
     Returns,
     statistic::PortfolioStatistic,
     statistics::{
-        expectancy::Expectancy, long_ratio::LongRatio, loser_max::MaxLoser, loser_min::MinLoser,
-        profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
+        expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
+        loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
         returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
         returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
         sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
@@ -55,12 +55,12 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct PortfolioAnalyzer {
-    statistics: HashMap<String, Statistic>,
-    account_balances_starting: HashMap<Currency, Money>,
-    account_balances: HashMap<Currency, Money>,
-    positions: Vec<Position>,
-    realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
-    returns: Returns,
+    pub statistics: HashMap<String, Statistic>,
+    pub account_balances_starting: HashMap<Currency, Money>,
+    pub account_balances: HashMap<Currency, Money>,
+    pub positions: Vec<Position>,
+    pub realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
+    pub returns: Returns,
 }
 
 impl Default for PortfolioAnalyzer {
@@ -71,6 +71,7 @@ impl Default for PortfolioAnalyzer {
         analyzer.register_statistic(Arc::new(AvgWinner {}));
         analyzer.register_statistic(Arc::new(MinWinner {}));
         analyzer.register_statistic(Arc::new(MinLoser {}));
+        analyzer.register_statistic(Arc::new(AvgLoser {}));
         analyzer.register_statistic(Arc::new(MaxLoser {}));
         analyzer.register_statistic(Arc::new(Expectancy {}));
         analyzer.register_statistic(Arc::new(WinRate {}));
@@ -415,6 +416,10 @@ impl PortfolioAnalyzer {
         output
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

@@ -16,7 +16,7 @@
 import pandas as pd
 from numpy import float64
 
-from nautilus_trader.analysis.statistics.expectancy import Expectancy
+from nautilus_trader.analysis import Expectancy
 
 
 class TestExpectancyPortfolioStatistic:

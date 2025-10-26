@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string_ascii, check_valid_string_utf8};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
@@ -82,8 +82,8 @@ impl FromStr for InstrumentId {
     fn from_str(s: &str) -> anyhow::Result<Self> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => {
-                check_valid_string(symbol_part, stringify!(value))?;
-                check_valid_string(venue_part, stringify!(value))?;
+                check_valid_string_utf8(symbol_part, stringify!(value))?;
+                check_valid_string_ascii(venue_part, stringify!(value))?;
 
                 let venue = Venue::new_checked(venue_part)?;
 
@@ -175,6 +175,7 @@ fn err_message(s: &str, e: String) -> String {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
 
     use rstest::rstest;
 
@@ -200,6 +201,17 @@ mod tests {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
+    }
+
+    #[rstest]
+    fn test_instrument_id_from_str_with_utf8_symbol() {
+        let non_ascii_symbol = "TËST-PÉRP";
+        let non_ascii_instrument = "TËST-PÉRP.BINANCE";
+
+        let id = InstrumentId::from_str(non_ascii_instrument).unwrap();
+        assert_eq!(id.symbol.to_string(), non_ascii_symbol);
+        assert_eq!(id.venue.to_string(), "BINANCE");
+        assert_eq!(id.to_string(), non_ascii_instrument);
     }
 
     #[cfg(feature = "defi")]

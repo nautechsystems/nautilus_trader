@@ -52,7 +52,7 @@ use nautilus_model::{
         OrderDenied, OrderEvent, OrderEventAny, OrderFilled, PositionChanged, PositionClosed,
         PositionOpened,
     },
-    identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
@@ -365,7 +365,13 @@ impl ExecutionEngine {
         };
 
         // Handle quote quantity conversion
-        if !instrument.is_inverse() && order.is_quote_quantity() {
+        if self.config.convert_quote_qty_to_base
+            && !instrument.is_inverse()
+            && order.is_quote_quantity()
+        {
+            log::warn!(
+                "`convert_quote_qty_to_base` is deprecated; set `convert_quote_qty_to_base=false` to maintain consistent behavior"
+            );
             let last_px = self.last_px_for_conversion(&instrument_id, order.order_side());
 
             if let Some(price) = last_px {
@@ -417,46 +423,57 @@ impl ExecutionEngine {
         drop(cache);
 
         // Get instrument from cache
-        let cache = self.cache.borrow();
-        let instrument = if let Some(instrument) = cache.instrument(&cmd.instrument_id) {
-            instrument
-        } else {
-            log::error!(
-                "Cannot handle submit order list: no instrument found for {}, {cmd}",
-                cmd.instrument_id,
-            );
-            return;
+        let instrument = {
+            let cache = self.cache.borrow();
+            if let Some(instrument) = cache.instrument(&cmd.instrument_id) {
+                instrument.clone()
+            } else {
+                log::error!(
+                    "Cannot handle submit order list: no instrument found for {}, {cmd}",
+                    cmd.instrument_id,
+                );
+                return;
+            }
         };
 
-        // Check if converting quote quantity
-        if !instrument.is_inverse() && cmd.order_list.orders[0].is_quote_quantity() {
-            let mut quote_qty = None;
-            let mut _last_px = None;
+        // Handle quote quantity conversion
+        if self.config.convert_quote_qty_to_base && !instrument.is_inverse() {
+            let mut conversions: Vec<(ClientOrderId, Quantity)> =
+                Vec::with_capacity(cmd.order_list.orders.len());
 
             for order in &cmd.order_list.orders {
                 if !order.is_quote_quantity() {
                     continue; // Base quantity already set
                 }
 
-                if Some(order.quantity()) != quote_qty {
-                    _last_px =
-                        self.last_px_for_conversion(&order.instrument_id(), order.order_side());
-                    quote_qty = Some(order.quantity());
-                }
+                let last_px =
+                    self.last_px_for_conversion(&order.instrument_id(), order.order_side());
 
-                // TODO: Pull order out of cache to modify
-                // if let Some(px) = last_px {
-                //     let base_qty = instrument.get_base_quantity(order.quantity(), px);
-                //     self.set_order_base_qty(order, base_qty);
-                // } else {
-                //     for order in &cmd.order_list.orders {
-                //         self.deny_order(
-                //             order,
-                //             &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
-                //         );
-                //     }
-                //     return; // Denied
-                // }
+                if let Some(px) = last_px {
+                    let base_qty = instrument.get_base_quantity(order.quantity(), px);
+                    conversions.push((order.client_order_id(), base_qty));
+                } else {
+                    for order in &cmd.order_list.orders {
+                        self.deny_order(
+                            order,
+                            &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
+                        );
+                    }
+                    return; // Denied
+                }
+            }
+
+            if !conversions.is_empty() {
+                log::warn!(
+                    "`convert_quote_qty_to_base` is deprecated; set `convert_quote_qty_to_base=false` to maintain consistent behavior"
+                );
+
+                let mut cache = self.cache.borrow_mut();
+                for (client_order_id, base_qty) in conversions {
+                    if let Some(mut_order) = cache.mut_order(&client_order_id) {
+                        self.set_order_base_qty(mut_order, base_qty);
+                    }
+                }
             }
         }
 
@@ -605,7 +622,7 @@ impl ExecutionEngine {
         match event {
             OrderEventAny::Filled(fill) => {
                 let oms_type = self.determine_oms_type(fill);
-                let position_id = self.determine_position_id(*fill, oms_type);
+                let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
 
                 // Create a new fill with the determined position ID
                 let mut fill = *fill;
@@ -642,15 +659,24 @@ impl ExecutionEngine {
         OmsType::Netting // Default fallback
     }
 
-    fn determine_position_id(&mut self, fill: OrderFilled, oms_type: OmsType) -> PositionId {
+    fn determine_position_id(
+        &mut self,
+        fill: OrderFilled,
+        oms_type: OmsType,
+        order: Option<&OrderAny>,
+    ) -> PositionId {
         match oms_type {
-            OmsType::Hedging => self.determine_hedging_position_id(fill),
+            OmsType::Hedging => self.determine_hedging_position_id(fill, order),
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill), // Default to netting
         }
     }
 
-    fn determine_hedging_position_id(&mut self, fill: OrderFilled) -> PositionId {
+    fn determine_hedging_position_id(
+        &mut self,
+        fill: OrderFilled,
+        order: Option<&OrderAny>,
+    ) -> PositionId {
         // Check if position ID already exists
         if let Some(position_id) = fill.position_id {
             if self.config.debug {
@@ -659,15 +685,19 @@ impl ExecutionEngine {
             return position_id;
         }
 
-        // Check for order
         let cache = self.cache.borrow();
-        let order = match cache.order(&fill.client_order_id()) {
-            Some(o) => o,
-            None => {
-                panic!(
-                    "Order for {} not found to determine position ID",
-                    fill.client_order_id()
-                );
+
+        let order = if let Some(o) = order {
+            o
+        } else {
+            match cache.order(&fill.client_order_id()) {
+                Some(o) => o,
+                None => {
+                    panic!(
+                        "Order for {} not found to determine position ID",
+                        fill.client_order_id()
+                    );
+                }
             }
         };
 

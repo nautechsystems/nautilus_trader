@@ -30,7 +30,10 @@ pub mod chain;
 pub mod data;
 pub mod dex;
 pub mod hex;
+pub mod pool_analysis;
+pub mod reporting;
 pub mod rpc;
+pub mod tick_map;
 pub mod token;
 pub mod types;
 pub mod validation;
@@ -41,11 +44,14 @@ pub use chain::{Blockchain, Chain, SharedChain};
 pub use data::{
     DefiData,
     block::Block,
+    collect::PoolFeeCollect,
+    flash::PoolFlash,
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
     swap::PoolSwap,
     transaction::Transaction,
 };
 pub use dex::{AmmType, Dex, DexType, SharedDex};
+pub use pool_analysis::PoolProfiler;
 pub use token::{SharedToken, Token};
 
 /// Number of decimal places used by the native Ether denomination.

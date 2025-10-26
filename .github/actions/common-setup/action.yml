@@ -39,10 +39,10 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y curl clang git make pkg-config
-        sudo apt-get install -y python3-dev libpython3-dev
-        sudo apt-get install -y capnproto libcapnp-dev
+        sudo apt-get update -o Acquire::Retries=5
+        sudo apt-get install -y curl clang git make pkg-config ripgrep -o Acquire::Retries=5
+        sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
+        sudo apt-get install -y capnproto libcapnp-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
 
@@ -50,15 +50,19 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew update
-        brew install capnp
+        brew update || { sleep 5; brew update; }
+        brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
     - name: Install capnproto (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        choco install capnproto -y || echo "capnproto install via choco failed or unavailable"
+        choco install capnproto ripgrep -y || {
+          echo "capnproto/ripgrep install via choco failed or unavailable"
+          sleep 5
+          choco install capnproto ripgrep -y || true
+        }
 
     # > --------------------------------------------------
     # > Rust
@@ -67,10 +71,7 @@ runs:
     # setup-rust-toolchain should handle this with override: true, but doesn't seem to work.
     - name: Reset and update Rust toolchain
       shell: bash
-      run: |
-        if command -v rustup &> /dev/null; then
-          rustup update --force
-        fi
+      run: bash scripts/ci/install-rust.sh
 
     - name: Get Rust toolchain version
       id: rust-toolchain
@@ -80,7 +81,7 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@9d7e65c320fdb52dcd45ffaa68deb6c02c8754d9 # v1.12.0
+      uses: actions-rust-lang/setup-rust-toolchain@ac90e63697ac2784f4ecfe2964e1a285c304003a # v1.14.1
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
@@ -126,10 +127,12 @@ runs:
     - name: Cached sccache
       id: cached-sccache
       # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
+        key:
+          sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{
+          hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
         restore-keys: |
           sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
           sccache-${{ runner.os }}-${{ github.workflow }}-
@@ -137,13 +140,13 @@ runs:
 
     - name: Run sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      uses: mozilla-actions/sccache-action@65101d47ea8028ed0c98a1cdea8dd9182e9b5133 # v0.0.8
+      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
     # > --------------------------------------------------
     # > Python
     - name: Set up Python environment
       # https://github.com/actions/setup-python
-      uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+      uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -160,7 +163,7 @@ runs:
     - name: Cache Python site-packages
       id: cached-site-packages
       # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
         key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
@@ -180,7 +183,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182  # 5.4.1
+      uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
       with:
         version: ${{ env.UV_VERSION }}
 
@@ -192,7 +195,7 @@ runs:
     - name: Cached uv
       id: cached-uv
       # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ env.UV_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
@@ -202,7 +205,7 @@ runs:
     - name: Cached pre-commit
       id: cached-pre-commit
       # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}

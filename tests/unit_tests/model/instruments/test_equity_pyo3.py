@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
@@ -77,3 +81,43 @@ def test_pyo3_cython_conversion():
     equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
     assert equity_cython_dict == equity_pyo3_dict
     assert equity_pyo3 == equity_pyo3_back
+
+
+def test_pyo3_cython_conversion_with_fees():
+    # Arrange
+    equity_pyo3 = nautilus_pyo3.Equity(
+        instrument_id=InstrumentId.from_str("TEST.XNAS"),
+        raw_symbol=nautilus_pyo3.Symbol("TEST"),
+        isin=None,
+        currency=nautilus_pyo3.Currency.from_str("USD"),
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        lot_size=Quantity.from_int(100),
+        max_quantity=Quantity.from_int(10000),
+        min_quantity=Quantity.from_int(1),
+        max_price=None,
+        min_price=None,
+        margin_init=Decimal("0.50"),
+        margin_maint=Decimal("0.25"),
+        maker_fee=Decimal("0.001"),
+        taker_fee=Decimal("0.002"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act
+    equity_cython = Equity.from_pyo3(equity_pyo3)
+
+    # Assert
+    assert equity_cython.margin_init == Decimal("0.50")
+    assert equity_cython.margin_maint == Decimal("0.25")
+    assert equity_cython.maker_fee == Decimal("0.001")
+    assert equity_cython.taker_fee == Decimal("0.002")
+    assert equity_cython.max_quantity.as_double() == 10000.0
+    assert equity_cython.min_quantity.as_double() == 1.0
+
+    # Round-trip conversion
+    equity_cython_dict = Equity.to_dict(equity_cython)
+    del equity_cython_dict["tick_scheme_name"]
+    equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
+    assert equity_pyo3_back == equity_pyo3

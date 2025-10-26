@@ -17,22 +17,30 @@
 
 pub mod enums;
 pub mod http;
+pub mod models;
 pub mod urls;
 pub mod websocket;
 
 use pyo3::prelude::*;
 
 /// Loaded as `nautilus_pyo3.okx`.
+///
+/// # Errors
+///
+/// Returns an error if any bindings fail to register with the Python module.
 #[pymodule]
 pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::websocket::OKXWebSocketClient>()?;
     m.add_class::<super::websocket::messages::OKXWebSocketError>()?;
     m.add_class::<super::http::OKXHttpClient>()?;
+    m.add_class::<crate::http::models::OKXBalanceDetail>()?;
     m.add_class::<crate::common::enums::OKXInstrumentType>()?;
     m.add_class::<crate::common::enums::OKXContractType>()?;
     m.add_class::<crate::common::enums::OKXMarginMode>()?;
     m.add_class::<crate::common::enums::OKXTradeMode>()?;
+    m.add_class::<crate::common::enums::OKXOrderStatus>()?;
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
+    m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::urls::OKXEndpointType>()?;
     m.add_function(wrap_pyfunction!(urls::get_okx_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;

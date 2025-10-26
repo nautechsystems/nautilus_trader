@@ -104,7 +104,7 @@ impl LimitIfTouchedOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(LimitIfTouchedOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]
@@ -133,7 +133,7 @@ impl LimitIfTouchedOrder {
 
     #[getter]
     #[pyo3(name = "events")]
-    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
             .into_iter()
             .map(|event| order_event_to_pyobject(py, event.clone()))
@@ -151,7 +151,7 @@ impl LimitIfTouchedOrder {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
         self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }

@@ -20,6 +20,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
+- `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
 
 ## Scripts
 
@@ -73,6 +74,24 @@ This script demonstrates how to use the blockchain data client to discover and c
 ```
 cargo run --bin sync_tokens_pools --features hypersync
 ```
+
+## Testing
+
+The crate includes both standard integration tests and deterministic network simulation tests using turmoil.
+
+To run standard tests:
+
+```bash
+cargo nextest run -p nautilus-blockchain
+```
+
+To run turmoil network simulation tests:
+
+```bash
+cargo nextest run -p nautilus-blockchain --features turmoil
+```
+
+The turmoil tests simulate various network conditions (reconnections, partitions, etc.) in a deterministic way, allowing reliable testing of network failure scenarios without flakiness.
 
 ## License
 

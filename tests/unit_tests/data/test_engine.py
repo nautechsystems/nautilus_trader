@@ -36,6 +36,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -60,9 +61,11 @@ from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -72,8 +75,10 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
@@ -131,6 +136,7 @@ class TestDataEngine:
 
         config = DataEngineConfig(
             validate_data_sequence=True,
+            emit_quotes_from_book_depths=True,
             debug=True,
         )
         self.data_engine = DataEngine(
@@ -3523,6 +3529,37 @@ class TestDataEngine:
             pd.Timestamp("2024-3-25"),
         )
 
+    def test_request_order_book_depth_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+        depth = TestDataStubs.order_book_depth10(instrument_id=ETHUSDT_BINANCE.id)
+        self.mock_market_data_client.order_book_depths = [depth]
+
+        handler = []
+        request = RequestOrderBookDepth(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
+            depth=10,
+            client_id=None,  # Will route to the Binance venue
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [depth]
+
     def test_request_aggregated_bars_with_bars(self):
         # Arrange
         loader = DatabentoDataLoader()
@@ -4334,6 +4371,381 @@ class TestDataEngine:
         assert self.data_engine.command_count == 3
         # The test verifies the infrastructure is in place for spread quote handling
 
+    def test_create_quote_tick_from_depth_with_valid_data_creates_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        depth = TestDataStubs.order_book_depth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 1
+        quote_tick = quote_handler[0]
+        assert isinstance(quote_tick, QuoteTick)
+        assert quote_tick.instrument_id == ETHUSDT_BINANCE.id
+        assert quote_tick.bid_price == Price.from_str("99.00")  # Top bid from TestDataStubs
+        assert quote_tick.ask_price == Price.from_str("100.00")  # Top ask from TestDataStubs
+        assert quote_tick.bid_size == Quantity.from_str("100")
+        assert quote_tick.ask_size == Quantity.from_str("100")
+        assert quote_tick.ts_event == 1_000_000_000
+        assert quote_tick.ts_init == 2_000_000_000
+
+    def test_create_quote_tick_from_depth_with_empty_bids_does_not_create_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with no valid bids (using NULL_ORDER)
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[NULL_ORDER],
+            asks=[BookOrder(OrderSide.SELL, Price.from_str("100.00"), Quantity.from_str("100"), 1)],
+            bid_counts=[0],
+            ask_counts=[1],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 0
+
+    def test_create_quote_tick_from_depth_with_empty_asks_does_not_create_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with no valid asks (using NULL_ORDER)
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[BookOrder(OrderSide.BUY, Price.from_str("99.00"), Quantity.from_str("100"), 1)],
+            asks=[NULL_ORDER],
+            bid_counts=[1],
+            ask_counts=[0],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 0
+
+    def test_create_quote_tick_from_depth_with_null_orders_does_not_create_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with NULL orders
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[NULL_ORDER],
+            asks=[NULL_ORDER],
+            bid_counts=[0],
+            ask_counts=[0],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 0
+
+    def test_create_quote_tick_from_depth_with_zero_size_orders_does_not_create_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with zero size orders
+        zero_bid = BookOrder(OrderSide.BUY, Price.from_str("99.00"), Quantity.from_str("0"), 1)
+        zero_ask = BookOrder(OrderSide.SELL, Price.from_str("100.00"), Quantity.from_str("0"), 2)
+
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[zero_bid],
+            asks=[zero_ask],
+            bid_counts=[1],
+            ask_counts=[1],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 0
+
+    def test_create_quote_tick_from_depth_with_different_instruments(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+        self.data_engine.process(BTCUSDT_BINANCE)
+
+        eth_quote_handler = []
+        btc_quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=eth_quote_handler.append,
+        )
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.BTCUSDT",
+            handler=btc_quote_handler.append,
+        )
+
+        eth_depth = TestDataStubs.order_book_depth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        btc_depth = TestDataStubs.order_book_depth10(
+            instrument_id=BTCUSDT_BINANCE.id,
+            ts_event=3_000_000_000,
+            ts_init=4_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(eth_depth)
+        self.data_engine.process(btc_depth)
+
+        # Assert
+        assert len(eth_quote_handler) == 1
+        assert len(btc_quote_handler) == 1
+
+        eth_quote = eth_quote_handler[0]
+        btc_quote = btc_quote_handler[0]
+
+        assert eth_quote.instrument_id == ETHUSDT_BINANCE.id
+        assert btc_quote.instrument_id == BTCUSDT_BINANCE.id
+        assert eth_quote.ts_event == 1_000_000_000
+        assert btc_quote.ts_event == 3_000_000_000
+
+    def test_create_quote_tick_from_depth_preserves_spread(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with specific bid/ask spread
+        bid_order = BookOrder(OrderSide.BUY, Price.from_str("1500.50"), Quantity.from_str("250"), 1)
+        ask_order = BookOrder(
+            OrderSide.SELL,
+            Price.from_str("1500.75"),
+            Quantity.from_str("300"),
+            2,
+        )
+
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[bid_order],
+            asks=[ask_order],
+            bid_counts=[1],
+            ask_counts=[1],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        assert len(quote_handler) == 1
+        quote_tick = quote_handler[0]
+
+        assert quote_tick.bid_price == Price.from_str("1500.50")
+        assert quote_tick.ask_price == Price.from_str("1500.75")
+        assert quote_tick.bid_size == Quantity.from_str("250")
+        assert quote_tick.ask_size == Quantity.from_str("300")
+
+        # Verify spread is preserved
+        spread = quote_tick.ask_price - quote_tick.bid_price
+        assert spread == Price.from_str("0.25")
+
+
+class TestDataEngineQuoteFromDepth:
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.tmp_path = tmp_path
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = DataEngineConfig(
+            validate_data_sequence=True,
+            debug=True,
+            emit_quotes_from_book_depths=True,
+        )
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        self.binance_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+    def test_handle_order_book_depth_publishes_both_depth_and_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        depth_handler = []
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.book.depth.BINANCE.ETHUSDT",
+            handler=depth_handler.append,
+        )
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        depth = TestDataStubs.order_book_depth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine._handle_order_book_depth(depth)
+
+        # Assert
+        assert len(depth_handler) == 1
+        assert len(quote_handler) == 1
+
+        # Verify depth message
+        published_depth = depth_handler[0]
+        assert published_depth == depth
+
+        # Verify quote tick message
+        quote_tick = quote_handler[0]
+        assert isinstance(quote_tick, QuoteTick)
+        assert quote_tick.instrument_id == ETHUSDT_BINANCE.id
+        assert quote_tick.bid_price == Price.from_str("99.00")
+        assert quote_tick.ask_price == Price.from_str("100.00")
+        assert quote_tick.ts_event == 1_000_000_000
+        assert quote_tick.ts_init == 2_000_000_000
+
+    def test_handle_order_book_depth_with_invalid_data_publishes_only_depth(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        depth_handler = []
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.book.depth.BINANCE.ETHUSDT",
+            handler=depth_handler.append,
+        )
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create depth with no valid bids (invalid for quote tick creation)
+        depth = OrderBookDepth10(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bids=[NULL_ORDER],
+            asks=[BookOrder(OrderSide.SELL, Price.from_str("100.00"), Quantity.from_str("100"), 1)],
+            bid_counts=[0],
+            ask_counts=[1],
+            flags=0,
+            sequence=1,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine._handle_order_book_depth(depth)
+
+        # Assert
+        assert len(depth_handler) == 1  # Depth is still published
+        assert len(quote_handler) == 0  # No quote tick created
+
 
 class TestDataBufferEngine:
     @pytest.fixture(autouse=True)
@@ -4572,3 +4984,299 @@ class TestDataBufferEngine:
         assert len(handler) == 2
         assert len(handler[0].deltas) == 1
         assert len(handler[1].deltas) == 1
+
+
+class TestDataEngineQuoteFromBook:
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.tmp_path = tmp_path
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = DataEngineConfig(
+            validate_data_sequence=True,
+            debug=True,
+            emit_quotes_from_book=True,
+        )
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        self.binance_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+    def test_update_order_book_with_delta_publishes_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Subscribe to order book to create it in cache
+        subscribe = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            book_data_type=OrderBookDelta,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create initial snapshot to populate the book
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=ETHUSDT_BINANCE,
+            bid_price=99.00,
+            ask_price=100.00,
+            bid_size=100.0,
+            ask_size=100.0,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+        self.data_engine.process(snapshot)
+
+        # Clear the quote handler after snapshot
+        quote_handler.clear()
+
+        # Create a delta update
+        delta = OrderBookDelta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.BUY,
+                ETHUSDT_BINANCE.make_price(99.50),
+                ETHUSDT_BINANCE.make_qty(200),
+                1,
+            ),
+            flags=RecordFlag.F_LAST,
+            sequence=2,
+            ts_event=3_000_000_000,
+            ts_init=4_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(delta)
+
+        # Assert
+        assert len(quote_handler) == 1
+        quote_tick = quote_handler[0]
+        assert isinstance(quote_tick, QuoteTick)
+        assert quote_tick.instrument_id == ETHUSDT_BINANCE.id
+        assert quote_tick.bid_price == Price.from_str("99.50")
+        assert quote_tick.ask_price == Price.from_str("100.00")
+
+    def test_update_order_book_with_deltas_publishes_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Subscribe to order book to create it in cache
+        subscribe = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            book_data_type=OrderBookDelta,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create snapshot with deltas
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=ETHUSDT_BINANCE,
+            bid_price=99.00,
+            ask_price=100.00,
+            bid_size=100.0,
+            ask_size=100.0,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(snapshot)
+
+        # Assert
+        assert len(quote_handler) == 1
+        quote_tick = quote_handler[0]
+        assert isinstance(quote_tick, QuoteTick)
+        assert quote_tick.instrument_id == ETHUSDT_BINANCE.id
+        assert quote_tick.bid_price == Price.from_str("99.00")
+        assert quote_tick.ask_price == Price.from_str("100.00")
+
+    def test_update_order_book_with_multiple_deltas_publishes_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Subscribe to order book to create it in cache
+        subscribe = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            book_data_type=OrderBookDelta,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create initial snapshot to populate the book
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=ETHUSDT_BINANCE,
+            bid_price=99.00,
+            ask_price=100.00,
+            bid_size=100.0,
+            ask_size=100.0,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+        self.data_engine.process(snapshot)
+
+        # Clear the quote handler after snapshot
+        quote_handler.clear()
+
+        # Create multiple delta updates
+        delta1 = OrderBookDelta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.BUY,
+                ETHUSDT_BINANCE.make_price(99.50),
+                ETHUSDT_BINANCE.make_qty(200),
+                1,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=3_000_000_000,
+            ts_init=4_000_000_000,
+        )
+
+        delta2 = OrderBookDelta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                OrderSide.SELL,
+                ETHUSDT_BINANCE.make_price(100.00),  # Update the existing best ask
+                ETHUSDT_BINANCE.make_qty(300),
+                11,  # Same order_id as the original best ask
+            ),
+            flags=RecordFlag.F_LAST,
+            sequence=3,
+            ts_event=5_000_000_000,
+            ts_init=6_000_000_000,
+        )
+
+        # Act
+        self.data_engine.process(delta1)
+        self.data_engine.process(delta2)
+
+        # Assert - should have 2 quote ticks (one per delta)
+        assert len(quote_handler) == 2
+        quote_tick = quote_handler[1]
+        assert isinstance(quote_tick, QuoteTick)
+        assert quote_tick.instrument_id == ETHUSDT_BINANCE.id
+        assert quote_tick.bid_price == Price.from_str("99.50")
+        assert quote_tick.ask_price == Price.from_str("100.00")
+        assert quote_tick.ask_size == Quantity.from_int(300)
+
+    def test_update_order_book_with_invalid_book_does_not_publish_quote_tick(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Subscribe to order book to create it in cache
+        subscribe = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            book_data_type=OrderBookDelta,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        quote_handler = []
+        self.msgbus.subscribe(
+            topic="data.quotes.BINANCE.ETHUSDT",
+            handler=quote_handler.append,
+        )
+
+        # Create snapshot with only asks (no bids)
+        deltas = [
+            OrderBookDelta.clear(ETHUSDT_BINANCE.id, 0, 1_000_000_000, 2_000_000_000),
+            OrderBookDelta(
+                ETHUSDT_BINANCE.id,
+                BookAction.ADD,
+                BookOrder(
+                    OrderSide.SELL,
+                    Price.from_str("100.00"),
+                    Quantity.from_str("100"),
+                    1,
+                ),
+                0,
+                0,
+                1_000_000_000,
+                2_000_000_000,
+            ),
+        ]
+        snapshot = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=deltas,
+        )
+
+        # Act
+        self.data_engine.process(snapshot)
+
+        # Assert - no quote tick should be created because there's no bid
+        assert len(quote_handler) == 0

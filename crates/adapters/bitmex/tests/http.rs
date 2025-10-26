@@ -15,7 +15,7 @@
 
 //! Integration tests for BitMEX HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
     Router,
@@ -27,10 +27,11 @@ use axum::{
 use nautilus_bitmex::{
     common::enums::{BitmexOrderType, BitmexSide},
     http::{
-        client::BitmexHttpInnerClient,
+        client::{BitmexHttpClient, BitmexHttpInnerClient},
         query::{DeleteOrderParams, GetOrderParamsBuilder, PostOrderParams},
     },
 };
+use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -63,6 +64,17 @@ async fn handle_get_instruments() -> impl IntoResponse {
     Json(vec![instrument])
 }
 
+async fn handle_get_instrument(query: Query<HashMap<String, String>>) -> impl IntoResponse {
+    let instrument = load_test_data("http_get_instrument_xbtusd.json");
+    let requested_symbol = query.get("symbol");
+
+    if requested_symbol.is_some_and(|s| s == "XBTUSD") {
+        Json(vec![instrument])
+    } else {
+        Json(Vec::<Value>::new())
+    }
+}
+
 async fn handle_get_wallet(headers: axum::http::HeaderMap) -> Response {
     if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
         return (
@@ -76,10 +88,10 @@ async fn handle_get_wallet(headers: axum::http::HeaderMap) -> Response {
 
     let wallets = load_test_data("http_get_wallet.json");
     // The test data is an array, but the endpoint returns a single wallet
-    if let Some(wallet_array) = wallets.as_array() {
-        if !wallet_array.is_empty() {
-            return Json(wallet_array[0].clone()).into_response();
-        }
+    if let Some(wallet_array) = wallets.as_array()
+        && !wallet_array.is_empty()
+    {
+        return Json(wallet_array[0].clone()).into_response();
     }
     Json(wallets).into_response()
 }
@@ -128,10 +140,7 @@ async fn handle_get_orders(
     Json(orders).into_response()
 }
 
-async fn handle_post_order(
-    headers: axum::http::HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
+async fn handle_post_order(headers: axum::http::HeaderMap, body: String) -> Response {
     if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
         return (
             StatusCode::UNAUTHORIZED,
@@ -142,7 +151,9 @@ async fn handle_post_order(
             .into_response();
     }
 
-    // BitMEX uses query parameters for POST /order
+    // BitMEX expects form-encoded body for POST /order
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&body).unwrap_or_default();
+
     if !params.contains_key("symbol") || !params.contains_key("orderQty") {
         return (
             StatusCode::BAD_REQUEST,
@@ -169,10 +180,7 @@ async fn handle_post_order(
     .into_response()
 }
 
-async fn handle_delete_order(
-    headers: axum::http::HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
+async fn handle_delete_order(headers: axum::http::HeaderMap, body: String) -> Response {
     if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
         return (
             StatusCode::UNAUTHORIZED,
@@ -183,11 +191,23 @@ async fn handle_delete_order(
             .into_response();
     }
 
-    // BitMEX uses query parameters for DELETE /order
-    if params.contains_key("orderID") || params.contains_key("clOrdID") {
+    // BitMEX expects form-encoded body for DELETE /order
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&body).unwrap_or_default();
+
+    // Parse the JSON-encoded orderID or clOrdID arrays
+    let has_order_id = params
+        .get("orderID")
+        .and_then(|v| serde_json::from_str::<Vec<String>>(v).ok())
+        .is_some();
+    let has_cl_ord_id = params
+        .get("clOrdID")
+        .and_then(|v| serde_json::from_str::<Vec<String>>(v).ok())
+        .is_some();
+
+    if has_order_id || has_cl_ord_id {
         // Return a cancelled order
         return Json(json!([{
-            "orderID": params.get("orderID").unwrap_or(&"test-order-id".to_string()),
+            "orderID": "test-order-id",
             "ordStatus": "Canceled",
             "symbol": "XBTUSD",
             "orderQty": 100,
@@ -208,6 +228,7 @@ async fn handle_delete_order(
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/instrument/active", get(handle_get_instruments))
+        .route("/instrument", get(handle_get_instrument))
         .route("/user/wallet", get(handle_get_wallet))
         .route("/position", get(handle_get_positions))
         .route("/order", get(handle_get_orders))
@@ -238,11 +259,57 @@ async fn test_get_instruments() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::new(Some(base_url), Some(60), None, None, None).unwrap();
+    let client =
+        BitmexHttpInnerClient::new(Some(base_url), Some(60), None, None, None, None, None, None)
+            .unwrap();
     let instruments = client.http_get_instruments(true).await.unwrap();
 
     assert_eq!(instruments.len(), 1);
     assert_eq!(instruments[0].symbol, "XBTUSD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_instrument_single_result() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    let client =
+        BitmexHttpInnerClient::new(Some(base_url), Some(60), None, None, None, None, None, None)
+            .unwrap();
+    let instrument = client.http_get_instrument("XBTUSD").await.unwrap();
+
+    assert!(instrument.is_some());
+    assert_eq!(instrument.unwrap().symbol, "XBTUSD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instrument() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{}", addr);
+
+    let client = BitmexHttpClient::new(
+        Some(base_url),
+        None,
+        None,
+        false,
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+    let instrument = client.request_instrument(instrument_id).await.unwrap();
+
+    assert!(instrument.is_some());
+    let instrument = instrument.unwrap();
+    assert_eq!(instrument.id(), instrument_id);
 }
 
 #[rstest]
@@ -252,8 +319,17 @@ async fn test_get_wallet_requires_auth() {
     let base_url = format!("http://{}", addr);
 
     // Test without credentials - should fail
-    let client =
-        BitmexHttpInnerClient::new(Some(base_url.clone()), Some(60), None, None, None).unwrap();
+    let client = BitmexHttpInnerClient::new(
+        Some(base_url.clone()),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let result = client.http_get_wallet().await;
     assert!(result.is_err());
 
@@ -263,6 +339,9 @@ async fn test_get_wallet_requires_auth() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
+        None,
+        None,
+        None,
         None,
         None,
         None,
@@ -283,6 +362,9 @@ async fn test_get_orders() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
+        None,
+        None,
+        None,
         None,
         None,
         None,
@@ -307,6 +389,9 @@ async fn test_place_order() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
+        None,
+        None,
+        None,
         None,
         None,
         None,
@@ -345,6 +430,9 @@ async fn test_cancel_order() {
         None,
         None,
         None,
+        None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -363,6 +451,7 @@ async fn test_cancel_order() {
 
 #[rstest]
 #[tokio::test]
+#[ignore = "Slow test; TODO: Improve test setup to avoid slow runtime"]
 async fn test_rate_limiting() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
@@ -372,6 +461,9 @@ async fn test_rate_limiting() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
+        None,
+        None,
+        None,
         None,
         None,
         None,

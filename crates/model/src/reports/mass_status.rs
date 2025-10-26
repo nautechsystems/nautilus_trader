@@ -208,10 +208,11 @@ mod tests {
             InstrumentId::from("AAPL.NASDAQ"),
             PositionSideSpecified::Long,
             Quantity::from("50"),
-            Some(PositionId::from("P-001")),
             UnixNanos::from(2_000_000_000),
             UnixNanos::from(3_000_000_000),
-            None,
+            None,                            // report_id
+            Some(PositionId::from("P-001")), // venue_position_id
+            None,                            // avg_px_open
         )
     }
 
@@ -321,9 +322,10 @@ mod tests {
             InstrumentId::from("AAPL.NASDAQ"), // Same instrument ID
             PositionSideSpecified::Short,
             Quantity::from("25"),
-            None,
             UnixNanos::from(2_100_000_000),
             UnixNanos::from(3_100_000_000),
+            None,
+            None,
             None,
         );
         let position_report3 = PositionStatusReport::new(
@@ -331,9 +333,10 @@ mod tests {
             InstrumentId::from("MSFT.NASDAQ"), // Different instrument
             PositionSideSpecified::Long,
             Quantity::from("100"),
-            None,
             UnixNanos::from(2_200_000_000),
             UnixNanos::from(3_200_000_000),
+            None,
+            None,
             None,
         );
 

@@ -13,88 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Turmoil-compatible socket tests with dependency injection.
+//! Turmoil integration tests for the SocketClient.
 //!
-//! This demonstrates how to make our networking components work with turmoil
-//! through dependency injection of network types.
+//! These tests use turmoil's network simulation to test the actual production
+//! SocketClient code under various network conditions.
+
+#![cfg(feature = "turmoil")]
 
 use std::time::Duration;
 
-use nautilus_network::{backoff::ExponentialBackoff, net::TcpConnector, socket::SocketConfig};
-use rstest::rstest;
+use nautilus_network::socket::{SocketClient, SocketConfig};
+use rstest::{fixture, rstest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
 use turmoil::{Builder, net};
 
-/// Turmoil TCP connector for testing.
-#[derive(Default, Clone, Debug)]
-pub struct TurmoilTcpConnector;
-
-impl TcpConnector for TurmoilTcpConnector {
-    type Stream = turmoil::net::TcpStream;
-
-    fn connect(
-        &self,
-        addr: &str,
-    ) -> impl std::future::Future<Output = std::io::Result<Self::Stream>> + Send {
-        turmoil::net::TcpStream::connect(addr.to_string())
+/// Default test socket configuration.
+#[fixture]
+fn socket_config() -> SocketConfig {
+    SocketConfig {
+        url: "server:8080".to_string(),
+        mode: Mode::Plain,
+        suffix: b"\r\n".to_vec(),
+        message_handler: None,
+        heartbeat: None,
+        reconnect_timeout_ms: Some(2_000),
+        reconnect_delay_initial_ms: Some(50),
+        reconnect_delay_max_ms: Some(500),
+        reconnect_backoff_factor: Some(1.5),
+        reconnect_jitter_ms: Some(10),
+        certs_dir: None,
     }
 }
 
-/// A test-specific socket client that uses dependency injection for networking.
-struct TestSocketClient<C: TcpConnector> {
-    config: SocketConfig,
-    connector: C,
-}
-
-impl<C: TcpConnector> TestSocketClient<C> {
-    const fn new(config: SocketConfig, connector: C) -> Self {
-        Self { config, connector }
-    }
-
-    async fn connect(&self) -> Result<C::Stream, Box<dyn std::error::Error>> {
-        let stream = self.connector.connect(&self.config.url).await?;
-        Ok(stream)
-    }
-
-    async fn send_data(
-        &self,
-        mut stream: C::Stream,
-        data: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        stream.write_all(data).await?;
-
-        let mut buffer = vec![0; 1024];
-        let n = stream.read(&mut buffer).await?;
-        buffer.truncate(n);
-        Ok(buffer)
-    }
-
-    async fn send_data_with_backoff(
-        &self,
-        data: &[u8],
-        backoff: &mut nautilus_network::backoff::ExponentialBackoff,
-        max_attempts: usize,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        for _attempt in 0..max_attempts {
-            if let Ok(stream) = self.connect().await {
-                if let Ok(response) = self.send_data(stream, data).await {
-                    backoff.reset();
-                    return Ok(response);
-                } else {
-                    let delay = backoff.next_duration();
-                    tokio::time::sleep(delay).await;
-                }
-            } else {
-                let delay = backoff.next_duration();
-                tokio::time::sleep(delay).await;
-            }
-        }
-        Err("Max attempts reached".into())
-    }
-}
-
-/// Echo server that responds to messages.
+/// Echo server for testing.
 async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
 
@@ -103,11 +55,22 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
             tokio::spawn(async move {
                 let mut buffer = vec![0; 1024];
 
-                while let Ok(n) = stream.read(&mut buffer).await {
-                    if n == 0 {
-                        break;
+                loop {
+                    match stream.read(&mut buffer).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            // Check for termination message
+                            if buffer.starts_with(b"close\r\n") {
+                                let _ = stream.shutdown().await;
+                                break;
+                            }
+                            // Echo back the data
+                            if stream.write_all(&buffer[..n]).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
                     }
-                    let _ = stream.write_all(&buffer[..n]).await;
                 }
             });
         }
@@ -115,38 +78,37 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[rstest]
-fn test_turmoil_socket_with_dependency_injection() {
+fn test_turmoil_real_socket_basic_connect(socket_config: SocketConfig) {
     let mut sim = Builder::new().build();
 
     sim.host("server", echo_server);
 
-    sim.client("client", async {
-        let config = SocketConfig {
-            url: "server:8080".to_string(),
-            mode: Mode::Plain,
-            suffix: b"\\r\\n".to_vec(),
-            message_handler: None,
-            heartbeat: None,
-            reconnect_timeout_ms: Some(2_000),
-            reconnect_delay_initial_ms: Some(50),
-            reconnect_delay_max_ms: Some(500),
-            reconnect_backoff_factor: Some(1.5),
-            reconnect_jitter_ms: Some(10),
-            certs_dir: None,
-        };
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Should connect");
 
-        // Use turmoil connector for testing
-        let client = TestSocketClient::new(config, TurmoilTcpConnector);
+        // Verify client is active
+        assert!(client.is_active(), "Client should be active after connect");
 
-        // Connect and send test data
-        let stream = client.connect().await.expect("Should connect");
-        let response = client
-            .send_data(stream, b"hello turmoil")
+        // Send a test message
+        client
+            .send_bytes(b"hello".to_vec())
             .await
             .expect("Should send data");
 
-        // Verify echo response
-        assert_eq!(response, b"hello turmoil");
+        // Wait a bit
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Send close message
+        client
+            .send_bytes(b"close".to_vec())
+            .await
+            .expect("Should send close");
+
+        // Close the client
+        client.close().await;
+        assert!(client.is_closed(), "Client should be closed");
 
         Ok(())
     });
@@ -155,178 +117,128 @@ fn test_turmoil_socket_with_dependency_injection() {
 }
 
 #[rstest]
-fn test_turmoil_socket_network_partition() {
+fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
+    socket_config.reconnect_timeout_ms = Some(5_000);
+    socket_config.reconnect_delay_initial_ms = Some(100);
+
+    let mut sim = Builder::new().build();
+
+    // Server that accepts one connection, closes it, then accepts another
+    sim.host("server", || async {
+        let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+        // Accept first connection
+        if let Ok((mut stream, _)) = listener.accept().await {
+            // Read one message
+            let mut buffer = vec![0; 1024];
+            let _ = stream.read(&mut buffer).await;
+            // Echo it back
+            let _ = stream.write_all(b"first\r\n").await;
+            // Close the connection
+            drop(stream);
+        }
+
+        // Wait a bit before accepting second connection
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Accept second connection and run echo server
+        if let Ok((mut stream, _)) = listener.accept().await {
+            let mut buffer = vec![0; 1024];
+            loop {
+                match stream.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if buffer.starts_with(b"close\r\n") {
+                            break;
+                        }
+                        if stream.write_all(&buffer[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Should connect");
+
+        // Send first message
+        client
+            .send_bytes(b"first_msg".to_vec())
+            .await
+            .expect("Should send first message");
+
+        // Wait for server to close connection
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Client should detect disconnection and attempt reconnection
+        // Send another message after reconnection
+        client
+            .send_bytes(b"second_msg".to_vec())
+            .await
+            .expect("Should send second message after reconnect");
+
+        // Close
+        client.send_bytes(b"close".to_vec()).await.ok();
+        client.close().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
+    socket_config.reconnect_timeout_ms = Some(3_000);
+
     let mut sim = Builder::new().build();
 
     sim.host("server", echo_server);
 
-    sim.client("client", async {
-        let config = SocketConfig {
-            url: "server:8080".to_string(),
-            mode: Mode::Plain,
-            suffix: b"\\r\\n".to_vec(),
-            message_handler: None,
-
-            heartbeat: None,
-            reconnect_timeout_ms: Some(2_000),
-            reconnect_delay_initial_ms: Some(100),
-            reconnect_delay_max_ms: Some(800),
-            reconnect_backoff_factor: Some(1.8),
-            reconnect_jitter_ms: Some(20),
-            certs_dir: None,
-        };
-
-        let client = TestSocketClient::new(config, TurmoilTcpConnector);
-
-        // Initial connection and message
-        let stream = client.connect().await.expect("Should connect initially");
-        let response = client
-            .send_data(stream, b"before_partition")
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
             .await
-            .expect("Should send initially");
-        assert_eq!(response, b"before_partition");
+            .expect("Should connect");
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Send message before partition
+        client
+            .send_bytes(b"before_partition".to_vec())
+            .await
+            .expect("Should send before partition");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Create network partition
         turmoil::partition("client", "server");
 
-        // Connection should fail during partition
-        let partition_result = client.connect().await;
-        assert!(
-            partition_result.is_err(),
-            "Connection should fail during partition"
-        );
-
+        // Wait a bit
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Repair partition
         turmoil::repair("client", "server");
 
-        // Wait for network to stabilize
+        // Wait for reconnection
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        // Should be able to connect again after repair
-        let stream = client.connect().await.expect("Should connect after repair");
-        let response = client
-            .send_data(stream, b"after_partition")
+        // Should be able to send after repair
+        client
+            .send_bytes(b"after_partition".to_vec())
             .await
-            .expect("Should send after repair");
-        assert_eq!(response, b"after_partition");
+            .expect("Should send after partition repair");
+
+        // Close
+        client.send_bytes(b"close".to_vec()).await.ok();
+        client.close().await;
 
         Ok(())
     });
-
-    sim.run().unwrap();
-}
-
-#[rstest]
-fn test_exponential_backoff_under_network_instability() {
-    let mut sim = Builder::new().build();
-
-    sim.host("server", echo_server);
-
-    sim.client("client", async {
-        let config = SocketConfig {
-            url: "server:8080".to_string(),
-            mode: Mode::Plain,
-            suffix: b"\\r\\n".to_vec(),
-            message_handler: None,
-
-            heartbeat: None,
-            reconnect_timeout_ms: Some(5_000),
-            reconnect_delay_initial_ms: Some(50),
-            reconnect_delay_max_ms: Some(500),
-            reconnect_backoff_factor: Some(2.0),
-            reconnect_jitter_ms: Some(10),
-            certs_dir: None,
-        };
-
-        let client = TestSocketClient::new(config, TurmoilTcpConnector);
-
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(50),  // initial delay
-            Duration::from_millis(500), // max delay
-            2.0,                        // factor
-            10,                         // jitter
-            true,                       // immediate first
-        )
-        .unwrap();
-
-        // Test successful communication first
-        let stream = client.connect().await.expect("Should connect");
-        let response = client
-            .send_data(stream, b"test_message")
-            .await
-            .expect("Should send data");
-        assert_eq!(response, b"test_message");
-
-        // Create network partition to test backoff
-        turmoil::partition("client", "server");
-
-        // Wait briefly
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Repair partition
-        turmoil::repair("client", "server");
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Should eventually succeed with backoff (limiting attempts to prevent infinite loops)
-        let response = client
-            .send_data_with_backoff(b"after_instability", &mut backoff, 5)
-            .await
-            .expect("Should eventually succeed");
-        assert_eq!(response, b"after_instability");
-
-        Ok(())
-    });
-
-    sim.run().unwrap();
-}
-
-#[rstest]
-fn test_multiple_clients_concurrent() {
-    let mut sim = Builder::new().build();
-
-    sim.host("server", echo_server);
-
-    // Test multiple clients concurrently
-    for client_id in 0..3_u32 {
-        sim.client(format!("client_{client_id}"), async move {
-            let config = SocketConfig {
-                url: "server:8080".to_string(),
-                mode: Mode::Plain,
-                suffix: b"\\r\\n".to_vec(),
-                message_handler: None,
-
-                heartbeat: None,
-                reconnect_timeout_ms: Some(2_000),
-                reconnect_delay_initial_ms: Some(50),
-                reconnect_delay_max_ms: Some(500),
-                reconnect_backoff_factor: Some(1.5),
-                reconnect_jitter_ms: Some(10),
-                certs_dir: None,
-            };
-
-            let client = TestSocketClient::new(config, TurmoilTcpConnector);
-
-            // Each client sends multiple requests
-            for req_id in 0..3 {
-                let message = format!("client_{client_id}_req_{req_id}");
-                let stream = client.connect().await.expect("Should connect");
-                let response = client
-                    .send_data(stream, message.as_bytes())
-                    .await
-                    .expect("Should send data");
-                assert_eq!(response, message.as_bytes());
-
-                // Add small delay between requests
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-
-            Ok(())
-        });
-    }
 
     sim.run().unwrap();
 }

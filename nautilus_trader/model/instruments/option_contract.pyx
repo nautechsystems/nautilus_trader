@@ -213,7 +213,7 @@ cdef class OptionContract(Instrument):
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
-        Return the contract expriation timestamp (UTC).
+        Return the contract expiration timestamp (UTC).
 
         Returns
         -------
@@ -300,13 +300,17 @@ cdef class OptionContract(Instrument):
             lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             underlying=pyo3_instrument.underlying,
             option_kind=option_kind_from_str(str(pyo3_instrument.option_kind)),
+            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
-            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
-            info=pyo3_instrument.info,
+            margin_init=Decimal(pyo3_instrument.margin_init),
+            margin_maint=Decimal(pyo3_instrument.margin_maint),
+            maker_fee=Decimal(pyo3_instrument.maker_fee),
+            taker_fee=Decimal(pyo3_instrument.taker_fee),
+            exchange=pyo3_instrument.exchange,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
-            exchange=pyo3_instrument.exchange,
+            info=pyo3_instrument.info,
         )
 
     @staticmethod

@@ -31,7 +31,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "hypersync")]
 fn extract_blockchain_factory(
     py: Python<'_>,
-    factory: PyObject,
+    factory: Py<PyAny>,
 ) -> PyResult<Box<dyn DataClientFactory>> {
     match factory.extract::<crate::factories::BlockchainDataClientFactory>(py) {
         Ok(concrete_factory) => Ok(Box::new(concrete_factory)),
@@ -43,7 +43,7 @@ fn extract_blockchain_factory(
 
 /// Extractor function for `BlockchainDataClientConfig`.
 #[cfg(feature = "hypersync")]
-fn extract_blockchain_config(py: Python<'_>, config: PyObject) -> PyResult<Box<dyn ClientConfig>> {
+fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<crate::config::BlockchainDataClientConfig>(py) {
         Ok(concrete_config) => Ok(Box::new(concrete_config)),
         Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(

@@ -89,6 +89,14 @@ cdef class ExecutionClient(Component):
         uint64_t ts_event,
         dict info=*,
     )
+    cpdef void generate_order_denied(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str reason,
+        uint64_t ts_event,
+    )
     cpdef void generate_order_submitted(
         self,
         StrategyId strategy_id,

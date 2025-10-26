@@ -275,6 +275,7 @@ def test_specialized_subscription_methods_exist(instrument_id, client_id):
     assert hasattr(actor, "subscribe_index_prices")
     assert hasattr(actor, "subscribe_instrument_status")
     assert hasattr(actor, "subscribe_instrument_close")
+    assert hasattr(actor, "subscribe_order_fills")
 
 
 def test_request_methods_exist(instrument_id, client_id, data_type):
@@ -313,6 +314,7 @@ def test_unsubscribe_methods_exist(client_id, data_type):
         "unsubscribe_instrument_status",
         "unsubscribe_instrument_close",
         "unsubscribe_book_at_interval",
+        "unsubscribe_order_fills",
     ]
 
     for method_name in unsubscribe_methods:
@@ -395,6 +397,7 @@ def test_all_subscription_methods_match_legacy_api():
         "subscribe_index_prices",
         "subscribe_instrument_status",
         "subscribe_instrument_close",
+        "subscribe_order_fills",
     ]
 
     for method_name in expected_subscription_methods:

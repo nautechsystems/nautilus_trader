@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
@@ -31,9 +29,10 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBetfairFactory:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -46,6 +45,8 @@ class TestBetfairFactory:
             clock=self.clock,
         )
         self.cache = TestComponentStubs.cache()
+
+        yield
 
     @pytest.mark.asyncio()
     def test_create(self):
@@ -65,7 +66,7 @@ class TestBetfairFactory:
         )
 
         data_client = BetfairLiveDataClientFactory.create(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             name=BETFAIR_VENUE.value,
             config=data_config,
             msgbus=self.msgbus,
@@ -73,7 +74,7 @@ class TestBetfairFactory:
             clock=self.clock,
         )
         exec_client = BetfairLiveExecClientFactory.create(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             name=BETFAIR_VENUE.value,
             config=exec_config,
             msgbus=self.msgbus,

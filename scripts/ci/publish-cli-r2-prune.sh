@@ -12,7 +12,7 @@ KEEP_DEVELOP=1
 KEEP_NIGHTLY=30
 
 # Collect version directories (exclude 'latest')
-mapfile -t dirs < <(aws s3 ls "s3://${BUCKET}/${PREFIX}/" --endpoint-url="$R2_URL" | awk '/PRE/ {print $2}' | sed 's:/$::' | grep -v '^latest$' || true)
+mapfile -t dirs < <(aws s3 ls "s3://${BUCKET}/${PREFIX}/" --endpoint-url="$R2_URL" --cli-connect-timeout 10 --cli-read-timeout 60 | awk '/PRE/ {print $2}' | sed 's:/$::' | grep -v '^latest$' || true)
 
 if [[ ${#dirs[@]} -eq 0 ]]; then
   echo "No version directories found; nothing to prune."
@@ -20,8 +20,7 @@ if [[ ${#dirs[@]} -eq 0 ]]; then
 fi
 
 # Sort lexicographically; dev/nightly names include date and generally increase
-IFS=$'\n' sorted=($(sort <<<"${dirs[*]}"))
-unset IFS
+mapfile -t sorted < <(printf '%s\n' "${dirs[@]}" | sort)
 
 keep=$KEEP_DEVELOP
 if [[ "$BRANCH_NAME" == "nightly" ]]; then
@@ -29,9 +28,9 @@ if [[ "$BRANCH_NAME" == "nightly" ]]; then
 fi
 
 to_delete=()
-if (( ${#sorted[@]} > keep )); then
+if ((${#sorted[@]} > keep)); then
   count=$((${#sorted[@]} - keep))
-  for ((i=0; i<count; i++)); do
+  for ((i = 0; i < count; i++)); do
     to_delete+=("${sorted[$i]}")
   done
 fi
@@ -44,10 +43,33 @@ fi
 echo "Deleting ${#to_delete[@]} old version directories:"
 printf '  %s\n' "${to_delete[@]}"
 
+had_failures=false
 for d in "${to_delete[@]}"; do
   echo "Removing s3://${BUCKET}/${PREFIX}/${d}/"
-  aws s3 rm "s3://${BUCKET}/${PREFIX}/${d}/" --recursive --endpoint-url="$R2_URL" || echo "Warning: failed to delete $d"
+  success=false
+  for i in {1..5}; do
+    if aws s3 rm "s3://${BUCKET}/${PREFIX}/${d}/" --recursive --endpoint-url="$R2_URL" --cli-connect-timeout 10 --cli-read-timeout 60; then
+      success=true
+      break
+    else
+      echo "Delete failed for ${d}, retrying ($i/5)..."
+      sleep $((2 ** i))
+    fi
+  done
+  if [ "$success" = false ]; then
+    # Accept concurrent deletion: treat as success if the directory is now empty
+    if aws s3 ls "s3://${BUCKET}/${PREFIX}/${d}/" --recursive --endpoint-url="$R2_URL" --cli-connect-timeout 10 --cli-read-timeout 60 | grep -q .; then
+      echo "Error: failed to delete ${d} after retries (still present)"
+      had_failures=true
+    else
+      echo "${d} already gone (treated as success)"
+    fi
+  fi
 done
 
-echo "Prune complete"
+if [ "$had_failures" = true ]; then
+  echo "Prune completed with failures"
+  exit 1
+fi
 
+echo "Prune complete"

@@ -329,10 +329,11 @@ class BacktestNode:
             "request_bars",
             "request_quote_ticks",
             "request_trade_ticks",
+            "request_order_book_depth",
         ]
 
         if request_function not in compatible_request_functions:
-            self._engines["download"].logger.error(
+            raise ValueError(
                 f"{request_function} not supported by BacktestNode.download_data. "
                 f"Please use one of {compatible_request_functions}.",
             )
@@ -665,6 +666,7 @@ class BacktestNode:
             path=config.catalog_path,
             fs_protocol=config.catalog_fs_protocol,
             fs_storage_options=config.catalog_fs_storage_options,
+            fs_rust_storage_options=config.catalog_fs_rust_storage_options,
         )
 
     def _load_engine_data(self, engine: BacktestEngine, result: CatalogDataResult) -> None:

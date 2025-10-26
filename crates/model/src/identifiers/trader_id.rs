@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string};
+use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.
@@ -50,7 +50,7 @@ impl TraderId {
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
-        check_valid_string(value, stringify!(value))?;
+        check_valid_string_ascii(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
         Ok(Self(Ustr::from(value)))
     }
@@ -65,7 +65,7 @@ impl TraderId {
     }
 
     /// Sets the inner identifier value.
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
     pub(crate) fn set_inner(&mut self, value: &str) {
         self.0 = Ustr::from(value);
     }

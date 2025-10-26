@@ -28,7 +28,7 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 For API details and troubleshooting, see the official [Betfair Developer Documentation](https://developer.betfair.com/en/get-started/).
 
-## Application Keys
+## Application keys
 
 Betfair requires an Application Key to authenticate API requests. After registering and funding your account, obtain your key using the [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
 
@@ -59,11 +59,11 @@ The Betfair adapter provides three primary components:
 - `BetfairDataClient`: streams real-time market data from the Exchange Streaming API.
 - `BetfairExecutionClient`: submits orders (bets) and tracks execution status via the REST API.
 
-## Capability Matrix
+## Orders capability
 
 Betfair operates as a betting exchange with unique characteristics compared to traditional financial exchanges:
 
-### Order Types
+### Order types
 
 | Order Type             | Supported | Notes                               |
 |------------------------|-----------|-------------------------------------|
@@ -75,7 +75,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                    |
 | `TRAILING_STOP_MARKET` | -         | *Not supported*.                    |
 
-### Execution Instructions
+### Execution instructions
 
 | Instruction   | Supported | Notes                               |
 |---------------|-----------|-------------------------------------|
@@ -91,7 +91,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `FOK`         | -         | Betting exchange uses different model. |
 | `IOC`         | -         | Betting exchange uses different model. |
 
-### Advanced Order Features
+### Advanced order features
 
 | Feature            | Supported | Notes                                    |
 |--------------------|-----------|------------------------------------------|
@@ -134,18 +134,36 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | Bracket orders      | -         | *Not supported*.                        |
 | Conditional orders  | -         | Basic bet conditions only.              |
 
-### Configuration options
-
-The following execution client configuration options affect order behavior:
-
-| Option                       | Default | Description                                      |
-|------------------------------|---------|--------------------------------------------------|
-| `calculate_account_state`    | `True`  | If `True`, calculates account state from events. |
-| `request_account_state_secs` | `300`   | Interval for account state checks in seconds (0 disables). |
-| `reconcile_market_ids_only`  | `False` | If `True`, only reconciles orders for configured market IDs. |
-| `ignore_external_orders`     | `False` | If `True`, silently ignores orders not found in cache. |
-
 ## Configuration
+
+### Data client configuration options
+
+| Option                    | Default   | Description |
+|---------------------------|-----------|-------------|
+| `account_currency`        | Required  | Betfair account currency for data and price feeds. |
+| `username`                | `None`    | Betfair account username; taken from environment when omitted. |
+| `password`                | `None`    | Betfair account password; taken from environment when omitted. |
+| `app_key`                 | `None`    | Betfair application key used for API authentication. |
+| `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
+| `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
+| `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
+| `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
+
+### Execution client configuration options
+
+| Option                       | Default  | Description |
+|------------------------------|----------|-------------|
+| `account_currency`           | Required | Betfair account currency for order placement and balances. |
+| `username`                   | `None`   | Betfair account username; taken from environment when omitted. |
+| `password`                   | `None`   | Betfair account password; taken from environment when omitted. |
+| `app_key`                    | `None`   | Betfair application key used for API authentication. |
+| `certs_dir`                  | `None`   | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`          | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation. |
+| `calculate_account_state`    | `True`   | Calculate account state locally from events when `True`. |
+| `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
+| `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation requests only cover configured market IDs. |
+| `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
 
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 
@@ -168,3 +186,8 @@ node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
 node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
 node.build()
 ```
+
+:::info
+For additional features or to contribute to the Betfair adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

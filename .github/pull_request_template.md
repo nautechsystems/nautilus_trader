@@ -18,6 +18,7 @@
 
 - [ ] Bug fix (non-breaking)
 - [ ] New feature (non-breaking)
+- [ ] Improvement (non-breaking)
 - [ ] Breaking change (impacts existing behavior)
 - [ ] Documentation update
 - [ ] Maintenance / chore

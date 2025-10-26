@@ -2,6 +2,12 @@
 
 We highly value involvement from the trading community, and all contributions are greatly appreciated as they help us continually improve NautilusTrader!
 
+> [!NOTE]
+>
+> **Integrations:**
+> New integrations are a major undertaking for the project and therefore require additional discussion and approval before opening any PRs.
+> Please see the [ROADMAP: Community-contributed integrations](ROADMAP.md#community-contributed-integrations) for details on the process.
+
 ## Steps
 
 To contribute, follow these steps:

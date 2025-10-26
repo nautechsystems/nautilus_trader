@@ -304,7 +304,20 @@ class TestMarketDataClient:
         self.client._handle_bars_py(
             TestDataStubs.bartype_gbpusd_1sec_mid(),
             [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
             None,
+        )
+
+        # Assert
+        assert self.data_engine.response_count == 1
+
+    def test_handle_order_book_depths_sends_to_data_engine(self):
+        # Arrange, Act
+        self.client._handle_order_book_depths_py(
+            AUDUSD_SIM.id,
+            [],
             UUID4(),
             pd.Timestamp("2023-01-01"),
             pd.Timestamp("2023-01-02"),

@@ -84,7 +84,7 @@ class TestPersistenceStreaming:
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderFilled": 94,
+            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 90,
@@ -438,7 +438,7 @@ class TestPersistenceStreaming:
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderFilled": 94,
+            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 90,
@@ -447,3 +447,183 @@ class TestPersistenceStreaming:
             "TradeTick": 179,
         }
         assert counts == expected
+
+    def test_feather_writer_per_bar_type(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        from nautilus_trader.cache.cache import Cache
+        from nautilus_trader.common.component import TestClock
+        from nautilus_trader.model.data import Bar
+        from nautilus_trader.persistence.writer import StreamingFeatherWriter
+        from nautilus_trader.test_kit.providers import TestInstrumentProvider
+        from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+        self.catalog = catalog_betfair
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        # Create writer with Bar in include_types
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/test_instance",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[Bar],
+        )
+
+        # Create bars with different bar types
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000, ts_init=1000)
+        bar2 = TestDataStubs.bar_5decimal_5min_bid()
+
+        # Act - write bars
+        writer.write(bar1)
+        writer.write(bar2)
+        writer.close()
+
+        # Assert - check that bars were written to per-bar-type subdirectories
+        bar_dir = f"{self.catalog.path}/backtest/test_instance/bar"
+
+        # Verify directory structure exists
+        assert self.catalog.fs.isdir(bar_dir)
+
+        # Verify subdirectories for each bar type exist
+        subdirs = [d for d in self.catalog.fs.glob(f"{bar_dir}/*") if self.catalog.fs.isdir(d)]
+        assert len(subdirs) == 2  # One for each bar type
+
+        # Verify feather files exist in subdirectories
+        feather_files = list(self.catalog.fs.glob(f"{bar_dir}/**/*.feather"))
+        assert len(feather_files) == 2  # One file per bar type
+
+    def test_convert_stream_to_data_with_identifiers(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        from nautilus_trader.cache.cache import Cache
+        from nautilus_trader.common.component import TestClock
+        from nautilus_trader.model.data import Bar
+        from nautilus_trader.persistence.writer import StreamingFeatherWriter
+        from nautilus_trader.test_kit.providers import TestInstrumentProvider
+        from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+        self.catalog = catalog_betfair
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        # Create writer
+        instance_id = "test_instance_identifiers"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[Bar],
+        )
+
+        # Create bars with different bar types (1-MINUTE and 5-MINUTE)
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000, ts_init=1000)
+        bar2 = TestDataStubs.bar_5decimal_5min_bid()
+
+        # Write bars
+        writer.write(bar1)
+        writer.write(bar2)
+        writer.close()
+
+        # Act - convert only bars with "5-MINUTE" in their identifier
+        self.catalog.convert_stream_to_data(
+            instance_id,
+            Bar,
+            identifiers=["5-MINUTE"],
+        )
+
+        # Assert - verify only 5-MINUTE bars were written to catalog
+        # Query all bars from catalog
+        all_bars = self.catalog.bars()
+        assert len(all_bars) == 1
+
+        # Verify the bar is a 5-MINUTE bar
+        assert "5-MINUTE" in str(all_bars[0].bar_type)
+
+    def test_convert_stream_to_data_internal_to_external(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        from nautilus_trader.cache.cache import Cache
+        from nautilus_trader.common.component import TestClock
+        from nautilus_trader.model.data import Bar
+        from nautilus_trader.model.data import BarSpecification
+        from nautilus_trader.model.data import BarType
+        from nautilus_trader.model.enums import AggregationSource
+        from nautilus_trader.model.enums import BarAggregation
+        from nautilus_trader.model.enums import PriceType
+        from nautilus_trader.model.objects import Price
+        from nautilus_trader.model.objects import Quantity
+        from nautilus_trader.persistence.writer import StreamingFeatherWriter
+        from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+        self.catalog = catalog_betfair
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        # Create writer
+        instance_id = "test_instance_internal"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[Bar],
+        )
+
+        # Create a bar with INTERNAL aggregation source
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type_internal = BarType(
+            instrument.id,
+            bar_spec,
+            AggregationSource.INTERNAL,
+        )
+
+        bar = Bar(
+            bar_type=bar_type_internal,
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event=1000,
+            ts_init=1000,
+        )
+
+        # Write bar
+        writer.write(bar)
+        writer.close()
+
+        # Act - convert stream to data (should convert INTERNAL to EXTERNAL)
+        self.catalog.convert_stream_to_data(
+            instance_id,
+            Bar,
+        )
+
+        # Assert - verify bars were converted to EXTERNAL
+        # Load all bars from catalog
+        bars = self.catalog.bars()
+        assert len(bars) == 1
+
+        # Check that the bar has EXTERNAL aggregation source
+        assert bars[0].bar_type.aggregation_source == AggregationSource.EXTERNAL
+        assert str(bars[0].bar_type).endswith("-EXTERNAL")

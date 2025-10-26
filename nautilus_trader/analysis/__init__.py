@@ -16,3 +16,48 @@
 The `analysis` subpackage groups components relating to trading performance statistics
 and analysis.
 """
+
+from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis.reporter import ReportProvider
+from nautilus_trader.analysis.statistic import PortfolioStatistic
+from nautilus_trader.core.nautilus_pyo3 import AvgLoser
+from nautilus_trader.core.nautilus_pyo3 import AvgWinner
+from nautilus_trader.core.nautilus_pyo3 import Expectancy
+from nautilus_trader.core.nautilus_pyo3 import LongRatio
+from nautilus_trader.core.nautilus_pyo3 import MaxLoser
+from nautilus_trader.core.nautilus_pyo3 import MaxWinner
+from nautilus_trader.core.nautilus_pyo3 import MinLoser
+from nautilus_trader.core.nautilus_pyo3 import MinWinner
+from nautilus_trader.core.nautilus_pyo3 import ProfitFactor
+from nautilus_trader.core.nautilus_pyo3 import ReturnsAverage
+from nautilus_trader.core.nautilus_pyo3 import ReturnsAverageLoss
+from nautilus_trader.core.nautilus_pyo3 import ReturnsAverageWin
+from nautilus_trader.core.nautilus_pyo3 import ReturnsVolatility
+from nautilus_trader.core.nautilus_pyo3 import RiskReturnRatio
+from nautilus_trader.core.nautilus_pyo3 import SharpeRatio
+from nautilus_trader.core.nautilus_pyo3 import SortinoRatio
+from nautilus_trader.core.nautilus_pyo3 import WinRate
+
+
+__all__ = [
+    "AvgLoser",
+    "AvgWinner",
+    "Expectancy",
+    "LongRatio",
+    "MaxLoser",
+    "MaxWinner",
+    "MinLoser",
+    "MinWinner",
+    "PortfolioAnalyzer",
+    "PortfolioStatistic",
+    "ProfitFactor",
+    "ReportProvider",
+    "ReturnsAverage",
+    "ReturnsAverageLoss",
+    "ReturnsAverageWin",
+    "ReturnsVolatility",
+    "RiskReturnRatio",
+    "SharpeRatio",
+    "SortinoRatio",
+    "WinRate",
+]

@@ -35,7 +35,7 @@ use base64::prelude::*;
 use nautilus_common::logging::{log_task_started, log_task_stopped};
 #[cfg(feature = "python")]
 use nautilus_core::python::IntoPyObjectNautilusExt;
-use nautilus_core::{env::get_env_var, time::get_atomic_clock_realtime};
+use nautilus_core::{env::get_or_env_var, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 #[cfg(feature = "python")]
@@ -92,11 +92,11 @@ impl CoinbaseIntxFixClient {
         portfolio_id: Option<String>,
     ) -> anyhow::Result<Self> {
         let endpoint = endpoint.unwrap_or("fix.international.coinbase.com:6130".to_string());
-        let api_key = api_key.unwrap_or(get_env_var("COINBASE_INTX_API_KEY")?);
-        let api_secret = api_secret.unwrap_or(get_env_var("COINBASE_INTX_API_SECRET")?);
-        let api_passphrase = api_passphrase.unwrap_or(get_env_var("COINBASE_INTX_API_PASSPHRASE")?);
-        let portfolio_id = portfolio_id.unwrap_or(get_env_var("COINBASE_INTX_PORTFOLIO_ID")?);
-        let sender_comp_id = api_key.to_string();
+        let api_key = get_or_env_var(api_key, "COINBASE_INTX_API_KEY")?;
+        let api_secret = get_or_env_var(api_secret, "COINBASE_INTX_API_SECRET")?;
+        let api_passphrase = get_or_env_var(api_passphrase, "COINBASE_INTX_API_PASSPHRASE")?;
+        let portfolio_id = get_or_env_var(portfolio_id, "COINBASE_INTX_PORTFOLIO_ID")?;
+        let sender_comp_id = api_key.clone();
         let target_comp_id = "CBINTLDC".to_string(); // Drop Copy endpoint
 
         Ok(Self {
@@ -181,7 +181,7 @@ impl CoinbaseIntxFixClient {
     /// Returns an error if network connection or FIX logon fails.
     pub async fn connect(
         &mut self,
-        #[cfg(feature = "python")] handler: PyObject,
+        #[cfg(feature = "python")] handler: Py<PyAny>,
         #[cfg(not(feature = "python"))] _handler: (),
     ) -> anyhow::Result<()> {
         let logged_on = self.logged_on.clone();
@@ -231,7 +231,7 @@ impl CoinbaseIntxFixClient {
                                         &message, account_id, ts_init,
                                     ) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -257,7 +257,7 @@ impl CoinbaseIntxFixClient {
                                     let ts_init = clock.get_time_ns();
                                     match convert_to_fill_report(&message, account_id, ts_init) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -284,7 +284,7 @@ impl CoinbaseIntxFixClient {
                         // These can be HEARTBEAT or TEST_REQUEST messages,
                         // ideally we'd respond to these with a heartbeat
                         // including tag 112 TestReqID.
-                        _ => tracing::trace!("Recieved unexpected {message:?}"),
+                        _ => tracing::trace!("Received unexpected {message:?}"),
                     }
                 }
             } else {
@@ -523,7 +523,7 @@ impl CoinbaseIntxFixClient {
 
 // Can't be moved to core because we don't want to depend on tracing there
 #[cfg(feature = "python")]
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

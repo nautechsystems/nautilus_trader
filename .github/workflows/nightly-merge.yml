@@ -1,38 +1,45 @@
 name: nightly-merge
 
 permissions: # Principle of least privilege
-  contents: write # Required for merging develop branch into nightly
+  contents: read
   actions: read
 
 on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: '0 14 * * *' # At 14:00 UTC every day
+    - cron: '0 14 * * *' # At 14:00 UTC daily
 
 jobs:
   check-develop-status:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      develop_status: ${{ steps.check-workflow.outputs.status }}
+      develop_sha: ${{ steps.check-workflow.outputs.sha }}
+      has_changes: ${{ steps.check-workflow.outputs.has_changes }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          token: ${{ secrets.NIGHTLY_TOKEN }}
+          fetch-depth: 0  # Fetch all history for all tags and branches
 
       - name: Fetch develop branch workflows
         id: fetch-workflows
         run: |
           set -eo pipefail
-          url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=20"
+          url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=50"
           echo "Fetching workflows from: $url"
-          if ! curl -s --max-time 30 -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
+          if ! curl -sS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 60 \
+               -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
               echo "Failed to fetch workflows, exiting"
               exit 1
           fi
@@ -43,101 +50,128 @@ jobs:
         id: check-workflow
         run: |
           set -eo pipefail
-          matching_workflows=$(jq '
+
+          # Find the most recent successful build workflow
+          successful_workflow=$(jq '
             .workflow_runs
             | map(
                 select(
                   .name == "build"
                   and .head_branch == "develop"
                   and .event == "push"
+                  and .conclusion == "success"
                 )
               )
             | sort_by(.created_at)
             | reverse
+            | .[0]
           ' workflow_runs.json) || {
             echo "Error parsing workflow data"
             exit 1
           }
 
-          if [[ -z "$matching_workflows" || "$matching_workflows" == "null" ]]; then
-            echo "No matching workflows found for the develop branch (push events)"
+          if [[ -z "$successful_workflow" || "$successful_workflow" == "null" ]]; then
+            echo "No successful workflows found for the develop branch"
             exit 1
           fi
 
-          echo "Matching workflows:"
-          echo "$matching_workflows" | jq '.'
+          echo "Last successful workflow:"
+          echo "$successful_workflow" | jq '.'
 
-          first_workflow=$(echo "$matching_workflows" | jq '.[0]')
-          if [[ "$first_workflow" == "null" || -z "$first_workflow" ]]; then
-            echo "No valid workflows found, exiting"
+          develop_sha=$(echo "$successful_workflow" | jq -r '.head_sha')
+          echo "sha=$develop_sha" >> "$GITHUB_OUTPUT"
+          echo "Last successful develop commit: $develop_sha"
+
+          # Check if there are changes between nightly and this develop commit
+          if ! git ls-remote --exit-code --heads origin nightly; then
+            echo "ERROR: nightly branch does not exist"
             exit 1
           fi
 
-          echo "First matching workflow:"
-          echo "$first_workflow"
-          echo "Workflow event type: $(echo "$first_workflow" | jq -r '.event')"
-          echo "Workflow created at: $(echo "$first_workflow" | jq -r '.created_at')"
+          git fetch origin nightly:nightly
+          git fetch origin develop
+          nightly_sha=$(git rev-parse nightly)
+          echo "Current nightly HEAD: $nightly_sha"
 
-          # If .status is in_progress, use that; else use .conclusion
-          status=$(echo "$first_workflow" | jq -r 'if .status == "in_progress" then "in_progress" else .conclusion end')
-          echo "status=$status" >> $GITHUB_OUTPUT
-          echo "Last develop branch push workflow status: $status"
-
-          if [[ "$status" == "in_progress" ]]; then
-            echo "The latest workflow for the develop branch is still in progress, exiting"
-            exit 1
-          elif [[ "$status" != "success" ]]; then
-            echo "The latest workflow for the develop branch did not succeed, exiting"
-            exit 1
+          if [[ "$nightly_sha" == "$develop_sha" ]]; then
+            echo "Nightly is already at the last successful develop commit"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            # Check if develop commit is ahead of nightly
+            if git merge-base --is-ancestor "$nightly_sha" "$develop_sha"; then
+              echo "Develop has new changes to merge"
+              echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "ERROR: nightly branch has diverged from develop"
+              echo "Nightly contains commits not in the develop chain"
+              exit 1
+            fi
           fi
-
-          echo "The latest workflow for the develop branch succeeded, proceeding"
 
       - name: Cleanup temporary files
         run: rm -f workflow_runs.json
 
   nightly-merge:
     needs: check-develop-status
-    if: needs.check-develop-status.outputs.develop_status == 'success'
+    if: needs.check-develop-status.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: false
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0  # Fetch all history for all tags and branches
+
+      - name: Configure authenticated git remote
+        run: |
+          git remote set-url origin \
+            "https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}"
 
       - name: Configure Git user
         run: |
           git config --global user.name "nautilus-trader-bot"
           git config --global user.email "bot@nautechsystems.io"
 
-      - name: Nightly merge
+      - name: Merge last successful develop commit into nightly
         id: merge
-        # https://github.com/robotology/gh-action-nightly-merge
-        uses: robotology/gh-action-nightly-merge@81570ba03dd370f582bd3f52d47672d29191829f # v1.5.2
-        with:
-          stable_branch: 'develop' # Branch to merge from
-          development_branch: 'nightly' # Branch to merge to
-          allow_ff: true
-          ff_only: true
-          user_name: 'nautilus-trader-bot'
-          user_email: 'bot@nautechsystems.io'
-          push_token: 'NIGHTLY_TOKEN'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
+        run: |
+          set -eo pipefail
+          develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
+          echo "Merging develop commit $develop_sha into nightly"
+
+          if ! git ls-remote --exit-code --heads origin nightly; then
+            echo "ERROR: nightly branch does not exist"
+            exit 1
+          fi
+
+          git fetch origin nightly:nightly
+          git fetch origin develop
+          git checkout nightly
+
+          # Fast-forward merge from the successful develop commit
+          if git merge --ff-only "$develop_sha"; then
+            echo "Successfully merged $develop_sha into nightly"
+            git push origin nightly
+            echo "Changes pushed to nightly"
+          else
+            echo "ERROR: Fast-forward merge failed - nightly may have diverged from develop"
+            exit 1
+          fi
 
       - name: Check merge result
         run: |
-          if [[ $(git rev-parse HEAD) == $(git merge-base HEAD develop) ]]; then
-            echo "No changes needed to be merged"
+          develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
+          nightly_sha=$(git rev-parse HEAD)
+          if [[ "$nightly_sha" == "$develop_sha" ]]; then
+            echo "Nightly is now at develop commit $develop_sha"
           else
-            echo "Changes were merged"
+            echo "Warning: Nightly HEAD does not match expected develop commit"
+            exit 1
           fi

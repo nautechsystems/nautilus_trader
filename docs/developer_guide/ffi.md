@@ -7,6 +7,18 @@ the FFI boundary **by value**.
 
 The rules below are *strict*; violating them results in undefined behaviour (usually a double-free or a memory leak).
 
+## Fail-fast panics at the FFI boundary
+
+Rust panics must never unwind across `extern "C"` functions. Unwinding into C or Python is
+undefined behaviour and can corrupt the foreign stack or leave partially-dropped resources
+behind. To enforce the fail-fast architecture we wrap every exported symbol in
+`crate::ffi::abort_on_panic`, which executes the body and calls `process::abort()` if a panic
+occurs. The panic message is still logged before the abort, so debugging output is preserved
+while avoiding undefined behaviour.
+
+When adding new FFI functions, call `abort_on_panic(|| { … })` around the implementation (or
+use a helper that does so) to maintain this guarantee.
+
 ## CVec lifecycle
 
 | Step  | Owner                         | Action |
@@ -36,7 +48,7 @@ once the capsule becomes unreachable. The closure/destructor is responsible
 for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
 
 ```rust
-Python::with_gil(|py| {
+Python::attach(|py| {
     // allocate the value on the heap
     let my_data = MyStruct::new();
 
@@ -84,9 +96,9 @@ pub extern "C" fn orderbook_drop(book: OrderBook_API) {
 
 Memory-safety requirements are therefore:
 
-1.  Every constructor (`*_new`) **must** have a matching `*_drop` exported
+1. Every constructor (`*_new`) **must** have a matching `*_drop` exported
     next to it.
-2.  The *Python/Cython* binding must guarantee that `*_drop` is invoked
+2. The *Python/Cython* binding must guarantee that `*_drop` is invoked
     exactly once. Two approaches are accepted:
 
     • Wrap the pointer in a `PyCapsule` created with

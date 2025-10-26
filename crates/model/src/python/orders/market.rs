@@ -26,7 +26,7 @@ use nautilus_core::{
     },
 };
 use pyo3::{
-    Bound, Py, PyAny, PyObject, PyResult, Python,
+    Bound, Py, PyAny, PyResult, Python,
     basic::CompareOp,
     pymethods,
     types::{PyAnyMethods, PyDict, PyList},
@@ -117,7 +117,7 @@ impl MarketOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(MarketOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]
@@ -286,7 +286,7 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "events")]
-    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
             .into_iter()
             .map(|event| order_event_to_pyobject(py, event.clone()))
@@ -304,7 +304,7 @@ impl MarketOrder {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
         self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
@@ -382,7 +382,7 @@ impl MarketOrder {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;

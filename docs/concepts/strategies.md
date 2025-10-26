@@ -6,8 +6,8 @@ implementing the methods required by the strategy's logic.
 
 **Key capabilities**:
 
-- All `Actor` capabilities
-- Order management
+- All `Actor` capabilities.
+- Order management.
 
 **Relationship with actors**:
 The `Strategy` class inherits from `Actor`, which means strategies have access to all actor functionality
@@ -31,8 +31,8 @@ of all available methods.
 
 There are two main parts of a Nautilus trading strategy:
 
-- The strategy implementation itself, defined by inheriting the `Strategy` class
-- The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class
+- The strategy implementation itself, defined by inheriting the `Strategy` class.
+- The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class.
 
 :::tip
 Once a strategy is defined, the same source code can be used for backtesting and live trading.
@@ -40,12 +40,12 @@ Once a strategy is defined, the same source code can be used for backtesting and
 
 The main capabilities of a strategy include:
 
-- Historical data requests
-- Live data feed subscriptions
-- Setting time alerts or timers
-- Cache access
-- Portfolio access
-- Creating and managing orders and positions
+- Historical data requests.
+- Live data feed subscriptions.
+- Setting time alerts or timers.
+- Cache access.
+- Portfolio access.
+- Creating and managing orders and positions.
 
 ## Strategy implementation
 
@@ -211,9 +211,9 @@ def on_event(self, event: Event) -> None:
 The following example shows a typical `on_start` handler method implementation (taken from the example EMA cross strategy).
 Here we can see the following:
 
-- Indicators being registered to receive bar updates
-- Historical data being requested (to hydrate the indicators)
-- Live data being subscribed to
+- Indicators being registered to receive bar updates.
+- Historical data being requested (to hydrate the indicators).
+- Live data being subscribed to.
 
 ```python
 def on_start(self) -> None:
@@ -383,7 +383,7 @@ of all available methods.
 :::
 
 :::info
-See the [Portfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
+See the [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
 :::
 
 ### Trading commands
@@ -409,7 +409,7 @@ The component a `SubmitOrder` or `SubmitOrderList` command will flow to for exec
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`.
 - Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
-This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
+This example submits a `LIMIT` BUY order for emulation (see [Emulated Orders](orders.md#emulated-orders)):
 
 ```python
 from nautilus_trader.model.enums import OrderSide
@@ -470,9 +470,9 @@ If the order is currently *open* then the status will become `PENDING_CANCEL`.
 
 The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command will flow to for execution depends on the following:
 
-- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`
-- Otherwise, the order will *firstly* be sent to the `ExecutionEngine`
+- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`.
+- Otherwise, the order will *firstly* be sent to the `ExecutionEngine`.
 
 :::info
 Any managed GTD timer will also be canceled after the command has left the strategy.
@@ -518,8 +518,8 @@ At least one value must differ from the original order for the command to be val
 
 The component a `ModifyOrder` command will flow to for execution depends on the following:
 
-- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`
-- Otherwise, the order will *firstly* be sent to the `RiskEngine`
+- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
+- Otherwise, the order will *firstly* be sent to the `RiskEngine`.
 
 :::info
 Once an order is under the control of an execution algorithm, it cannot be directly modified by a strategy (only canceled).
@@ -609,11 +609,11 @@ When implementing strategies, it's recommended to access configuration values di
 This provides clear separation between:
 
 - Configuration data (accessed via `self.config`):
-  - Contains initial settings, that define how the strategy works
+  - Contains initial settings, that define how the strategy works.
   - Example: `self.config.trade_size`, `self.config.instrument_id`
 
 - Strategy state variables (as direct attributes):
-  - Track any custom state of the strategy
+  - Track any custom state of the strategy.
   - Example: `self.time_started`, `self.count_of_processed_bars`
 
 This separation makes code easier to understand and maintain.

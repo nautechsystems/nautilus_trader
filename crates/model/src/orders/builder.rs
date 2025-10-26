@@ -84,7 +84,7 @@ pub struct OrderTestBuilder {
 impl OrderTestBuilder {
     /// Creates a new [`OrderTestBuilder`] instance.
     pub fn new(kind: OrderType) -> Self {
-        OrderTestBuilder {
+        Self {
             kind,
             trader_id: None,
             strategy_id: None,

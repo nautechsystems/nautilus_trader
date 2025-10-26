@@ -491,7 +491,7 @@ impl RiskEngine {
         }
 
         // Check Quantity
-        risk_msg = self.check_quantity(&instrument, command.quantity);
+        risk_msg = self.check_quantity(&instrument, command.quantity, order.is_quote_quantity());
         if let Some(risk_msg) = risk_msg {
             self.reject_modify_order(order, &risk_msg);
             return; // Denied
@@ -577,7 +577,11 @@ impl RiskEngine {
     }
 
     fn check_order_quantity(&self, instrument: InstrumentAny, order: OrderAny) -> bool {
-        let risk_msg = self.check_quantity(&instrument, Some(order.quantity()));
+        let risk_msg = self.check_quantity(
+            &instrument,
+            Some(order.quantity()),
+            order.is_quote_quantity(),
+        );
         if let Some(risk_msg) = risk_msg {
             self.deny_order(order, &risk_msg);
             return false; // Denied
@@ -680,11 +684,58 @@ impl RiskEngine {
                 continue;
             };
 
+            // For quote quantity limit orders, use worst-case execution price
+            let effective_price = if order.is_quote_quantity()
+                && !instrument.is_inverse()
+                && matches!(order, OrderAny::Limit(_) | OrderAny::StopLimit(_))
+            {
+                // Get current market price for worst-case execution
+                let cache = self.cache.borrow();
+                if let Some(quote_tick) = cache.quote(&instrument.id()) {
+                    match order.order_side() {
+                        // BUY: could execute at best ask if below limit (more quantity)
+                        OrderSide::Buy => last_px.min(quote_tick.ask_price),
+                        // SELL: could execute at best bid if above limit (but less quantity, so use limit)
+                        OrderSide::Sell => last_px.max(quote_tick.bid_price),
+                        _ => last_px,
+                    }
+                } else {
+                    last_px // No market data, use limit price
+                }
+            } else {
+                last_px
+            };
+
             let effective_quantity = if order.is_quote_quantity() && !instrument.is_inverse() {
-                instrument.calculate_base_quantity(order.quantity(), last_px)
+                instrument.calculate_base_quantity(order.quantity(), effective_price)
             } else {
                 order.quantity()
             };
+
+            // Check min/max quantity against effective quantity
+            if let Some(max_quantity) = instrument.max_quantity()
+                && effective_quantity > max_quantity
+            {
+                self.deny_order(
+                    order.clone(),
+                    &format!(
+                        "QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={max_quantity}"
+                    ),
+                );
+                return false; // Denied
+            }
+
+            if let Some(min_quantity) = instrument.min_quantity()
+                && effective_quantity < min_quantity
+            {
+                self.deny_order(
+                    order.clone(),
+                    &format!(
+                        "QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={min_quantity}"
+                    ),
+                );
+                return false; // Denied
+            }
 
             let notional =
                 instrument.calculate_notional_value(effective_quantity, last_px, Some(true));
@@ -788,30 +839,47 @@ impl RiskEngine {
                 }
             } else if order.is_sell() {
                 if cash_account.base_currency.is_some() {
-                    match cum_notional_sell.as_mut() {
-                        Some(cum_notional_buy_val) => {
-                            cum_notional_buy_val.raw += order_balance_impact.raw;
+                    if order.is_reduce_only() {
+                        if self.config.debug {
+                            log::debug!(
+                                "Reduce-only SELL skips cumulative notional free-balance check"
+                            );
                         }
-                        None => {
-                            cum_notional_sell = Some(Money::from_raw(
-                                order_balance_impact.raw,
-                                order_balance_impact.currency,
-                            ));
+                    } else {
+                        match cum_notional_sell.as_mut() {
+                            Some(cum_notional_buy_val) => {
+                                cum_notional_buy_val.raw += order_balance_impact.raw;
+                            }
+                            None => {
+                                cum_notional_sell = Some(Money::from_raw(
+                                    order_balance_impact.raw,
+                                    order_balance_impact.currency,
+                                ));
+                            }
                         }
-                    }
-                    if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
-                    }
+                        if self.config.debug {
+                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                        }
 
-                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
-                        && cum_notional_sell > free
-                    {
-                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                        return false; // Denied
+                        if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                            && cum_notional_sell > free
+                        {
+                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                            return false; // Denied
+                        }
                     }
                 }
                 // Account is already of type Cash, so no check
                 else if let Some(base_currency) = base_currency {
+                    if order.is_reduce_only() {
+                        if self.config.debug {
+                            log::debug!(
+                                "Reduce-only SELL skips base-currency cumulative free check"
+                            );
+                        }
+                        continue;
+                    }
+
                     let cash_value = Money::from_raw(
                         effective_quantity
                             .raw
@@ -881,6 +949,7 @@ impl RiskEngine {
         &self,
         instrument: &InstrumentAny,
         quantity: Option<Quantity>,
+        is_quote_quantity: bool,
     ) -> Option<String> {
         let quantity_val = quantity?;
 
@@ -894,6 +963,11 @@ impl RiskEngine {
             ));
         }
 
+        // Skip min/max checks for quote quantities (they will be checked in check_orders_risk using effective_quantity)
+        if is_quote_quantity {
+            return None;
+        }
+
         // Check maximum quantity
         if let Some(max_quantity) = instrument.max_quantity()
             && quantity_val > max_quantity
@@ -903,7 +977,7 @@ impl RiskEngine {
             ));
         }
 
-        // // Check minimum quantity
+        // Check minimum quantity
         if let Some(min_quantity) = instrument.min_quantity()
             && quantity_val < min_quantity
         {

@@ -45,6 +45,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
@@ -596,6 +597,197 @@ class TestBacktestEngineData:
         assert len(self.engine.data) == 2
         assert self.engine.data[0] == operations1
         assert self.engine.data[1] == operations2
+
+    def test_add_order_book_depth10_adds_to_engine(self):
+        # Arrange
+        self.engine.add_instrument(AUDUSD_SIM)
+
+        depth_data = [
+            OrderBookDepth10(
+                instrument_id=AUDUSD_SIM.id,
+                bids=[
+                    BookOrder(OrderSide.BUY, Price.from_str("1.0000"), Quantity.from_str("100"), 1),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9999"), Quantity.from_str("200"), 2),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9998"), Quantity.from_str("300"), 3),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9997"), Quantity.from_str("400"), 4),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9996"), Quantity.from_str("500"), 5),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9995"), Quantity.from_str("600"), 6),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9994"), Quantity.from_str("700"), 7),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9993"), Quantity.from_str("800"), 8),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9992"), Quantity.from_str("900"), 9),
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price.from_str("0.9991"),
+                        Quantity.from_str("1000"),
+                        10,
+                    ),
+                ],
+                asks=[
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0001"),
+                        Quantity.from_str("100"),
+                        11,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0002"),
+                        Quantity.from_str("200"),
+                        12,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0003"),
+                        Quantity.from_str("300"),
+                        13,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0004"),
+                        Quantity.from_str("400"),
+                        14,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0005"),
+                        Quantity.from_str("500"),
+                        15,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0006"),
+                        Quantity.from_str("600"),
+                        16,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0007"),
+                        Quantity.from_str("700"),
+                        17,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0008"),
+                        Quantity.from_str("800"),
+                        18,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0009"),
+                        Quantity.from_str("900"),
+                        19,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0010"),
+                        Quantity.from_str("1000"),
+                        20,
+                    ),
+                ],
+                bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                flags=0,
+                sequence=1,
+                ts_event=0,
+                ts_init=0,
+            ),
+            OrderBookDepth10(
+                instrument_id=AUDUSD_SIM.id,
+                bids=[
+                    BookOrder(OrderSide.BUY, Price.from_str("1.0001"), Quantity.from_str("150"), 1),
+                    BookOrder(OrderSide.BUY, Price.from_str("1.0000"), Quantity.from_str("250"), 2),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9999"), Quantity.from_str("350"), 3),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9998"), Quantity.from_str("450"), 4),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9997"), Quantity.from_str("550"), 5),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9996"), Quantity.from_str("650"), 6),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9995"), Quantity.from_str("750"), 7),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9994"), Quantity.from_str("850"), 8),
+                    BookOrder(OrderSide.BUY, Price.from_str("0.9993"), Quantity.from_str("950"), 9),
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price.from_str("0.9992"),
+                        Quantity.from_str("1050"),
+                        10,
+                    ),
+                ],
+                asks=[
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0002"),
+                        Quantity.from_str("150"),
+                        11,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0003"),
+                        Quantity.from_str("250"),
+                        12,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0004"),
+                        Quantity.from_str("350"),
+                        13,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0005"),
+                        Quantity.from_str("450"),
+                        14,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0006"),
+                        Quantity.from_str("550"),
+                        15,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0007"),
+                        Quantity.from_str("650"),
+                        16,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0008"),
+                        Quantity.from_str("750"),
+                        17,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0009"),
+                        Quantity.from_str("850"),
+                        18,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0010"),
+                        Quantity.from_str("950"),
+                        19,
+                    ),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_str("1.0011"),
+                        Quantity.from_str("1050"),
+                        20,
+                    ),
+                ],
+                bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                flags=0,
+                sequence=2,
+                ts_event=1000,
+                ts_init=1000,
+            ),
+        ]
+
+        # Act
+        self.engine.add_data(depth_data)
+
+        # Assert
+        assert len(self.engine.data) == 2
+        assert self.engine.data[0] == depth_data[0]
+        assert self.engine.data[1] == depth_data[1]
 
     def test_add_quote_ticks_adds_to_engine(self):
         # Arrange - set up data

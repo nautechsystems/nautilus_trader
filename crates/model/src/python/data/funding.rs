@@ -131,7 +131,7 @@ impl FundingRateUpdate {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut dict = HashMap::new();
         dict.insert(
             "type".to_string(),
@@ -258,7 +258,7 @@ impl FundingRateUpdate {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         Ok((
             self.instrument_id.to_string(),
             self.rate.to_string(),
@@ -269,7 +269,7 @@ impl FundingRateUpdate {
             .into_py_any_unwrap(py))
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         Ok((safe_constructor, PyTuple::empty(py), state).into_py_any_unwrap(py))
@@ -331,9 +331,8 @@ mod tests {
 
     #[rstest]
     fn test_py_funding_rate_update_new() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|_py| {
+        Python::initialize();
+        Python::attach(|_py| {
             let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
             let rate = Decimal::new(1, 4); // 0.0001
             let ts_event = UnixNanos::from(1_640_000_000_000_000_000_u64);

@@ -21,6 +21,7 @@ from weakref import WeakSet
 
 from msgspec import json as msgspec_json
 
+import nautilus_trader
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
@@ -57,6 +58,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.secure import SecureString
 from nautilus_trader.config import PositiveFloat
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
@@ -130,6 +132,11 @@ class BybitWebSocketClient:
         self._log: Logger = Logger(name=type(self).__name__)
 
         self._base_url: str = base_url
+        self._headers: list[tuple[str, str]] = [
+            ("Content-Type", "application/json"),
+            ("User-Agent", nautilus_trader.NAUTILUS_USER_AGENT),
+            ("Referer", nautilus_pyo3.BYBIT_NAUTILUS_BROKER_ID),
+        ]
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
@@ -208,7 +215,7 @@ class BybitWebSocketClient:
             handler=self._msg_handler,
             heartbeat=20,
             heartbeat_msg=msgspec_json.encode({"op": "ping"}).decode(),
-            headers=[],
+            headers=self._headers,
         )
         client = await WebSocketClient.connect(
             config=config,
@@ -516,6 +523,7 @@ class BybitWebSocketClient:
             header={
                 "X-BAPI-TIMESTAMP": str(self._clock.timestamp_ms()),
                 "X-BAPI-RECV-WINDOW": str(self._recv_window_ms),
+                "Referer": nautilus_pyo3.BYBIT_NAUTILUS_BROKER_ID,
             },
             op=op,
             args=args,  # Args array, support one item only for now

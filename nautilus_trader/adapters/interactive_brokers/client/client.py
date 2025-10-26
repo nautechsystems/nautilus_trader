@@ -83,6 +83,7 @@ class InteractiveBrokersClient(
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
+        fetch_all_open_orders: bool = False,
     ) -> None:
         super().__init__(
             clock=clock,
@@ -97,6 +98,7 @@ class InteractiveBrokersClient(
         self._host = host
         self._port = port
         self._client_id = client_id
+        self._fetch_all_open_orders = fetch_all_open_orders
 
         # TWS API
         self._eclient: EClient = EClient(
@@ -138,6 +140,7 @@ class InteractiveBrokersClient(
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
         self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
         self._reconnect_delay: int = 5  # seconds
+        self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
@@ -145,6 +148,7 @@ class InteractiveBrokersClient(
             {}
         )  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
+        self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
         # OrderMixin
         self._exec_id_details: dict[
@@ -387,6 +391,7 @@ class InteractiveBrokersClient(
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
 
+        self._last_disconnection_ns = self._clock.timestamp_ns()
         await asyncio.sleep(5)
         await self._handle_reconnect()
 
@@ -497,7 +502,7 @@ class InteractiveBrokersClient(
         request: Request,
         timeout: int,
         default_value: Any | None = None,
-        supress_timeout_warning: bool = False,
+        suppress_timeout_warning: bool = False,
     ) -> Any:
         """
         Await the completion of a request within a specified timeout.
@@ -510,7 +515,7 @@ class InteractiveBrokersClient(
             The maximum time to wait for the request to complete, in seconds.
         default_value : Any, optional
             The default value to return if the request times out or fails. Defaults to None.
-        supress_timeout_warning: bool, optional
+        suppress_timeout_warning: bool, optional
             Suppress the timeout warning. Defaults to False.
 
         Returns
@@ -523,7 +528,7 @@ class InteractiveBrokersClient(
             return await asyncio.wait_for(request.future, timeout)
         except TimeoutError as e:
             msg = f"Request timed out for {request}. Ending request."
-            self._log.debug(msg) if supress_timeout_warning else self._log.warning(msg)
+            self._log.debug(msg) if suppress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value

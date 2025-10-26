@@ -18,22 +18,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['python']
+        language: ['python', 'rust']
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: false
           fetch-depth: 1
+
+      - name: Get Rust toolchain version
+        if: matrix.language == 'rust'
+        id: rust-toolchain
+        run: |
+          echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@ac90e63697ac2784f4ecfe2964e1a285c304003a # v1.14.1
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1
+        uses: github/codeql-action/init@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -41,6 +56,11 @@ jobs:
           # Prefix the list here with "+" to use these queries and those in the config file.
           # queries: ./path/to/local/query, your-org/your-repo/queries@main
 
+      # https://github.com/github/codeql-action
+      - name: Autobuild
+        if: matrix.language == 'rust'
+        uses: github/codeql-action/autobuild@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
+
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1
+        uses: github/codeql-action/analyze@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0

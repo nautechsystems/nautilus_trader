@@ -86,8 +86,8 @@ def test_cancel_all_orders(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_get_open_orders(ib_client):
-    # Arrange
+async def test_get_open_orders_with_fetch_all_false(ib_client):
+    # Arrange - default behavior (fetch_all_open_orders=False)
     account_id_1 = "DU123456"
     account_id_2 = "DU999999"
     order_1 = IBTestExecStubs.aapl_buy_ib_order(order_id=1, account_id=account_id_1)
@@ -95,8 +95,10 @@ async def test_get_open_orders(ib_client):
     order_3 = IBTestExecStubs.aapl_buy_ib_order(order_id=3, account_id=account_id_2)
     all_orders = [order_1, order_2, order_3]
     ib_client._await_request = AsyncMock(return_value=all_orders)
+    ib_client._fetch_all_open_orders = False  # Explicitly set to False
 
     ib_client._eclient.reqOpenOrders = MagicMock()
+    ib_client._eclient.reqAllOpenOrders = MagicMock()
 
     # Act
     orders = await ib_client.get_open_orders(account_id_1)
@@ -104,6 +106,31 @@ async def test_get_open_orders(ib_client):
     # Assert
     assert Counter(orders) == Counter([order_1, order_2])
     ib_client._eclient.reqOpenOrders.assert_called_once()
+    ib_client._eclient.reqAllOpenOrders.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_open_orders_with_fetch_all_true(ib_client):
+    # Arrange - with fetch_all_open_orders=True
+    account_id_1 = "DU123456"
+    account_id_2 = "DU999999"
+    order_1 = IBTestExecStubs.aapl_buy_ib_order(order_id=1, account_id=account_id_1)
+    order_2 = IBTestExecStubs.aapl_buy_ib_order(order_id=2, account_id=account_id_1)
+    order_3 = IBTestExecStubs.aapl_buy_ib_order(order_id=3, account_id=account_id_2)
+    all_orders = [order_1, order_2, order_3]
+    ib_client._await_request = AsyncMock(return_value=all_orders)
+    ib_client._fetch_all_open_orders = True  # Set to True
+
+    ib_client._eclient.reqOpenOrders = MagicMock()
+    ib_client._eclient.reqAllOpenOrders = MagicMock()
+
+    # Act
+    orders = await ib_client.get_open_orders(account_id_1)
+
+    # Assert
+    assert Counter(orders) == Counter([order_1, order_2])
+    ib_client._eclient.reqAllOpenOrders.assert_called_once()
+    ib_client._eclient.reqOpenOrders.assert_not_called()
 
 
 def test_next_order_id(ib_client):

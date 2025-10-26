@@ -2,34 +2,33 @@
 name = "nautilus-trader"
 version = "2.0.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
-authors = [
-    {name = "Nautech Systems", email = "info@nautechsystems.io"},
-]
+authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
-    "License :: OSI Approved :: GNU Lesser General Public License Version 3.0 (LGPLv3+)",
-    "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Rust",
-    "Topic :: Software Development :: Libraries",
-    "Topic :: Scientific/Engineering",
-    "Topic :: Office/Business :: Financial",
-    "Topic :: Office/Business :: Financial :: Investment",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Financial and Insurance Industry",
-    "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU Lesser General Public License Version 3.0 (LGPLv3+)",
+  "Operating System :: OS Independent",
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Rust",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Office/Business :: Financial",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Intended Audience :: Science/Research",
 ]
-license = {text = "LGPL-3.0-or-later"}
+license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "numpy>=1.26.4",
-    "pandas>=2.2.3,<3.0.0",
-    "pyarrow>=20.0.0",
-    "pytz>=2025.1.0",
+  "numpy>=1.26.4",
+  "pandas>=2.2.3,<3.0.0",
+  "pyarrow>=21.0.0",
+  "python-dotenv>=1.1.0",
+  "pytz>=2025.2.0",
 ]
 
 [project.urls]
@@ -38,10 +37,7 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 docs = "https://nautilustrader.io/docs"
 
 [build-system]
-requires = [
-    "maturin>=1.9.3",
-    "patchelf",
-]
+requires = ["maturin>=1.9.6", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin.scripts]
@@ -50,94 +46,95 @@ pre-build = "python generate_stubs.py"
 [tool.maturin]
 manifest-path = "../crates/pyo3/Cargo.toml"
 module-name = "nautilus_trader._libnautilus"
-features = ["extension-module", "high-precision", "redis", "postgres", "defi", "hypersync"]
+python-source = "."
+features = [
+  "extension-module",
+  "high-precision",
+  "redis",
+  "postgres",
+  "defi",
+  "hypersync",
+]
 strip = false
 
-include = [
-    "**/*.pyi",
-]
+include = ["**/*.pyi"]
 
 [dependency-groups]
 dev = [
-    "maturin>=1.9.3",
-    "ruff>=0.12.10,<1.0.0",
-    "mypy>=1.17.1,<2.0.0",
-    "pre-commit>=4.3.0,<5.0.0",
+  "maturin>=1.9.6",
+  "mypy>=1.18.2,<2.0.0",
+  "pre-commit>=4.3.0,<5.0.0",
+  "ruff==0.12.12", # Pinned to 0.12.12 for import sorting stability
 ]
 test = [
-    "pytest>=7.4.4,<8.0.0",
-    "pytest-asyncio==0.21.1",
-    "pytest-benchmark>=4.0.0,<5.0.0",
-    "pytest-cov>=4.1.0,<5.0.0",
-    "pytest-mock>=3.14.1,<4.0.0",
-    "pytest-xdist[psutil]>=3.8.0,<4.0.0",
+  "pytest>=7.4.4,<8.0.0",
+  "pytest-asyncio==0.21.1",
+  "pytest-benchmark==5.0.1", # Pinned to 5.0.1 due pytest 8.x requirement
+  "pytest-cov==6.3.0", # Pinned to 6.3.0 due pytest 8.x requirement
+  "pytest-mock>=3.15.1,<4.0.0",
+  "pytest-xdist[psutil]>=3.8.0,<4.0.0",
 ]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-exclude = [
-    "stubs/**",
-    "../build",
-    "../dist",
-    "../target",
-]
+exclude = ["stubs/**", "../build", "../dist", "../target"]
 
 [tool.ruff.lint]
 select = [
-    "C4",
-    "E",
-    "F",
-    "W",
-    "C90",
-    "D",
-    # "DTZ",
-    "UP",
-    "S",
-    "T10",
-    "ICN",
-    "PIE",
-    # "PT",
-    "PYI",
-    "Q",
-    "I",
-    "RSE",
-    "TID",
-    # "SIM",
-    # "ARG",
-    # "ERA",
-    "PD",
-    # "PGH",
-    # "PLW",
-    "NPY",
-    "RUF",
+  "C4",
+  "E",
+  "F",
+  "W",
+  "C90",
+  "D",
+  # "DTZ",
+  "UP",
+  "S",
+  "T10",
+  "ICN",
+  "PIE",
+  # "PT",
+  "PYI",
+  "Q",
+  "I",
+  "RSE",
+  "TID",
+  # "SIM",
+  # "ARG",
+  # "ERA",
+  "PD",
+  # "PGH",
+  # "PLW",
+  "NPY",
+  "RUF",
 ]
 
 ignore = [
-    "D100",  # Missing docstring in public module  **fix**
-    "D101",
-    "D102",  # Missing docstring in public method  **fix**
-    "D103",  # Missing docstring in public function  **fix**
-    "D104",  # Missing docstring in public package  **fix**
-    "D107",
-    "D105",
-    "D200",  # One-line docstring should fit on one line with quotes (optional style)
-    "D203",  # 1 blank line required before class docstring (optional style)
-    "D205",  # 1 blank line required between summary line and description (optional style)
-    "D212",  # Multi-line docstring summary should start at the first line (optional style)
-    "D400",  # First line should end with a period (not always a first line)
-    "D413",  # Missing blank line after last section ('Parameters')
-    "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
-    "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-    "E741",  # Ambiguous variable name (single char)
-    "PD901", # `df` is a bad variable name. Be kinder to your future self
-    "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
-    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
-    "S101",  # Use of assert detected (OK in test suite)
-    "S105",  # Use of hard-coded password (spurious)
-    "S106",  # Use of hard-coded password (spurious)
-    "S113",  # Probable use of requests call without timeout **fix**
-    "S603",  # `subprocess` call: check for execution of untrusted input **fix**
+  "D100", # Missing docstring in public module  **fix**
+  "D101",
+  "D102", # Missing docstring in public method  **fix**
+  "D103", # Missing docstring in public function  **fix**
+  "D104", # Missing docstring in public package  **fix**
+  "D107",
+  "D105",
+  "D200", # One-line docstring should fit on one line with quotes (optional style)
+  "D203", # 1 blank line required before class docstring (optional style)
+  "D205", # 1 blank line required between summary line and description (optional style)
+  "D212", # Multi-line docstring summary should start at the first line (optional style)
+  "D400", # First line should end with a period (not always a first line)
+  "D413", # Missing blank line after last section ('Parameters')
+  "D415", # First line should end with a period, question mark, or exclamation point (not always a first line)
+  "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
+  "E741", # Ambiguous variable name (single char)
+  "PD901", # `df` is a bad variable name. Be kinder to your future self
+  "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "S101", # Use of assert detected (OK in test suite)
+  "S105", # Use of hardcoded password (spurious)
+  "S106", # Use of hardcoded password (spurious)
+  "S113", # Probable use of requests call without timeout **fix**
+  "S603", # `subprocess` call: check for execution of untrusted input **fix**
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

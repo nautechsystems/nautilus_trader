@@ -13,17 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
 /// Calculates the Sharpe ratio for portfolio returns.
 ///
 /// The Sharpe ratio measures risk-adjusted return and is calculated as:
-/// (Mean Return - Risk-free Rate) / Standard Deviation of Returns
+/// `(Mean Return - Risk-free Rate) / Standard Deviation of Returns * sqrt(period)`
 ///
 /// This implementation assumes a risk-free rate of 0 and annualizes the ratio
-/// using the square root of the specified period.
+/// using the square root of the specified period (default: 252 trading days).
+///
+/// # References
+///
+/// - Sharpe, W. F. (1966). "Mutual Fund Performance". *Journal of Business*, 39(1), 119-138.
+/// - Sharpe, W. F. (1994). "The Sharpe Ratio". *Journal of Portfolio Management*, 21(1), 49-58.
+/// - CFA Institute Investment Foundations, 3rd Edition
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
@@ -43,11 +53,17 @@ impl SharpeRatio {
     }
 }
 
+impl Display for SharpeRatio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Sharpe Ratio ({} days)", self.period)
+    }
+}
+
 impl PortfolioStatistic for SharpeRatio {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(SharpeRatio).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
@@ -67,7 +83,18 @@ impl PortfolioStatistic for SharpeRatio {
 
         Some(annualized_ratio)
     }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -126,6 +153,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let ratio = SharpeRatio::new(None);
-        assert_eq!(ratio.name(), "SharpeRatio");
+        assert_eq!(ratio.name(), "Sharpe Ratio (252 days)");
     }
 }

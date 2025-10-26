@@ -17,12 +17,13 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
+    ffi::CStr,
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
 use pyo3::{
-    IntoPyObjectExt,
+    IntoPyObjectExt, Py,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyTuple},
@@ -44,27 +45,47 @@ impl UUID4 {
 
     /// Sets the state of the `UUID4` instance during unpickling.
     #[allow(clippy::needless_pass_by_value)]
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         let bytes: &Bound<'_, PyBytes> = state.downcast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
 
         if slice.len() != UUID4_LEN {
             return Err(to_pyvalue_err(
-                "Invalid state for deserialzing, incorrect bytes length",
+                "Invalid state for deserializing, incorrect bytes length",
             ));
         }
 
-        self.value.copy_from_slice(slice);
+        if slice[UUID4_LEN - 1] != 0 {
+            return Err(to_pyvalue_err(
+                "Invalid state for deserializing, missing null terminator",
+            ));
+        }
+
+        let cstr = CStr::from_bytes_with_nul(slice).map_err(|_| {
+            to_pyvalue_err("Invalid state for deserializing, bytes must be null-terminated UTF-8")
+        })?;
+
+        let value = cstr.to_str().map_err(|_| {
+            to_pyvalue_err("Invalid state for deserializing, bytes must be valid UTF-8")
+        })?;
+
+        let parsed = Self::from_str(value).map_err(|e| {
+            to_pyvalue_err(format!(
+                "Invalid state for deserializing, unable to parse UUID: {e}"
+            ))
+        })?;
+
+        self.value.copy_from_slice(&parsed.value);
         Ok(())
     }
 
     /// Gets the state of the `UUID4` instance for pickling.
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         PyBytes::new(py, &self.value).into_py_any(py)
     }
 
     /// Reduces the `UUID4` instance for pickling.
-    fn __reduce__(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -116,5 +137,68 @@ impl UUID4 {
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::from_str(value).map_err(to_pyvalue_err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use pyo3::Python;
+
+    use super::*;
+
+    fn ensure_python_initialized() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            pyo3::prepare_freethreaded_python();
+        });
+    }
+
+    #[test]
+    fn test_setstate_rejects_invalid_uuid_bytes() {
+        ensure_python_initialized();
+        Python::with_gil(|py| {
+            let mut uuid = UUID4::new();
+            let mut invalid = [b'a'; UUID4_LEN];
+            invalid[UUID4_LEN - 1] = 0;
+            let py_bytes = PyBytes::new(py, &invalid);
+            let err = uuid
+                .__setstate__(py, py_bytes.into_py_any_unwrap(py))
+                .expect_err("expected invalid state to error");
+            assert!(err.to_string().contains("Invalid state for deserializing"));
+        });
+    }
+
+    #[test]
+    fn test_setstate_rejects_missing_null_terminator() {
+        ensure_python_initialized();
+        Python::with_gil(|py| {
+            let mut uuid = UUID4::new();
+            let mut bytes = uuid.value;
+            bytes[UUID4_LEN - 1] = b'0';
+            let py_bytes = PyBytes::new(py, &bytes);
+            let err = uuid
+                .__setstate__(py, py_bytes.into_py_any_unwrap(py))
+                .expect_err("expected missing NUL terminator to error");
+            assert!(
+                err.to_string()
+                    .contains("Invalid state for deserializing, missing null terminator")
+            );
+        });
+    }
+
+    #[test]
+    fn test_setstate_accepts_valid_state() {
+        ensure_python_initialized();
+        Python::with_gil(|py| {
+            let source = UUID4::new();
+            let mut target = UUID4::new();
+            let py_bytes = PyBytes::new(py, &source.value);
+            target
+                .__setstate__(py, py_bytes.into_py_any_unwrap(py))
+                .expect("valid state should succeed");
+            assert_eq!(target.to_string(), source.to_string());
+        });
     }
 }

@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.parsing import parse_str_to_raw
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
@@ -47,29 +48,32 @@ class BybitCoinBalance(msgspec.Struct):
     # Whether the collateral is turned on by the user
     marginCollateral: bool
     coin: str
+    spotHedgingQty: str | None = None
+    spotBorrow: str | None = None
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
+        wallet_balance = Decimal(self.walletBalance or "0")
+        spot_borrow = Decimal(self.spotBorrow or "0")
 
-        total_raw = parse_str_to_raw(self.walletBalance)
-        locked_raw = parse_str_to_raw(self.locked)  # TODO: Locked only valid for Spot
-        free_raw = total_raw - locked_raw
+        total_balance = wallet_balance - spot_borrow
+
+        total = Money.from_str(f"{total_balance} {currency}")
+        locked = Money.from_str(f"{self.locked or '0'} {currency}")
+        free = Money.from_raw(total.raw - locked.raw, currency)
 
         return AccountBalance(
-            total=Money.from_raw(total_raw, currency),
-            locked=Money.from_raw(locked_raw, currency),
-            free=Money.from_raw(free_raw, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
         currency = Currency.from_str(self.coin)
 
-        initial_raw = parse_str_to_raw(self.totalPositionIM)
-        maintenance_raw = parse_str_to_raw(self.totalPositionMM)
-
         return MarginBalance(
-            initial=Money.from_raw(initial_raw, currency),
-            maintenance=Money.from_raw(maintenance_raw, currency),
+            initial=Money.from_str(f"{self.totalPositionIM or '0'} {currency}"),
+            maintenance=Money.from_str(f"{self.totalPositionMM or '0'} {currency}"),
         )
 
 

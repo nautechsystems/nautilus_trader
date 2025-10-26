@@ -132,7 +132,7 @@ impl LimitOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(LimitOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]
@@ -203,7 +203,7 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_accound_id(&self) -> Option<AccountId> {
+    fn py_account_id(&self) -> Option<AccountId> {
         self.account_id
     }
 
@@ -445,7 +445,7 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "events")]
-    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
             .into_iter()
             .map(|event| order_event_to_pyobject(py, event.clone()))
@@ -463,7 +463,7 @@ impl LimitOrder {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
         self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
@@ -558,7 +558,7 @@ impl LimitOrder {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;

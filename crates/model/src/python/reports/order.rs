@@ -17,7 +17,12 @@ use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{
+    Py,
+    basic::CompareOp,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -51,6 +56,8 @@ impl OrderStatusReport {
         report_id=None,
         order_list_id=None,
         venue_position_id=None,
+        linked_order_ids=None,
+        parent_order_id=None,
         contingency_type=None,
         expire_time=None,
         price=None,
@@ -83,6 +90,8 @@ impl OrderStatusReport {
         report_id: Option<UUID4>,
         order_list_id: Option<OrderListId>,
         venue_position_id: Option<PositionId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
         contingency_type: Option<ContingencyType>,
         expire_time: Option<u64>,
         price: Option<Price>,
@@ -120,6 +129,12 @@ impl OrderStatusReport {
         }
         if let Some(venue_position_id) = venue_position_id {
             report = report.with_venue_position_id(venue_position_id);
+        }
+        if let Some(linked_order_ids) = linked_order_ids {
+            report = report.with_linked_order_ids(linked_order_ids);
+        }
+        if let Some(parent_order_id) = parent_order_id {
+            report = report.with_parent_order_id(parent_order_id);
         }
         if let Some(contingency_type) = contingency_type {
             report = report.with_contingency_type(contingency_type);
@@ -280,6 +295,18 @@ impl OrderStatusReport {
     }
 
     #[getter]
+    #[pyo3(name = "linked_order_ids")]
+    fn py_linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        self.linked_order_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "parent_order_id")]
+    fn py_parent_order_id(&self) -> Option<ClientOrderId> {
+        self.parent_order_id
+    }
+
+    #[getter]
     #[pyo3(name = "contingency_type")]
     const fn py_contingency_type(&self) -> ContingencyType {
         self.contingency_type
@@ -380,7 +407,7 @@ impl OrderStatusReport {
     ///
     /// Returns a Python exception if conversion to dict fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderStatusReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;
@@ -411,6 +438,21 @@ impl OrderStatusReport {
         match &self.order_list_id {
             Some(id) => dict.set_item("order_list_id", id.to_string())?,
             None => dict.set_item("order_list_id", py.None())?,
+        }
+        match &self.venue_position_id {
+            Some(id) => dict.set_item("venue_position_id", id.to_string())?,
+            None => dict.set_item("venue_position_id", py.None())?,
+        }
+        match &self.linked_order_ids {
+            Some(ids) => {
+                let py_list = PyList::new(py, ids.iter().map(|id| id.to_string()))?;
+                dict.set_item("linked_order_ids", py_list)?;
+            }
+            None => dict.set_item("linked_order_ids", py.None())?,
+        }
+        match &self.parent_order_id {
+            Some(id) => dict.set_item("parent_order_id", id.to_string())?,
+            None => dict.set_item("parent_order_id", py.None())?,
         }
         match &self.expire_time {
             Some(t) => dict.set_item("expire_time", t.as_u64())?,

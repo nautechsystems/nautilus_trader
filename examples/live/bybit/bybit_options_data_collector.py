@@ -130,7 +130,7 @@ class BybitOptionsDataCollector(Strategy):
         """
         Set up file logging to save logs alongside data.
         """
-        # Skip custom file logging setup - use Nautilus Trader's built-in logging
+        # Skip custom file logging setup - use NautilusTrader's built-in logging
         if not self.config.save_logs:
             return
 
@@ -138,9 +138,9 @@ class BybitOptionsDataCollector(Strategy):
         logs_dir = os.path.join(self.base_data_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
 
-        # Log that file logging is handled by Nautilus Trader kernel
+        # Log that file logging is handled by NautilusTrader kernel
         self.log.info(f"File logging directory: {logs_dir}")
-        self.log.info("File logging is handled by Nautilus Trader kernel configuration")
+        self.log.info("File logging is handled by NautilusTrader kernel configuration")
 
     def _initialize_spot_data_storage(self) -> None:
         """

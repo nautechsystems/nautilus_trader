@@ -28,13 +28,11 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
-#[cfg(feature = "defi")]
-use crate::types::fixed::MAX_FLOAT_PRECISION;
 
 // -----------------------------------------------------------------------------
 // QuantityRaw
@@ -87,7 +85,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen)
 )]
 pub struct Quantity {
     /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
@@ -188,10 +186,48 @@ impl Quantity {
         }
         check_predicate_true(
             raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
-            &format!("raw outside valid range, was {raw}"),
+            &format!(
+                "Quantity::from_raw received raw={raw} (precision={precision}) exceeding QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}. \
+                 Likely overflow/underflow upstream (e.g., leaves < 0 from unsigned subtraction). \
+                 Ensure fills never exceed order/position and prefer clamping/saturating deltas."
+            ),
         )
         .expect(FAILED);
         check_fixed_precision(precision).expect(FAILED);
+        Self { raw, precision }
+    }
+
+    /// Computes a saturating subtraction between two quantities, logging when clamped.
+    ///
+    /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
+    /// Precision rules follow the `Sub` implementation: the left-hand precision is retained unless zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the right-hand side has greater precision than the left-hand side (precision loss).
+    #[must_use]
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
+
+        let raw = self.raw.saturating_sub(rhs.raw);
+        if raw == 0 && self.raw < rhs.raw {
+            log::warn!(
+                "Saturating Quantity subtraction: {} - {} < 0, clamped to 0 (precision={})",
+                self,
+                rhs,
+                precision
+            );
+        }
+
         Self { raw, precision }
     }
 
@@ -266,7 +302,7 @@ impl Quantity {
         // SAFETY: The raw value is guaranteed to be within i128 range after scaling
         // because our quantity constraints ensure the maximum raw value times the scaling
         // factor cannot exceed i128::MAX (high-precision) or i64::MAX (standard-precision).
-        #[allow(clippy::useless_conversion)] // Required for precision modes
+        #[allow(clippy::useless_conversion, reason = "Required for precision modes")]
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
@@ -331,13 +367,33 @@ impl From<&Quantity> for f64 {
 }
 
 impl From<i32> for Quantity {
+    /// Creates a `Quantity` from an `i32` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is negative. Use `u32` for guaranteed non-negative values.
     fn from(value: i32) -> Self {
+        assert!(
+            value >= 0,
+            "Cannot create Quantity from negative i32: {}. Use u32 or check value is non-negative.",
+            value
+        );
         Self::new(value as f64, 0)
     }
 }
 
 impl From<i64> for Quantity {
+    /// Creates a `Quantity` from an `i64` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is negative. Use `u64` for guaranteed non-negative values.
     fn from(value: i64) -> Self {
+        assert!(
+            value >= 0,
+            "Cannot create Quantity from negative i64: {}. Use u64 or check value is non-negative.",
+            value
+        );
         Self::new(value as f64, 0)
     }
 }
@@ -448,7 +504,10 @@ impl Sub for Quantity {
     }
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)] // Can use division to scale back
+#[allow(
+    clippy::suspicious_arithmetic_impl,
+    reason = "Can use division to scale back"
+)]
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
@@ -569,7 +628,7 @@ impl<T: Into<QuantityRaw>> MulAssign<T> for Quantity {
 
 impl Debug for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+        if self.precision > MAX_FLOAT_PRECISION {
             write!(f, "{}({})", stringify!(Quantity), self.raw)
         } else {
             write!(f, "{}({})", stringify!(Quantity), self.as_decimal())
@@ -579,7 +638,7 @@ impl Debug for Quantity {
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+        if self.precision > MAX_FLOAT_PRECISION {
             write!(f, "{}", self.raw)
         } else {
             write!(f, "{}", self.as_decimal())
@@ -1064,7 +1123,7 @@ mod tests {
         #[case] expected_debug: &str,
         #[case] expected_display: &str,
     ) {
-        let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+        let quantity = if precision > MAX_FLOAT_PRECISION {
             // For high precision, use from_raw to avoid f64 conversion issues
             Quantity::from_raw(value as QuantityRaw, precision)
         } else {
@@ -1081,6 +1140,32 @@ mod tests {
         let formatted = qty.to_formatted_string();
         assert_eq!(formatted, "1_234.5678");
         assert_eq!(qty.to_string(), "1234.5678");
+    }
+
+    #[rstest]
+    fn test_saturating_sub() {
+        let q1 = Quantity::new(100.0, 2);
+        let q2 = Quantity::new(50.0, 2);
+        let q3 = Quantity::new(150.0, 2);
+
+        let result = q1.saturating_sub(q2);
+        assert_eq!(result, Quantity::new(50.0, 2));
+
+        let result = q1.saturating_sub(q3);
+        assert_eq!(result, Quantity::zero(2));
+        assert_eq!(result.raw, 0);
+    }
+
+    #[rstest]
+    fn test_saturating_sub_overflow_bug() {
+        // Reproduces original bug: subtracting 80 from 79
+        let peak_qty = Quantity::from_raw(79_000, 3);
+        let order_qty = Quantity::from_raw(80_000, 3);
+
+        // This would have caused panic before fix due to underflow
+        let result = peak_qty.saturating_sub(order_qty);
+        assert_eq!(result.raw, 0);
+        assert_eq!(result, Quantity::zero(3));
     }
 
     #[rstest]
@@ -1148,30 +1233,70 @@ mod property_tests {
             100_000.0..1_000_000.0,
             // Include zero
             Just(0.0),
+            // Boundary cases
+            Just(QUANTITY_MAX / 2.0),
         ]
     }
 
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
-        #[cfg(feature = "defi")]
-        {
-            // In DeFi mode, exclude precision 17 (invalid) and 18 (f64 constructor incompatible)
-            0..=16u8
+        let upper = FIXED_PRECISION.min(MAX_FLOAT_PRECISION);
+        prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
+    }
+
+    fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
+        let upper = FIXED_PRECISION.clamp(1, MAX_FLOAT_PRECISION);
+        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
+    }
+
+    fn raw_for_precision_strategy() -> impl Strategy<Value = (QuantityRaw, u8)> {
+        precision_strategy().prop_flat_map(|precision| {
+            let step_u128 = 10u128.pow(u32::from(FIXED_PRECISION.saturating_sub(precision)));
+            #[cfg(feature = "high-precision")]
+            let max_steps_u128 = QUANTITY_RAW_MAX / step_u128;
+            #[cfg(not(feature = "high-precision"))]
+            let max_steps_u128 = (QUANTITY_RAW_MAX as u128) / step_u128;
+
+            (0u128..=max_steps_u128).prop_map(move |steps_u128| {
+                let raw_u128 = steps_u128 * step_u128;
+                #[cfg(feature = "high-precision")]
+                let raw = raw_u128;
+                #[cfg(not(feature = "high-precision"))]
+                let raw = raw_u128
+                    .try_into()
+                    .expect("raw value should fit in QuantityRaw");
+                (raw, precision)
+            })
+        })
+    }
+
+    const DECIMAL_MAX_MANTISSA: u128 = 79_228_162_514_264_337_593_543_950_335;
+
+    fn decimal_compatible(raw: QuantityRaw, precision: u8) -> bool {
+        if precision > MAX_FLOAT_PRECISION {
+            return false;
         }
-        #[cfg(not(feature = "defi"))]
-        {
-            0..=FIXED_PRECISION
-        }
+        let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));
+        let divisor = 10u128.pow(precision_diff);
+        #[cfg(feature = "high-precision")]
+        let rescaled_raw = raw / divisor;
+        #[cfg(not(feature = "high-precision"))]
+        let rescaled_raw = (raw as u128) / divisor;
+        // rust_decimal stores the coefficient in 96 bits; this guard mirrors that bound so
+        // proptests skip cases the runtime representation cannot encode.
+        rescaled_raw <= DECIMAL_MAX_MANTISSA
     }
 
     proptest! {
         /// Property: Quantity string serialization round-trip should preserve value and precision
         #[rstest]
         fn prop_quantity_serde_round_trip(
-            value in quantity_value_strategy(),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
+            (raw, precision) in raw_for_precision_strategy()
         ) {
-            let original = Quantity::new(value, precision);
+            // Only run string-based round-trip checks where decimal formatting is supported.
+            prop_assume!(decimal_compatible(raw, precision));
+
+            let original = Quantity::from_raw(raw, precision);
 
             // String round-trip (this should be exact and is the most important)
             let string_repr = original.to_string();
@@ -1183,7 +1308,7 @@ mod property_tests {
             let json = serde_json::to_string(&original).unwrap();
             let from_json: Quantity = serde_json::from_str(&json).unwrap();
             prop_assert_eq!(from_json.precision, original.precision);
-            // Note: JSON may have minor floating-point precision differences due to f64 limitations
+            prop_assert_eq!(from_json.raw, original.raw);
         }
 
         /// Property: Quantity arithmetic should be associative for same precision
@@ -1192,7 +1317,7 @@ mod property_tests {
             a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
             b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
             c in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+            precision in precision_strategy()
         ) {
             let q_a = Quantity::new(a, precision);
             let q_b = Quantity::new(b, precision);
@@ -1218,7 +1343,7 @@ mod property_tests {
         fn prop_quantity_addition_subtraction_inverse(
             base in quantity_value_strategy().prop_filter("Reasonable values", |&x| x < 1e6),
             delta in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
-            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+            precision in precision_strategy()
         ) {
             let q_base = Quantity::new(base, precision);
             let q_delta = Quantity::new(delta, precision);
@@ -1255,10 +1380,12 @@ mod property_tests {
         fn prop_quantity_string_parsing_precision(
             integral in 0u32..1000000,
             fractional in 0u32..1000000,
-            precision in 1u8..=6
+            precision in precision_strategy_non_zero()
         ) {
             // Create a decimal string with exactly 'precision' decimal places
-            let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
+            let pow = 10u128.pow(u32::from(precision));
+            let fractional_mod = (fractional as u128) % pow;
+            let fractional_str = format!("{:0width$}", fractional_mod, width = precision as usize);
             let quantity_str = format!("{integral}.{fractional_str}");
 
             let parsed: Quantity = quantity_str.parse().unwrap();
@@ -1274,8 +1401,8 @@ mod property_tests {
         #[rstest]
         fn prop_quantity_precision_information_preservation(
             value in quantity_value_strategy().prop_filter("Reasonable values", |&x| x < 1e6),
-            precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
-            precision2 in 1u8..=6u8
+            precision1 in precision_strategy_non_zero(),
+            precision2 in precision_strategy_non_zero()
         ) {
             // Skip cases where precisions are equal (trivial case)
             prop_assume!(precision1 != precision2);
@@ -1361,6 +1488,18 @@ mod property_tests {
             // q + 0 = q and 0 + q = q
             prop_assert_eq!(q + zero, q);
             prop_assert_eq!(zero + q, q);
+        }
+    }
+
+    proptest! {
+        /// Property: constructing from raw within bounds preserves raw/precision
+        #[rstest]
+        fn prop_quantity_from_raw_round_trip(
+            (raw, precision) in raw_for_precision_strategy()
+        ) {
+            let quantity = Quantity::from_raw(raw, precision);
+            prop_assert_eq!(quantity.raw, raw);
+            prop_assert_eq!(quantity.precision, precision);
         }
     }
 }

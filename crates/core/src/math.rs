@@ -56,13 +56,17 @@ macro_rules! approx_eq {
 ///
 /// # Panics
 ///
-/// Panics if `x1 == x2` because the denominator becomes zero.
+/// Panics if `x1` and `x2` are too close (within machine epsilon), which would
+/// cause division by zero or numerical instability. Uses `f64::EPSILON` * 2.0 to
+/// account for floating-point rounding in the difference computation.
 #[inline]
 #[must_use]
 pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
+    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
+    let diff = (x2 - x1).abs();
     assert!(
-        x1 != x2,
-        "`x1` and `x2` must differ to compute a linear weight"
+        diff >= EPSILON,
+        "`x1` ({x1}) and `x2` ({x2}) are too close for stable interpolation (diff: {diff}, min: {EPSILON})"
     );
     (x - x1) / (x2 - x1)
 }
@@ -81,9 +85,33 @@ pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
 ///
 /// Returns the index of the largest element in `xs` that is less than `x`,
 /// clamped to the valid range `[0, xs.len() - 1]`.
+///
+/// # Edge Cases
+///
+/// - For empty arrays, returns 0
+/// - For single-element arrays, always returns index 0, regardless of whether `x > xs[0]`
+/// - For values below the minimum, returns 0
+/// - For values at or above the maximum, returns `xs.len() - 1`
+///
+/// # Examples
+///
+/// ```
+/// use nautilus_core::math::pos_search;
+///
+/// // Normal case: find position between elements
+/// assert_eq!(pos_search(2.5, &[1.0, 2.0, 3.0, 4.0]), 1); // Between indices 1 and 2
+///
+/// // Single element: always returns 0
+/// assert_eq!(pos_search(5.0, &[10.0]), 0); // Even though x < xs[0]
+/// assert_eq!(pos_search(15.0, &[10.0]), 0); // Even though x > xs[0]
+/// ```
 #[inline]
 #[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
+    if xs.is_empty() {
+        return 0;
+    }
+
     let n_elem = xs.len();
     let pos = xs.partition_point(|&val| val < x);
     std::cmp::min(std::cmp::max(pos.saturating_sub(1), 0), n_elem - 1)
@@ -97,15 +125,21 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 ///
 /// # Panics
 ///
-/// Panics if any two abscissas are identical because the interpolation
-/// coefficients would involve division by zero.
+/// Panics if any two abscissas are too close (within machine epsilon), which would
+/// cause division by zero or numerical instability in the interpolation.
 #[inline]
 #[must_use]
 pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: f64) -> f64 {
+    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
+
     // Protect against coincident x values that would lead to division by zero
+    let diff_01 = (x0 - x1).abs();
+    let diff_02 = (x0 - x2).abs();
+    let diff_12 = (x1 - x2).abs();
+
     assert!(
-        x0 != x1 && x0 != x2 && x1 != x2,
-        "Abscissas must be distinct"
+        diff_01 >= EPSILON && diff_02 >= EPSILON && diff_12 >= EPSILON,
+        "Abscissas are too close for stable interpolation: x0={x0}, x1={x1}, x2={x2} (diffs: {diff_01:.2e}, {diff_02:.2e}, {diff_12:.2e}, min: {EPSILON})"
     );
 
     y0 * (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))
@@ -207,14 +241,37 @@ mod tests {
         let result = linear_weight(x1, x2, x);
         assert!(
             approx_eq!(f64, result, expected, epsilon = 1e-10),
-            "Expected {expected}, got {result}"
+            "Expected {expected}, was {result}"
         );
     }
 
     #[rstest]
-    #[should_panic(expected = "must differ to compute a linear weight")]
+    #[should_panic(expected = "too close for stable interpolation")]
     fn test_linear_weight_zero_divisor() {
         let _ = linear_weight(1.0, 1.0, 0.5);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "too close for stable interpolation")]
+    fn test_linear_weight_near_equal_values() {
+        // Values within machine epsilon should be rejected
+        let _ = linear_weight(1.0, 1.0 + f64::EPSILON, 0.5);
+    }
+
+    #[rstest]
+    fn test_linear_weight_with_small_differences() {
+        // High-resolution data (e.g., nanosecond timestamps as seconds) should work
+        let result = linear_weight(0.0, 1e-12, 5e-13);
+        assert!(result.is_finite());
+        assert!((result - 0.5).abs() < 1e-10); // Should be approximately 0.5
+    }
+
+    #[rstest]
+    fn test_linear_weight_just_above_epsilon() {
+        // Values differing by more than machine epsilon should work
+        let result = linear_weight(1.0, 1.0 + 1e-9, 1.0 + 5e-10);
+        // Should not panic and return a reasonable value
+        assert!(result.is_finite());
     }
 
     #[rstest]
@@ -231,7 +288,7 @@ mod tests {
         let result = linear_weighting(y1, y2, weight);
         assert!(
             approx_eq!(f64, result, expected, epsilon = 1e-10),
-            "Expected {expected}, got {result}"
+            "Expected {expected}, was {result}"
         );
     }
 
@@ -262,6 +319,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_pos_search_empty_slice() {
+        let empty: &[f64] = &[];
+        assert_eq!(pos_search(42.0, empty), 0);
+    }
+
+    #[rstest]
     fn test_quad_polynomial_linear_case() {
         // Test with three collinear points - should behave like linear interpolation
         let result = quad_polynomial(1.5, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0);
@@ -278,9 +341,31 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Abscissas must be distinct")]
+    #[should_panic(expected = "too close for stable interpolation")]
     fn test_quad_polynomial_duplicate_x() {
         let _ = quad_polynomial(0.5, 1.0, 1.0, 2.0, 0.0, 1.0, 4.0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "too close for stable interpolation")]
+    fn test_quad_polynomial_near_equal_x_values() {
+        // x0 and x1 differ by only machine epsilon
+        let _ = quad_polynomial(0.5, 1.0, 1.0 + f64::EPSILON, 2.0, 0.0, 1.0, 4.0);
+    }
+
+    #[rstest]
+    fn test_quad_polynomial_with_small_differences() {
+        // High-resolution data should work (e.g., 1e-12 spacing)
+        let result = quad_polynomial(5e-13, 0.0, 1e-12, 2e-12, 0.0, 1.0, 4.0);
+        assert!(result.is_finite());
+    }
+
+    #[rstest]
+    fn test_quad_polynomial_just_above_epsilon() {
+        // Values differing by more than machine epsilon should work
+        let result = quad_polynomial(0.5, 0.0, 1.0 + 1e-9, 2.0, 0.0, 1.0, 4.0);
+        // Should not panic and return a reasonable value
+        assert!(result.is_finite());
     }
 
     #[rstest]

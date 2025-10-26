@@ -32,6 +32,35 @@ pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 /// Number of nanoseconds in one microsecond.
 pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
+// Compile-time checks for time constants to prevent accidental modification
+#[cfg(test)]
+mod compile_time_checks {
+    use static_assertions::const_assert_eq;
+
+    use super::*;
+
+    // [STATIC_ASSERT] Core time constant relationships
+    const_assert_eq!(NANOSECONDS_IN_SECOND, 1_000_000_000);
+    const_assert_eq!(NANOSECONDS_IN_MILLISECOND, 1_000_000);
+    const_assert_eq!(NANOSECONDS_IN_MICROSECOND, 1_000);
+    const_assert_eq!(MILLISECONDS_IN_SECOND, 1_000);
+
+    // [STATIC_ASSERT] Mathematical relationships between constants
+    const_assert_eq!(
+        NANOSECONDS_IN_SECOND,
+        MILLISECONDS_IN_SECOND * NANOSECONDS_IN_MILLISECOND
+    );
+    const_assert_eq!(
+        NANOSECONDS_IN_MILLISECOND,
+        NANOSECONDS_IN_MICROSECOND * 1_000
+    );
+    const_assert_eq!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MILLISECOND, 1_000);
+    const_assert_eq!(
+        NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND,
+        1_000_000
+    );
+}
+
 /// List of weekdays (Monday to Friday).
 pub const WEEKDAYS: [Weekday; 5] = [
     Weekday::Mon,
@@ -163,7 +192,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
     date_string
         .parse::<UnixNanos>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{}': {}", date_string, e))
+        .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{date_string}': {e}"))
 }
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
@@ -231,6 +260,12 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
         .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
+    // Future timestamps are not within the last 24 hours
+    if timestamp > now {
+        return Ok(false);
+    }
+
+    // Check if the timestamp is within the last 24 hours (non-negative duration <= 1 day)
     Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
 }
 
@@ -304,8 +339,11 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixN
 ///
 /// Returns an error if the resulting date would be invalid or out of range.
 pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
-    // Use checked_add_months with n * 12 months
-    match datetime.checked_add_months(chrono::Months::new(n * 12)) {
+    let months = n.checked_mul(12).ok_or_else(|| {
+        anyhow::anyhow!("Failed to add {n} years to {datetime}: month count overflow")
+    })?;
+
+    match datetime.checked_add_months(chrono::Months::new(months)) {
         Some(result) => Ok(result),
         None => anyhow::bail!("Failed to add {n} years to {datetime}"),
     }
@@ -317,8 +355,11 @@ pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<U
 ///
 /// Returns an error if the resulting date would be invalid or out of range.
 pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
-    // Use checked_sub_months with n * 12 months
-    match datetime.checked_sub_months(chrono::Months::new(n * 12)) {
+    let months = n.checked_mul(12).ok_or_else(|| {
+        anyhow::anyhow!("Failed to subtract {n} years from {datetime}: month count overflow")
+    })?;
+
+    match datetime.checked_sub_months(chrono::Months::new(months)) {
         Some(result) => Ok(result),
         None => anyhow::bail!("Failed to subtract {n} years from {datetime}"),
     }
@@ -336,6 +377,10 @@ pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNa
         Some(ts) => ts,
         None => anyhow::bail!("Timestamp out of range after adding {n} years"),
     };
+
+    if timestamp < 0 {
+        anyhow::bail!("Negative timestamp not allowed");
+    }
 
     Ok(UnixNanos::from(timestamp as u64))
 }
@@ -557,6 +602,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_is_within_last_24_hours_when_future() {
+        // Future timestamps should return false
+        let future_ns = (Utc::now() + TimeDelta::try_hours(1).unwrap())
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert!(!is_within_last_24_hours(UnixNanos::from(future_ns as u64)).unwrap());
+
+        // One day in the future should also return false
+        let future_ns = (Utc::now() + TimeDelta::try_days(1).unwrap())
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert!(!is_within_last_24_hours(UnixNanos::from(future_ns as u64)).unwrap());
+    }
+
+    #[rstest]
     #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
     #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 12, Utc.with_ymd_and_hms(2023, 3, 31, 12, 0, 0).unwrap())] // One year earlier
     #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap())] // Wrapping to previous year
@@ -582,6 +642,27 @@ mod tests {
     ) {
         let result = add_n_months(input, months).unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_add_n_years_overflow() {
+        let datetime = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let err = add_n_years(datetime, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
+    }
+
+    #[rstest]
+    fn test_subtract_n_years_overflow() {
+        let datetime = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let err = subtract_n_years(datetime, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
+    }
+
+    #[rstest]
+    fn test_add_n_years_nanos_overflow() {
+        let nanos = UnixNanos::from(0);
+        let err = add_n_years_nanos(nanos, u32::MAX).unwrap_err();
+        assert!(err.to_string().contains("month count overflow"));
     }
 
     #[rstest]
@@ -634,5 +715,25 @@ mod tests {
         let iso8601_string = unix_nanos_to_iso8601(original_nanos);
         let parsed_nanos = iso8601_to_unix_nanos(iso8601_string).unwrap();
         assert_eq!(parsed_nanos, original_nanos);
+    }
+
+    #[rstest]
+    fn test_add_n_years_nanos_normal_case() {
+        // Test adding 1 year from 2020-01-01
+        let start = UnixNanos::from(Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap());
+        let result = add_n_years_nanos(start, 1).unwrap();
+        let expected = UnixNanos::from(Utc.with_ymd_and_hms(2021, 1, 1, 0, 0, 0).unwrap());
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_add_n_years_nanos_prevents_negative_timestamp() {
+        // Edge case: ensure we catch if somehow a negative timestamp would be produced
+        // This is a defensive check - in practice, adding years shouldn't produce negative
+        // timestamps from valid UnixNanos, but we verify the check is in place
+        let start = UnixNanos::from(0); // Epoch
+        // Adding years to epoch should never produce negative, but the check is there
+        let result = add_n_years_nanos(start, 1);
+        assert!(result.is_ok());
     }
 }

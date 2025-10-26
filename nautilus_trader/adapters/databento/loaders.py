@@ -374,7 +374,7 @@ class DatabentoDataLoader:
                 | DatabentoSchema.OHLCV_1M.value
                 | DatabentoSchema.OHLCV_1H.value
                 | DatabentoSchema.OHLCV_1D.value
-                | DatabentoSchema.OHLCV_EOD
+                | DatabentoSchema.OHLCV_EOD.value
             ):
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_bars_as_pycapsule(

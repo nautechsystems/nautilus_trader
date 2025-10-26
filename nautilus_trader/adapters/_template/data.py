@@ -70,8 +70,6 @@ class TemplateLiveDataClient(LiveDataClient):
     +---------------------------------------+-------------+
     | _connect                              | required    |
     | _disconnect                           | required    |
-    | reset                                 | optional    |
-    | dispose                               | optional    |
     +---------------------------------------+-------------+
     | _subscribe                            | optional    |
     | _unsubscribe                          | optional    |
@@ -89,16 +87,6 @@ class TemplateLiveDataClient(LiveDataClient):
     async def _disconnect(self) -> None:
         raise NotImplementedError(
             "method `_disconnect` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def reset(self) -> None:
-        raise NotImplementedError(
-            "method `reset` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def dispose(self) -> None:
-        raise NotImplementedError(
-            "method `dispose` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
@@ -133,8 +121,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     +----------------------------------------+-------------+
     | _connect                               | required    |
     | _disconnect                            | required    |
-    | reset                                  | optional    |
-    | dispose                                | optional    |
     +----------------------------------------+-------------+
     | _subscribe (adapter specific types)    | optional    |
     | _subscribe_instruments                 | optional    |
@@ -182,16 +168,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _disconnect(self) -> None:
         raise NotImplementedError(
             "method `_disconnect` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def reset(self) -> None:
-        raise NotImplementedError(
-            "method `reset` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def dispose(self) -> None:
-        raise NotImplementedError(
-            "method `dispose` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------

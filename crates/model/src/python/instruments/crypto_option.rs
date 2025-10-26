@@ -35,7 +35,7 @@ use crate::{
 impl CryptoOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -54,6 +54,7 @@ impl CryptoOption {
         ts_event: u64,
         ts_init: u64,
         multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -81,6 +82,7 @@ impl CryptoOption {
             price_increment,
             size_increment,
             multiplier,
+            lot_size,
             max_quantity,
             min_quantity,
             max_notional,
@@ -274,7 +276,7 @@ impl CryptoOption {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -297,7 +299,7 @@ impl CryptoOption {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(CryptoOption))?;
         dict.set_item("id", self.id.to_string())?;
@@ -359,20 +361,20 @@ impl CryptoOption {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
     use crate::instruments::{CryptoOption, stubs::*};
 
     #[rstest]
     fn test_dict_round_trip(crypto_option_btc_deribit: CryptoOption) {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let crypto_option = crypto_option_btc_deribit;
             let values = crypto_option.py_to_dict(py).unwrap();
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_crypto_future = CryptoOption::py_from_dict(py, values).unwrap();
             assert_eq!(crypto_option, new_crypto_future);
-        })
+        });
     }
 }

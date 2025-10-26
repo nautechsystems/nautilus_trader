@@ -13,21 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+//! Python bindings for the BitMEX HTTP client.
+
+use chrono::{DateTime, Utc};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    data::BarType,
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::http::client::BitmexHttpClient;
+use crate::http::{client::BitmexHttpClient, error::BitmexHttpError};
 
 #[pymethods]
 impl BitmexHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, max_requests_per_second=None, max_requests_per_minute=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<&str>,
@@ -38,50 +42,42 @@ impl BitmexHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        max_requests_per_second: Option<u32>,
+        max_requests_per_minute: Option<u32>,
     ) -> PyResult<Self> {
         let timeout = timeout_secs.or(Some(60));
 
-        // Try to use with_credentials if we have any credentials or need env vars
-        if api_key.is_none() && api_secret.is_none() && !testnet && base_url.is_none() {
-            // Try to load from environment
-            match Self::with_credentials(
-                None,
-                None,
-                base_url.map(String::from),
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-            ) {
-                Ok(client) => Ok(client),
-                Err(_) => {
-                    // Fall back to unauthenticated client
-                    Self::new(
-                        base_url.map(String::from),
-                        None,
-                        None,
-                        testnet,
-                        timeout,
-                        max_retries,
-                        retry_delay_ms,
-                        retry_delay_max_ms,
-                    )
-                    .map_err(to_pyvalue_err)
-                }
-            }
+        // If credentials not provided, try to load from environment
+        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
+            // Choose environment variables based on testnet flag
+            let (key_var, secret_var) = if testnet {
+                ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+            } else {
+                ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+            };
+
+            let env_key = std::env::var(key_var).ok();
+            let env_secret = std::env::var(secret_var).ok();
+            (env_key, env_secret)
         } else {
-            Self::new(
-                base_url.map(String::from),
-                api_key.map(String::from),
-                api_secret.map(String::from),
-                testnet,
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-            )
-            .map_err(to_pyvalue_err)
-        }
+            (api_key.map(String::from), api_secret.map(String::from))
+        };
+
+        Self::new(
+            base_url.map(String::from),
+            final_api_key,
+            final_api_secret,
+            testnet,
+            timeout,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+            recv_window_ms,
+            max_requests_per_second,
+            max_requests_per_minute,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -119,7 +115,7 @@ impl BitmexHttpClient {
             //     .await
             //     .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
                 // report.into_py_any(py).map_err(to_pyvalue_err)
                 Ok(py.None())
             })
@@ -140,7 +136,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| match instrument {
+            Python::attach(|py| match instrument {
                 Some(inst) => instrument_any_to_pyobject(py, inst),
                 None => Ok(py.None()),
             })
@@ -161,7 +157,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -176,27 +172,57 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "request_trades")]
-    #[pyo3(signature = (instrument_id, limit=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trades<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trades(instrument_id, limit)
+                .request_trades(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_trades: PyResult<Vec<_>> = trades
                     .into_iter()
                     .map(|trade| trade.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "request_bars")]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, partial=false))]
+    fn py_request_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+        partial: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let bars = client
+                .request_bars(bar_type, start, end, limit, partial)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_bars: PyResult<Vec<_>> =
+                    bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
+                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -218,8 +244,8 @@ impl BitmexHttpClient {
                 .query_order(instrument_id, client_order_id, venue_order_id)
                 .await
             {
-                Ok(Some(report)) => Python::with_gil(|py| report.into_py_any(py)),
-                Ok(None) => Ok(Python::with_gil(|py| py.None())),
+                Ok(Some(report)) => Python::attach(|py| report.into_py_any(py)),
+                Ok(None) => Ok(Python::attach(|py| py.None())),
                 Err(e) => Err(to_pyvalue_err(e)),
             }
         })
@@ -242,7 +268,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -269,7 +295,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -293,7 +319,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -314,9 +340,12 @@ impl BitmexHttpClient {
         time_in_force,
         price = None,
         trigger_price = None,
+        trigger_type = None,
         display_qty = None,
         post_only = false,
-        reduce_only = false
+        reduce_only = false,
+        order_list_id = None,
+        contingency_type = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -330,9 +359,12 @@ impl BitmexHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
+        order_list_id: Option<OrderListId>,
+        contingency_type: Option<ContingencyType>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -347,14 +379,17 @@ impl BitmexHttpClient {
                     time_in_force,
                     price,
                     trigger_price,
+                    trigger_type,
                     display_qty,
                     post_only,
                     reduce_only,
+                    order_list_id,
+                    contingency_type,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
@@ -375,7 +410,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
@@ -396,7 +431,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -423,7 +458,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -469,15 +504,20 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(inst_any);
         Ok(())
+    }
+
+    #[pyo3(name = "cancel_all_requests")]
+    fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
     }
 
     #[pyo3(name = "http_get_margin")]
@@ -494,7 +534,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 // Create a simple Python object with just the account field we need
                 // We can expand this if more fields are needed
                 let account = margin.account;
@@ -517,7 +557,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
+            Python::attach(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
         })
     }
 
@@ -525,12 +565,12 @@ impl BitmexHttpClient {
     fn py_submit_orders_bulk<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _client = self.clone();
 
         // Convert Python objects to PostOrderParams
-        let _params = Python::with_gil(|_py| {
+        let _params = Python::attach(|_py| {
             orders
                 .into_iter()
                 .map(|obj| {
@@ -545,8 +585,8 @@ impl BitmexHttpClient {
             // Call the bulk order method once it's implemented
             // let reports = client.submit_orders_bulk(params).await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let py_list = PyList::new(py, Vec::<Py<PyAny>>::new())?;
                 // for report in reports {
                 //     py_list.append(report.into_py_any(py)?)?;
                 // }
@@ -559,12 +599,12 @@ impl BitmexHttpClient {
     fn py_modify_orders_bulk<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _client = self.clone();
 
         // Convert Python objects to PutOrderParams
-        let _params = Python::with_gil(|_py| {
+        let _params = Python::attach(|_py| {
             orders
                 .into_iter()
                 .map(|obj| {
@@ -579,13 +619,53 @@ impl BitmexHttpClient {
             // Call the bulk amend method once it's implemented
             // let reports = client.modify_orders_bulk(params).await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let py_list = PyList::new(py, Vec::<Py<PyAny>>::new())?;
                 // for report in reports {
                 //     py_list.append(report.into_py_any(py)?)?;
                 // }
                 Ok(py_list.into())
             })
         })
+    }
+
+    #[pyo3(name = "http_get_server_time")]
+    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let timestamp = client
+                .http_get_server_time()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| timestamp.into_py_any(py))
+        })
+    }
+}
+
+impl From<BitmexHttpError> for PyErr {
+    fn from(error: BitmexHttpError) -> Self {
+        match error {
+            // Runtime/operational errors
+            BitmexHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
+            BitmexHttpError::NetworkError(msg) => to_pyruntime_err(format!("Network error: {msg}")),
+            BitmexHttpError::UnexpectedStatus { status, body } => {
+                to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            // Validation/configuration errors
+            BitmexHttpError::MissingCredentials => {
+                to_pyvalue_err("Missing credentials for authenticated request")
+            }
+            BitmexHttpError::ValidationError(msg) => {
+                to_pyvalue_err(format!("Parameter validation error: {msg}"))
+            }
+            BitmexHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            BitmexHttpError::BuildError(e) => to_pyvalue_err(format!("Build error: {e}")),
+            BitmexHttpError::BitmexError {
+                error_name,
+                message,
+            } => to_pyvalue_err(format!("BitMEX error {error_name}: {message}")),
+        }
     }
 }

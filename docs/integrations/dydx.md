@@ -1,9 +1,5 @@
 # dYdX
 
-:::info
-We are currently working on this integration guide.
-:::
-
 dYdX is one of the largest decentralized cryptocurrency exchanges in terms of daily trading volume
 for crypto derivative products. dYdX runs on smart contracts on the Ethereum blockchain, and allows
 users to trade with no intermediaries. This integration supports live market data ingestion and order
@@ -153,7 +149,7 @@ order = self.order_factory.market(
 Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
 for conditional orders.
 
-## Capability Matrix
+## Orders capability
 
 dYdX supports perpetual futures trading with a comprehensive set of order types and execution features.
 
@@ -161,7 +157,7 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 
 | Order Type             | Perpetuals | Notes                                   |
 |------------------------|------------|-----------------------------------------|
-| `MARKET`               | ✓          | Requires price for slippage protection. |
+| `MARKET`               | ✓          | Requires price for slippage protection. Quote quantity not supported. |
 | `LIMIT`                | ✓          |                                         |
 | `STOP_MARKET`          | ✓          | Long-term orders only.                  |
 | `STOP_LIMIT`           | ✓          | Long-term orders only.                  |
@@ -213,33 +209,22 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 ### Order querying
 
 | Feature              | Perpetuals | Notes                                          |
-|--------------------|------------|------------------------------------------------|
-| Query open orders   | ✓          | List all active orders.                        |
-| Query order history | ✓          | Historical order data.                         |
-| Order status updates| ✓          | Real-time order state changes.                |
-| Trade history       | ✓          | Execution and fill reports.                   |
+|----------------------|------------|------------------------------------------------|
+| Query open orders    | ✓          | List all active orders.                        |
+| Query order history  | ✓          | Historical order data.                         |
+| Order status updates | ✓          | Real-time order state changes.                |
+| Trade history        | ✓          | Execution and fill reports.                   |
 
 ### Contingent orders
 
-| Feature              | Perpetuals | Notes                                          |
-|--------------------|------------|------------------------------------------------|
+| Feature             | Perpetuals | Notes                                          |
+|---------------------|------------|------------------------------------------------|
 | Order lists         | -          | *Not supported*.                               |
 | OCO orders          | -          | *Not supported*.                               |
 | Bracket orders      | -          | *Not supported*.                               |
 | Conditional orders  | ✓          | Stop market and stop limit orders.           |
 
-### Configuration Options
-
-The following execution client configuration options are available:
-
-| Option           | Default | Description                                                      |
-|------------------|---------|------------------------------------------------------------------|
-| `subaccount`     | `0`     | Subaccount number (venue creates subaccount 0 by default).       |
-| `wallet_address` | `None`  | dYdX wallet address for the account.                             |
-| `mnemonic`       | `None`  | Mnemonic for generating private key for order signing.           |
-| `is_testnet`     | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
-
-### Order Classification
+### Order classification
 
 dYdX classifies orders as either **short-term** or **long-term** orders:
 
@@ -250,7 +235,32 @@ dYdX classifies orders as either **short-term** or **long-term** orders:
 
 The product types for each client must be specified in the configurations.
 
-### Execution Clients
+### Data client configuration options
+
+| Option                           | Default | Description |
+|----------------------------------|---------|-------------|
+| `wallet_address`                 | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
+| `is_testnet`                     | `False` | Connect to the dYdX testnet when `True`. |
+| `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
+| `max_retries`                    | `None`  | Maximum retry attempts for REST/WebSocket recovery. |
+| `retry_delay_initial_ms`         | `None`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`             | `None`  | Maximum delay (milliseconds) between retries. |
+
+### Execution client configuration options
+
+| Option                   | Default | Description |
+|--------------------------|---------|-------------|
+| `wallet_address`         | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
+| `subaccount`             | `0`     | Subaccount number (dYdX provisions subaccount `0` by default). |
+| `mnemonic`               | `None`  | Mnemonic used to derive the signing key; loaded from environment when omitted. |
+| `base_url_http`          | `None`  | Override for the REST base URL. |
+| `base_url_ws`            | `None`  | Override for the WebSocket base URL. |
+| `is_testnet`             | `False` | Connect to the dYdX testnet when `True`. |
+| `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
+
+### Execution clients
 
 The account type must be a margin account to trade the perpetual futures contracts.
 
@@ -298,7 +308,7 @@ node.add_exec_client_factory("DYDX", DYDXLiveExecClientFactory)
 node.build()
 ```
 
-### API Credentials
+### API credentials
 
 There are two options for supplying your credentials to the dYdX clients.
 Either pass the corresponding `wallet_address` and `mnemonic` values to the configuration objects, or
@@ -345,7 +355,7 @@ config = TradingNodeConfig(
 )
 ```
 
-### Parser Warnings
+### Parser warnings
 
 Some dYdX instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
@@ -356,3 +366,8 @@ In these cases, a *warn and continue* approach is taken (the instrument will not
 Order books can be maintained at full depth or top-of-book quotes depending on the
 subscription. The venue does not provide quotes, but the adapter subscribes to order
 book deltas and sends new quotes to the `DataEngine` when there is a top-of-book price or size change.
+
+:::info
+For additional features or to contribute to the dYdX adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

@@ -37,6 +37,10 @@ class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     settleCoin: str | None = None
     orderId: str | None = None
     orderLinkId: str | None = None
+    openOnly: int | None = None
+    orderFilter: str | None = None
+    limit: int | None = None
+    cursor: str | None = None
 
 
 class BybitOpenOrdersEndpoint(BybitHttpEndpoint):

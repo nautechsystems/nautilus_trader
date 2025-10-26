@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get Databento API key from environment
     let api_key = get_env_var("DATABENTO_API_KEY").unwrap_or_else(|_| {
-        println!("⚠️  DATABENTO_API_KEY not found, using placeholder");
+        println!("WARNING: DATABENTO_API_KEY not found, using placeholder");
         "db-placeholder-key".to_string()
     });
 
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let publishers_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
     if !publishers_filepath.exists() {
         println!(
-            "⚠️  Publishers file not found at: {}",
+            "WARNING: Publishers file not found at: {}",
             publishers_filepath.display()
         );
     }

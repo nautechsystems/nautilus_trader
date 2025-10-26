@@ -649,11 +649,9 @@ mod tests {
         // Should not panic and methods should chain
     }
 
+    #[cfg(feature = "python")]
     #[rstest]
     fn test_trading_node_build() {
-        #[cfg(feature = "python")]
-        pyo3::prepare_freethreaded_python();
-
         let builder_result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),

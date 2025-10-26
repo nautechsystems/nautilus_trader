@@ -461,9 +461,21 @@ impl Order for TrailingStopMarketOrder {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         }
+
         let was_filled = matches!(event, OrderEventAny::Filled(_));
+        let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
+        let ts_event = if is_order_triggered {
+            Some(event.ts_event())
+        } else {
+            None
+        };
 
         self.core.apply(event)?;
+
+        if is_order_triggered {
+            self.is_triggered = true;
+            self.ts_triggered = ts_event;
+        }
 
         if was_filled {
             self.core.set_slippage(self.trigger_price);
@@ -480,7 +492,7 @@ impl Order for TrailingStopMarketOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -508,7 +520,7 @@ impl Order for TrailingStopMarketOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
@@ -841,7 +853,7 @@ mod tests {
 
         assert!(
             (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {expected_slippage}, got {actual_slippage}"
+            "Expected slippage around {expected_slippage}, was {actual_slippage}"
         );
     }
 }

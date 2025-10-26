@@ -39,11 +39,11 @@ impl Default for SyntheticInstrument {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
-        SyntheticInstrument::new(
+        Self::new(
             Symbol::new("BTC-LTC"),
             2,
             vec![btc_binance, ltc_binance],
-            formula.clone(),
+            formula,
             0.into(),
             0.into(),
         )
@@ -201,6 +201,7 @@ pub fn crypto_option_btc_deribit(
         size_precision,
         price_increment,
         size_increment,
+        Some(Quantity::from(1)),
         Some(Quantity::from(1)),
         Some(Quantity::from("9000.0")),
         Some(Quantity::from("0.1")),
@@ -381,7 +382,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let base_currency = symbol.as_str().split('/').next().unwrap();
     let quote_currency = symbol.as_str().split('/').next_back().unwrap();
     let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
-    let price_increment = Price::new(1.0 / 10.0f64, price_precision);
+    let price_increment = Price::new(1.0 / 10.0f64.powi(price_precision as i32), price_precision);
     CurrencyPair::new(
         instrument_id,
         symbol,

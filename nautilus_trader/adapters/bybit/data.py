@@ -241,7 +241,7 @@ class BybitDataClient(LiveMarketDataClient):
         symbol = request.metadata["symbol"]
         if not isinstance(symbol, Symbol):
             raise ValueError(
-                f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
+                f"Parameter symbol in request metadata object is not of type Symbol, was {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
         self.create_task(
@@ -648,7 +648,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

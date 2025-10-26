@@ -82,9 +82,15 @@ class TardisInstrumentProvider(InstrumentProvider):
         else:
             available_offset_ns = available_offset
 
+        # Determine if we should skip option exchanges
+        skip_options = instrument_type is None or "option" not in instrument_type
+
         for venue in venues:
             venue = venue.upper().replace("-", "_")
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
+                if skip_options and nautilus_pyo3.tardis_exchange_is_option_exchange(exchange):
+                    continue
+
                 exchange = exchange.lower().replace("_", "-")
                 self._log.info(f"Requesting instruments for {exchange=}")
                 pyo3_instruments = await self._client.instruments(
@@ -147,7 +153,13 @@ class TardisInstrumentProvider(InstrumentProvider):
         else:
             available_offset_ns = available_offset
 
+        # Determine if we should skip option exchanges
+        skip_options = instrument_type is None or "option" not in instrument_type
+
         for exchange, symbols in venue_instruments.items():
+            if skip_options and nautilus_pyo3.tardis_exchange_is_option_exchange(exchange):
+                continue
+
             exchange = exchange.lower().replace("_", "-")
             self._log.info(f"Requesting instruments for {exchange=}")
             pyo3_instruments = await self._client.instruments(

@@ -22,11 +22,11 @@ use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
 
 #[derive(Debug)]
 pub struct GenerateOrderStatusReport {
-    command_id: UUID4,
-    ts_init: UnixNanos,
-    instrument_id: Option<InstrumentId>,
-    client_order_id: Option<ClientOrderId>,
-    venue_order_id: Option<ClientOrderId>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub instrument_id: Option<InstrumentId>,
+    pub client_order_id: Option<ClientOrderId>,
+    pub venue_order_id: Option<ClientOrderId>,
 }
 
 impl GenerateOrderStatusReport {
@@ -50,12 +50,12 @@ impl GenerateOrderStatusReport {
 
 #[derive(Debug)]
 pub struct GenerateOrderStatusReports {
-    command_id: UUID4,
-    ts_init: UnixNanos,
-    open_only: bool,
-    instrument_id: Option<InstrumentId>,
-    start: Option<UnixNanos>,
-    end: Option<UnixNanos>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub open_only: bool,
+    pub instrument_id: Option<InstrumentId>,
+    pub start: Option<UnixNanos>,
+    pub end: Option<UnixNanos>,
 }
 
 impl GenerateOrderStatusReports {
@@ -81,12 +81,12 @@ impl GenerateOrderStatusReports {
 
 #[derive(Debug)]
 pub struct GenerateFillReports {
-    command_id: UUID4,
-    ts_init: UnixNanos,
-    instrument_id: Option<InstrumentId>,
-    venue_order_id: Option<ClientOrderId>,
-    start: Option<UnixNanos>,
-    end: Option<UnixNanos>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub instrument_id: Option<InstrumentId>,
+    pub venue_order_id: Option<ClientOrderId>,
+    pub start: Option<UnixNanos>,
+    pub end: Option<UnixNanos>,
 }
 
 impl GenerateFillReports {
@@ -112,11 +112,11 @@ impl GenerateFillReports {
 
 #[derive(Debug)]
 pub struct GeneratePositionReports {
-    command_id: UUID4,
-    ts_init: UnixNanos,
-    instrument_id: Option<InstrumentId>,
-    start: Option<UnixNanos>,
-    end: Option<UnixNanos>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub instrument_id: Option<InstrumentId>,
+    pub start: Option<UnixNanos>,
+    pub end: Option<UnixNanos>,
 }
 
 impl GeneratePositionReports {

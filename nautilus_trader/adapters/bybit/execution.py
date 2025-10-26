@@ -53,7 +53,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
@@ -62,6 +64,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.identifiers import AccountId
@@ -107,7 +110,6 @@ if TYPE_CHECKING:
     from nautilus_trader.execution.messages import SubmitOrderList
     from nautilus_trader.execution.reports import FillReport
     from nautilus_trader.execution.reports import OrderStatusReport
-    from nautilus_trader.execution.reports import PositionStatusReport
     from nautilus_trader.model.position import Position
 
 
@@ -195,6 +197,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._futures_leverages = config.futures_leverages
         self._margin_mode = config.margin_mode
         self._position_mode = config.position_mode
+        self._use_spot_position_reports = config.use_spot_position_reports
+        self._ignore_uncached_instrument_executions = config.ignore_uncached_instrument_executions
 
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
@@ -202,6 +206,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
+        self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -210,6 +216,14 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.futures_leverages=}", LogColor.BLUE)
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
         self._log.info(f"{config.position_mode=}", LogColor.BLUE)
+
+        if self._use_spot_position_reports:
+            self._log.warning(
+                "SPOT position reports enabled - positive wallet balances will be treated as LONG positions "
+                "and negative balances (borrowing) as SHORT positions; this may lead to unintended "
+                "liquidation of wallet assets if strategies are not designed to handle SPOT positions properly",
+                LogColor.YELLOW,
+            )
 
         self._enum_parser = BybitEnumParser()
 
@@ -314,6 +328,10 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
         await self._update_account_state()
+        await self._await_account_registered()
+
+        self._log.info("Bybit API key authenticated", LogColor.GREEN)
+        self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
 
         await self._ws_private_client.connect()
 
@@ -345,21 +363,48 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[OrderStatusReport]:
         instrument_id = command.instrument_id
 
-        self._log.debug("Requesting OrderStatusReports...")
+        self._log.debug(f"Requesting OrderStatusReports... open_only={command.open_only}")
         reports: list[OrderStatusReport] = []
 
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
-            # active_symbols = self._get_cache_active_symbols()
-            # active_symbols.update(await self._get_active_position_symbols(symbol))
-            # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
+
             for product_type in self._product_types:
-                bybit_orders = await self._http_account.query_order_history(
-                    product_type,
-                    symbol,
-                    command.open_only,
-                )
+                if command.open_only:
+                    bybit_orders = await self._http_account.query_open_orders(
+                        product_type,
+                        symbol,
+                    )
+                else:
+                    # For full history mode, query BOTH endpoints to ensure we don't miss any orders
+                    # The realtime endpoint has the most up-to-date open orders
+                    # The history endpoint has recently closed orders
+                    all_orders = []
+
+                    # First get open orders from realtime endpoint
+                    open_orders = await self._http_account.query_open_orders(
+                        product_type,
+                        symbol,
+                    )
+                    all_orders.extend(open_orders)
+
+                    # Then get order history (which may lag for very recent orders)
+                    history_orders = await self._http_account.query_order_history(
+                        product_type,
+                        symbol,
+                        command.open_only,
+                        command.start,
+                    )
+
+                    # De-duplicate by orderId (open orders might appear in both)
+                    seen_order_ids = {order.orderId for order in open_orders}
+                    for order in history_orders:
+                        if order.orderId not in seen_order_ids:
+                            all_orders.append(order)
+
+                    bybit_orders = all_orders
+
                 for bybit_order in bybit_orders:
                     # Uncomment for development
                     # self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
@@ -472,11 +517,20 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
+
+            start_time_ms = secs_to_millis(command.start.timestamp()) if command.start else None
+            end_time_ms = secs_to_millis(command.end.timestamp()) if command.end else None
+
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
             # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
             for product_type in self._product_types:
-                bybit_fills = await self._http_account.query_trade_history(product_type, symbol)
+                bybit_fills = await self._http_account.query_trade_history(
+                    product_type,
+                    symbol,
+                    start_time=start_time_ms,
+                    end_time=end_time_ms,
+                )
                 for bybit_fill in bybit_fills:
                     # Uncomment for development
                     # self._log.info(f"Generating fill {bybit_fill}", LogColor.MAGENTA)
@@ -501,7 +555,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_position_status_reports(
+    async def generate_position_status_reports(  # noqa: C901
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
@@ -513,44 +567,174 @@ class BybitExecutionClient(LiveExecutionClient):
             if instrument_id:
                 self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
                 bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-                positions = await self._http_account.query_position_info(
-                    bybit_symbol.product_type,
-                    bybit_symbol.raw_symbol,
-                )
-                for position in positions:
-                    position_report = position.parse_to_position_status_report(
-                        account_id=self.account_id,
-                        instrument_id=instrument_id,
-                        report_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
+
+                if (
+                    self._use_spot_position_reports
+                    and bybit_symbol.product_type == BybitProductType.SPOT
+                ):
+                    # Handle SPOT positions from wallet if enabled
+                    spot_reports = await self._generate_spot_position_reports_from_wallet(
+                        instrument_id,
                     )
-                    self._log.debug(f"Received {position_report}")
-                    reports.append(position_report)
-            else:
-                self._log.debug("Requesting PositionStatusReports...")
-                for product_type in self._product_types:
-                    if product_type == BybitProductType.SPOT:
-                        continue  # No positions on spot
-                    positions = await self._http_account.query_position_info(product_type)
+                    reports.extend(spot_reports)
+                elif bybit_symbol.product_type in (
+                    BybitProductType.LINEAR,
+                    BybitProductType.OPTION,
+                ):
+                    # Only LINEAR and OPTION are supported by Bybit position endpoint
+                    positions = await self._http_account.query_position_info(
+                        bybit_symbol.product_type,
+                        bybit_symbol.raw_symbol,
+                    )
                     for position in positions:
-                        symbol = position.symbol
-                        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
                         position_report = position.parse_to_position_status_report(
                             account_id=self.account_id,
-                            instrument_id=bybit_symbol.to_instrument_id(),
+                            instrument_id=instrument_id,
                             report_id=UUID4(),
                             ts_init=self._clock.timestamp_ns(),
                         )
                         self._log.debug(f"Received {position_report}")
                         reports.append(position_report)
+                else:
+                    # INVERSE or SPOT (without use_spot_position_reports) not supported
+                    self._log.debug(
+                        f"No position reports available for {instrument_id} "
+                        f"({bybit_symbol.product_type.value} not supported)",
+                    )
+            else:
+                self._log.debug("Requesting PositionStatusReports...")
+                for product_type in self._product_types:
+                    if product_type == BybitProductType.SPOT:
+                        # Handle SPOT positions from wallet if enabled
+                        if self._use_spot_position_reports:
+                            spot_reports = await self._generate_spot_position_reports_from_wallet()
+                            reports.extend(spot_reports)
+                    elif product_type in (BybitProductType.LINEAR, BybitProductType.OPTION):
+                        # Only LINEAR and OPTION are supported by Bybit position endpoint
+                        positions = await self._http_account.query_position_info(product_type)
+                        for position in positions:
+                            symbol = position.symbol
+                            bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+                            position_report = position.parse_to_position_status_report(
+                                account_id=self.account_id,
+                                instrument_id=bybit_symbol.to_instrument_id(),
+                                report_id=UUID4(),
+                                ts_init=self._clock.timestamp_ns(),
+                            )
+                            self._log.debug(f"Received {position_report}")
+                            reports.append(position_report)
+                    else:
+                        # INVERSE not supported by position endpoint
+                        self._log.debug(
+                            f"Skipping position query for {product_type.value} "
+                            f"(not supported by Bybit position endpoint)",
+                        )
         except BybitError as e:
             self._log.error(f"Failed to generate PositionReports: {e}")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionReport{plural}")
+        self._log.info(f"Received {len_reports} PositionReport{plural}")
 
         return reports
+
+    async def _generate_spot_position_reports_from_wallet(
+        self,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]:
+        reports: list[PositionStatusReport] = []
+
+        try:
+            (balances, ts_event) = await self._http_account.query_wallet_balance()
+
+            # Build lookup table of wallet balances by coin
+            wallet_by_coin: dict[str, Decimal] = {}
+
+            for wallet in balances:
+                for coin_balance in wallet.coin:
+                    wallet_balance = Decimal(coin_balance.walletBalance or "0")
+                    spot_borrow = Decimal(coin_balance.spotBorrow or "0")
+                    actual_balance = wallet_balance - spot_borrow
+                    wallet_by_coin[coin_balance.coin] = (
+                        wallet_by_coin.get(coin_balance.coin, Decimal(0)) + actual_balance
+                    )
+
+            if instrument_id:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is None:
+                    raise ValueError(
+                        f"Cannot generate SPOT position report: instrument not found for {instrument_id}",
+                    )
+
+                coin = instrument.base_currency.code
+                wallet_balance = wallet_by_coin.get(coin, Decimal(0))
+
+                report = self._build_spot_position_report_from_wallet_balance(
+                    instrument,
+                    wallet_balance,
+                    ts_event,
+                )
+                reports.append(report)
+            else:
+                # instrument_id not specified: generate reports for loaded SPOT instruments
+                # based on wallet balances
+                for loaded in self._instrument_provider.get_all().values():
+                    # Only consider SPOT instruments
+                    if not loaded.id.symbol.value.endswith("-SPOT"):
+                        continue
+
+                    coin = loaded.base_currency.code
+                    wallet_balance = wallet_by_coin.get(coin, Decimal(0))
+                    if wallet_balance == 0:
+                        continue
+
+                    report = self._build_spot_position_report_from_wallet_balance(
+                        loaded,
+                        wallet_balance,
+                        ts_event,
+                    )
+                    reports.append(report)
+        except BybitError as e:
+            self._log.error(f"Failed to generate SPOT position report(s) from wallet: {e}")
+
+        for report in reports:
+            self._log.debug(f"Generated SPOT position report from wallet: {report}")
+
+        return reports
+
+    def _build_spot_position_report_from_wallet_balance(
+        self,
+        instrument,
+        wallet_balance: Decimal,
+        ts_event: int,
+    ) -> PositionStatusReport:
+        position_side = PositionSide.LONG if wallet_balance > 0 else PositionSide.SHORT
+        abs_balance = abs(wallet_balance)
+
+        try:
+            quantity = instrument.make_qty(str(abs_balance), round_down=True)
+        except ValueError:
+            quantity = Quantity.zero(instrument.size_precision)
+
+        if quantity == 0:
+            return PositionStatusReport.create_flat(
+                account_id=self.account_id,
+                instrument_id=instrument.id,
+                size_precision=instrument.size_precision,
+                ts_init=self._clock.timestamp_ns(),
+                report_id=UUID4(),
+            )
+
+        return PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            position_side=position_side,
+            quantity=quantity,
+            avg_px_open=None,
+            report_id=UUID4(),
+            ts_last=millis_to_nanos(ts_event),
+            ts_init=self._clock.timestamp_ns(),
+        )
 
     def _get_cached_instrument_id(
         self,
@@ -605,12 +789,7 @@ class BybitExecutionClient(LiveExecutionClient):
         return active_symbols
 
     async def _update_account_state(self) -> None:
-        # positions = await self._http_account.query_position_info()
         (balances, ts_event) = await self._http_account.query_wallet_balance()
-
-        if balances:
-            self._log.info("Bybit API key authenticated", LogColor.GREEN)
-            self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
 
         for balance in balances:
             balances = balance.parse_to_account_balance()
@@ -623,7 +802,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(ts_event),
                 )
             except Exception as e:
-                self._log.exception("Failed to generate AccountState", e)
+                self._log.exception("Failed to update account state", e)
 
         # Set Leverages
         if self._futures_leverages:
@@ -694,7 +873,6 @@ class BybitExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _query_account(self, _command: QueryAccount) -> None:
-        # Specific account ID (sub account) not yet supported
         await self._update_account_state()
 
     async def _cancel_order(self, command: CancelOrder) -> None:
@@ -951,7 +1129,7 @@ class BybitExecutionClient(LiveExecutionClient):
             await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
-                self._submit_order_methods[order.order_type],  # type: ignore[arg-type]
+                self._submit_order_methods[order.order_type],
                 order,
                 is_leverage,
             )
@@ -1222,11 +1400,27 @@ class BybitExecutionClient(LiveExecutionClient):
             is_leverage=is_leverage,
         )
 
-    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
+    async def _submit_trailing_stop_market(
+        self,
+        order: TrailingStopMarketOrder,
+        is_leverage: bool = False,
+    ) -> None:
+        # Note: is_leverage parameter is accepted to match the method signature expected by
+        # the retry manager, but is not passed to Bybit's set_trading_stop endpoint since
+        # trailing stops are position-level operations and leverage is already set on the position
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        active_price = str(order.activation_price) if order.activation_price else None
+
+        if order.trigger_price is not None:
+            self._log.warning(
+                f"Bybit trailing stops do not support `trigger_price` - will be ignored: "
+                f"only `activation_price` and `trailing_offset` are used for {order.client_order_id}",
+            )
+
         self._pending_trailing_stops[order.client_order_id] = order
+
         await self._http_account.set_trading_stop(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
@@ -1235,6 +1429,7 @@ class BybitExecutionClient(LiveExecutionClient):
             tpsl_mode=BybitTpSlMode.FULL,
             trigger_type=trigger_type,
             trailing_offset=str(order.trailing_offset),
+            active_price=active_price,
         )
 
     def _handle_ws_message_trade(self, raw: bytes) -> None:
@@ -1272,6 +1467,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_account_execution_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_execution_update.decode(raw)
+
             for trade in msg.data:
                 self._process_execution(trade)
         except Exception as e:
@@ -1280,12 +1476,13 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_account_execution_fast_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_execution_fast_update.decode(raw)
+
             for trade in msg.data:
                 self._process_execution(trade)
         except Exception as e:
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
-    def _process_execution(
+    def _process_execution(  # noqa: C901 (too complex)
         self,
         execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
     ) -> None:
@@ -1332,6 +1529,9 @@ class BybitExecutionClient(LiveExecutionClient):
 
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
+            if self._ignore_uncached_instrument_executions:
+                return
+
             raise ValueError(
                 f"Cannot handle trade event: instrument {instrument_id} not found",
             )
@@ -1485,15 +1685,26 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.error(f"Cannot find {report.client_order_id!r}")
                     return
 
-                if bybit_order.orderStatus == BybitOrderStatus.REJECTED:
-                    self.generate_order_rejected(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        reason=bybit_order.rejectReason,
-                        ts_event=report.ts_last,
-                        due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
-                    )
+                # Use parsed status from report (parser handles Rejected+fills -> Canceled remapping)
+                if report.order_status == OrderStatus.REJECTED:
+                    if order.status == OrderStatus.PENDING_UPDATE:
+                        self.generate_order_modify_rejected(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            venue_order_id=report.venue_order_id,
+                            reason=bybit_order.rejectReason,
+                            ts_event=report.ts_last,
+                        )
+                    else:
+                        self.generate_order_rejected(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            reason=bybit_order.rejectReason,
+                            ts_event=report.ts_last,
+                            due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
+                        )
                 elif bybit_order.orderStatus == BybitOrderStatus.NEW:
                     if order.status == OrderStatus.PENDING_UPDATE:
                         self.generate_order_updated(
@@ -1506,7 +1717,8 @@ class BybitExecutionClient(LiveExecutionClient):
                             trigger_price=report.trigger_price,
                             ts_event=report.ts_last,
                         )
-                    else:
+                    elif not order.is_closed:
+                        # Only generate accepted if order is not in a terminal state
                         self.generate_order_accepted(
                             strategy_id=strategy_id,
                             instrument_id=report.instrument_id,
@@ -1514,10 +1726,7 @@ class BybitExecutionClient(LiveExecutionClient):
                             venue_order_id=report.venue_order_id,
                             ts_event=report.ts_last,
                         )
-                elif bybit_order.orderStatus in (
-                    BybitOrderStatus.CANCELED,
-                    BybitOrderStatus.DEACTIVATED,
-                ):
+                elif report.order_status == OrderStatus.CANCELED:
                     self.generate_order_canceled(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,

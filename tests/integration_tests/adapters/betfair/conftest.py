@@ -206,7 +206,15 @@ async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 
 @pytest_asyncio.fixture()
 async def socket_server():
-    server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
+    try:
+        server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
+    except (PermissionError, OSError) as e:
+        if isinstance(e, PermissionError) or getattr(e, "errno", None) in {1, 13}:
+            pytest.skip("Unable to create local socket server in restricted environment.")
+            raise
+        raise
+    if not server.sockets:
+        pytest.skip("Unable to create local socket server in restricted environment.")
     addr = server.sockets[0].getsockname()
     await server.start_serving()
 
@@ -233,7 +241,15 @@ async def fixture_closing_socket_server():
 
         await write()
 
-    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    try:
+        server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    except (PermissionError, OSError) as e:
+        if isinstance(e, PermissionError) or getattr(e, "errno", None) in {1, 13}:
+            pytest.skip("Unable to create local socket server in restricted environment.")
+            raise
+        raise
+    if not server.sockets:
+        pytest.skip("Unable to create local socket server in restricted environment.")
     addr = server.sockets[0].getsockname()
 
     try:

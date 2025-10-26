@@ -13,12 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Quote cache for reconstructing BitMEX WebSocket partial updates.
+
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId, types::price::Price};
+use nautilus_model::{
+    data::quote::QuoteTick,
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+    types::price::Price,
+};
 
 use super::{messages::BitmexQuoteMsg, parse::parse_quote_msg};
-use crate::common::parse::{parse_contracts_quantity, parse_instrument_id};
+use crate::common::parse::parse_contracts_quantity;
 
 /// Maintains quote state for each instrument to handle partial quote updates.
 ///
@@ -37,16 +44,30 @@ impl QuoteCache {
         }
     }
 
+    /// Clears all cached quotes, typically used after reconnection.
+    pub fn clear(&mut self) {
+        self.last_quotes.clear();
+    }
+
+    /// Processes an incoming quote message, emitting a complete quote when possible.
     pub fn process(
         &mut self,
         msg: &BitmexQuoteMsg,
-        price_precision: u8,
+        instrument: &InstrumentAny,
         ts_init: UnixNanos,
     ) -> Option<QuoteTick> {
-        let instrument_id = parse_instrument_id(msg.symbol);
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
 
         let quote = if let Some(last_quote) = self.last_quotes.get(&instrument_id) {
-            Some(parse_quote_msg(msg, last_quote, price_precision, ts_init))
+            Some(parse_quote_msg(
+                msg,
+                last_quote,
+                instrument,
+                instrument_id,
+                price_precision,
+                ts_init,
+            ))
         } else {
             match (msg.bid_price, msg.ask_price, msg.bid_size, msg.ask_size) {
                 (Some(bid_price), Some(ask_price), Some(bid_size), Some(ask_size)) => {
@@ -54,8 +75,8 @@ impl QuoteCache {
                         instrument_id,
                         Price::new(bid_price, price_precision),
                         Price::new(ask_price, price_precision),
-                        parse_contracts_quantity(bid_size),
-                        parse_contracts_quantity(ask_size),
+                        parse_contracts_quantity(bid_size, instrument),
+                        parse_contracts_quantity(ask_size, instrument),
                         UnixNanos::from(msg.timestamp),
                         ts_init,
                     ))
@@ -73,13 +94,50 @@ impl QuoteCache {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use nautilus_model::types::quantity::Quantity;
+    use nautilus_model::{
+        identifiers::Symbol,
+        instruments::currency_pair::CurrencyPair,
+        types::{Currency, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::common::parse::parse_instrument_id;
+
+    fn make_test_instrument(price_precision: u8, size_precision: u8) -> InstrumentAny {
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            Symbol::new("XBTUSD"),
+            Currency::BTC(),
+            Currency::USD(),
+            price_precision,
+            size_precision,
+            Price::new(1.0, price_precision),
+            Quantity::new(1.0, size_precision),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
 
     #[rstest]
     fn test_quote_cache_new() {
@@ -101,7 +159,8 @@ mod tests {
         };
 
         let ts_init = UnixNanos::default();
-        let quote = cache.process(&msg, 1, ts_init);
+        let instrument = make_test_instrument(1, 0);
+        let quote = cache.process(&msg, &instrument, ts_init);
 
         assert!(quote.is_some());
         let quote = quote.unwrap();
@@ -127,7 +186,8 @@ mod tests {
         };
 
         let ts_init = UnixNanos::default();
-        let quote = cache.process(&msg, 1, ts_init);
+        let instrument = make_test_instrument(1, 0);
+        let quote = cache.process(&msg, &instrument, ts_init);
 
         // Should return None for incomplete first quote
         assert!(quote.is_none());
@@ -148,7 +208,8 @@ mod tests {
         };
 
         let ts_init = UnixNanos::default();
-        let first_quote = cache.process(&complete_msg, 1, ts_init).unwrap();
+        let instrument = make_test_instrument(1, 0);
+        let first_quote = cache.process(&complete_msg, &instrument, ts_init).unwrap();
 
         // Now process a partial quote with only bid update
         let partial_msg = BitmexQuoteMsg {
@@ -160,7 +221,7 @@ mod tests {
             timestamp: Utc::now(),
         };
 
-        let quote = cache.process(&partial_msg, 1, ts_init);
+        let quote = cache.process(&partial_msg, &instrument, ts_init);
 
         assert!(quote.is_some());
         let quote = quote.unwrap();
@@ -188,7 +249,8 @@ mod tests {
         };
 
         let ts_init = UnixNanos::default();
-        let quote = cache.process(&msg, 1, ts_init).unwrap();
+        let instrument = make_test_instrument(1, 0);
+        let quote = cache.process(&msg, &instrument, ts_init).unwrap();
 
         let instrument_id = parse_instrument_id("XBTUSD".into());
         assert!(cache.last_quotes.contains_key(&instrument_id));

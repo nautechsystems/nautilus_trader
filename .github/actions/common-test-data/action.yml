@@ -4,13 +4,21 @@ description: Common test data caching
 runs:
   using: "composite"
   steps:
-      - name: Cached test data
-        id: cached-testdata-large
-        # https://github.com/actions/cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: tests/test_data/large
-          key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: large-files-
-          save-always: true
-          enableCrossOsArchive: true
+    - name: Restore test data from cache
+      id: cached-testdata-large
+      # https://github.com/actions/cache/tree/main/restore
+      uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: tests/test_data/large
+        key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        restore-keys: large-files-
+        enableCrossOsArchive: true
+
+    - name: Save test data to cache
+      if: ${{ always() && steps.cached-testdata-large.outputs.cache-hit != 'true' }}
+      # https://github.com/actions/cache/tree/main/save
+      uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: tests/test_data/large
+        key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        enableCrossOsArchive: true

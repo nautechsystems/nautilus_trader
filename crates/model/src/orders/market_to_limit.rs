@@ -18,7 +18,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use anyhow;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
@@ -448,7 +447,7 @@ impl Order for MarketToLimitOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {

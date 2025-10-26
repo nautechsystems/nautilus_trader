@@ -147,7 +147,7 @@ impl OrderRejected {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderRejected))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
@@ -160,6 +160,7 @@ impl OrderRejected {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        dict.set_item("due_post_only", self.due_post_only)?;
         Ok(dict.into())
     }
 }

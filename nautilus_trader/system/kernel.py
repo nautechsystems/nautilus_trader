@@ -18,6 +18,7 @@ import concurrent.futures
 import platform
 import signal
 import socket
+import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -88,10 +89,13 @@ from nautilus_trader.trading.trader import Trader
 
 try:
     import uvloop
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:  # pragma: no cover
     uvloop = None
+
+# Only set uvloop policy if not running in test environment,
+# pytest-asyncio manages the event loop policy for tests via event_loop_policy fixture.
+if uvloop is not None and "pytest" not in sys.modules:
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
 class NautilusKernel:
@@ -125,7 +129,7 @@ class NautilusKernel:
 
     """
 
-    def __init__(  # noqa (too complex)
+    def __init__(  # noqa: C901 (too complex)
         self,
         name: str,
         config: NautilusKernelConfig,
@@ -222,6 +226,8 @@ class NautilusKernel:
                         component=name,
                     )
                 else:
+                    set_logging_pyo3(False)
+
                     # Initialize logging for sync Rust and Python
                     self._log_guard = init_logging(
                         trader_id=self._trader_id,
@@ -306,7 +312,7 @@ class NautilusKernel:
                 instance_id=self._instance_id,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
                 config=config.cache,
@@ -327,7 +333,7 @@ class NautilusKernel:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                timestamps_as_str=True,  # Hard-coded for now
+                timestamps_as_str=True,  # Hardcoded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
 
@@ -481,9 +487,6 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if self._load_state:
-            self._trader.load()
-
         # Add controller
         self._controller: Controller | None = None
 
@@ -510,6 +513,7 @@ class NautilusKernel:
                     path=catalog_config.path,
                     fs_protocol=catalog_config.fs_protocol,
                     fs_storage_options=catalog_config.fs_storage_options,
+                    fs_rust_storage_options=catalog_config.fs_rust_storage_options,
                 )
                 used_catalog_name = catalog_config.name
 
@@ -530,6 +534,9 @@ class NautilusKernel:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
 
+        if self._load_state:
+            self._trader.load()
+
         # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
@@ -539,7 +546,8 @@ class NautilusKernel:
         self._is_running = False
         self._is_stopping = False
 
-        build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
+        build_time_ns = time.time_ns() - ts_build
+        build_time_ms = nanos_to_millis(build_time_ns) if build_time_ns > 0 else 0
         self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
@@ -1100,6 +1108,11 @@ class NautilusKernel:
         Calling this method multiple times has the same effect as calling it once (it is
         idempotent). Once called, it cannot be reversed, and no other methods should be
         called on this instance.
+
+        Notes
+        -----
+        The log guard is intentionally not disposed to support running multiple engines
+        sequentially without re-initializing logging.
 
         """
         self._stop_engines()

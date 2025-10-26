@@ -13,13 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
-use std::env;
+use std::str::FromStr;
 
 use nautilus_bitmex::http::client::BitmexHttpClient;
+use nautilus_model::identifiers::InstrumentId;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -28,19 +25,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let api_key = env::var("BITMEX_API_KEY").expect("environment variable should be set");
-    let api_secret = env::var("BITMEX_API_SECRET").expect("environment variable should be set");
-    let client = BitmexHttpClient::new(
-        None,
-        Some(api_key),
-        Some(api_secret),
-        false,
-        None,
-        None, // max_retries
-        None, // retry_delay_ms
-        None, // retry_delay_max_ms
-    )
-    .expect("Failed to create HTTP client");
+    let client = BitmexHttpClient::from_env()?;
+
+    let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX")?;
+    let instrument = client.request_instrument(instrument_id).await?;
+
+    match instrument {
+        Some(inst) => tracing::info!(instrument = ?inst, "Retrieved instrument"),
+        None => tracing::warn!("Instrument XBTUSD.BITMEX not returned from BitMEX"),
+    }
 
     Ok(())
 }

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.analysis.statistics.long_ratio import LongRatio
+from nautilus_trader.analysis import LongRatio
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -103,7 +103,7 @@ class TestLongRatioPortfolioStatistics:
         result = stat.calculate_from_positions(data)
 
         # Assert
-        assert result == "1.00"
+        assert result == 1.0
 
     def test_calculate_given_one_long_one_short_returns_expected(self):
         # Arrange
@@ -149,4 +149,4 @@ class TestLongRatioPortfolioStatistics:
         result = stat.calculate_from_positions(data)
 
         # Assert
-        assert result == "0.50"
+        assert result == 0.5

@@ -467,6 +467,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         reqExecutions().
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_exec_details_end,
+            req_id=reqId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def updateMktDepth(
         self,
@@ -863,7 +868,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str) -> None:
+    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallenge: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
     def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str) -> None:

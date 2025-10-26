@@ -42,6 +42,7 @@ use crate::data::{
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[pymethods]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
 impl DataType {
     #[new]
     #[pyo3(signature = (type_name, metadata=None))]
@@ -75,7 +76,7 @@ impl DataType {
 ///
 /// # Panics
 ///
-/// This function will panic if the `PyCapsule` creation fails, which may occur if
+/// This function panics if the `PyCapsule` creation fails, which may occur if
 /// there are issues with memory allocation or if the `Data` instance cannot be
 /// properly encapsulated.
 ///
@@ -87,7 +88,7 @@ impl DataType {
 /// encapsulated `Data` safely, especially when converting the capsule back to a
 /// Rust data structure.
 #[must_use]
-pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
+pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     // Register a destructor which simply drops the `Data` value once the
     // capsule is released by Python.
     let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})
@@ -111,9 +112,9 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// This function is unsafe as it involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 /// Incorrect usage can lead to memory corruption or undefined behavior.
+#[cfg(feature = "ffi")]
 #[pyfunction]
 #[allow(unsafe_code)]
-#[cfg(feature = "ffi")]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     let capsule: &Bound<'_, PyCapsule> = capsule
         .downcast::<PyCapsule>()
@@ -124,8 +125,8 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     drop(data);
 }
 
-#[pyfunction]
 #[cfg(not(feature = "ffi"))]
+#[pyfunction]
 /// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
 ///
 /// # Panics

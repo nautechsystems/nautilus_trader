@@ -308,3 +308,13 @@ pub fn roc_10() -> RateOfChange {
 pub fn fuzzy_candlesticks_10() -> FuzzyCandlesticks {
     FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3)
 }
+
+#[fixture]
+pub fn fuzzy_candlesticks_1() -> FuzzyCandlesticks {
+    FuzzyCandlesticks::new(1, 0.1, 0.15, 0.2, 0.3)
+}
+
+#[fixture]
+pub fn fuzzy_candlesticks_3() -> FuzzyCandlesticks {
+    FuzzyCandlesticks::new(3, 0.1, 0.15, 0.2, 0.3)
+}

@@ -585,15 +585,15 @@ impl OrderEvent for OrderInitialized {
 impl From<OrderInitialized> for OrderAny {
     fn from(order: OrderInitialized) -> Self {
         match order.order_type {
-            OrderType::Limit => OrderAny::Limit(order.into()),
-            OrderType::Market => OrderAny::Market(order.into()),
-            OrderType::StopMarket => OrderAny::StopMarket(order.into()),
-            OrderType::StopLimit => OrderAny::StopLimit(order.into()),
-            OrderType::LimitIfTouched => OrderAny::LimitIfTouched(order.into()),
-            OrderType::TrailingStopLimit => OrderAny::TrailingStopLimit(order.into()),
-            OrderType::TrailingStopMarket => OrderAny::TrailingStopMarket(order.into()),
-            OrderType::MarketToLimit => OrderAny::MarketToLimit(order.into()),
-            OrderType::MarketIfTouched => OrderAny::MarketIfTouched(order.into()),
+            OrderType::Limit => Self::Limit(order.into()),
+            OrderType::Market => Self::Market(order.into()),
+            OrderType::StopMarket => Self::StopMarket(order.into()),
+            OrderType::StopLimit => Self::StopLimit(order.into()),
+            OrderType::LimitIfTouched => Self::LimitIfTouched(order.into()),
+            OrderType::TrailingStopLimit => Self::TrailingStopLimit(order.into()),
+            OrderType::TrailingStopMarket => Self::TrailingStopMarket(order.into()),
+            OrderType::MarketToLimit => Self::MarketToLimit(order.into()),
+            OrderType::MarketIfTouched => Self::MarketIfTouched(order.into()),
         }
     }
 }

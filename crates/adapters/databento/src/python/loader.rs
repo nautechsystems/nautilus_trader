@@ -90,7 +90,7 @@ impl DatabentoDataLoader {
         py: Python,
         filepath: PathBuf,
         use_exchange_as_venue: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .load_instruments(&filepath, use_exchange_as_venue)
             .map_err(to_pyvalue_err)?;
@@ -128,7 +128,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::MboMsg>(
                 &filepath,
@@ -162,7 +162,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -191,7 +191,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::Mbp1Msg>(
                 &filepath,
@@ -225,7 +225,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -254,7 +254,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::Cmbp1Msg>(
                 &filepath,
@@ -288,7 +288,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -316,7 +316,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -344,7 +344,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -372,7 +372,7 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
@@ -407,7 +407,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         timestamp_on_close: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let iter = self
             .read_records::<dbn::OhlcvMsg>(
                 &filepath,
@@ -493,7 +493,7 @@ impl DatabentoDataLoader {
 fn exhaust_data_iter_to_pycapsule(
     py: Python,
     iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
-) -> anyhow::Result<PyObject> {
+) -> anyhow::Result<Py<PyAny>> {
     let mut data = Vec::new();
     for result in iter {
         match result {

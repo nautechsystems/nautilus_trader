@@ -140,7 +140,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        OrderBookDelta::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.order.price.precision,
             self.order.size.precision,
@@ -194,11 +194,15 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        assert_eq!(
-            price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    price_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
@@ -300,7 +304,7 @@ mod tests {
 
         assert_eq!(schema_map.get("action").unwrap(), "UInt8");
         assert_eq!(schema_map.get("side").unwrap(), "UInt8");
-        assert_eq!(*schema_map.get("price").unwrap(), fixed_size_binary.clone());
+        assert_eq!(*schema_map.get("price").unwrap(), fixed_size_binary);
         assert_eq!(*schema_map.get("size").unwrap(), fixed_size_binary);
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
         assert_eq!(schema_map.get("flags").unwrap(), "UInt8");

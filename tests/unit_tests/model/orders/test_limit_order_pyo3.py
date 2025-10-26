@@ -40,7 +40,7 @@ def test_initialize_limit_order():
 
     # Assert
     assert order.order_type == OrderType.LIMIT
-    assert order.expire_time == 0
+    assert order.expire_time is None  # GTC orders don't have expiry
     assert order.status == OrderStatus.INITIALIZED
     assert order.time_in_force == TimeInForce.GTC
     assert order.has_price

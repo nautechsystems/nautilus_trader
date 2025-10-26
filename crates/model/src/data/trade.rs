@@ -555,10 +555,10 @@ mod tests {
     fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
         use pyo3::{IntoPyObjectExt, Python};
 
-        pyo3::prepare_freethreaded_python();
         let trade = stub_trade_ethusdt_buyer;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let tick_pyobject = trade.into_py_any(py).unwrap();
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);

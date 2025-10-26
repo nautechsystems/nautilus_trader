@@ -21,13 +21,7 @@ use std::{
 };
 
 use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
-use pyo3::{
-    IntoPyObjectExt,
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyFloat, PyInt, PyString, PyTuple},
-};
+use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::types::{Currency, Money, money::MoneyRaw};
@@ -39,36 +33,46 @@ impl Money {
         Self::new_checked(amount, currency).map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
-        self.raw = py_tuple
-            .get_item(0)?
-            .downcast::<PyInt>()?
-            .extract::<MoneyRaw>()?;
-        let currency_code: String = py_tuple
-            .get_item(1)?
-            .downcast::<PyString>()?
-            .extract::<String>()?;
-        self.currency = Currency::from_str(currency_code.as_str()).map_err(to_pyvalue_err)?;
-        Ok(())
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let from_raw = py.get_type::<Self>().getattr("from_raw")?;
+        let args = (self.raw, self.currency).into_py_any(py)?;
+        (from_raw, args).into_py_any(py)
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        (self.raw, self.currency.code.to_string()).into_py_any(py)
+    fn __richcmp__(
+        &self,
+        other: &Bound<'_, PyAny>,
+        op: CompareOp,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        if let Ok(other_money) = other.extract::<Self>() {
+            if self.currency != other_money.currency {
+                return Err(to_pyvalue_err(format!(
+                    "Cannot compare Money with different currencies: {} vs {}",
+                    self.currency.code, other_money.currency.code
+                )));
+            }
+            let result = match op {
+                CompareOp::Eq => self.eq(&other_money),
+                CompareOp::Ne => self.ne(&other_money),
+                CompareOp::Ge => self.ge(&other_money),
+                CompareOp::Gt => self.gt(&other_money),
+                CompareOp::Le => self.le(&other_money),
+                CompareOp::Lt => self.lt(&other_money),
+            };
+            result.into_py_any(py)
+        } else {
+            Ok(py.NotImplemented())
+        }
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
     }
 
-    #[staticmethod]
-    fn _safe_constructor() -> Self {
-        Self::new(0.0, Currency::AUD())
-    }
-
-    fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract::<f64>()?;
             (self.as_f64() + other_float).into_py_any(py)
@@ -84,7 +88,7 @@ impl Money {
         }
     }
 
-    fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
@@ -100,7 +104,7 @@ impl Money {
         }
     }
 
-    fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
@@ -116,7 +120,7 @@ impl Money {
         }
     }
 
-    fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
@@ -132,7 +136,7 @@ impl Money {
         }
     }
 
-    fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() * other_float).into_py_any(py)
@@ -148,7 +152,7 @@ impl Money {
         }
     }
 
-    fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float * self.as_f64()).into_py_any(py)
@@ -164,7 +168,7 @@ impl Money {
         }
     }
 
-    fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).into_py_any(py)
@@ -180,7 +184,7 @@ impl Money {
         }
     }
 
-    fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).into_py_any(py)
@@ -196,7 +200,7 @@ impl Money {
         }
     }
 
-    fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).floor().into_py_any(py)
@@ -214,7 +218,7 @@ impl Money {
         }
     }
 
-    fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).floor().into_py_any(py)
@@ -232,7 +236,7 @@ impl Money {
         }
     }
 
-    fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() % other_float).into_py_any(py)
@@ -248,7 +252,7 @@ impl Money {
         }
     }
 
-    fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float % self.as_f64()).into_py_any(py)
@@ -290,34 +294,6 @@ impl Money {
     fn __round__(&self, ndigits: Option<u32>) -> Decimal {
         self.as_decimal()
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)
-    }
-
-    fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        if let Ok(other_money) = other.extract::<Self>(py) {
-            if self.currency != other_money.currency {
-                return Err(PyErr::new::<PyValueError, _>(
-                    "Cannot compare `Money` with different currencies",
-                ));
-            }
-
-            let result = match op {
-                CompareOp::Eq => self.eq(&other_money),
-                CompareOp::Ne => self.ne(&other_money),
-                CompareOp::Ge => self.ge(&other_money),
-                CompareOp::Gt => self.gt(&other_money),
-                CompareOp::Le => self.le(&other_money),
-                CompareOp::Lt => self.lt(&other_money),
-            };
-            result.into_py_any(py)
-        } else {
-            Ok(py.NotImplemented())
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
     }
 
     fn __repr__(&self) -> String {

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import platform
 import sys
 from collections.abc import Callable
@@ -38,10 +37,13 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
     reason="Failing on Windows with Python 3.12",
 )
 class TestBetfairSockets:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
+
+        yield
 
     def _build_stream_client(
         self,

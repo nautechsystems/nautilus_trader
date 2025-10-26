@@ -34,7 +34,7 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("ES.c.0.GLBX"),  # TODO: Continuous contracts only work with GLBX for now
-    InstrumentId.from_str("ESU5.XCME"),
+    InstrumentId.from_str("ESZ5.XCME"),
     # InstrumentId.from_str("ES.FUT.XCME"),
     # InstrumentId.from_str("CL.FUT.NYMEX"),
     # InstrumentId.from_str("LO.OPT.NYMEX"),
@@ -73,7 +73,9 @@ node = TradingNode(config=config_node)
 config_tester = DataTesterConfig(
     instrument_ids=instrument_ids,
     bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-SECOND-LAST-EXTERNAL")],
+    # bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-DAY-LAST-EXTERNAL")],
     # subscribe_params={"schema": "bbo-1s"},
+    # subscribe_params={"schema": "ohlcv-eod"},
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
     # subscribe_book_at_interval=True,

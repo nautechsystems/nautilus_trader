@@ -94,7 +94,7 @@ impl TardisMachineClient {
         &self,
         instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
-        callback: PyObject,
+        callback: Py<PyAny>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let map = if instruments.is_empty() {
@@ -170,7 +170,7 @@ impl TardisMachineClient {
                 }
             }
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))
                         .expect("Invalid `ExactSizeIterator`");
@@ -184,7 +184,7 @@ impl TardisMachineClient {
         &self,
         instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<StreamNormalizedRequestOptions>,
-        callback: PyObject,
+        callback: Py<PyAny>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instrument_map: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
@@ -237,7 +237,7 @@ pub fn py_run_tardis_machine_replay(
 
 async fn handle_python_stream<S>(
     stream: S,
-    callback: PyObject,
+    callback: Py<PyAny>,
     instrument: Option<Arc<TardisInstrumentMiniInfo>>,
     instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
 ) where
@@ -259,7 +259,7 @@ async fn handle_python_stream<S>(
 
                 if let Some(info) = info.clone() {
                     if let Some(data) = parse_tardis_ws_message(msg.clone(), info.clone()) {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             let py_obj = data_to_pycapsule(py, data);
                             call_python(py, &callback, py_obj);
                         });
@@ -284,7 +284,7 @@ async fn handle_python_stream<S>(
                         };
 
                         if should_emit {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let py_obj = funding_rate.into_py_any_unwrap(py);
                                 call_python(py, &callback, py_obj);
                             });
@@ -300,7 +300,7 @@ async fn handle_python_stream<S>(
     }
 }
 
-fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

@@ -18,17 +18,15 @@ use std::{env, fmt, fs, path::Path};
 use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    common::consts::HyperliquidNetwork,
-    http::error::{Error, Result},
-};
+use crate::http::error::{Error, Result};
 
 /// Represents a secure wrapper for EVM private key with zeroization on drop.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct EvmPrivateKey {
     #[zeroize(skip)]
     formatted_key: String, // Keep the formatted version for display
-    raw_bytes: Vec<u8>, // The actual key bytes that get zeroized
+    #[zeroize(skip)] // Skip zeroization to allow safe cloning
+    raw_bytes: Vec<u8>, // The actual key bytes
 }
 
 impl EvmPrivateKey {
@@ -151,15 +149,15 @@ impl fmt::Display for VaultAddress {
 pub struct Secrets {
     pub private_key: EvmPrivateKey,
     pub vault_address: Option<VaultAddress>,
-    pub network: HyperliquidNetwork,
+    pub is_testnet: bool,
 }
 
 impl fmt::Debug for Secrets {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Secrets")
+        f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
             .field("vault_address", &self.vault_address)
-            .field("network", &self.network)
+            .field("is_testnet", &self.is_testnet)
             .finish()
     }
 }
@@ -168,26 +166,65 @@ impl Secrets {
     /// Load secrets from environment variables
     ///
     /// Expected environment variables:
-    /// - `HYPERLIQUID_PK`: EVM private key (required)
-    /// - `HYPERLIQUID_VAULT`: Vault address (optional)
-    /// - `HYPERLIQUID_NET`: Network (optional, defaults to mainnet)
+    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required for mainnet)
+    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required for testnet)
+    /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
+    /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
+    ///
+    /// The method will first try to load testnet credentials. If not found, it will fall back to mainnet.
     pub fn from_env() -> Result<Self> {
-        let private_key_str = env::var("HYPERLIQUID_PK")
-            .map_err(|_| Error::bad_request("HYPERLIQUID_PK environment variable not set"))?;
+        // Try testnet credentials first
+        let (private_key_str, vault_env_var, is_testnet) =
+            if let Ok(testnet_pk) = env::var("HYPERLIQUID_TESTNET_PK") {
+                (testnet_pk, "HYPERLIQUID_TESTNET_VAULT", true)
+            } else if let Ok(mainnet_pk) = env::var("HYPERLIQUID_PK") {
+                (mainnet_pk, "HYPERLIQUID_VAULT", false)
+            } else {
+                return Err(Error::bad_request(
+                    "Neither HYPERLIQUID_PK nor HYPERLIQUID_TESTNET_PK environment variable is set",
+                ));
+            };
 
         let private_key = EvmPrivateKey::new(private_key_str)?;
 
-        let vault_address = match env::var("HYPERLIQUID_VAULT") {
+        let vault_address = match env::var(vault_env_var) {
             Ok(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(&addr_str)?),
             _ => None,
         };
 
-        let network = HyperliquidNetwork::from_env();
+        Ok(Self {
+            private_key,
+            vault_address,
+            is_testnet,
+        })
+    }
+
+    /// Create secrets from explicit private key and vault address.
+    ///
+    /// # Arguments
+    ///
+    /// * `private_key_str` - The private key hex string (with or without 0x prefix)
+    /// * `vault_address_str` - Optional vault address for vault trading
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the private key or vault address is invalid.
+    pub fn from_private_key(
+        private_key_str: &str,
+        vault_address_str: Option<&str>,
+        is_testnet: bool,
+    ) -> Result<Self> {
+        let private_key = EvmPrivateKey::new(private_key_str.to_string())?;
+
+        let vault_address = match vault_address_str {
+            Some(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(addr_str)?),
+            _ => None,
+        };
 
         Ok(Self {
             private_key,
             vault_address,
-            network,
+            is_testnet,
         })
     }
 
@@ -234,15 +271,12 @@ impl Secrets {
             None => None,
         };
 
-        let network = match raw.network.as_deref() {
-            Some("testnet") | Some("test") => HyperliquidNetwork::Testnet,
-            _ => HyperliquidNetwork::Mainnet,
-        };
+        let is_testnet = matches!(raw.network.as_deref(), Some("testnet" | "test"));
 
         Ok(Self {
             private_key,
             vault_address,
-            network,
+            is_testnet,
         })
     }
 }
@@ -356,7 +390,7 @@ mod tests {
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_some());
         assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert_eq!(secrets.network, HyperliquidNetwork::Testnet);
+        assert!(secrets.is_testnet);
     }
 
     #[rstest]
@@ -371,7 +405,7 @@ mod tests {
         let secrets = Secrets::from_json(&json).unwrap();
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_none());
-        assert_eq!(secrets.network, HyperliquidNetwork::Mainnet);
+        assert!(!secrets.is_testnet);
     }
 
     #[rstest]
@@ -397,19 +431,19 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore] // This test modifies environment variables - run manually if needed
+    #[ignore = "This test modifies environment variables - run manually if needed"]
     fn test_secrets_from_env() {
         // Note: This test requires setting environment variables manually
         // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
         // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NET=testnet
+        // HYPERLIQUID_NETWORK=testnet
 
         // For now, just test the error case when variables are not set
         match Secrets::from_env() {
             Err(e) => {
                 assert!(
-                    e.to_string().contains("HYPERLIQUID_PK missing")
-                        || e.to_string().contains("invalid EVM private key")
+                    e.to_string().contains("HYPERLIQUID_PK")
+                        || e.to_string().contains("environment variable not set")
                 );
             }
             Ok(_) => {

@@ -15,11 +15,58 @@
 
 //! Core parsing functions.
 
+/// Clamps a length to `u8::MAX` with optional debug logging.
+#[inline]
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
+    if len > u8::MAX as usize {
+        log::debug!(
+            "{} precision clamped from {} to {} for input: {}",
+            context,
+            len,
+            u8::MAX,
+            input
+        );
+    }
+    len.min(u8::MAX as usize) as u8
+}
+
+/// Parses a scientific notation exponent and clamps to `u8::MAX`.
+///
+/// Returns `None` for invalid/empty exponents when `strict` is false,
+/// otherwise panics for malformed input.
+#[inline]
+#[must_use]
+fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
+    if let Ok(exp) = exponent_str.parse::<u64>() {
+        Some(exp.min(u64::from(u8::MAX)) as u8)
+    } else {
+        assert!(
+            !(exponent_str.is_empty() && strict),
+            "Invalid scientific notation format: missing exponent after 'e-'"
+        );
+        // If it's all digits but overflows u64, clamp to u8::MAX
+        if exponent_str.chars().all(|c| c.is_ascii_digit()) {
+            Some(u8::MAX)
+        } else if strict {
+            panic!("Invalid scientific notation exponent '{exponent_str}': must be a valid number")
+        } else {
+            None // Return None for lenient parsing
+        }
+    }
+}
+
 /// Returns the decimal precision inferred from the given string.
+///
+/// For scientific notation with large negative exponents (e.g., "1e-300", "1e-4294967296"),
+/// the precision is clamped to `u8::MAX` (255) since that represents the maximum representable
+/// precision in this system. This handles arbitrarily large exponents without panicking.
 ///
 /// # Panics
 ///
-/// Panics if the input string is not a valid decimal or scientific notation format.
+/// Panics if the input string is malformed (e.g., "1e-" with no exponent value, or non-numeric
+/// exponents like "1e-abc").
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn precision_from_str(s: &str) -> u8 {
@@ -27,17 +74,18 @@ pub fn precision_from_str(s: &str) -> u8 {
 
     // Check for scientific notation
     if s.contains("e-") {
-        // SAFETY: Double unwrap is acceptable here because:
-        // 1. We already validated the string contains "e-"
-        // 2. Function is used only for parsing valid numeric strings in controlled contexts
-        // 3. Alternative error handling would complicate the API for minimal benefit
-        return s.split("e-").last().unwrap().parse::<u8>().unwrap();
+        let exponent_str = s
+            .split("e-")
+            .nth(1)
+            .expect("Invalid scientific notation format: missing exponent after 'e-'");
+
+        return parse_scientific_exponent(exponent_str, true)
+            .expect("parse_scientific_exponent should return Some in strict mode");
     }
 
     // Check for decimal precision
     if let Some((_, decimal_part)) = s.split_once('.') {
-        // Clamp decimal precision to u8::MAX for very long decimal strings
-        decimal_part.len().min(u8::MAX as usize) as u8
+        clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
     } else {
         0
     }
@@ -45,6 +93,9 @@ pub fn precision_from_str(s: &str) -> u8 {
 
 /// Returns the minimum increment precision inferred from the given string,
 /// ignoring trailing zeros.
+///
+/// For scientific notation with large negative exponents (e.g., "1e-300"), the precision
+/// is clamped to `u8::MAX` (255) to match the behavior of `precision_from_str`.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
@@ -54,7 +105,9 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
     if let Some(pos) = s.find('e')
         && s[pos + 1..].starts_with('-')
     {
-        return s[pos + 2..].parse::<u8>().unwrap_or(0);
+        let exponent_str = &s[pos + 2..];
+        // Use lenient parsing (returns 0 for invalid, doesn't panic)
+        return parse_scientific_exponent(exponent_str, false).unwrap_or(0);
     }
 
     // Check for decimal precision
@@ -62,12 +115,12 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
         let decimal_part = &s[dot_pos + 1..];
         if decimal_part.chars().any(|c| c != '0') {
             let trimmed_len = decimal_part.trim_end_matches('0').len();
-            return trimmed_len.min(u8::MAX as usize) as u8;
+            return clamp_precision_with_log(trimmed_len, "Minimum increment", &s);
         }
-        return decimal_part.len().min(u8::MAX as usize) as u8;
+        clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
+    } else {
+        0
     }
-
-    0
 }
 
 /// Returns a `usize` from the given bytes.
@@ -172,5 +225,87 @@ mod tests {
         let result = bytes_to_usize(&payload).unwrap();
         assert_eq!(result, 0x0807_0605_0403_0201);
         assert_eq!(result, 578_437_695_752_307_201);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_large_exponent_clamped() {
+        // u8::MAX is 255, so 999 should be clamped to 255
+        let result = precision_from_str("1e-999");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_very_large_exponent_clamped() {
+        // Very large exponents should also be clamped to u8::MAX
+        let result = precision_from_str("1e-300");
+        assert_eq!(result, 255);
+
+        let result = precision_from_str("1e-1000000");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid scientific notation exponent")]
+    fn test_precision_from_str_invalid_exponent_not_numeric() {
+        let _ = precision_from_str("1e-abc");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "missing exponent after 'e-'")]
+    fn test_precision_from_str_malformed_scientific_notation() {
+        // "1e-" with empty exponent should panic (fail fast on malformed input)
+        let _ = precision_from_str("1e-");
+    }
+
+    #[rstest]
+    fn test_precision_from_str_edge_case_max_u8() {
+        // u8::MAX = 255, should work
+        let result = precision_from_str("1e-255");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_just_above_max_u8() {
+        // 256 should be clamped to 255
+        let result = precision_from_str("1e-256");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_u32_overflow() {
+        // Exponent > u32::MAX (4294967296) should be clamped to 255
+        let result = precision_from_str("1e-4294967296");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_u64_overflow() {
+        // Exponent > u64::MAX should be clamped to 255
+        let result = precision_from_str("1e-99999999999999999999");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_min_increment_precision_from_str_large_exponent() {
+        // Large exponents should be clamped to u8::MAX (255), not return 0
+        let result = min_increment_precision_from_str("1e-300");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_min_increment_precision_from_str_very_large_exponent() {
+        // Very large exponents should also be clamped to 255
+        let result = min_increment_precision_from_str("1e-99999999999999999999");
+        assert_eq!(result, 255);
+    }
+
+    #[rstest]
+    fn test_min_increment_precision_from_str_consistency() {
+        // Should match precision_from_str for large exponents
+        let input = "1e-1000";
+        let precision = precision_from_str(input);
+        let min_precision = min_increment_precision_from_str(input);
+        assert_eq!(precision, min_precision);
+        assert_eq!(precision, 255);
     }
 }

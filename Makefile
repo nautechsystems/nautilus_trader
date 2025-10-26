@@ -8,7 +8,7 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
-M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
+M = $(shell printf "\033[0;34m>\033[0m") # Message prefix for commands
 
 # Verbose options for specific targets (defaults to true, can be overridden)
 VERBOSE ?= true
@@ -27,28 +27,33 @@ FAIL_FAST_FLAG := --no-fail-fast
 endif
 
 # > Colors
-RED    := $(shell tput -Txterm setaf 1)
-GREEN  := $(shell tput -Txterm setaf 2)
-YELLOW := $(shell tput -Txterm setaf 3)
-BLUE   := $(shell tput -Txterm setaf 4)
-PURPLE := $(shell tput -Txterm setaf 5)
-CYAN   := $(shell tput -Txterm setaf 6)
-GRAY   := $(shell tput -Txterm setaf 7)
-RESET  := $(shell tput -Txterm sgr0)
+# Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
+RED    := \033[0;31m
+GREEN  := \033[0;32m
+YELLOW := \033[0;33m
+BLUE   := \033[0;34m
+PURPLE := \033[0;35m
+CYAN   := \033[0;36m
+GRAY   := \033[0;37m
+RESET  := \033[0m
 
 .DEFAULT_GOAL := help
+
+# Requires GNU Make across all platforms (Windows users should install it via MSYS2 or WSL).
 
 #== Installation
 
 .PHONY: install
+install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
-	$(info $(M) Installing Nautilus Trader in release mode with all dependencies and extras...)
-	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
+install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
-	$(info $(M) Installing Nautilus Trader in debug mode for development...)
-	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+	$(info $(M) Installing NautilusTrader in debug mode for development...)
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:  #-- Install dependencies only without building the package
@@ -58,40 +63,46 @@ install-just-deps:  #-- Install dependencies only without building the package
 #== Build
 
 .PHONY: build
+build: export BUILD_MODE=release
 build:  #-- Build the package in release mode
-	BUILD_MODE=release uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 .PHONY: build-debug
+build-debug: export BUILD_MODE=debug
 build-debug:  #-- Build the package in debug mode (recommended for development)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with verbose output...)
-	BUILD_MODE=debug uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode (errors will still be shown)...)
-	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-debug-pyo3
+build-debug-pyo3: export BUILD_MODE=debug-pyo3
 build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with PyO3 debug symbols...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 else
 	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
-	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
 .PHONY: build-wheel
+build-wheel: export BUILD_MODE=release
 build-wheel:  #-- Build wheel distribution in release mode
-	BUILD_MODE=release uv build --wheel
+	uv build --wheel
 
 .PHONY: build-wheel-debug
+build-wheel-debug: export BUILD_MODE=debug
 build-wheel-debug:  #-- Build wheel distribution in debug mode
-	BUILD_MODE=debug uv build --wheel
+	uv build --wheel
 
 .PHONY: build-dry-run
+build-dry-run: export DRY_RUN=true
 build-dry-run:  #-- Show build commands without executing them
-	DRY_RUN=true uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 #== Clean
 
@@ -110,10 +121,10 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 	find target -name "*.rmeta" -delete 2>/dev/null || true
 	rm -rf target/*/build target/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
-	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 -r rm -rf
-	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -print0 | xargs -0 -r rm -f
-	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
-	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
+	find . -type d -name "__pycache__" -not -path "./.venv*" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
 	rm -rf build/ cython_debug/ 2>/dev/null || true
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
@@ -126,8 +137,11 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
-	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
-	@echo "⚠️  nuking working tree (git clean -fxd)…"
+	@if [ "$$FORCE" != "1" ]; then \
+		echo "Pass FORCE=1 to really nuke"; \
+		exit 1; \
+	fi
+	@echo "WARNING: removing all untracked files (git clean -fxd)..."
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
 #== Code Quality
@@ -140,32 +154,66 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+.PHONY: pre-flight
+pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
+	$(info $(M) Running pre-flight checks...)
+	@$(MAKE) --no-print-directory format
+	@$(MAKE) --no-print-directory pre-commit
+	@$(MAKE) --no-print-directory cargo-test-hypersync
+	@$(MAKE) --no-print-directory build-debug
+	@$(MAKE) --no-print-directory pytest
+	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
+
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
 	uv run --active --no-sync ruff check . --fix
 
 .PHONY: clippy
-clippy:  #-- Run Rust clippy linter with fixes
-	cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
+clippy:  #-- Run clippy linter (check only, workspace lints)
+	cargo clippy --all-targets --all-features -- -D warnings
 
-.PHONY: clippy-nightly
-clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
-	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
+.PHONY: clippy-fix
+clippy-fix:  #-- Run clippy linter with automatic fixes (workspace lints)
+	cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
 
-.PHONY: clippy-crate-%
-clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)
-	cargo clippy --all-targets --all-features -p $* -- -D warnings
+.PHONY: clippy-fix-nightly
+clippy-fix-nightly:  #-- Run clippy linter with nightly toolchain and automatic fixes (workspace lints + additional strictness)
+	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
+
+.PHONY: clippy-pedantic-crate-%
+clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage: make clippy-crate-<crate_name>)
+	cargo clippy --all-targets --all-features -p $* -- -D warnings \
+		-W clippy::todo \
+		-W clippy::unwrap_used \
+		-W clippy::expect_used
 
 #== Dependencies
 
 .PHONY: outdated
-outdated:  #-- Check for outdated Rust dependencies
-	cargo outdated
+outdated: check-outdated-installed  #-- Check for outdated dependencies
+	cargo outdated --workspace --root-deps-only
+	uv tree --outdated --depth 1 --all-groups
 
 .PHONY: update cargo-update
 update: cargo-update  #-- Update all dependencies (uv and cargo)
 	uv self update
 	uv lock --upgrade
+
+#== Security
+
+.PHONY: security-audit
+security-audit: check-audit-installed  #-- Run security audit for Rust and Python dependencies
+	$(info $(M) Running security audit for Rust dependencies...)
+	@printf "$(CYAN)Checking Rust dependencies for known vulnerabilities...$(RESET)\n"
+	cargo audit --color never || true
+	@printf "\n$(CYAN)Installed Python packages:$(RESET)\n"
+	@pip list --format=freeze 2>/dev/null | grep -E "^(aiohttp|requests|urllib3|cryptography|pyyaml|jinja2)" || echo "  (key security-relevant packages not found in pip list)"
+	@printf "\n$(YELLOW)Note: For comprehensive Python vulnerability scanning, install and run:$(RESET)\n"
+	@printf "  pip install pip-audit && pip-audit\n"
+
+.PHONY: cargo-deny
+cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
+	cargo deny --all-features check
 
 #== Documentation
 
@@ -173,16 +221,19 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
+docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
+docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
 docs-rust:  #-- Build Rust documentation with cargo doc
-	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
+	cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
+docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
+	cargo hack --workspace doc --no-deps --all-features
 
 #== Rust Development
 
@@ -199,6 +250,20 @@ cargo-update:  #-- Update Rust dependencies and install test tools
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
+
+.PHONY: check-audit-installed
+check-audit-installed:  #-- Verify cargo-audit is installed
+	@if ! cargo audit --version >/dev/null 2>&1; then \
+		echo "cargo-audit is not installed. You can install it using 'cargo install cargo-audit'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-deny-installed
+check-deny-installed:  #-- Verify cargo-deny is installed
+	@if ! cargo deny --version >/dev/null 2>&1; then \
+		echo "cargo-deny is not installed. You can install it using 'cargo install cargo-deny'"; \
+		exit 1; \
+	fi
 
 .PHONY: check-nextest-installed
 check-nextest-installed:  #-- Verify cargo-nextest is installed
@@ -221,6 +286,13 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 		exit 1; \
 	fi
 
+.PHONY: check-outdated-installed
+check-outdated-installed:  #-- Verify cargo-outdated is installed
+	@if ! cargo outdated --version >/dev/null 2>&1; then \
+		echo "cargo-outdated is not installed. You can install it using 'cargo install cargo-outdated'"; \
+		exit 1; \
+	fi
+
 .PHONY: check-features  #-- Verify crate feature combinations compile correctly
 check-features: check-hack-installed
 	cargo hack check --each-feature
@@ -228,8 +300,8 @@ check-features: check-hack-installed
 #== Rust Testing
 
 .PHONY: cargo-test
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
+cargo-test: export RUST_BACKTRACE=1
+cargo-test: export HIGH_PRECISION=true
 cargo-test: check-nextest-installed
 cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
 ifeq ($(VERBOSE),true)
@@ -241,38 +313,31 @@ else
 endif
 
 .PHONY: cargo-test-hypersync
-cargo-test-hypersync: RUST_BACKTRACE=1
+cargo-test-hypersync: export RUST_BACKTRACE=1
 cargo-test-hypersync: check-nextest-installed
 cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
 
 .PHONY: cargo-test-lib
-cargo-test-lib: RUST_BACKTRACE=1
-cargo-test-lib: HIGH_PRECISION=true
+cargo-test-lib: export RUST_BACKTRACE=1
+cargo-test-lib: export HIGH_PRECISION=true
 cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
 	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
-cargo-test-standard-precision: RUST_BACKTRACE=1
-cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision: export RUST_BACKTRACE=1
+cargo-test-standard-precision: export HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest-installed
-cargo-test-standard-precision:  #-- Run Rust tests with standard precision (64-bit)
-	cargo nextest run --workspace --features "ffi,python" $(FAIL_FAST_FLAG) --cargo-profile nextest
+cargo-test-standard-precision:  #-- Run Rust tests in debug mode with standard precision (64-bit)
+	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-debug
-cargo-test-debug: RUST_BACKTRACE=1
-cargo-test-debug: HIGH_PRECISION=true
+cargo-test-debug: export RUST_BACKTRACE=1
+cargo-test-debug: export HIGH_PRECISION=true
 cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG)
-
-.PHONY: cargo-test-standard-precision-debug
-cargo-test-standard-precision-debug: RUST_BACKTRACE=1
-cargo-test-standard-precision-debug: HIGH_PRECISION=false
-cargo-test-standard-precision-debug: check-nextest-installed
-cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with standard precision
-	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed
@@ -294,15 +359,15 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 # -----------------------------------------------------------------------------
 
 .PHONY: cargo-test-crate-%
-cargo-test-crate-%: RUST_BACKTRACE=1
-cargo-test-crate-%: HIGH_PRECISION=true
+cargo-test-crate-%: export RUST_BACKTRACE=1
+cargo-test-crate-%: export HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest-installed
 cargo-test-crate-%:  #-- Run Rust tests for a specific crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
 .PHONY: cargo-test-coverage-crate-%
-cargo-test-coverage-crate-%: RUST_BACKTRACE=1
-cargo-test-coverage-crate-%: HIGH_PRECISION=true
+cargo-test-coverage-crate-%: export RUST_BACKTRACE=1
+cargo-test-coverage-crate-%: export HIGH_PRECISION=true
 cargo-test-coverage-crate-%: check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage-crate-%:  #-- Run Rust tests with coverage reporting for a specific crate (usage: make cargo-test-coverage-crate-<crate_name>)
 	cargo llvm-cov nextest --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
@@ -356,7 +421,7 @@ docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 init-services:  #-- Initialize development services eg. for integration tests (start containers and setup database)
 	$(info $(M) Initializing development services...)
 	@$(MAKE) start-services
-	@echo "${PURPLE}Waiting for PostgreSQL to be ready...${RESET}"
+	@printf "$(PURPLE)Waiting for PostgreSQL to be ready...$(RESET)\n"
 	@sleep 10
 	@$(MAKE) init-db
 
@@ -378,19 +443,14 @@ purge-services:  #-- Purge all development services (stop containers and remove 
 .PHONY: init-db
 init-db:  #-- Initialize PostgreSQL database schema
 	$(info $(M) Initializing PostgreSQL database schema...)
-	cat schema/sql/*.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
+	cat schema/sql/types.sql schema/sql/tables.sql schema/sql/functions.sql schema/sql/partitions.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
 
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
 	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0 $(if $(filter true,$(VERBOSE)),-v,)
-
-.PHONY: pytest-memory-tracking
-pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled
-	$(info $(M) Running Python tests with memory tracking enabled...)
-	MEMORY_TRACKING_ENABLED_PY=true uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
+	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
 
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
@@ -400,17 +460,17 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 
 .PHONY: install-cli
 install-cli:  #-- Install Nautilus CLI tool from source
-	cargo install --path crates/cli --bin nautilus --force
+	cargo install --path crates/cli --bin nautilus --locked --force
 
 #== Internal
 
 .PHONY: help
 help:  #-- Show this help message and exit
-	@printf "Nautilus Trader Makefile\n\n"
+	@printf "NautilusTrader Makefile\n\n"
+	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make pytest VERBOSE=true$(GRAY) to run tests with verbose output$(RESET)\n\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
@@ -426,7 +486,13 @@ help:  #-- Show this help message and exit
 	@printf "⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀\n"
 
 	@awk '\
-	BEGIN { FS = ":.*#--"; target_maxlen = 0 } \
+	BEGIN { \
+		FS = ":.*#--"; \
+		target_maxlen = 0; \
+		GREEN = "\033[0;32m"; \
+		CYAN = "\033[0;36m"; \
+		RESET = "\033[0m"; \
+	} \
 	/^[$$()% a-zA-Z_-]+:.*?#--/ { \
 		if (length($$1) > target_maxlen) target_maxlen = length($$1); \
 		targets[NR] = $$1; descriptions[NR] = $$2; \
@@ -437,9 +503,9 @@ help:  #-- Show this help message and exit
 	END { \
 		for (i = 1; i <= NR; i++) { \
 			if (groups[i]) { \
-				printf "\n$(GREEN)%s:$(RESET)\n", groups[i]; \
+				printf "\n" GREEN "%s:" RESET "\n", groups[i]; \
 			} else if (targets[i]) { \
-				printf "  $(CYAN)%-*s$(RESET) %s\n", target_maxlen, targets[i], descriptions[i]; \
+				printf "  " CYAN "%-*s" RESET " %s\n", target_maxlen, targets[i], descriptions[i]; \
 			} \
 		} \
 	}' $(MAKEFILE_LIST)

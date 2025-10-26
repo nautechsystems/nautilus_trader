@@ -40,18 +40,18 @@ impl MessageBusListener {
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
-        self.close()
+        self.close();
     }
 
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: String, payload: Vec<u8>) {
-        self.publish(Ustr::from(&topic), Bytes::from(payload))
+        self.publish(Ustr::from(&topic), Bytes::from(payload));
     }
 
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &mut self,
-        callback: PyObject,
+        callback: Py<PyAny>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let stream_rx = self.get_stream_receiver().map_err(to_pyruntime_err)?;
@@ -59,14 +59,14 @@ impl MessageBusListener {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream_rx);
             while let Some(msg) = stream_rx.recv().await {
-                Python::with_gil(|py| call_python(py, &callback, msg.into_py_any_unwrap(py)));
+                Python::attach(|py| call_python(py, &callback, msg.into_py_any_unwrap(py)));
             }
             Ok(())
         })
     }
 }
 
-fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

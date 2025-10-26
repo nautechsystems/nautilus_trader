@@ -15,15 +15,15 @@ The Cache serves multiple key purposes:
    - Stores `Instrument` definitions and `Currency` information.
 
 3. **Stores custom data**:
-   - Any user-defined objects or data can be stored in the `Cache` for later use.
+   - You can store any user-defined objects or data in the `Cache` for later use.
    - Enables data sharing between different strategies.
 
-## How Cache works
+## How caching works
 
 **Built-in types**:
 
-- Data is automatically added to the `Cache` as it flows through the system.
-- In live contexts, updates happen asynchronously - which means there might be a small delay between an event occurring and it appearing in the `Cache`.
+- The system automatically adds data to the `Cache` as it flows through.
+- In live contexts, the engine applies updates asynchronously, so you might see a brief delay between an event and its appearance in the `Cache`.
 - All data flows through the `Cache` before reaching your strategy’s callbacks – see the diagram below:
 
 ```
@@ -66,7 +66,7 @@ def on_bar(self, bar: Bar) -> None:
 
 ## Configuration
 
-The `Cache`’s behavior and capacity can be configured through the `CacheConfig` class.
+Use the `CacheConfig` class to configure the `Cache` behavior and capacity.
 You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](architecture.md#environment-contexts).
 
 Here's a basic example of configuring the `Cache`:
@@ -96,7 +96,7 @@ By default, the `Cache` keeps the last 10,000 bars for each bar type and 10,000 
 These limits provide a good balance between memory usage and data availability. Increase them if your strategy needs more historical data.
 :::
 
-### Configuration Options
+### Configuration options
 
 The `CacheConfig` class supports these parameters:
 
@@ -118,11 +118,11 @@ cache_config = CacheConfig(
 ```
 
 :::note
-Each bar type maintains its own separate capacity. For example, if you're using both 1-minute and 5-minute bars, each will store up to `bar_capacity` bars.
-When `bar_capacity` is reached, the oldest data is automatically removed from the `Cache`.
+Each bar type maintains its own separate capacity. For example, if you're using both 1-minute and 5-minute bars, each stores up to `bar_capacity` bars.
+When `bar_capacity` is reached, the `Cache` automatically removes the oldest data.
 :::
 
-### Database Configuration
+### Database configuration
 
 For persistence between system restarts, you can configure a database backend.
 
@@ -145,14 +145,14 @@ config = CacheConfig(
 )
 ```
 
-## Using the Cache
+## Using the cache
 
-### Accessing Market data
+### Accessing market data
 
-The `Cache` provides a comprehensive interface for accessing different types of market data, including order books, quotes, trades, bars.
-All market data in the cache are stored with reverse indexing — meaning the most recent data is at index 0.
+The `Cache` provides a comprehensive interface for accessing order books, quotes, trades, and bars.
+All market data in the cache uses reverse indexing, so the most recent entry sits at index 0.
 
-#### Bar(s) access
+#### Bar access
 
 ```python
 # Get a list of all cached bars for a bar type
@@ -195,7 +195,7 @@ trade_count = self.cache.trade_tick_count(instrument_id)  # Returns the number o
 has_trades = self.cache.has_trade_ticks(instrument_id)    # Returns bool indicating if any trades exist
 ```
 
-#### Order Book
+#### Order book
 
 ```python
 # Get current order book
@@ -261,7 +261,7 @@ class MarketDataStrategy(Strategy):
             self.log.info(f"Current spread: {current_spread}")
 ```
 
-### Trading Objects
+### Trading objects
 
 The `Cache` provides comprehensive access to all trading objects within the system, including:
 
@@ -272,9 +272,9 @@ The `Cache` provides comprehensive access to all trading objects within the syst
 
 #### Orders
 
-Orders can be accessed and queried through multiple methods, with flexible filtering options by venue, strategy, instrument, and order side.
+You can access and query orders through multiple methods, with flexible filtering options by venue, strategy, instrument, and order side.
 
-##### Basic Order Access
+##### Basic order access
 
 ```python
 # Get a specific order by its client order ID
@@ -289,7 +289,7 @@ orders_for_strategy = self.cache.orders(strategy_id=strategy_id)        # All or
 orders_for_instrument = self.cache.orders(instrument_id=instrument_id)  # All orders for an instrument
 ```
 
-##### Order State Queries
+##### Order state queries
 
 ```python
 # Get orders by their current state
@@ -306,7 +306,7 @@ is_emulated = self.cache.is_order_emulated(client_order_id)  # Checks if an orde
 is_inflight = self.cache.is_order_inflight(client_order_id)  # Checks if an order is submitted or modified, but not yet confirmed
 ```
 
-##### Order Statistics
+##### Order statistics
 
 ```python
 # Get counts of orders in different states
@@ -325,7 +325,7 @@ venue_orders_count = self.cache.orders_total_count(venue=venue)      # Total num
 
 The `Cache` maintains a record of all positions and offers several ways to query them.
 
-##### Position Access
+##### Position access
 
 ```python
 # Get a specific position by its ID
@@ -343,7 +343,7 @@ strategy_positions = self.cache.positions(strategy_id=strategy_id)        # Posi
 long_positions = self.cache.positions(side=PositionSide.LONG)             # All long positions
 ```
 
-##### Position State Queries
+##### Position state queries
 
 ```python
 # Check position states
@@ -356,7 +356,7 @@ orders = self.cache.orders_for_position(position_id)       # All orders related 
 position = self.cache.position_for_order(client_order_id)  # Find the position associated with a specific order
 ```
 
-##### Position Statistics
+##### Position statistics
 
 ```python
 # Get position counts in different states
@@ -379,7 +379,24 @@ account_id = self.cache.account_id(venue)      # Retrieve account ID for a venue
 accounts = self.cache.accounts()               # Retrieve all accounts in the cache
 ```
 
-#### Instruments and Currencies
+#### Purging cached state
+
+The cache exposes explicit maintenance hooks that remove closed or stale objects while preserving safety checks:
+
+- `purge_closed_orders(ts_now, buffer_secs=0, purge_from_database=False)` drops closed orders that have been inactive for at least `buffer_secs`. Linked contingency orders remain until every dependent child is closed.
+- `purge_closed_positions(ts_now, buffer_secs=0, purge_from_database=False)` removes positions that have stayed closed beyond the buffer window and deletes associated indices.
+- `purge_account_events(ts_now, lookback_secs=0, purge_from_database=False)` trims account event history outside the lookback window and can cascade deletes to the backing database.
+
+Key safeguards:
+
+- Open orders and positions are never purged; the cache logs a warning and leaves the item intact.
+- Linked orders keep parents in the cache until all children have closed, preventing premature removal of contingency chains.
+- Indices and reverse lookups are cleaned alongside the primary object to avoid dangling references.
+- Database deletions occur only when `purge_from_database=True` and a cache database is configured, ensuring in-memory purges do not silently erase persisted data.
+
+Use the trading clock (for example, `self.clock.timestamp_ns()`) when supplying `ts_now`. Set `purge_from_database=True` only when you intend to delete persisted records from Redis or PostgreSQL as well. In live trading these methods run automatically when the execution engine is configured with purge intervals; see [Memory management](live.md#memory-management) for the scheduler settings.
+
+#### Instruments and currencies
 
 ##### Instruments
 
@@ -406,12 +423,12 @@ currency = self.cache.load_currency("USD")  # Loads currency data for USD
 
 ---
 
-### Custom Data
+### Custom data
 
 The `Cache` can also store and retrieve custom data types in addition to built-in market data and trading objects.
-You can keep any user-defined data you want to share between system components (mostly Actors / Strategies).
+Use it to share any user-defined data between system components, primarily actors and strategies.
 
-#### Basic Storage and Retrieval
+#### Basic storage and retrieval
 
 ```python
 # Call this code inside Strategy methods (`self` refers to Strategy)
@@ -429,23 +446,23 @@ For more complex use cases, the `Cache` can store custom data objects that inher
 The `Cache` is not designed to be a full database replacement. For large datasets or complex querying needs, consider using a dedicated database system.
 :::
 
-## Best Practices and Common Questions
+## Best practices and common questions
 
-### Cache vs. Portfolio Usage
+### Cache vs. portfolio usage
 
 The `Cache` and `Portfolio` components serve different but complementary purposes in NautilusTrader:
 
 **Cache**:
 
 - Maintains the historical knowledge and current state of the trading system.
-- Updates immediately for local state changes (initializing an order to be submitted)
-- Updates asynchronously as external events occur (order is filled).
-- Provides complete history of trading activity and market data.
-- All data a strategy has received (events/updates) is stored in Cache.
+- Updates immediately when local state changes (for example, initializing an order before submission).
+- Updates asynchronously as external events occur (for example, when an order fills).
+- Provides a complete history of trading activity and market data.
+- Keeps every event the strategy receives in the cache.
 
 **Portfolio**:
 
-- Aggregated position/exposure and account information.
+- Aggregates position, exposure, and account information.
 - Provides current state without history.
 
 **Example**:
@@ -460,18 +477,18 @@ class MyStrategy(Strategy):
         current_exposure = self.portfolio.net_exposure(event.instrument_id)
 ```
 
-### Cache vs. Strategy variables
+### Cache vs. strategy variables
 
 Choosing between storing data in the `Cache` versus strategy variables depends on your specific needs:
 
-**Cache Storage**:
+**Cache storage**:
 
 - Use for data that needs to be shared between strategies.
 - Best for data that needs to persist between system restarts.
 - Acts as a central database accessible to all components.
 - Ideal for state that needs to survive strategy resets.
 
-**Strategy Variables**:
+**Strategy variables**:
 
 - Use for strategy-specific calculations.
 - Better for temporary values and intermediate results.
@@ -480,7 +497,7 @@ Choosing between storing data in the `Cache` versus strategy variables depends o
 
 **Example**:
 
-Example that clarifies how you might store data in the `Cache` so multiple strategies can access the same information.
+The following example shows how you might store data in the `Cache` so multiple strategies can access the same information.
 
 ```python
 import pickle
@@ -501,7 +518,7 @@ class MyStrategy(Strategy):
 
 ```
 
-How another strategy (running in parallel) can retrieve cached data above:
+Another strategy can retrieve the cached data as follows:
 
 ```python
 import pickle

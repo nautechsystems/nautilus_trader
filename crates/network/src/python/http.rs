@@ -19,7 +19,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{collections::into_ustr_vec, python::to_pyvalue_err};
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 
 use crate::{
@@ -160,6 +160,7 @@ impl HttpClient {
         let rate_limiter = self.rate_limiter.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let keys = keys.map(into_ustr_vec);
             rate_limiter.await_keys_ready(keys).await;
             client
                 .send_request(method.into(), url, headers, body, timeout_secs)

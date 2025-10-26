@@ -73,7 +73,6 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use heck::ToSnakeCase;
 use itertools::Itertools;
-use log::info;
 use nautilus_core::{
     UnixNanos,
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
@@ -204,7 +203,7 @@ impl ParquetDataCatalog {
     ///
     /// - **AWS S3**: `s3://bucket/path`.
     /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`.
-    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`.
+    /// - **Azure Blob Storage**: `az://container/path` or `abfs://container@account.dfs.core.windows.net/path`.
     /// - **HTTP/WebDAV**: `http://` or `https://`.
     /// - **Local files**: `file://path` or plain paths.
     ///
@@ -252,8 +251,8 @@ impl ParquetDataCatalog {
     ///
     /// // Azure Blob Storage
     /// let azure_catalog = ParquetDataCatalog::from_uri(
-    ///     "azure://account/container/nautilus-data",
-    ///     None, None, None, None
+    ///     "az://container/nautilus-data",
+    ///     storage_options, None, None, None
     /// )?;
     ///
     /// // S3 with custom endpoint and credentials
@@ -418,7 +417,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Data serialization to Arrow record batches fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
@@ -473,7 +472,7 @@ impl ParquetDataCatalog {
         let path = PathBuf::from(format!("{directory}/{filename}"));
 
         // Write all batches to parquet file
-        info!(
+        log::info!(
             "Writing {} batches of {type_name} data to {path:?}",
             batches.len()
         );
@@ -524,7 +523,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - JSON serialization fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
@@ -574,7 +573,7 @@ impl ParquetDataCatalog {
         let filename = timestamps_to_filename(start_ts, end_ts).replace(".parquet", ".json");
         let json_path = directory.join(&filename);
 
-        info!(
+        log::info!(
             "Writing {} records of {type_name} data to {json_path:?}",
             data.len()
         );
@@ -582,7 +581,7 @@ impl ParquetDataCatalog {
         if write_metadata {
             let metadata = T::chunk_metadata(&data);
             let metadata_path = json_path.with_extension("metadata.json");
-            info!("Writing metadata to {metadata_path:?}");
+            log::info!("Writing metadata to {metadata_path:?}");
 
             // Use object store for metadata file
             let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());
@@ -684,7 +683,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - No adjacent file is found to extend.
     /// - File rename operations fail.
@@ -759,7 +758,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store listing operations fail.
     /// - Directory access is denied.
     /// - Network issues occur (for remote object stores).
@@ -853,7 +852,7 @@ impl ParquetDataCatalog {
         self.original_uri.starts_with("s3://")
             || self.original_uri.starts_with("gs://")
             || self.original_uri.starts_with("gcs://")
-            || self.original_uri.starts_with("azure://")
+            || self.original_uri.starts_with("az://")
             || self.original_uri.starts_with("abfs://")
             || self.original_uri.starts_with("http://")
             || self.original_uri.starts_with("https://")
@@ -884,7 +883,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store registration fails for remote URIs.
     /// - File discovery fails.
     /// - DataFusion query execution fails.
@@ -1013,7 +1012,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The underlying query execution fails.
     /// - Data type conversion fails.
     /// - Object store access fails.
@@ -1106,7 +1105,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Object store listing operations fail.
     /// - URI reconstruction fails.
@@ -1241,7 +1240,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Interval retrieval fails.
     /// - Gap calculation fails.
@@ -1296,7 +1295,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Interval retrieval fails.
     ///
@@ -1347,7 +1346,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The directory path cannot be constructed.
     /// - Directory listing fails.
     /// - Filename parsing fails.
@@ -1394,14 +1393,14 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - Object store listing operations fail.
     /// - Directory access is denied.
     ///
     /// # Notes
     ///
     /// - Only files with valid timestamp-based filenames are included.
-    /// - Files with unparseable names are silently ignored.
+    /// - Files with unparsable names are silently ignored.
     /// - The method works with both local and remote object stores.
     /// - Results are automatically sorted by start timestamp.
     ///
@@ -1471,7 +1470,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The instrument ID contains invalid characters that cannot be made URI-safe.
     /// - Path construction fails due to system limitations.
     ///
@@ -1844,7 +1843,7 @@ pub fn extract_identifier_from_path(file_path: &str) -> String {
 #[must_use]
 pub fn make_sql_safe_identifier(identifier: &str) -> String {
     urisafe_instrument_id(identifier)
-        .replace(['.', '-', ' '], "_")
+        .replace(['.', '-', ' ', '%'], "_")
         .to_lowercase()
 }
 

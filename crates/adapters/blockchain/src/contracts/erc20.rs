@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy::{
-    primitives::{Address, Bytes},
+    primitives::{Address, Bytes, U256},
     sol,
     sol_types::SolCall,
 };
@@ -32,6 +32,7 @@ sol! {
         function name() external view returns (string);
         function symbol() external view returns (string);
         function decimals() external view returns (uint8);
+        function balanceOf(address account) external view returns (uint256);
     }
 }
 
@@ -60,7 +61,7 @@ pub enum TokenInfoError {
     RpcError(#[from] BlockchainRpcClientError),
     #[error("Token {field} is empty for address {address}")]
     EmptyTokenField { field: Erc20Field, address: Address },
-    #[error("Multicall returned unexpected number of results: expected {expected}, got {actual}")]
+    #[error("Multicall returned unexpected number of results: expected {expected}, was {actual}")]
     UnexpectedResultCount { expected: usize, actual: usize },
     #[error("Call failed for {field} at address {address}: {reason} (raw data: {raw_data})")]
     CallFailed {
@@ -129,7 +130,7 @@ impl Erc20Contract {
             },
         ];
 
-        let results = self.base.execute_multicall(calls).await?;
+        let results = self.base.execute_multicall(calls, None).await?;
 
         if results.len() != 3 {
             return Err(TokenInfoError::UnexpectedResultCount {
@@ -165,10 +166,14 @@ impl Erc20Contract {
 
     /// Fetches token information for multiple tokens in a single multicall.
     ///
+    /// If the multicall fails (typically due to expired/broken contracts causing RPC "out of gas"),
+    /// automatically falls back to individual token fetches to isolate problematic contracts.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the multicall itself fails. Individual token failures
-    /// are captured in the Result values of the returned `HashMap`.
+    /// Returns an error only if the operation cannot proceed. Multicall failures trigger
+    /// automatic fallback to individual fetches. Individual token failures are captured
+    /// in the Result values of the returned `HashMap`.
     pub async fn batch_fetch_token_info(
         &self,
         token_addresses: &[Address],
@@ -196,7 +201,38 @@ impl Erc20Contract {
             ]);
         }
 
-        let results = self.base.execute_multicall(calls).await?;
+        // Try batch multicall first
+        let results = match self.base.execute_multicall(calls, None).await {
+            Ok(results) => results,
+            Err(e) => {
+                // Multicall failed (likely expired/broken contract causing RPC failure)
+                tracing::warn!(
+                    "Batch multicall failed: {}. Falling back to individual fetches for {} tokens",
+                    e,
+                    token_addresses.len()
+                );
+
+                // Fallback: fetch each token individually to isolate problematic contracts
+                let mut token_infos = HashMap::with_capacity(token_addresses.len());
+                for token_address in token_addresses {
+                    match self.fetch_token_info(token_address).await {
+                        Ok(info) => {
+                            token_infos.insert(*token_address, Ok(info));
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                "Token {} failed individual fetch (likely expired/broken): {}",
+                                token_address,
+                                e
+                            );
+                            token_infos.insert(*token_address, Err(e));
+                        }
+                    }
+                }
+
+                return Ok(token_infos);
+            }
+        };
 
         let mut token_infos = HashMap::with_capacity(token_addresses.len());
         for (i, token_address) in token_addresses.iter().enumerate() {
@@ -221,6 +257,28 @@ impl Erc20Contract {
         }
 
         Ok(token_infos)
+    }
+
+    /// Fetches the balance of a specific account for this ERC20 token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract call fails.
+    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
+    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    pub async fn balance_of(
+        &self,
+        token_address: &Address,
+        account: &Address,
+    ) -> Result<U256, BlockchainRpcClientError> {
+        let call_data = ERC20::balanceOfCall { account: *account }.abi_encode();
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, None)
+            .await?;
+
+        ERC20::balanceOfCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 }
 

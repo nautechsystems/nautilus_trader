@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
@@ -34,6 +35,8 @@ from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
@@ -50,10 +53,12 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -114,12 +119,21 @@ class OKXDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
+        self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
+        self._log.info(f"{config.is_demo=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.vip_level=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        if self._http_client.api_key:
+            masked_key = mask_api_key(self._http_client.api_key)
+            self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API (using public endpoint for market data - no auth needed)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
@@ -127,6 +141,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_key=None,  # Public endpoints don't need authentication
             api_secret=None,
             api_passphrase=None,
+            heartbeat=20,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -136,8 +151,13 @@ class OKXDataClient(LiveMarketDataClient):
             api_key=config.api_key,  # Business endpoint requires authentication
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
+            heartbeat=20,
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
+
+        if config.vip_level is not None:
+            self._ws_client.set_vip_level(config.vip_level)
+            self._ws_business_client.set_vip_level(config.vip_level)
 
     @property
     def instrument_provider(self) -> OKXInstrumentProvider:
@@ -156,7 +176,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to public websocket {self._ws_client.url}", LogColor.BLUE)
 
         await self._ws_business_client.connect(
@@ -165,7 +185,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)
+        await self._ws_business_client.wait_until_active(timeout_secs=30.0)
         self._log.info(
             f"Connected to business websocket {self._ws_business_client.url}",
             LogColor.BLUE,
@@ -176,6 +196,8 @@ class OKXDataClient(LiveMarketDataClient):
             await self._ws_client.subscribe_instruments(instrument_type)
 
     async def _disconnect(self) -> None:
+        self._http_client.cancel_all_requests()
+
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
@@ -228,6 +250,14 @@ class OKXDataClient(LiveMarketDataClient):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        pass  # Automatically subscribes for instruments websocket channel
+
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
@@ -244,18 +274,7 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        vip_level = self._config.vip_level or 0
-
-        if command.depth == 50:
-            if vip_level >= 4:
-                await self._ws_client.subscribe_book50_l2_tbt(pyo3_instrument_id)
-            else:
-                self._log.error(f"Insufficient VIP level {vip_level} for depth {command.depth}")
-        else:
-            if vip_level >= 5:
-                await self._ws_client.subscribe_book_l2_tbt(pyo3_instrument_id)
-            else:
-                await self._ws_client.subscribe_book(pyo3_instrument_id)
+        await self._ws_client.subscribe_book_with_depth(pyo3_instrument_id, command.depth)
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -297,6 +316,20 @@ class OKXDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        # Funding rates only apply to perpetual swaps
+        instrument = self._instrument_provider.find(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {command.instrument_id}")
+            return
+
+        # Check if instrument is a perpetual swap
+        if not isinstance(instrument, CryptoPerpetual):
+            self._log.warning(
+                f"Funding rates not applicable for {command.instrument_id} "
+                f"(instrument type: {type(instrument).__name__}), skipping subscription",
+            )
+            return
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
 
@@ -345,6 +378,18 @@ class OKXDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        instrument = self._instrument_provider.find(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {command.instrument_id}")
+            return
+
+        if not isinstance(instrument, CryptoPerpetual):
+            self._log.warning(
+                f"Funding rates not applicable for {command.instrument_id} "
+                f"(instrument type: {type(instrument).__name__}), skipping unsubscription",
+            )
+            return
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
@@ -411,14 +456,23 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
-        trades = await self._http_client.request_trades(
+
+        pyo3_trades = await self._http_client.request_trades(
             instrument_id=pyo3_instrument_id,
             start=ensure_pydatetime_utc(request.start),
             end=ensure_pydatetime_utc(request.end),
             limit=request.limit,
         )
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(trades, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         self._log.debug(
@@ -439,7 +493,6 @@ class OKXDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

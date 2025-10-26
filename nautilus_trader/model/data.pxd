@@ -104,6 +104,11 @@ cpdef enum BarAggregation:
     WEEK = 15
     MONTH = 16
     YEAR = 17
+    RENKO = 18
+
+
+cpdef str supported_bar_aggregations_str()
+cpdef str bar_aggregation_not_implemented_message(BarAggregation aggregation)
 
 
 cpdef enum BarIntervalType:
@@ -299,6 +304,9 @@ cdef class OrderBookDeltas(Data):
     cpdef to_pyo3(self)
 
 
+cdef class QuoteTick
+
+
 cdef class OrderBookDepth10(Data):
     cdef OrderBookDepth10_t _mem
 
@@ -319,6 +327,8 @@ cdef class OrderBookDepth10(Data):
 
     @staticmethod
     cdef object list_to_capsule_c(list items)
+
+    cpdef QuoteTick to_quote_tick(self)
 
 
 cdef class InstrumentStatus(Data):

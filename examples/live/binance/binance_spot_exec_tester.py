@@ -36,6 +36,10 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# Strategy config params
+symbol = "ETHUSDT"
+instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
+order_qty = Decimal("0.01")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -112,14 +116,17 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
-    order_qty=Decimal("0.010"),
+config_strat = ExecTesterConfig(
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
+    order_qty=order_qty,
+    # open_position_on_start_qty=order_qty,
+    # tob_offset_ticks=0,
+    # log_data=False,
 )
 
 # Instantiate your strategy
-strategy = ExecTester(config=strat_config)
+strategy = ExecTester(config=config_strat)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

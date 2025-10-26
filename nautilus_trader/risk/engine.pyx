@@ -534,7 +534,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Check quantity
-        risk_msg = self._check_quantity(instrument, command.quantity)
+        risk_msg = self._check_quantity(instrument, command.quantity, order.is_quote_quantity)
 
         if risk_msg:
             self._reject_modify_order(order=order, reason=risk_msg)
@@ -616,7 +616,7 @@ cdef class RiskEngine(Component):
         return True  # Passed
 
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order):
-        cdef str risk_msg = self._check_quantity(instrument, order.quantity)
+        cdef str risk_msg = self._check_quantity(instrument, order.quantity, order.is_quote_quantity)
 
         if risk_msg:
             self._deny_order(order=order, reason=risk_msg)
@@ -667,6 +667,7 @@ cdef class RiskEngine(Component):
             Currency base_currency = None
             double xrate
             Quantity effective_quantity
+            Price effective_price
 
         for order in orders:
             if self.debug:
@@ -708,14 +709,51 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
+            # For quote quantity limit orders, use worst-case execution price
+            if (
+                order.is_quote_quantity
+                and not instrument.is_inverse
+                and (order.order_type == OrderType.LIMIT or order.order_type == OrderType.STOP_LIMIT)
+            ):
+                # Get current market price for worst-case execution
+                last_quote = self._cache.quote_tick(instrument.id)
+                if last_quote is not None:
+                    if order.side == OrderSide.BUY:
+                        # BUY: could execute at best ask if below limit (more quantity)
+                        effective_price = last_px if last_px < last_quote.ask_price else last_quote.ask_price
+                    elif order.side == OrderSide.SELL:
+                        # SELL: could execute at best bid if above limit (but less quantity, so use limit)
+                        effective_price = last_px if last_px > last_quote.bid_price else last_quote.bid_price
+                    else:
+                        effective_price = last_px
+                else:
+                    effective_price = last_px  # No market data, use limit price
+            else:
+                effective_price = last_px
+
             # Convert quote quantity to base quantity if needed for balance calculations
             if order.is_quote_quantity and not instrument.is_inverse:
-                effective_quantity = instrument.calculate_base_quantity(order.quantity, last_px)
+                effective_quantity = instrument.calculate_base_quantity(order.quantity, effective_price)
 
                 if self.debug:
                     self._log.debug(f"Converted quote quantity {order.quantity} to base quantity {effective_quantity}", LogColor.MAGENTA)
             else:
                 effective_quantity = order.quantity
+
+            # Check min/max quantity against effective quantity
+            if instrument.max_quantity and effective_quantity > instrument.max_quantity:
+                self._deny_order(
+                    order=order,
+                    reason=f"QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={instrument.max_quantity}",
+                )
+                return False  # Denied
+
+            if instrument.min_quantity and effective_quantity < instrument.min_quantity:
+                self._deny_order(
+                    order=order,
+                    reason=f"QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={instrument.min_quantity}",
+                )
+                return False  # Denied
 
             notional = instrument.notional_value(effective_quantity, last_px, use_quote_for_inverse=True)
 
@@ -785,20 +823,34 @@ cdef class RiskEngine(Component):
                     return False  # Denied
             elif order.is_sell_c():
                 if account.base_currency is not None:
-                    if cum_notional_sell is None:
-                        cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
+                    if order.is_reduce_only:
+                        if self.debug:
+                            self._log.debug(
+                                "Reduce-only SELL skips cumulative notional free-balance check",
+                                LogColor.MAGENTA,
+                            )
                     else:
-                        cum_notional_sell._mem.raw += order_balance_impact._mem.raw
+                        if cum_notional_sell is None:
+                            cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
+                        else:
+                            cum_notional_sell._mem.raw += order_balance_impact._mem.raw
 
-                    if self.debug:
-                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
-                    if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
-                        self._deny_order(
-                            order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
-                        )
-                        return False  # Denied
+                        if self.debug:
+                            self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
+                        if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
+                            self._deny_order(
+                                order=order,
+                                reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
+                            )
+                            return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
+                    if order.is_reduce_only:
+                        if self.debug:
+                            self._log.debug(
+                                "Reduce-only SELL skips base-currency cumulative free check",
+                                LogColor.MAGENTA,
+                            )
+                        continue
                     cash_value = Money(effective_quantity.as_f64_c(), base_currency)
                     free = account.balance_free(base_currency)
 
@@ -841,7 +893,7 @@ cdef class RiskEngine(Component):
                 # Check failed
                 return f"price {price} invalid (not positive)"
 
-    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity):
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=False):
         if quantity is None:
             # Nothing to check
             return None
@@ -849,6 +901,10 @@ cdef class RiskEngine(Component):
         if quantity._mem.precision > instrument.size_precision:
             # Check failed
             return f"quantity {quantity} invalid (precision {quantity._mem.precision} > {instrument.size_precision})"
+
+        # Skip min/max checks for quote quantities (they will be checked in _check_orders_risk using effective_quantity)
+        if is_quote_quantity:
+            return None
 
         if instrument.max_quantity and quantity > instrument.max_quantity:
             # Check failed

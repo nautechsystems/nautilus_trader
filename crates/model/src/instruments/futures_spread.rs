@@ -17,7 +17,9 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     UnixNanos,
-    correctness::{FAILED, check_equal_u8, check_valid_string, check_valid_string_optional},
+    correctness::{
+        FAILED, check_equal_u8, check_valid_string_ascii, check_valid_string_ascii_optional,
+    },
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -130,8 +132,8 @@ impl FuturesSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
+        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,

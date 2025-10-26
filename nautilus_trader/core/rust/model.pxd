@@ -99,21 +99,30 @@ cdef extern from "../includes/model.h":
     # The minimum valid quantity value that can be represented.
     const double QUANTITY_MIN # = 0.0
 
-    # An account type provided by a trading venue or broker.
-    cpdef enum AccountType:
-        # An account with unleveraged cash assets only.
-        CASH # = 1,
-        # An account which facilitates trading on margin, using account assets as collateral.
-        MARGIN # = 2,
-        # An account specific to betting markets.
-        BETTING # = 3,
+    # Minimum valid tick value for Uniswap V3 pools.
+    const int32_t PoolTick_MIN_TICK # = -887272
 
-    # An aggregation source for derived data.
-    cpdef enum AggregationSource:
-        # The data is externally aggregated (outside the Nautilus system boundary).
-        EXTERNAL # = 1,
-        # The data is internally aggregated (inside the Nautilus system boundary).
-        INTERNAL # = 2,
+
+
+    # The type of order book action for an order book event.
+    cpdef enum BookAction:
+        # An order is added to the book.
+        ADD # = 1,
+        # An existing order in the book is updated/modified.
+        UPDATE # = 2,
+        # An existing order in the book is deleted/canceled.
+        DELETE # = 3,
+        # The state of the order book is cleared.
+        CLEAR # = 4,
+
+    # The order side for a specific order, or action related to orders.
+    cpdef enum OrderSide:
+        # No order side is specified.
+        NO_ORDER_SIDE # = 0,
+        # The order is a BUY.
+        BUY # = 1,
+        # The order is a SELL.
+        SELL # = 2,
 
     # The side for the aggressing order of a trade in a market.
     cpdef enum AggressorSide:
@@ -123,6 +132,45 @@ cdef extern from "../includes/model.h":
         BUYER # = 1,
         # The SELL order was the aggressor for the trade.
         SELLER # = 2,
+
+    # The type of price for an instrument in a market.
+    cpdef enum PriceType:
+        # The best quoted price at which buyers are willing to buy a quantity of an instrument.
+        # Often considered the best bid in the order book.
+        BID # = 1,
+        # The best quoted price at which sellers are willing to sell a quantity of an instrument.
+        # Often considered the best ask in the order book.
+        ASK # = 2,
+        # The arithmetic midpoint between the best bid and ask quotes.
+        MID # = 3,
+        # The price at which the last trade of an instrument was executed.
+        LAST # = 4,
+        # A reference price reflecting an instrument's fair value, often used for portfolio
+        # calculations and risk management.
+        MARK # = 5,
+
+    # An aggregation source for derived data.
+    cpdef enum AggregationSource:
+        # The data is externally aggregated (outside the Nautilus system boundary).
+        EXTERNAL # = 1,
+        # The data is internally aggregated (inside the Nautilus system boundary).
+        INTERNAL # = 2,
+
+    # The type of event for an instrument close.
+    cpdef enum InstrumentCloseType:
+        # When the market session ended.
+        END_OF_SESSION # = 1,
+        # When the instrument expiration was reached.
+        CONTRACT_EXPIRED # = 2,
+
+    # An account type provided by a trading venue or broker.
+    cpdef enum AccountType:
+        # An account with unleveraged cash assets only.
+        CASH # = 1,
+        # An account which facilitates trading on margin, using account assets as collateral.
+        MARGIN # = 2,
+        # An account specific to betting markets.
+        BETTING # = 3,
 
     # A broad financial market asset class.
     cpdef enum AssetClass:
@@ -140,48 +188,6 @@ cdef extern from "../includes/model.h":
         CRYPTOCURRENCY # = 6,
         # Alternative assets.
         ALTERNATIVE # = 7,
-
-    # The type of order book action for an order book event.
-    cpdef enum BookAction:
-        # An order is added to the book.
-        ADD # = 1,
-        # An existing order in the book is updated/modified.
-        UPDATE # = 2,
-        # An existing order in the book is deleted/canceled.
-        DELETE # = 3,
-        # The state of the order book is cleared.
-        CLEAR # = 4,
-
-    # The order book type, representing the type of levels granularity and delta updating heuristics.
-    cpdef enum BookType:
-        # Top-of-book best bid/ask, one level per side.
-        L1_MBP # = 1,
-        # Market by price, one order per level (aggregated).
-        L2_MBP # = 2,
-        # Market by order, multiple orders per level (full granularity).
-        L3_MBO # = 3,
-
-    # The order contigency type which specifies the behavior of linked orders.
-    #
-    # [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
-    cpdef enum ContingencyType:
-        # Not a contingent order.
-        NO_CONTINGENCY # = 0,
-        # One-Cancels-the-Other.
-        OCO # = 1,
-        # One-Triggers-the-Other.
-        OTO # = 2,
-        # One-Updates-the-Other (by proportional quantity).
-        OUO # = 3,
-
-    # The broad currency type.
-    cpdef enum CurrencyType:
-        # A type of cryptocurrency or crypto token.
-        CRYPTO # = 1,
-        # A type of currency issued by governments which is not backed by a commodity.
-        FIAT # = 2,
-        # A type of currency that is based on the value of an underlying commodity.
-        COMMODITY_BACKED # = 3,
 
     # The instrument class.
     cpdef enum InstrumentClass:
@@ -211,20 +217,44 @@ cdef extern from "../includes/model.h":
         # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
         BINARY_OPTION # = 12,
 
-    # The type of event for an instrument close.
-    cpdef enum InstrumentCloseType:
-        # When the market session ended.
-        END_OF_SESSION # = 1,
-        # When the instrument expiration was reached.
-        CONTRACT_EXPIRED # = 2,
+    # The order book type, representing the type of levels granularity and delta updating heuristics.
+    cpdef enum BookType:
+        # Top-of-book best bid/ask, one level per side.
+        L1_MBP # = 1,
+        # Market by price, one order per level (aggregated).
+        L2_MBP # = 2,
+        # Market by order, multiple orders per level (full granularity).
+        L3_MBO # = 3,
 
-    # The liqudity side for a trade.
+    # The order contingency type which specifies the behavior of linked orders.
+    #
+    # [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
+    cpdef enum ContingencyType:
+        # Not a contingent order.
+        NO_CONTINGENCY # = 0,
+        # One-Cancels-the-Other.
+        OCO # = 1,
+        # One-Triggers-the-Other.
+        OTO # = 2,
+        # One-Updates-the-Other (by proportional quantity).
+        OUO # = 3,
+
+    # The broad currency type.
+    cpdef enum CurrencyType:
+        # A type of cryptocurrency or crypto token.
+        CRYPTO # = 1,
+        # A type of currency issued by governments which is not backed by a commodity.
+        FIAT # = 2,
+        # A type of currency that is based on the value of an underlying commodity.
+        COMMODITY_BACKED # = 3,
+
+    # The liquidity side for a trade.
     cpdef enum LiquiditySide:
         # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
-        # The order passively provided liqudity to the market to complete the trade (made a market).
+        # The order passively provided liquidity to the market to complete the trade (made a market).
         MAKER # = 1,
-        # The order aggressively took liqudity from the market to complete the trade.
+        # The order aggressively took liquidity from the market to complete the trade.
         TAKER # = 2,
 
     # The status of an individual market on a trading venue.
@@ -293,15 +323,6 @@ cdef extern from "../includes/model.h":
         CALL # = 1,
         # A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
         PUT # = 2,
-
-    # The order side for a specific order, or action related to orders.
-    cpdef enum OrderSide:
-        # No order side is specified.
-        NO_ORDER_SIDE # = 0,
-        # The order is a BUY.
-        BUY # = 1,
-        # The order is a SELL.
-        SELL # = 2,
 
     # The status for a specific order.
     #
@@ -384,22 +405,6 @@ cdef extern from "../includes/model.h":
         LONG # = 2,
         # A short position in the market, typically acquired through one or many SELL orders.
         SHORT # = 3,
-
-    # The type of price for an instrument in a market.
-    cpdef enum PriceType:
-        # The best quoted price at which buyers are willing to buy a quantity of an instrument.
-        # Often considered the best bid in the order book.
-        BID # = 1,
-        # The best quoted price at which sellers are willing to sell a quantity of an instrument.
-        # Often considered the best ask in the order book.
-        ASK # = 2,
-        # The arithmetic midpoint between the best bid and ask quotes.
-        MID # = 3,
-        # The price at which the last trade of an instrument was executed.
-        LAST # = 4,
-        # A reference price reflecting an instrument's fair value, often used for portfolio
-        # calculations and risk management.
-        MARK # = 5,
 
     # A record flag bit field, indicating event end and data information.
     cpdef enum RecordFlag:
@@ -498,6 +503,10 @@ cdef extern from "../includes/model.h":
     #
     # This type cannot be `repr(C)` due to the `deltas` vec.
     cdef struct OrderBookDeltas_t:
+        pass
+
+    # Represents a tick in a Uniswap V3-style AMM with liquidity tracking and fee accounting.
+    cdef struct PoolTick:
         pass
 
     # Represents a synthetic instrument with prices derived from component instruments using a
@@ -607,7 +616,7 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBookDeltas_API:
         OrderBookDeltas_t *_0;
 
-    # Represents a aggregated order book update with a fixed depth of 10 levels per side.
+    # Represents an aggregated order book update with a fixed depth of 10 levels per side.
     #
     # This structure is specifically designed for scenarios where a snapshot of the top 10 bid and
     # ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
@@ -2198,3 +2207,5 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
+
+    Quantity_t quantity_saturating_sub(Quantity_t a, Quantity_t b);

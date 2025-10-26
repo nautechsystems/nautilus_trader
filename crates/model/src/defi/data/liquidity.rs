@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
@@ -23,7 +23,6 @@ use strum::{Display, EnumIter, EnumString};
 use crate::{
     defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
-    types::Quantity,
 };
 
 #[derive(
@@ -65,7 +64,7 @@ pub struct PoolLiquidityUpdate {
     pub chain: SharedChain,
     /// The decentralized exchange where the liquidity update was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool instrument ID.
+    /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
@@ -84,11 +83,11 @@ pub struct PoolLiquidityUpdate {
     /// The blockchain address that owns the liquidity position.
     pub owner: Address,
     /// The amount of liquidity tokens affected in the position.
-    pub position_liquidity: Quantity,
+    pub position_liquidity: u128,
     /// The amount of the first token in the pool pair.
-    pub amount0: Quantity,
+    pub amount0: U256,
     /// The amount of the second token in the pool pair.
-    pub amount1: Quantity,
+    pub amount1: U256,
     /// The lower price tick boundary of the liquidity position.
     pub tick_lower: i32,
     /// The upper price tick boundary of the liquidity position.
@@ -115,9 +114,9 @@ impl PoolLiquidityUpdate {
         log_index: u32,
         sender: Option<Address>,
         owner: Address,
-        position_liquidity: Quantity,
-        amount0: Quantity,
-        amount1: Quantity,
+        position_liquidity: u128,
+        amount0: U256,
+        amount1: U256,
         tick_lower: i32,
         tick_upper: i32,
         timestamp: Option<UnixNanos>,

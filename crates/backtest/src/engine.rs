@@ -515,7 +515,7 @@ mod tests {
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
-    #[allow(clippy::missing_panics_doc)] // OK for testing
+    #[allow(clippy::missing_panics_doc, reason = "OK for testing")]
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
         let config = config.unwrap_or_default();
         let mut engine = BacktestEngine::new(config).unwrap();

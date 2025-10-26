@@ -52,7 +52,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef set[OrderType] STOP_ORDER_TYPES
 cdef set[OrderType] LIMIT_ORDER_TYPES
-cdef set[OrderStatus] LOCAL_ACTIVE_ORDER_STATUS
+cdef set[OrderStatus] CANCELLABLE_ORDER_STATUSES
+cdef set[OrderStatus] LOCAL_ACTIVE_ORDER_STATUSES
 
 
 cdef class Order:
@@ -144,6 +145,7 @@ cdef class Order:
     cpdef str tif_string(self)
     cpdef dict to_dict(self)
 
+    cpdef void set_quote_quantity(self, bint value)
     cdef void set_activated_c(self, Price activation_price)
     cdef void set_triggered_price_c(self, Price triggered_price)
     cdef Price get_triggered_price_c(self)

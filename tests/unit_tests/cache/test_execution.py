@@ -1372,6 +1372,35 @@ class TestCache:
         position = Position(AUDUSD_SIM, fill1)
         self.cache.add_position(position, OmsType.NETTING)
 
+        # Close the position to test purging from closed positions
+        order1_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order1_close, position1_id)
+        order1_close.apply(TestEventStubs.order_submitted(order1_close))
+
+        self.cache.update_order(order1_close)
+        order1_close.apply(TestEventStubs.order_accepted(order1_close))
+
+        self.cache.update_order(order1_close)
+        fill1_close = TestEventStubs.order_filled(
+            order1_close,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            last_px=Price.from_str("1.00010"),
+        )
+        order1_close.apply(fill1_close)
+        self.cache.update_order(order1_close)
+
+        position.apply(fill1_close)
+        self.cache.update_position(position)
+
+        # Verify position is now closed
+        assert position.is_closed
+
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1398,7 +1427,79 @@ class TestCache:
         assert order1 not in self.cache.orders_closed()
         assert self.cache.orders_total_count() == 1
         assert self.cache.orders_closed_count() == 0
-        assert len(position.events) == 0  # <-- Events for order were purged
+        assert (
+            len(position.events) == 2
+        )  # Position fills preserved (purge_order doesn't touch them)
+
+    def test_purge_open_order_skips_purge(self):
+        # Test that attempting to purge an open order is prevented by the guard
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        # Verify order is open
+        assert order.is_open
+        assert self.cache.order_exists(order.client_order_id)
+        assert self.cache.orders_total_count() == 1
+
+        # Act - attempt to purge the open order (should be prevented by guard)
+        self.cache.purge_order(order.client_order_id)
+
+        # Assert - order still exists (guard prevented purge)
+        assert self.cache.order_exists(order.client_order_id)
+        assert self.cache.orders_total_count() == 1
+        assert self.cache.order(order.client_order_id) is not None
+
+    def test_purge_open_position_skips_purge(self):
+        # Test that attempting to purge an open position is prevented by the guard
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        # Verify position is open
+        assert position.is_open
+        assert self.cache.position_exists(position_id)
+        assert self.cache.positions_total_count() == 1
+        assert len(position.events) == 1
+
+        # Act - attempt to purge the open position (should be prevented by guard)
+        self.cache.purge_position(position_id)
+
+        # Assert - position still exists (guard prevented purge)
+        assert self.cache.position_exists(position_id)
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.position(position_id) is not None
+        # Verify events are preserved
+        assert len(self.cache.position(position_id).events) == 1
 
     def test_purge_closed_orders_with_linked_orders_does_not_purge_parent_when_child_open(self):
         # Arrange - Create bracket order which has linked orders
@@ -1584,6 +1685,28 @@ class TestCache:
         assert position_id in self.cache.position_snapshot_ids(AUDUSD_SIM.id)
         assert position_id in self.cache.position_snapshot_ids()
 
+        # Close the position first (required for purge to work)
+        order_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order_close, position_id)
+
+        fill_close = TestEventStubs.order_filled(
+            order_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+        )
+
+        position.apply(fill_close)
+        self.cache.update_position(position)
+
+        # Verify position is now closed
+        assert position.is_closed
+
         # Act - purge the position
         self.cache.purge_position(position_id)
 
@@ -1698,6 +1821,27 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
         self.cache.add_position(position, OmsType.HEDGING)
 
+        # Close the position first (required for purge to work)
+        order_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order_close, position_id)
+
+        fill_close = TestEventStubs.order_filled(
+            order_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+        )
+
+        position.apply(fill_close)
+        self.cache.update_position(position)
+
+        # Verify position is now closed
+        assert position.is_closed
+
         # Act
         self.cache.purge_position(position_id=position_id, purge_from_database=True)
 
@@ -1769,6 +1913,294 @@ class TestCache:
         # Should retain exactly 1 event (the latest)
         assert account.event_count == 1
         assert account.event_count < initial_event_count
+
+    def test_purge_closed_positions_does_not_purge_reopened_position(self):
+        # Arrange: Create a position that goes FLAT then reopens
+        # This test verifies the fix for the race condition where positions that were
+        # previously closed but later reopened were incorrectly purged
+
+        # Create initial buy order to open position
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+
+        # Fill the buy order to open LONG position
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,  # 1 second
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.add_position(position, OmsType.NETTING)
+        self.cache.update_position(position)
+
+        # Verify position is LONG
+        assert position.is_long
+        assert not position.is_closed
+        assert self.cache.is_position_open(position_id)
+
+        # Create sell order to close position (make it FLAT)
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order2, position_id)
+
+        # Fill the sell order to close position (FLAT)
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+            ts_event=2_000_000_000,  # 2 seconds
+        )
+        position.apply(fill2)
+        self.cache.update_position(position)
+
+        # Verify position is now FLAT (closed)
+        assert position.side == PositionSide.FLAT
+        assert position.is_closed
+        assert position.ts_closed > 0  # Has a close timestamp
+        assert self.cache.is_position_closed(position_id)
+        ts_closed_original = position.ts_closed
+
+        # Create another buy order to REOPEN the position
+        order3 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+        self.cache.add_order(order3, position_id)
+
+        # Fill the buy order to reopen position (LONG again)
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00020"),
+            ts_event=3_000_000_000,  # 3 seconds
+        )
+        position.apply(fill3)
+        self.cache.update_position(position)
+
+        # Verify position is LONG again (reopened)
+        assert position.is_long
+        assert not position.is_closed
+        assert position.ts_closed == 0  # Close timestamp should be reset
+        assert self.cache.is_position_open(position_id)
+
+        # Act: Attempt to purge closed positions
+        # This should NOT purge our position even though it was closed before,
+        # because it's currently OPEN
+        # Use a timestamp far in the future to ensure any old ts_closed would trigger purge
+        self.cache.purge_closed_positions(
+            ts_now=ts_closed_original + 1_000_000_000_000,  # Way after the close time
+            buffer_secs=0,
+        )
+
+        # Assert: Position should still exist because it's currently OPEN
+        assert self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is not None
+        assert self.cache.is_position_open(position_id)
+        assert not self.cache.is_position_closed(position_id)
+        assert position in self.cache.positions_open()
+        assert position not in self.cache.positions_closed()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
+
+    def test_purge_closed_positions_removes_empty_shell_after_purge_events(self):
+        """
+        Test that a position that becomes an empty shell via purge_events_for_order is
+        immediately eligible for cache purging (ts_closed = 0 bypasses buffer).
+
+        This verifies that the zeroed timestamps make empty shells eligible for cleanup.
+
+        """
+        # Arrange: Create position with a fill
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-SHELL-TEST")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        # Verify position exists and is open
+        assert self.cache.position_exists(position_id)
+        assert position.is_open
+        assert position.ts_opened > 0
+        assert position.event_count == 1
+
+        # Act: Purge all fills - creates empty shell with zeroed timestamps
+        position.purge_events_for_order(order.client_order_id)
+        self.cache.update_position(position)
+
+        # Verify empty shell state
+        assert position.side == PositionSide.FLAT
+        assert position.is_closed  # FLAT positions are considered closed
+        assert position.ts_closed == 0  # Zeroed out - key to immediate purge eligibility
+        assert position.ts_opened == 0
+        assert position.ts_last == 0
+        assert position.duration_ns == 0
+        assert position.event_count == 0
+        assert self.cache.is_position_closed(position_id)
+
+        # The key insight: ts_closed=0 makes condition (0 + buffer_ns <= ts_now) always true
+        # Use ts_now far in future (1 hour) so that even with a 1-hour buffer, 0 + buffer < ts_now
+        self.cache.purge_closed_positions(
+            ts_now=7_200_000_000_000,  # 2 hours in nanoseconds
+            buffer_secs=3600,  # 1 hour buffer
+        )
+
+        # Assert: Position should be removed immediately (0 + buffer << ts_now always true)
+        assert not self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is None
+        assert self.cache.positions_total_count() == 0
+        assert self.cache.positions_closed_count() == 0
+
+    def test_purge_order_cleans_up_strategy_orders_index(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        # Verify order is closed and in strategy index
+        assert order.is_closed
+        strategy_id = self.strategy.id
+        client_order_id = order.client_order_id
+
+        # Verify order is in index (by checking query doesn't crash and includes order)
+        orders_for_strategy = self.cache.orders(strategy_id=strategy_id)
+        assert order in orders_for_strategy
+
+        # Act
+        self.cache.purge_order(client_order_id)
+
+        # Assert - verify order is removed and queries don't crash
+        assert not self.cache.order_exists(client_order_id)
+        orders_for_strategy_after = self.cache.orders(strategy_id=strategy_id)
+        assert order not in orders_for_strategy_after
+
+    def test_purge_order_cleans_up_exec_spawn_orders_index(self):
+        # Arrange
+        parent_order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Verify parent order is in exec_spawn index
+        parent_id = parent_order.client_order_id
+        orders_for_spawn = self.cache.orders_for_exec_spawn(parent_id)
+        assert parent_order in orders_for_spawn
+
+        # Act
+        self.cache.purge_order(parent_id)
+
+        # Assert - verify query doesn't crash after purge
+        assert not self.cache.order_exists(parent_id)
+        orders_for_spawn_after = self.cache.orders_for_exec_spawn(parent_id)
+        assert parent_order not in orders_for_spawn_after
+        assert orders_for_spawn_after == []
+
+    def test_purge_order_multiple_times_does_not_crash(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        client_order_id = order.client_order_id
+
+        # Act - purge the order once
+        self.cache.purge_order(client_order_id)
+        assert not self.cache.order_exists(client_order_id)
+
+        self.cache.purge_order(client_order_id)
+        self.cache.purge_order(ClientOrderId("O-DOES-NOT-EXIST"))
+
+        # Assert - verify queries still work
+        orders_for_strategy = self.cache.orders(strategy_id=self.strategy.id)
+        assert order not in orders_for_strategy
 
 
 class TestExecutionCacheIntegrityCheck:

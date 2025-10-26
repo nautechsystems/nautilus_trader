@@ -333,7 +333,7 @@ impl BettingInstrument {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -356,7 +356,7 @@ impl BettingInstrument {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(BettingInstrument))?;
         dict.set_item("id", self.id.to_string())?;
@@ -422,19 +422,19 @@ impl BettingInstrument {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
     use crate::instruments::{BettingInstrument, stubs::*};
 
     #[rstest]
     fn test_dict_round_trip(betting: BettingInstrument) {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let values = betting.py_to_dict(py).unwrap();
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_betting = BettingInstrument::py_from_dict(py, values).unwrap();
             assert_eq!(betting, new_betting);
-        })
+        });
     }
 }

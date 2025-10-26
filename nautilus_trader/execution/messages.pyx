@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime as py_datetime
+from datetime import timezone
 from typing import Any
 
 from cpython.datetime cimport datetime
@@ -42,6 +44,14 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
+
+
+cpdef datetime _ns_to_datetime(object value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return py_datetime.fromtimestamp(value / 1_000_000_000, tz=timezone.utc)
+    return value
 
 
 cdef class ExecutionReportCommand(Command):
@@ -260,8 +270,8 @@ cdef class GenerateOrderStatusReports(ExecutionReportCommand):
         cdef str i = values["instrument_id"]
         return GenerateOrderStatusReports(
             instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
-            start=values["start"],
-            end=values["end"],
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
             open_only=values["open_only"],
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
@@ -375,8 +385,8 @@ cdef class GenerateFillReports(ExecutionReportCommand):
         return GenerateFillReports(
             instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            start=values["start"],
-            end=values["end"],
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
             params=values.get("params"),
@@ -481,8 +491,8 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
         cdef str i = values["instrument_id"]
         return GeneratePositionStatusReports(
             instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
-            start=values["start"],
-            end=values["end"],
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
             params=values.get("params"),

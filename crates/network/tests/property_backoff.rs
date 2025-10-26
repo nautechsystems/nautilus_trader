@@ -229,7 +229,7 @@ proptest! {
             let delay = backoff.next_duration();
             prop_assert!(
                 delay >= initial,
-                "Subsequent call {} should return delay >= initial ({}ms), got {}ms",
+                "Subsequent call {} should return delay >= initial ({}ms), was {}ms",
                 i + 1,
                 initial.as_millis(),
                 delay.as_millis()

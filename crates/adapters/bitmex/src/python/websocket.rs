@@ -55,19 +55,26 @@ use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 #[pymethods]
 impl BitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None, testnet=false))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
+        testnet: bool,
     ) -> PyResult<Self> {
         // If both api_key and api_secret are None, try to load from environment
         let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
-            // Try to load from environment variables
-            let env_key = std::env::var("BITMEX_API_KEY").ok();
-            let env_secret = std::env::var("BITMEX_API_SECRET").ok();
+            // Choose environment variables based on testnet flag
+            let (key_var, secret_var) = if testnet {
+                ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+            } else {
+                ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+            };
+
+            let env_key = std::env::var(key_var).ok();
+            let env_secret = std::env::var(secret_var).ok();
             (env_key, env_secret)
         } else {
             (api_key, api_secret)
@@ -121,8 +128,8 @@ impl BitmexWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -143,7 +150,7 @@ impl BitmexWebSocketClient {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
-                    Python::with_gil(|py| match msg {
+                    Python::attach(|py| match msg {
                         NautilusWsMessage::Data(data_vec) => {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
@@ -688,7 +695,7 @@ impl BitmexWebSocketClient {
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

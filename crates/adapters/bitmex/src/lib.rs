@@ -51,9 +51,23 @@
 
 pub mod common;
 pub mod config;
+pub mod data;
 pub mod error;
+pub mod execution;
 pub mod http;
 pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports
+pub use crate::{
+    common::{consts::BITMEX_VENUE, enums::BitmexSide},
+    data::BitmexDataClient,
+    execution::{
+        BitmexExecutionClient,
+        canceller::{BroadcasterMetrics, CancelBroadcaster, CancelBroadcasterConfig, ClientStats},
+    },
+    http::{client::BitmexHttpClient, error::BitmexHttpError},
+    websocket::{client::BitmexWebSocketClient, error::BitmexWsError},
+};

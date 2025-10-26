@@ -42,10 +42,8 @@ use strum::{Display, EnumIter, EnumString};
 )]
 #[non_exhaustive]
 #[strum(ascii_case_insensitive)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 pub enum Blockchain {
     Abstract,
     Arbitrum,
@@ -131,6 +129,7 @@ pub enum Blockchain {
 
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
 #[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_pyo3.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     /// The blockchain network type.
@@ -166,7 +165,7 @@ impl Chain {
     }
 
     /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
-    pub fn from_chain_id(chain_id: u32) -> Option<&'static Chain> {
+    pub fn from_chain_id(chain_id: u32) -> Option<&'static Self> {
         match chain_id {
             2741 => Some(&chains::ABSTRACT),
             42161 => Some(&chains::ARBITRUM),
@@ -239,7 +238,7 @@ impl Chain {
             109 => Some(&chains::SONEIUM),
             138 => Some(&chains::SOPHON),
             139 => Some(&chains::SOPHON_TESTNET),
-            10001 => Some(&chains::SUPERSEED),
+            10001 => Some(&chains::SUPERSEDE),
             9999 => Some(&chains::UNICHAIN),
             9997 => Some(&chains::UNICHAIN_SEPOLIA),
             50 => Some(&chains::XDC),
@@ -255,7 +254,7 @@ impl Chain {
     /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
     ///
     /// String matching is case-insensitive.
-    pub fn from_chain_name(chain_name: &str) -> Option<&'static Chain> {
+    pub fn from_chain_name(chain_name: &str) -> Option<&'static Self> {
         let blockchain = Blockchain::from_str(chain_name).ok()?;
 
         match blockchain {
@@ -330,7 +329,7 @@ impl Chain {
             Blockchain::Soneium => Some(&chains::SONEIUM),
             Blockchain::Sophon => Some(&chains::SOPHON),
             Blockchain::SophonTestnet => Some(&chains::SOPHON_TESTNET),
-            Blockchain::Superseed => Some(&chains::SUPERSEED),
+            Blockchain::Superseed => Some(&chains::SUPERSEDE),
             Blockchain::Unichain => Some(&chains::UNICHAIN),
             Blockchain::UnichainSepolia => Some(&chains::UNICHAIN_SEPOLIA),
             Blockchain::Xdc => Some(&chains::XDC),
@@ -471,7 +470,7 @@ pub mod chains {
     pub static SOPHON: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Sophon, 138));
     pub static SOPHON_TESTNET: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 139));
-    pub static SUPERSEED: LazyLock<Chain> =
+    pub static SUPERSEDE: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::Superseed, 10001));
     pub static UNICHAIN: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Unichain, 9999));
     pub static UNICHAIN_SEPOLIA: LazyLock<Chain> =
@@ -485,6 +484,10 @@ pub mod chains {
     pub static ZORA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zora, 7777777));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -497,7 +500,7 @@ mod tests {
         assert_eq!(eth_chain.to_string(), "Chain(name=Ethereum, id=1)");
         assert_eq!(eth_chain.name, Blockchain::Ethereum);
         assert_eq!(eth_chain.chain_id, 1);
-        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz")
+        assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz");
     }
 
     #[rstest]

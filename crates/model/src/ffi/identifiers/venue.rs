@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::cstr_as_str;
+use nautilus_core::{MUTEX_POISONED, ffi::string::cstr_as_str};
 
 use crate::{identifiers::Venue, venues::VENUE_MAP};
 
@@ -52,7 +52,7 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_code_exists(code_ptr: *const c_char) -> u8 {
     let code = unsafe { cstr_as_str(code_ptr) };
-    u8::from(VENUE_MAP.lock().unwrap().contains_key(code))
+    u8::from(VENUE_MAP.lock().expect(MUTEX_POISONED).contains_key(code))
 }
 
 /// Converts a UTF-8 C string pointer to a `Venue`.

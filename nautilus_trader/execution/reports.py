@@ -88,6 +88,9 @@ class OrderStatusReport(ExecutionReport):
     """
     Represents an order status at a point in time.
 
+    Reporting is best-effort; if filled exceeds quantity due to venue anomalies,
+    avoid negative leaves_qty by clamping to zero.
+
     Parameters
     ----------
     account_id : AccountId
@@ -185,6 +188,8 @@ class OrderStatusReport(ExecutionReport):
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         order_list_id: OrderListId | None = None,
         venue_position_id: PositionId | None = None,  # (None if not assigned by venue)
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
         contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
         expire_time: datetime | None = None,
         price: Price | None = None,
@@ -222,6 +227,8 @@ class OrderStatusReport(ExecutionReport):
         self.order_list_id = order_list_id
         self.venue_order_id = venue_order_id
         self.venue_position_id = venue_position_id
+        self.linked_order_ids = linked_order_ids
+        self.parent_order_id = parent_order_id
         self.order_side = order_side
         self.order_type = order_type
         self.contingency_type = contingency_type
@@ -236,10 +243,11 @@ class OrderStatusReport(ExecutionReport):
         self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(
-            float(self.quantity - self.filled_qty),
-            self.quantity.precision,
-        )
+
+        # Clamp to minimum zero for robustness
+        raw_leaves_qty = max(self.quantity.raw - self.filled_qty.raw, 0)
+        self.leaves_qty = Quantity.from_raw(raw_leaves_qty, self.quantity.precision)
+
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only
@@ -278,6 +286,7 @@ class OrderStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
+        linked_ids = [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -286,6 +295,8 @@ class OrderStatusReport(ExecutionReport):
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"linked_order_ids={linked_ids}, "
+            f"parent_order_id={self.parent_order_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
@@ -340,6 +351,10 @@ class OrderStatusReport(ExecutionReport):
             "client_order_id": self.client_order_id.value if self.client_order_id else None,
             "order_list_id": self.order_list_id.value if self.order_list_id else None,
             "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+            "linked_order_ids": (
+                [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
+            ),
+            "parent_order_id": self.parent_order_id.value if self.parent_order_id else None,
             "contingency_type": self.contingency_type.value,
             "expire_time": self.expire_time.isoformat() if self.expire_time else None,
             "price": str(self.price) if self.price else None,
@@ -392,6 +407,12 @@ class OrderStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
+            linked_order_ids=(
+                [ClientOrderId(value) for value in values.get("linked_order_ids") or []] or None
+            ),
+            parent_order_id=(
+                ClientOrderId(values["parent_order_id"]) if values.get("parent_order_id") else None
+            ),
             contingency_type=ContingencyType(values["contingency_type"]),
             expire_time=(
                 datetime.fromisoformat(values["expire_time"]) if values["expire_time"] else None
@@ -441,6 +462,16 @@ class OrderStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(pyo3_report.venue_position_id.value)
                 if pyo3_report.venue_position_id
+                else None
+            ),
+            linked_order_ids=(
+                [ClientOrderId(str(oid.value)) for oid in pyo3_report.linked_order_ids]
+                if pyo3_report.linked_order_ids
+                else None
+            ),
+            parent_order_id=(
+                ClientOrderId(str(pyo3_report.parent_order_id.value))
+                if pyo3_report.parent_order_id
                 else None
             ),
             contingency_type=contingency_type_from_pyo3(pyo3_report.contingency_type),
@@ -698,6 +729,8 @@ class PositionStatusReport(ExecutionReport):
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
+    avg_px_open : Decimal, optional
+        The reported position average open price.
 
     """
 
@@ -711,7 +744,7 @@ class PositionStatusReport(ExecutionReport):
         ts_last: int,
         ts_init: int,
         venue_position_id: PositionId | None = None,
-        avg_px_open: Price | None = None,
+        avg_px_open: Decimal | None = None,
     ) -> None:
         super().__init__(
             account_id,
@@ -749,9 +782,6 @@ class PositionStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
-        avg_px_open_str = (
-            f"avg_px_open={self.avg_px_open}, " if self.avg_px_open is not None else ""
-        )
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -759,7 +789,7 @@ class PositionStatusReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
-            f"{avg_px_open_str}"
+            f"avg_px_open={self.avg_px_open}, "
             f"signed_decimal_qty={self.signed_decimal_qty}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
@@ -814,9 +844,7 @@ class PositionStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
-            avg_px_open=(
-                Price.from_str(values["avg_px_open"]) if values.get("avg_px_open") else None
-            ),
+            avg_px_open=(Decimal(values["avg_px_open"]) if values.get("avg_px_open") else None),
         )
 
     @staticmethod
@@ -834,11 +862,7 @@ class PositionStatusReport(ExecutionReport):
                 if pyo3_report.venue_position_id
                 else None
             ),
-            avg_px_open=(
-                Price.from_str(str(pyo3_report.avg_px_open))
-                if hasattr(pyo3_report, "avg_px_open") and pyo3_report.avg_px_open
-                else None
-            ),
+            avg_px_open=pyo3_report.avg_px_open,
         )
 
 

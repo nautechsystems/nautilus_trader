@@ -80,8 +80,16 @@ impl MessageHandler for BookUpdater {
                 .order_book_mut(&data.instrument_id())
         {
             match data {
-                Data::Delta(delta) => book.apply_delta(delta),
-                Data::Deltas(deltas) => book.apply_deltas(deltas),
+                Data::Delta(delta) => {
+                    if let Err(e) = book.apply_delta(delta) {
+                        log::error!("Failed to apply delta: {e}");
+                    }
+                }
+                Data::Deltas(deltas) => {
+                    if let Err(e) = book.apply_deltas(deltas) {
+                        log::error!("Failed to apply deltas: {e}");
+                    }
+                }
                 Data::Depth10(depth) => book.apply_depth(depth),
                 _ => log::error!("Invalid data type for book update, was {data:?}"),
             }

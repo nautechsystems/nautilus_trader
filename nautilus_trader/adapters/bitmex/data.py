@@ -24,10 +24,10 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
-from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -44,9 +44,14 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 
@@ -100,12 +105,16 @@ class BitmexDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._active_only = True  # Always use active instruments for live clients
-        self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
-        self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
-        self._log.info(
-            f"config.update_instruments_interval_mins={config.update_instruments_interval_mins}",
-            LogColor.BLUE,
-        )
+
+        self._log.info(f"{config.testnet=}", LogColor.BLUE)
+        self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
+        self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
 
         # Periodic updates
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
@@ -124,6 +133,7 @@ class BitmexDataClient(LiveMarketDataClient):
             api_secret=config.api_secret,
             account_id=None,  # Not required for data
             heartbeat=30,
+            testnet=config.testnet,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
@@ -194,6 +204,23 @@ class BitmexDataClient(LiveMarketDataClient):
             return "wss://testnet.bitmex.com/realtime"
         else:
             return "wss://ws.bitmex.com/realtime"
+
+    def _cache_instruments(self) -> None:
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
+
+        for inst in instruments_pyo3:
+            self._http_client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    def _send_all_instruments_to_data_engine(self) -> None:
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
+
+        for currency in self._instrument_provider.currencies().values():
+            self._cache.add_currency(currency)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -333,22 +360,108 @@ class BitmexDataClient(LiveMarketDataClient):
 
         self._log.warning(f"Instrument {request.instrument_id} not found")
 
-    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Quote ticks request not yet implemented")
-
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Trade ticks request not yet implemented")
+        limit = request.limit or None
+        if limit is not None and limit > 1000:
+            self._log.warning(
+                f"BitMEX limit {limit} exceeds maximum of 1000, clamping",
+            )
+            limit = 1000
+
+        start = ensure_pydatetime_utc(request.start) if request.start else None
+        end = ensure_pydatetime_utc(request.end) if request.end else None
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+
+        try:
+            pyo3_trades = await self._http_client.request_trades(
+                instrument_id=pyo3_instrument_id,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+        except Exception as e:  # pragma: no cover - network failures
+            self._log.exception(
+                f"Failed to request trades for {request.instrument_id}",
+                e,
+            )
+            return
+
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
+
+        self._handle_trade_ticks(
+            request.instrument_id,
+            trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
-        # TODO: Implement
-        self._log.warning("Bars request not yet implemented")
+        bar_type = request.bar_type
+
+        if (
+            bar_type.is_internally_aggregated()
+            or bar_type.aggregation_source != AggregationSource.EXTERNAL
+        ):
+            self._log.error(
+                f"Cannot request {bar_type} bars: BitMEX only provides EXTERNAL aggregation",
+            )
+            return
+
+        spec = bar_type.spec
+        supported = spec.price_type == PriceType.LAST and (
+            (spec.aggregation == BarAggregation.MINUTE and spec.step in (1, 5))
+            or (spec.aggregation == BarAggregation.HOUR and spec.step == 1)
+            or (spec.aggregation == BarAggregation.DAY and spec.step == 1)
+        )
+        if not supported:
+            self._log.error(
+                f"Cannot request {bar_type} bars: unsupported BitMEX specification",
+            )
+            return
+
+        limit = request.limit or None
+        if limit is not None and limit > 1000:
+            self._log.warning(
+                f"BitMEX bar limit {limit} exceeds maximum of 1000, clamping",
+            )
+            limit = 1000
+
+        partial = False
+
+        if isinstance(request.params, dict):
+            partial = bool(request.params.get("partial", False))
+
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        start = ensure_pydatetime_utc(request.start) if request.start else None
+        end = ensure_pydatetime_utc(request.end) if request.end else None
+
+        try:
+            pyo3_bars = await self._http_client.request_bars(
+                bar_type=pyo3_bar_type,
+                start=start,
+                end=end,
+                limit=limit,
+                partial=partial,
+            )
+        except Exception as e:  # pragma: no cover - network failures
+            self._log.exception(f"Failed to request bars for {bar_type}", e)
+            return
+
+        bars = Bar.from_pyo3_list(pyo3_bars)
+
+        self._handle_bars(
+            bar_type,
+            bars,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _update_instruments(self, interval_mins: int) -> None:
-        """
-        Periodically update instruments from the venue.
-        """
         while True:
             try:
                 self._log.debug(
@@ -362,26 +475,6 @@ class BitmexDataClient(LiveMarketDataClient):
                 return
             except Exception as e:
                 self._log.error(f"Error updating instruments: {e}")
-
-    def _cache_instruments(self) -> None:
-        # Ensures instrument definitions are available for correct
-        # price and size precisions when parsing responses
-        instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
-
-        for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
-
-        self._log.debug("Cached instruments", LogColor.MAGENTA)
-
-    def _send_all_instruments_to_data_engine(self) -> None:
-        """
-        Send all instruments to the data engine.
-        """
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
-
-        for currency in self._instrument_provider.currencies().values():
-            self._cache.add_currency(currency)
 
     def _handle_msg(self, msg: Any) -> None:
         try:

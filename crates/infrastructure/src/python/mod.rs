@@ -36,5 +36,7 @@ pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::redis::msgbus::RedisMessageBusDatabase>()?;
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::cache::PostgresCacheDatabase>()?;
+    #[cfg(feature = "postgres")]
+    m.add_class::<crate::sql::pg::PostgresConnectOptions>()?;
     Ok(())
 }

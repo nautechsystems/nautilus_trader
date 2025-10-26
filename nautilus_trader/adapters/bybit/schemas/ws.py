@@ -36,7 +36,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.enums import BybitWsOrderRequestMsgOP
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
-from nautilus_trader.adapters.bybit.common.parsing import parse_str_to_raw
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderPostParams
@@ -63,6 +62,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -671,6 +671,15 @@ class BybitWsAccountOrder(msgspec.Struct):
             trailing_offset = None
             trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
 
+        order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
+
+        # Special case: if Bybit reports "Rejected" but the order has fills, treat it as Canceled.
+        # This handles the case where the exchange partially fills an order then rejects the
+        # remaining quantity (e.g., due to margin, risk limits, or liquidity constraints).
+        # The state machine does not allow PARTIALLY_FILLED -> REJECTED transitions.
+        if self.orderStatus == BybitOrderStatus.REJECTED and Decimal(self.cumExecQty) > 0:
+            order_status = OrderStatus.CANCELED
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -679,7 +688,7 @@ class BybitWsAccountOrder(msgspec.Struct):
             order_side=enum_parser.parse_bybit_order_side(self.side),
             order_type=order_type,
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
-            order_status=enum_parser.parse_bybit_order_status(order_type, self.orderStatus),
+            order_status=order_status,
             price=Price.from_str(self.price) if self.price else None,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
@@ -799,29 +808,31 @@ class BybitWsAccountWalletCoin(msgspec.Struct):
     marginCollateral: bool
     locked: str
     spotHedgingQty: str
+    spotBorrow: str | None = None
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
+        wallet_balance = Decimal(self.walletBalance or "0")
+        spot_borrow = Decimal(self.spotBorrow or "0")
 
-        total_raw = parse_str_to_raw(self.walletBalance)
-        locked_raw = parse_str_to_raw(self.locked)  # TODO: Locked only valid for Spot
-        free_raw = total_raw - locked_raw
+        total_balance = wallet_balance - spot_borrow
+
+        total = Money.from_str(f"{total_balance} {currency}")
+        locked = Money.from_str(f"{self.locked or '0'} {currency}")
+        free = Money.from_raw(total.raw - locked.raw, currency)
 
         return AccountBalance(
-            total=Money.from_raw(total_raw, currency),
-            locked=Money.from_raw(locked_raw, currency),
-            free=Money.from_raw(free_raw, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
         currency = Currency.from_str(self.coin)
 
-        initial_raw = parse_str_to_raw(self.totalPositionIM)
-        maintenance_raw = parse_str_to_raw(self.totalPositionMM)
-
         return MarginBalance(
-            initial=Money.from_raw(initial_raw, currency),
-            maintenance=Money.from_raw(maintenance_raw, currency),
+            initial=Money.from_str(f"{self.totalPositionIM or '0'} {currency}"),
+            maintenance=Money.from_str(f"{self.totalPositionMM or '0'} {currency}"),
         )
 
 

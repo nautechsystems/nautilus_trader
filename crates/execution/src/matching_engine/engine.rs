@@ -247,24 +247,35 @@ impl OrderMatchingEngine {
     // -- DATA PROCESSING -------------------------------------------------------------------------
 
     /// Process the venues market for the given order book delta.
-    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the delta to the book fails.
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) -> anyhow::Result<()> {
         log::debug!("Processing {delta}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_delta(delta);
+            self.book.apply_delta(delta)?;
         }
 
         self.iterate(delta.ts_init);
+        Ok(())
     }
 
-    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+    /// Process the venues market for the given order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the deltas to the book fails.
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         log::debug!("Processing {deltas}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_deltas(deltas);
+            self.book.apply_deltas(deltas)?;
         }
 
         self.iterate(deltas.ts_init);
+        Ok(())
     }
 
     /// # Panics
@@ -615,7 +626,7 @@ impl OrderMatchingEngine {
                 }
             }
 
-            // Check fo valid order quantity precision
+            // Check for valid order quantity precision
             if order.quantity().precision != self.instrument.size_precision() {
                 self.generate_order_rejected(
                     order,
@@ -1543,6 +1554,10 @@ impl OrderMatchingEngine {
             }
 
             // Check reduce only order
+            // If the incoming simulated fill would exceed the position when reduce-only is honored,
+            // clamp the effective fill size to the adjusted (remaining position) quantity.
+            let mut effective_fill_qty = *fill_qty;
+
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && let Some(position) = &position
@@ -1553,11 +1568,17 @@ impl OrderMatchingEngine {
                     return;
                 }
 
-                // Adjust fill to honor reduce only execution (fill remaining position size only)
+                // Adjusted target quantity equals the remaining position size
                 let adjusted_fill_qty =
                     Quantity::from_raw(position.quantity.raw, fill_qty.precision);
 
-                self.generate_order_updated(order, adjusted_fill_qty, None, None);
+                // Determine the effective fill size for this iteration first
+                effective_fill_qty = std::cmp::min(effective_fill_qty, adjusted_fill_qty);
+
+                // Only emit an update if the order quantity actually changes
+                if order.quantity() != adjusted_fill_qty {
+                    self.generate_order_updated(order, adjusted_fill_qty, None, None);
+                }
             }
 
             if fill_qty.is_zero() {
@@ -1573,7 +1594,7 @@ impl OrderMatchingEngine {
             self.fill_order(
                 order,
                 fill_px,
-                *fill_qty,
+                effective_fill_qty,
                 liquidity_side,
                 venue_position_id,
                 position.clone(),
@@ -1653,9 +1674,9 @@ impl OrderMatchingEngine {
         if order.is_passive() && order.is_closed() {
             // Check if order exists in OrderMatching core, and delete it if it does
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self
-                    .core
-                    .delete_order(&PassiveOrderAny::from(order.clone()));
+                let _ = self.core.delete_order(
+                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                );
             }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
@@ -2079,7 +2100,9 @@ impl OrderMatchingEngine {
             }
         }
 
-        let _ = self.core.add_order(order.to_owned().into());
+        let _ = self.core.add_order(
+            PassiveOrderAny::try_from(order.to_owned()).expect("passive order conversion"),
+        );
     }
 
     fn expire_order(&mut self, order: &PassiveOrderAny) {
@@ -2106,9 +2129,9 @@ impl OrderMatchingEngine {
 
         // Check if order exists in OrderMatching core, and delete it if it does
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self
-                .core
-                .delete_order(&PassiveOrderAny::from(order.clone()));
+            let _ = self.core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            );
         }
         self.cached_filled_qty.remove(&order.client_order_id());
 

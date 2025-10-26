@@ -319,6 +319,7 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
     symbol: str | None
     price: str | None
     time: int | None = None  # FUTURES only
+    pair: str | None = None  # USDT-M FUTURES only (v2 endpoint)
     ps: str | None = None  # COIN-M FUTURES only, pair
 
 
