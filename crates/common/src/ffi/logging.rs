@@ -30,8 +30,9 @@ use nautilus_model::identifiers::TraderId;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        headers,
+        headers, init_logging,
         logger::{self, LogGuard, LoggerConfig},
+        map_log_level_to_filter, parse_component_levels,
         writer::FileWriterConfig,
     },
 };
@@ -101,11 +102,12 @@ pub unsafe extern "C" fn logging_init(
     max_file_size: u64,
     max_backup_count: u32,
 ) -> LogGuard_API {
-    let level_stdout = crate::logging::map_log_level_to_filter(level_stdout);
-    let level_file = crate::logging::map_log_level_to_filter(level_file);
+    let level_stdout = map_log_level_to_filter(level_stdout);
+    let level_file = map_log_level_to_filter(level_file);
 
     let component_levels_json = unsafe { optional_bytes_to_json(component_levels_ptr) };
-    let component_levels = crate::logging::parse_component_levels(component_levels_json);
+    let component_levels = parse_component_levels(component_levels_json)
+        .expect("Failed to parse component log levels");
 
     let config = LoggerConfig::new(
         level_stdout,
@@ -130,11 +132,12 @@ pub unsafe extern "C" fn logging_init(
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 
     if u8_as_bool(is_bypassed) {
-        crate::logging::logging_set_bypass();
+        logging_set_bypass();
     }
 
     LogGuard_API(Box::new(
-        crate::logging::init_logging(trader_id, instance_id, config, file_config).unwrap(),
+        init_logging(trader_id, instance_id, config, file_config)
+            .expect("Failed to initialize logging"),
     ))
 }
 

@@ -565,9 +565,9 @@ class LoggingConfig(NautilusConfig, frozen=True):
         The maximum number of backup log files to keep when rotating.
     log_colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
-    log_component_levels : dict[str, LogLevel]
+    log_component_levels : dict[str, str]
         The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
+        IDs (e.g. actor/strategy IDs) and values are log level strings (case-insensitive).
     log_components_only : bool, default False
         If only components with explicit component-level filters should be logged.
         When enabled, only log messages from components that have been explicitly

@@ -226,6 +226,8 @@ class NautilusKernel:
                         component=name,
                     )
                 else:
+                    set_logging_pyo3(False)
+
                     # Initialize logging for sync Rust and Python
                     self._log_guard = init_logging(
                         trader_id=self._trader_id,

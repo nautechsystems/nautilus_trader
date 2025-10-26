@@ -1466,13 +1466,14 @@ class MovingAverageType(Enum):
     VARIABLE_INDEX_DYNAMIC = "VARIABLE_INDEX_DYNAMIC"
 
 class LogLevel(Enum):
+    OFF = "OFF"
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
 
 class LogColor(Enum):
-    DEFAULT = "DEFAULT"
+    NORMAL = "NORMAL"
     GREEN = "GREEN"
     BLUE = "BLUE"
     MAGENTA = "MAGENTA"

@@ -1214,7 +1214,7 @@ cpdef LogGuard init_logging(
     str directory = None,
     str file_name = None,
     str file_format = None,
-    dict component_levels: dict[ComponentId, LogLevel] = None,
+    dict component_levels = None,
     bint log_components_only = False,
     bint colors = True,
     bint bypass = False,
@@ -1248,17 +1248,17 @@ cpdef LogGuard init_logging(
         If ``None`` then will write to the current working directory.
     file_name : str, optional
         The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
-        If ``None`` will not log to a file (unless `file_auto` is True).
+        If ``None`` will not log to a file.
     file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
         If set to 'JSON' then logs will be in JSON format.
-    component_levels : dict[ComponentId, LogLevel]
+    component_levels : dict[str, str], optional
         The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
+        IDs as strings (e.g. actor/strategy IDs) and values are log level strings (case-insensitive).
     log_components_only : bool, default False
         If only components with explicit component-level filters should be logged.
         When enabled, only log messages from components that have been explicitly
-        configured in `log_component_levels` will be output.
+        configured in `component_levels` will be output.
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False

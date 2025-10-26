@@ -119,10 +119,12 @@ pub fn py_init_logging(
 ) -> PyResult<LogGuard> {
     let level_file = level_file.map_or(LevelFilter::Off, map_log_level_to_filter);
 
+    let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
+
     let config = LoggerConfig::new(
         map_log_level_to_filter(level_stdout),
         level_file,
-        parse_component_levels(component_levels),
+        component_levels,
         log_components_only.unwrap_or(false),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
@@ -145,18 +147,18 @@ pub fn py_logger_flush() {
 
 fn parse_component_levels(
     original_map: Option<HashMap<String, String>>,
-) -> HashMap<Ustr, LevelFilter> {
+) -> anyhow::Result<HashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
             let mut new_map = HashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
-                let value = parse_level_filter_str(&value);
-                new_map.insert(ustr_key, value);
+                let level = parse_level_filter_str(&value)?;
+                new_map.insert(ustr_key, level);
             }
-            new_map
+            Ok(new_map)
         }
-        None => HashMap::new(),
+        None => Ok(HashMap::new()),
     }
 }
 
