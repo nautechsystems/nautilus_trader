@@ -1024,9 +1024,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+                # Signal order event
                 event = self._ack_events_order.get(venue_order_id)
                 if event:
                     event.set()
+
+                # Signal trade event
+                trade_event = self._ack_events_trade.get(venue_order_id)
+                if trade_event:
+                    trade_event.set()
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
