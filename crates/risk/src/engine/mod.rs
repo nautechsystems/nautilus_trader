@@ -903,8 +903,9 @@ impl RiskEngine {
                     }
 
                     match cum_notional_sell {
-                        Some(mut cum_notional_sell) => {
-                            cum_notional_sell.raw += cash_value.raw;
+                        Some(mut value) => {
+                            value.raw += cash_value.raw;
+                            cum_notional_sell = Some(value);
                         }
                         None => cum_notional_sell = Some(cash_value),
                     }

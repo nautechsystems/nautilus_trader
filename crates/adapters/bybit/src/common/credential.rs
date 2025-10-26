@@ -15,6 +15,8 @@
 
 //! Bybit API credential storage and signing helpers.
 
+#![allow(unused_assignments)] // Fields are used in methods, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;

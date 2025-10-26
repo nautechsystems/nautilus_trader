@@ -233,7 +233,7 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 .PHONY: docsrs-check
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	cargo hack --workspace doc --no-deps --all-features
+	cargo +nightly hack --workspace doc --no-deps --all-features
 
 #== Rust Development
 

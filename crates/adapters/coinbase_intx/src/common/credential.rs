@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(unused_assignments)] // Fields are used in sign_ws and accessed externally, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;

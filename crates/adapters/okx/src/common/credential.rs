@@ -15,6 +15,8 @@
 
 //! OKX API credential storage and request signing helpers.
 
+#![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
