@@ -91,7 +91,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.15.2
+    rev: v1.16.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -282,7 +282,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.24  # Must match uv-version file
+    rev: 0.9.5  # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

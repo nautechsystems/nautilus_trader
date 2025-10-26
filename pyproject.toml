@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.221.0"
+version = "1.222.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -45,9 +45,9 @@ docs = "https://nautilustrader.io/docs"
 [build-system]
 requires = [
   "setuptools>=80",
-  "poetry-core>=2.1.3",
+  "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
   "numpy>=1.26.4",
-  "cython==3.1.6",
+  "cython==3.1.6", # Pinned to 3.1.6 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
