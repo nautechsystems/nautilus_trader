@@ -87,6 +87,7 @@ dydx = [
 polymarket = [
   "py-clob-client==0.28.0,<1.0.0", # Pinned to 0.28.0 for stability
 ]
+visualization = ["plotly>=6.3.1,<7.0.0"]
 
 [dependency-groups]
 dev = [
@@ -205,7 +206,7 @@ ignore = [
   "D413", # Missing blank line after last section ('Parameters')
   "D415", # First line should end with a period, question mark, or exclamation point (not always a first line)
   "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-  "E501",
+  "E501", # Line too long (will lint separately)
   "E741", # Ambiguous variable name (single char)
   "PD901", # `df` is a bad variable name. Be kinder to your future self
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
@@ -226,7 +227,7 @@ fixable = ["ALL"]
 # E501 = line too long
 # UP006 = Use list instead of List for type annotation (field name 'list' shadows built-in in Bybit schemas)
 # UP035 = typing.List is deprecated (field name 'list' shadows built-in in Bybit schemas)
-# These are ignored and linted separately (see .pre-commit-config.yaml)
+# These are ignored and linted separately
 unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"

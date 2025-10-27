@@ -11,7 +11,7 @@ central components.
 To install NautilusTrader with dYdX support:
 
 ```bash
-pip install --upgrade "nautilus_trader[dydx]"
+uv pip install "nautilus_trader[dydx]"
 ```
 
 To build from source with all extras (including dYdX):

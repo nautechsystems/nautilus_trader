@@ -13,25 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Trading performance statistics and portfolio metrics.
+use std::collections::BTreeMap;
 
-pub mod cagr;
-pub mod calmar_ratio;
-pub mod expectancy;
-pub mod long_ratio;
-pub mod loser_avg;
-pub mod loser_max;
-pub mod loser_min;
-pub mod max_drawdown;
-pub mod profit_factor;
-pub mod returns_avg;
-pub mod returns_avg_loss;
-pub mod returns_avg_win;
-pub mod returns_volatility;
-pub mod risk_return_ratio;
-pub mod sharpe_ratio;
-pub mod sortino_ratio;
-pub mod win_rate;
-pub mod winner_avg;
-pub mod winner_max;
-pub mod winner_min;
+use pyo3::prelude::*;
+
+use super::transform_returns;
+use crate::{statistic::PortfolioStatistic, statistics::cagr::CAGR};
+
+#[pymethods]
+impl CAGR {
+    #[new]
+    #[pyo3(signature = (period=None))]
+    fn py_new(period: Option<usize>) -> Self {
+        Self::new(period)
+    }
+
+    #[getter]
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> String {
+        self.name()
+    }
+
+    #[pyo3(name = "calculate_from_returns")]
+    fn py_calculate_from_returns(&self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
+        self.calculate_from_returns(&transform_returns(raw_returns))
+    }
+
+    fn __repr__(&self) -> String {
+        format!("CAGR({})", self.name())
+    }
+}

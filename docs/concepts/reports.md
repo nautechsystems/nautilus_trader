@@ -289,26 +289,41 @@ see the [Portfolio guide](portfolio.md#portfolio-statistics). The Portfolio guid
 
 ### Visualization
 
-Reports integrate well with visualization tools:
+NautilusTrader provides interactive tearsheets and plots via Plotly:
 
 ```python
-import matplotlib.pyplot as plt
+from nautilus_trader.analysis.tearsheet import create_tearsheet
 
-# Plot cumulative returns
-returns = positions_report["realized_return"].cumsum()
-returns.plot(title="Cumulative Returns")
-plt.show()
+# After backtest run
+engine.run()
 
-# Analyze fill quality (commission is a Money string e.g. "0.50 USD")
-# Extract numeric values and currency
-fills_report["commission_value"] = fills_report["commission"].str.split().str[0].astype(float)
-fills_report["commission_currency"] = fills_report["commission"].str.split().str[1]
+# Generate interactive HTML tearsheet
+create_tearsheet(engine, output_path="tearsheet.html")
+```
 
-# Group by liquidity side and currency
-commission_by_side = fills_report.groupby(["liquidity_side", "commission_currency"])["commission_value"].sum()
-commission_by_side.plot.bar()
-plt.title("Commission by Liquidity Side and Currency")
-plt.show()
+This creates an interactive HTML report with:
+
+- Equity curve
+- Drawdown analysis
+- Monthly returns heatmap
+- Performance statistics table
+- Returns distribution
+
+For more control, generate individual plots:
+
+```python
+from nautilus_trader.analysis.tearsheet import create_equity_curve
+
+returns = engine.portfolio.analyzer.returns()
+fig = create_equity_curve(returns, title="My Strategy Equity")
+fig.show()  # Display in browser
+fig.write_image("equity.png")  # Export to PNG (requires kaleido)
+```
+
+Install visualization dependencies:
+
+```bash
+uv pip install "nautilus_trader[visualization]"
 ```
 
 ## Report generation patterns
@@ -390,3 +405,10 @@ enabling detailed analysis of orders, fills, positions, and account states. Unde
 how to generate and interpret these reports is essential for strategy development,
 performance evaluation, and accurate PnL accounting, particularly when dealing with
 position snapshots in `NETTING` OMS configurations.
+
+## Related guides
+
+- [Visualization](visualization.md) - Learn how to create interactive tearsheets and charts from backtest results.
+- [Portfolio](portfolio.md) - Explore portfolio statistics and performance metrics.
+- [Backtesting](backtesting.md) - Learn how to run backtests that generate reports.
+- [Cache](cache.md) - Understand the cache system that stores data for reports.

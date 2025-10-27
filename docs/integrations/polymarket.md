@@ -16,7 +16,7 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 To install NautilusTrader with Polymarket support:
 
 ```bash
-pip install --upgrade "nautilus_trader[polymarket]"
+uv pip install "nautilus_trader[polymarket]"
 ```
 
 To build from source with all extras (including Polymarket):
@@ -113,7 +113,7 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 
-- Install the web3 Python package: `pip install --upgrade web3==7.12.1`.
+- Install the web3 Python package: `uv pip install "web3==7.12.1"`.
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.

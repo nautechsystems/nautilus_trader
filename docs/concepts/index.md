@@ -81,6 +81,12 @@ The platform provides logging for both backtesting and live trading using a high
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation.
 
+## [Visualization](visualization.md)
+
+The **Visualization** guide covers the interactive tearsheet system for analyzing backtest
+results, including available charts, themes, customization options, and how to create
+custom visualizations using the extensible chart registry.
+
 ## [Live Trading](live.md)
 
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in real-time

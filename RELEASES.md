@@ -3,6 +3,10 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added initial backtest visualization tearsheets with plotly
+- Added `CAGR` portfolio statistic
+- Added `CalmarRatio` portfolio statistic
+- Added `MaxDrawdown` portfolio statistic
 
 ### Breaking Changes
 - Dropped support for Python 3.11

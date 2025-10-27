@@ -36,10 +36,10 @@ Conda and other Python distributions *may* work but aren’t officially supporte
 
 ## From PyPI
 
-To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI using Python's pip package manager:
+To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI:
 
 ```bash
-pip install -U nautilus_trader
+uv pip install nautilus_trader
 ```
 
 ## Extras
@@ -51,11 +51,12 @@ Install optional dependencies as 'extras' for specific integrations:
 - `dydx`: dYdX adapter (integration) dependencies.
 - `ib`: Interactive Brokers adapter (integration) dependencies.
 - `polymarket`: Polymarket adapter (integration) dependencies.
+- `visualization`: Plotly-based interactive tearsheets and charts.
 
-To install with specific extras using pip:
+To install with specific extras:
 
 ```bash
-pip install -U "nautilus_trader[docker,ib]"
+uv pip install "nautilus_trader[docker,ib]"
 ```
 
 ## From the Nautech Systems package index
@@ -70,11 +71,11 @@ Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and 
 To install the latest stable release:
 
 ```bash
-pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader --index-url=https://packages.nautechsystems.io/simple
 ```
 
 :::tip
-Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically:
+Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to PyPI automatically:
 
 :::
 
@@ -105,18 +106,18 @@ We do not recommend using development wheels in production environments, such as
 
 ### Installation commands
 
-By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, uv will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
 ```bash
-pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
 To install a specific development wheel (e.g., `1.221.0a20250912` for September 12, 2025):
 
 ```bash
-pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 ### Available versions
@@ -239,7 +240,7 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
 ```bash
-pip install <file-name>.whl
+uv pip install <file-name>.whl
 ```
 
 ## Versioning and releases
