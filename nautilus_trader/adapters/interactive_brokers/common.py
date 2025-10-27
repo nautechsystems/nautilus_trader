@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Final, Literal
+from typing import Final
+from typing import Literal
 
 from ibapi.const import UNSET_DECIMAL
 from ibapi.contract import FundAssetType

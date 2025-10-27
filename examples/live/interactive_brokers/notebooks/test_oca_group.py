@@ -24,7 +24,6 @@ import sys
 
 import pandas as pd
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
@@ -38,7 +37,6 @@ from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBr
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 
-# fmt: on
 # from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import RoutingConfig

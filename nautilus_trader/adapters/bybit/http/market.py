@@ -20,12 +20,8 @@ from typing import TYPE_CHECKING
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParams
-
-# fmt: on
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint

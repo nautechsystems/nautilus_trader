@@ -19,7 +19,6 @@ from operator import attrgetter
 
 import pandas as pd
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -62,9 +61,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-
-
-# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):

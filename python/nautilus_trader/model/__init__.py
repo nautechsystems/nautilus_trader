@@ -19,16 +19,10 @@ from nautilus_trader._libnautilus.model import *  # noqa: F403 (undefined-local-
 
 
 try:  # pragma: no cover - optional extension may be absent
-    from nautilus_trader._libnautilus.blockchain import (  # type: ignore[attr-defined]
-        Blockchain as _Blockchain,
-    )
-    from nautilus_trader._libnautilus.blockchain import (  # type: ignore[attr-defined]
-        Chain as _Chain,
-    )
+    from nautilus_trader._libnautilus.blockchain import Blockchain as _Blockchain
+    from nautilus_trader._libnautilus.blockchain import Chain as _Chain
     from nautilus_trader._libnautilus.blockchain import Dex as _Dex  # type: ignore[attr-defined]
-    from nautilus_trader._libnautilus.blockchain import (  # type: ignore[attr-defined]
-        DexType as _DexType,
-    )
+    from nautilus_trader._libnautilus.blockchain import DexType as _DexType
 except ImportError:
 
     class _Blockchain:  # type: ignore[too-many-ancestors]

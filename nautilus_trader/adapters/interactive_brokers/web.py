@@ -15,7 +15,8 @@
 
 import enum
 from collections.abc import Generator
-from typing import Any, NamedTuple
+from typing import Any
+from typing import NamedTuple
 
 import requests
 from lxml.etree import _Element

@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 
 import msgspec
 
-# fmt: off
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
@@ -78,8 +77,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
-
-# fmt: on
 
 if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.execution import BybitExecutionClient

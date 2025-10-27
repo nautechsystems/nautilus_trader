@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Final
+from typing import Any
+from typing import Final
 
 import msgspec
 

@@ -19,7 +19,9 @@ from abc import ABC
 from abc import abstractmethod
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated
+from typing import Any
+from typing import NamedTuple
 
 import msgspec
 from ibapi.client import EClient

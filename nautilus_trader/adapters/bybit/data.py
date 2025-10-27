@@ -19,7 +19,8 @@ import asyncio
 from collections import defaultdict
 from decimal import Decimal
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 import msgspec
 

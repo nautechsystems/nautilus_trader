@@ -73,7 +73,7 @@ BYBIT_RETRY_ERRORS_UTA: Final[set[int]] = {
     110_063,  # Settlement in progress, not available for trading
     110_066,  # Trading is currently not allowed
     110_079,  # The order is processing and can not be operated
-    110_080,  # Operations Restriction: The current LTV ratio of your Institutional Lending has hit the liquidation threshold. Assets in your account are being liquidated (trade/risk limit/leverage)  # noqa: E501
+    110_080,  # Operations Restriction: The current LTV ratio of your Institutional Lending has hit the liquidation threshold. Assets in your account are being liquidated (trade/risk limit/leverage)
     110_082,  # You cannot lift Reduce-Only restrictions, as no Reduce-Only restrictions are applied to your position
     110_083,  # Reduce-Only restrictions must be lifted for both Long and Short positions at the same time
     110_089,  # Exceeds the maximum risk limit level

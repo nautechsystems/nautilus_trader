@@ -15,7 +15,8 @@
 
 from collections.abc import Callable
 from io import BytesIO
-from typing import Any, Union
+from typing import Any
+from typing import Union
 
 import pyarrow as pa
 

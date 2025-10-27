@@ -46,11 +46,11 @@
 #     # Act, Assert
 #     assert (
 #         str(imbalance)
-#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"  # noqa
+#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"
 #     )
 #     assert (
 #         repr(imbalance)
-#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"  # noqa
+#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"
 #     )
 #     assert isinstance(hash(imbalance), int)
 #
@@ -78,7 +78,7 @@
 #     assert unpickled == imbalance
 #     assert (
 #         repr(unpickled)
-#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"  # noqa
+#         == "DatabentoImbalance(instrument_id=MSFT.XNAS, ref_price=238.94, cont_book_clr_price=238.94, auct_interest_clr_price=238.94, paired_qty=242735, total_imbalance_qty=1248, side=BUY, significant_imbalance=L, ts_event=1664458080039784528, ts_init=1664458080039774464)"
 #     )
 #
 #
@@ -137,11 +137,11 @@
 #     # Act, Assert
 #     assert (
 #         str(statistics)
-#         == "DatabentoStatistics(instrument_id=TSLA 230901C00250000.XBOX, stat_type=DatabentoStatisticType.TRADING_SESSION_HIGH_PRICE, update_action=DatabentoStatisticUpdateAction.ADDED, price=3.450000000, quantity=None, channel_id=41, stat_flags=0, sequence=1278617494, ts_ref=1, ts_in_delta=2, ts_event=1664458080039784528, ts_init=1664458080039774464)"  # noqa
+#         == "DatabentoStatistics(instrument_id=TSLA 230901C00250000.XBOX, stat_type=DatabentoStatisticType.TRADING_SESSION_HIGH_PRICE, update_action=DatabentoStatisticUpdateAction.ADDED, price=3.450000000, quantity=None, channel_id=41, stat_flags=0, sequence=1278617494, ts_ref=1, ts_in_delta=2, ts_event=1664458080039784528, ts_init=1664458080039774464)"
 #     )
 #     assert (
 #         repr(statistics)
-#         == "DatabentoStatistics(instrument_id=TSLA 230901C00250000.XBOX, stat_type=DatabentoStatisticType.TRADING_SESSION_HIGH_PRICE, update_action=DatabentoStatisticUpdateAction.ADDED, price=3.450000000, quantity=None, channel_id=41, stat_flags=0, sequence=1278617494, ts_ref=1, ts_in_delta=2, ts_event=1664458080039784528, ts_init=1664458080039774464)"  # noqa
+#         == "DatabentoStatistics(instrument_id=TSLA 230901C00250000.XBOX, stat_type=DatabentoStatisticType.TRADING_SESSION_HIGH_PRICE, update_action=DatabentoStatisticUpdateAction.ADDED, price=3.450000000, quantity=None, channel_id=41, stat_flags=0, sequence=1278617494, ts_ref=1, ts_in_delta=2, ts_event=1664458080039784528, ts_init=1664458080039774464)"
 #     )
 #     assert isinstance(hash(statistics), int)
 #

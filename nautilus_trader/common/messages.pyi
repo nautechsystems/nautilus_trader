@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import TraderId
 
+
 class ShutdownSystem(Command):
     @property
     def trader_id(self) -> TraderId: ...

@@ -33,7 +33,6 @@ from ibapi.order_condition import TimeCondition
 from ibapi.order_condition import VolumeCondition
 from ibapi.order_state import OrderState as IBOrderState
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -101,9 +100,6 @@ from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
-
-
-# fmt: on
 
 
 # Monkey patch to fix IB API bug where PriceCondition.__str__ is a property instead of a method
@@ -1261,7 +1257,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # TODO: Is there more better approach for this use case?
             # This tells the details about Pre and Post margin changes, user can request by setting whatIf flag
             # order will not be placed by IB and instead returns simulation.
-            # example={'status': 'PreSubmitted', 'initMarginBefore': '52.88', 'maintMarginBefore': '52.88', 'equityWithLoanBefore': '23337.31', 'initMarginChange': '2517.5099999999998', 'maintMarginChange': '2517.5099999999998', 'equityWithLoanChange': '-0.6200000000026193', 'initMarginAfter': '2570.39', 'maintMarginAfter': '2570.39', 'equityWithLoanAfter': '23336.69', 'commission': 2.12362, 'minCommission': 1.7976931348623157e+308, 'maxCommission': 1.7976931348623157e+308, 'commissionCurrency': 'USD', 'warningText': '', 'completedTime': '', 'completedStatus': ''}  # noqa
+            # example={'status': 'PreSubmitted', 'initMarginBefore': '52.88', 'maintMarginBefore': '52.88', 'equityWithLoanBefore': '23337.31', 'initMarginChange': '2517.5099999999998', 'maintMarginChange': '2517.5099999999998', 'equityWithLoanChange': '-0.6200000000026193', 'initMarginAfter': '2570.39', 'maintMarginAfter': '2570.39', 'equityWithLoanAfter': '23336.69', 'commission': 2.12362, 'minCommission': 1.7976931348623157e+308, 'maxCommission': 1.7976931348623157e+308, 'commissionCurrency': 'USD', 'warningText': '', 'completedTime': '', 'completedStatus': ''}
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
                 order=nautilus_order,

@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# fmt: off
+
 from nautilus_trader.adapters.interactive_brokers.historical.client import HistoricInteractiveBrokersClient
 
-
-# fmt: on
 
 __all__ = [
     "HistoricInteractiveBrokersClient",

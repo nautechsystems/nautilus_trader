@@ -478,7 +478,7 @@ def test_parse_empty_book_snapshot_returns_none():
             "currency": "USDC.e",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
-            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
             "maker_fee": "0",
             "margin_init": "0",
             "margin_maint": "0",
@@ -533,7 +533,7 @@ def test_parse_empty_book_snapshot_in_backtest_engine():
             "currency": "USDC.e",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
-            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
             "maker_fee": "0",
             "margin_init": "0",
             "margin_maint": "0",

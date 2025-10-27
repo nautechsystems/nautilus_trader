@@ -4,6 +4,7 @@ import builtins
 import typing
 from enum import Enum
 
+
 class DataType:
     r"""
     Represents a data type including metadata.

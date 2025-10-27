@@ -25,7 +25,9 @@ from collections.abc import Generator
 from itertools import groupby
 from os import PathLike
 from pathlib import Path
-from typing import Any, NamedTuple, Union
+from typing import Any
+from typing import NamedTuple
+from typing import Union
 
 import fsspec
 import pandas as pd

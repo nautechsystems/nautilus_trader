@@ -112,9 +112,9 @@ def test_betfair_sequence_completed_str_repr() -> None:
     # Act, Assert
     assert (
         str(completed)
-        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"  # noqa
+        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"
     )
     assert (
         repr(completed)
-        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"  # noqa
+        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"
     )

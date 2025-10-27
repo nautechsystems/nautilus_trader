@@ -88,11 +88,11 @@ class TestExecutionReports:
         # Assert
         assert (
             str(report)
-            == f"OrderStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=123456789, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id}, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"  # noqa
+            == f"OrderStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=123456789, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id}, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"
         )
         assert (
             repr(report)
-            == f"OrderStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=123456789, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id}, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"  # noqa
+            == f"OrderStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=123456789, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id}, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"
         )
         assert report.parent_order_id is None
 
@@ -119,11 +119,11 @@ class TestExecutionReports:
         # Assert
         assert (
             str(report)
-            == f"FillReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456789, venue_order_id=1, venue_position_id=2, trade_id=3, order_side=BUY, last_qty=10_000_000, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, report_id={report_id}, ts_event=0, ts_init=0)"  # noqa
+            == f"FillReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456789, venue_order_id=1, venue_position_id=2, trade_id=3, order_side=BUY, last_qty=10_000_000, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, report_id={report_id}, ts_event=0, ts_init=0)"
         )
         assert (
             repr(report)
-            == f"FillReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456789, venue_order_id=1, venue_position_id=2, trade_id=3, order_side=BUY, last_qty=10_000_000, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, report_id={report_id}, ts_event=0, ts_init=0)"  # noqa
+            == f"FillReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456789, venue_order_id=1, venue_position_id=2, trade_id=3, order_side=BUY, last_qty=10_000_000, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, report_id={report_id}, ts_event=0, ts_init=0)"
         )
 
     def test_instantiate_position_status_report_long_and_short(self):
@@ -159,19 +159,19 @@ class TestExecutionReports:
         assert report2.signed_decimal_qty == Decimal("-1000000")
         assert (
             str(report1)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"
         )
         assert (
             repr(report1)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"
         )
         assert (
             str(report2)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"
         )
         assert (
             repr(report2)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"
         )
 
     def test_position_status_report_create_flat(self):
@@ -247,11 +247,11 @@ class TestExecutionReports:
         assert report.position_reports == {}
         assert (
             str(report)
-            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"  # noqa
+            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"
         )
         assert (
             repr(report)
-            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"  # noqa
+            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"
         )
 
     def test_add_order_status_reports(self):
@@ -306,11 +306,11 @@ class TestExecutionReports:
         assert mass_status.order_reports[venue_order_id] == report
         assert (
             repr(mass_status)
-            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{VenueOrderId('2'): OrderStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=None, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id2}, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)}}, fill_reports={{}}, position_reports={{}}, report_id={report_id1}, ts_init=0)"  # noqa
+            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{VenueOrderId('2'): OrderStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=None, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id2}, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)}}, fill_reports={{}}, position_reports={{}}, report_id={report_id1}, ts_init=0)"
         )
         assert (
             repr(report)
-            == f"OrderStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=None, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id2}, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)"  # noqa
+            == f"OrderStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, venue_position_id=None, linked_order_ids=None, parent_order_id=None, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id2}, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)"
         )
 
     def test_add_fill_reports(self):
@@ -394,11 +394,11 @@ class TestExecutionReports:
         assert mass_status.position_reports[AUDUSD_IDEALPRO] == [report]
         assert (
             repr(mass_status)
-            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{InstrumentId('AUD/USD.IDEALPRO'): [PositionStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id2}, ts_last=0, ts_init=0)]}}, report_id={report_id1}, ts_init=0)"  # noqa
+            == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{InstrumentId('AUD/USD.IDEALPRO'): [PositionStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id2}, ts_last=0, ts_init=0)]}}, report_id={report_id1}, ts_init=0)"
         )
         assert (
             repr(report)
-            == f"PositionStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
+            == f"PositionStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id2}, ts_last=0, ts_init=0)"
         )
 
     def test_order_status_report_serialization(self):
