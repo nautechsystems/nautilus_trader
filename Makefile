@@ -6,6 +6,12 @@ IMAGE?=$(REGISTRY)$(PROJECT)
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
+# Tool versions from Cargo.toml [workspace.metadata.tools]
+CARGO_AUDIT_VERSION := $(shell grep '^cargo-audit *= *"' Cargo.toml | awk -F\" '{print $$2}')
+CARGO_DENY_VERSION := $(shell grep '^cargo-deny *= *"' Cargo.toml | awk -F\" '{print $$2}')
+CARGO_LLVM_COV_VERSION := $(shell grep '^cargo-llvm-cov *= *"' Cargo.toml | awk -F\" '{print $$2}')
+CARGO_NEXTEST_VERSION := $(shell grep '^cargo-nextest *= *"' Cargo.toml | awk -F\" '{print $$2}')
+
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
 M = $(shell printf "\033[0;34m>\033[0m") # Message prefix for commands
@@ -242,10 +248,12 @@ cargo-build:  #-- Build Rust crates in release mode
 	cargo build --release --all-features
 
 .PHONY: cargo-update
-cargo-update:  #-- Update Rust dependencies and install test tools
+cargo-update:  #-- Update Rust dependencies and install required tools (versions from Cargo.toml)
 	cargo update \
-	&& cargo install cargo-nextest \
-	&& cargo install cargo-llvm-cov
+	&& cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
+	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
+	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
+	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked
 
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building

@@ -1,6 +1,10 @@
 version = 1
 revision = 3
 requires-python = ">=3.12, <3.14"
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version < '3.13'",
+]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -120,19 +124,19 @@ wheels = [
 
 [[package]]
 name = "betfair-parser"
-version = "0.17"
+version = "0.17.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "msgspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/71/1b279a71498657e308279374cc7dfb7f0fca67c2d4873185e674cacaacf5/betfair_parser-0.17.tar.gz", hash = "sha256:b2264a0533b91d4296479e1fe4884057d44c535d01774e149ee5566914961ea3", size = 55676, upload-time = "2025-08-27T13:05:46.196Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/7d/43298c788796e98cf852ec50777e6586163ac653d192d3c748a22f0b150a/betfair_parser-0.17.2.tar.gz", hash = "sha256:86a1f2205a80ffcd1d1fa45db22bdc7be82da84d208ff07a33ffdfa8a6c4b8d1", size = 55758, upload-time = "2025-10-26T12:47:50.465Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/d1/cc9b25648a649894cbce13e5066be0ac89b8eed7d9ecc17c1ed76eca96fa/betfair_parser-0.17-py3-none-any.whl", hash = "sha256:223ead91e3862fe4fa328aa176d203cdb1011950efe91687a6ceb04bd3d72a60", size = 67386, upload-time = "2025-08-27T13:05:44.844Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/08/00d05ed07c5980b2f0280b664052a5fbf5d78df4f9416a735a6b6406a810/betfair_parser-0.17.2-py3-none-any.whl", hash = "sha256:356043d0ea1379bcbb385da8602c957b6061cf390a4b098e65882523a7b29262", size = 67505, upload-time = "2025-10-26T12:47:49.513Z" },
 ]
 
 [[package]]
 name = "bip-utils"
-version = "2.9.3"
+version = "2.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cbor2" },
@@ -144,9 +148,9 @@ dependencies = [
     { name = "pycryptodome" },
     { name = "pynacl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/0b/c112ca753e8454d8f0ac3ddae2337f37b60c36056f9a89184f07bbed1a0c/bip_utils-2.9.3.tar.gz", hash = "sha256:72a8c95484b57e92311b0b2a3d5195b0ce4395c19a0b157d4a289e8b1300f48a", size = 335672, upload-time = "2024-04-15T19:30:46.31Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/ca/c61d6d12ebb7d722fbef2ab86b146965719cd7e015c36b7f7154bde31799/bip_utils-2.10.0.tar.gz", hash = "sha256:660e3b07723a6c0750d6a4b43fc888c6a56573c73cb515e3af7e5d6e19cd5957", size = 583314, upload-time = "2025-10-27T09:05:57.347Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/86/e7ce96e91c4cb383fc998c5c80000db92592354ec81b5f38d6f0717917dd/bip_utils-2.9.3-py3-none-any.whl", hash = "sha256:ee26b8417a576c7f89b847da37316db01a5cece1994c1609d37fbeefb91ad45e", size = 589384, upload-time = "2024-04-15T19:30:43.507Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/d3/59a21685c2ab9f508d960059e88c06f28dae5f5c3761ef06b8c8ffcaeeae/bip_utils-2.10.0-py3-none-any.whl", hash = "sha256:33792674bda552a071a539b6590b2986aa8c08d0c9c30c2566d7cb323173310d", size = 597460, upload-time = "2025-10-27T09:05:55.364Z" },
 ]
 
 [[package]]
@@ -1142,11 +1146,11 @@ wheels = [
 
 [[package]]
 name = "narwhals"
-version = "2.7.0"
+version = "2.10.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/87/76/9ca8f4d03f02b8289807d0c91eeb01fa6b7fdd6273769d5bd1f94773b40b/narwhals-2.7.0.tar.gz", hash = "sha256:e3fff7f1610fd3318ede78c969bc5954ce710d585eefdb689586fb69da3da43c", size = 569315, upload-time = "2025-10-06T09:39:37.69Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/e5/ef07d31c2e07d99eecac8e14ace5c20aeb00ecba4ed5bb00343136380524/narwhals-2.10.0.tar.gz", hash = "sha256:1c05bbef2048a4045263de7d98c3d06140583eb13d796dd733b2157f05d24485", size = 582423, upload-time = "2025-10-27T17:55:55.632Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/0d/bc630dfd34ad2150d40f9392e94d3803980e71a47e10a709ce9bfcd40ffe/narwhals-2.7.0-py3-none-any.whl", hash = "sha256:010791aa0cee86d90bf2b658264aaec3eeea34fb4ddf2e83746ea4940bcffae3", size = 412767, upload-time = "2025-10-06T09:39:35.564Z" },
+    { url = "https://files.pythonhosted.org/packages/29/13/024ae0586d901f8a6f99e2d29b4ae217e8ef11d3fd944cdfc3bbde5f2a08/narwhals-2.10.0-py3-none-any.whl", hash = "sha256:baed44e8fc38e800e3a585e3fa9843a7079a6fad5fbffbecee4348d6ac52298c", size = 418077, upload-time = "2025-10-27T17:55:53.709Z" },
 ]
 
 [[package]]
@@ -1239,12 +1243,12 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "bech32", marker = "extra == 'dydx'", specifier = ">=1.2.0,<2.0.0" },
-    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.17.0" },
-    { name = "bip-utils", marker = "extra == 'dydx'", specifier = ">=2.9.3,<3.0.0" },
+    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.17.2" },
+    { name = "bip-utils", marker = "extra == 'dydx'", specifier = ">=2.10.0,<3.0.0" },
     { name = "click", specifier = ">=8.0.0,<9.0.0" },
     { name = "defusedxml", marker = "extra == 'ib'", specifier = ">=0.7.1,<1.0.0" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.1.0,<8.0.0" },
-    { name = "ecdsa", marker = "extra == 'dydx'", specifier = ">=0.19.0,<1.0.0" },
+    { name = "ecdsa", marker = "extra == 'dydx'", specifier = ">=0.19.1,<1.0.0" },
     { name = "fsspec", specifier = ">=2025.2.0,<2026.0.0" },
     { name = "grpcio", marker = "extra == 'dydx'", specifier = "==1.68.1" },
     { name = "msgspec", specifier = ">=0.19.0,<1.0.0" },

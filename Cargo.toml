@@ -38,7 +38,7 @@ version = "0.52.0"
 edition = "2024"
 rust-version = "1.90.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
-license = "LGPL-3.0"
+license = "LGPL-3.0-or-later"
 readme = "README.md"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 categories = ["finance", "simulation", "asynchronous"]
@@ -330,6 +330,15 @@ turmoil = "0.6.6"
 # Build dependencies
 # -----------------------------------------------------------------------------
 cbindgen = "0.29.2"
+
+# -----------------------------------------------------------------------------
+# Tools (for cargo install, used by Makefile and CI)
+# -----------------------------------------------------------------------------
+[workspace.metadata.tools]
+cargo-audit = "0.21.2"
+cargo-deny = "0.18.5"
+cargo-llvm-cov = "0.6.21"
+cargo-nextest = "0.9.108"
 
 # -----------------------------------------------------------------------------
 # Profiles
