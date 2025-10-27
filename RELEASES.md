@@ -12,14 +12,20 @@ Released on TBD (UTC).
 - Dropped support for Python 3.11
 
 ### Security
+TBD
 
 ### Fixes
+None
 
 ### Internal Improvements
+- Refactored reading of feather files in catalog (#3114), thanks @faysou
+- Upgraded implied-vol crate (#3115), thanks @faysou
 
 ### Documentation Updates
+None
 
 ### Deprecations
+None
 
 ---
 

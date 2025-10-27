@@ -57,15 +57,11 @@ jobs:
           persist-credentials: false
 
       # https://github.com/EmbarkStudios/cargo-deny-action
-      # NOTE: License checking is disabled due to implied-vol crate not declaring
-      # its license in Cargo.toml (has MIT LICENSE file but shows as "unlicensed").
-      # License compliance is verified manually until this is resolved upstream.
-      # See deny.toml for documented exception and tracking.
-      - name: Run cargo-deny (advisories, sources, bans)
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
         uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
         with:
+          command: check advisories licenses sources bans
           arguments: --all-features
-          command: check advisories sources bans
 
   build:
     needs:

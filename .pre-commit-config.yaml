@@ -137,16 +137,14 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
-  - repo: local
+  - repo: https://github.com/EmbarkStudios/cargo-deny
+    rev: 0.18.5
     hooks:
       - id: cargo-deny
-        name: cargo deny
-        description: Run cargo-deny security checks (advisories, sources, bans)
-        entry: .pre-commit-hooks/cargo_deny.sh
-        language: script
-        files: '(Cargo\.(toml|lock)|deny\.toml)$'
-        pass_filenames: false
+        args: ["--all-features", "check"]
 
+  - repo: local
+    hooks:
       - id: check-anyhow-usage
         name: check anyhow usage
         description:
