@@ -74,7 +74,7 @@ class TestPersistenceStreaming:
             instance_id=instance_id,
             raise_on_failed_deserialize=True,
         )
-        result = dict(Counter([r.__class__.__name__ for r in result]))  # type: ignore [assignment]
+        result = dict(Counter([r.__class__.__name__ for r in result]))  # type: ignore [arg-type]
 
         # TODO: Backtest needs to be reconfigured to use either deltas or trades
         expected = {
