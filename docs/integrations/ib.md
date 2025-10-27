@@ -15,7 +15,7 @@ The standalone TWS and IB Gateway applications require manually inputting userna
 To install NautilusTrader with Interactive Brokers (and Docker) support:
 
 ```bash
-pip install --upgrade "nautilus_trader[ib,docker]"
+uv pip install "nautilus_trader[ib,docker]"
 ```
 
 To build from source with all extras (including IB and Docker):

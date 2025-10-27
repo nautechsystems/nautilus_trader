@@ -8,10 +8,10 @@ Exchange Streaming API.
 
 ## Installation
 
-Install NautilusTrader with Betfair support via pip:
+Install NautilusTrader with Betfair support:
 
 ```bash
-pip install --upgrade "nautilus_trader[betfair]"
+uv pip install "nautilus_trader[betfair]"
 ```
 
 To build from source with Betfair extras:

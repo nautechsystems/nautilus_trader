@@ -112,6 +112,28 @@ if __name__ == "__main__":
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
+    # Generate interactive tearsheet (requires: pip install plotly>=6.3.1)
+    try:
+        from nautilus_trader.analysis import TearsheetConfig
+        from nautilus_trader.analysis.tearsheet import create_tearsheet
+
+        print("\nGenerating tearsheet...")
+
+        # Try different themes: "plotly_white", "plotly_dark", "nautilus", "nautilus_dark"
+        tearsheet_config = TearsheetConfig(theme="plotly_white")  # Change this to test themes!
+
+        create_tearsheet(
+            engine=engine,
+            output_path="crypto_ethusdt_tearsheet.html",
+            config=tearsheet_config,
+        )
+        print("Tearsheet saved to: crypto_ethusdt_tearsheet.html")
+        print(f"Theme: {tearsheet_config.theme}")
+        print("Open this file in your browser to view interactive charts!")
+    except ImportError:
+        print("\nPlotly not installed. Install with: pip install plotly>=6.3.1")
+        print("  Then re-run to generate tearsheets.")
+
     # For repeated backtest runs make sure to reset the engine
     engine.reset()
 
