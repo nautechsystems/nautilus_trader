@@ -1962,45 +1962,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         return file_paths
 
-    @staticmethod
-    def _handle_table_nautilus(
-        table: pa.Table | pd.DataFrame,
-        data_cls: type,
-        convert_bar_type_to_external: bool = False,
-    ) -> list[Data]:
-        if isinstance(table, pd.DataFrame):
-            table = pa.Table.from_pandas(table)
-
-        # Convert metadata from INTERNAL to EXTERNAL if requested
-        if convert_bar_type_to_external and table.schema.metadata:
-            metadata = dict(table.schema.metadata)
-
-            # Convert bar_type metadata (for Bar data)
-            if b"bar_type" in metadata:
-                bar_type_str = metadata[b"bar_type"].decode()
-
-                if bar_type_str.endswith("-INTERNAL"):
-                    metadata[b"bar_type"] = bar_type_str.replace("-INTERNAL", "-EXTERNAL").encode()
-
-            # Replace schema with updated metadata (shallow copy)
-            table = table.replace_schema_metadata(metadata)
-
-        data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
-        module = data[0].__class__.__module__
-
-        if "nautilus_pyo3" in module:
-            cython_cls = {
-                "OrderBookDelta": OrderBookDelta,
-                "OrderBookDeltas": OrderBookDelta,
-                "OrderBookDepth10": OrderBookDepth10,
-                "QuoteTick": QuoteTick,
-                "TradeTick": TradeTick,
-                "Bar": Bar,
-            }.get(data_cls.__name__, data_cls.__name__)
-            data = cython_cls.from_pyo3_list(data)
-
-        return data
-
     def query_last_timestamp(
         self,
         data_cls: type,
@@ -2134,11 +2095,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- OVERLOADED BASE METHODS ------------------------------------------------------------------
 
-    def _list_directory_stems(self, subdirectory: str) -> list[str]:
-        glob_path = f"{self.path}/{subdirectory}/*"
-
-        return [Path(p).stem for p in self.fs.glob(glob_path)]
-
     def list_data_types(self) -> list[str]:
         """
         List all data types available in the catalog.
@@ -2175,7 +2131,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         return self._list_directory_stems("live")
 
-    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[Data]:
+    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[Data] | dict[str, list[Data]]:
         """
         Read data from a live run.
 
@@ -2197,7 +2153,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         return self._read_feather(kind="live", instance_id=instance_id, **kwargs)
 
-    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[Data]:
+    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[Data] | dict[str, list[Data]]:
         """
         Read data from a backtest run.
 
@@ -2224,11 +2180,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         kind: str,
         instance_id: str,
         raise_on_failed_deserialize: bool = False,
-    ) -> list[Data]:
+        data_cls: type | None = None,
+        identifiers: list[str] | None = None,
+        return_as_dict: bool = False,
+    ) -> list[Data] | dict[str, list[Data]]:
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = defaultdict(list)
 
-        for feather_file in self._list_feather_files(kind=kind, instance_id=instance_id):
+        for feather_file in self._list_feather_files(kind, instance_id, data_cls, identifiers):
             path = feather_file.path
             cls_name = feather_file.class_name
             table: pa.Table = self._read_feather_file(path=path)
@@ -2242,53 +2201,18 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             try:
                 data_cls = class_mapping[cls_name]
-                objs = self._handle_table_nautilus(table=table, data_cls=data_cls)
-                data[cls_name].extend(objs)
+                data_objects = self._handle_table_nautilus(table=table, data_cls=data_cls)
+                data[cls_name].extend(data_objects)
             except Exception as e:
                 if raise_on_failed_deserialize:
                     raise
 
                 print(f"Failed to deserialize {cls_name}: {e}")
 
+        if return_as_dict:
+            return data
+
         return sorted(itertools.chain.from_iterable(data.values()), key=lambda x: x.ts_init)
-
-    def _list_feather_files(
-        self,
-        kind: str,
-        instance_id: str,
-    ) -> Generator[FeatherFile, None, None]:
-        prefix = f"{self.path}/{kind}/{urisafe_identifier(instance_id)}"
-
-        # Non-instrument feather files
-        for path_str in self.fs.glob(f"{prefix}/*.feather"):
-            if not self.fs.isfile(path_str):
-                continue
-
-            file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
-            cls_name = "_".join(file_name.split("_")[:-1])
-
-            if not cls_name:
-                raise ValueError(f"`cls_name` was empty when a value was expected: {path_str}")
-
-            yield FeatherFile(path=path_str, class_name=cls_name)
-
-        # Per-instrument feather files (organized in subdirectories)
-        for path_str in self.fs.glob(f"{prefix}/**/*.feather"):
-            if not self.fs.isfile(path_str):
-                continue
-
-            file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
-            path_parts = Path(file_name).parts
-
-            if len(path_parts) >= 2:
-                cls_name = path_parts[0]  # cls_name is the first directory
-            else:
-                continue
-
-            if not cls_name:
-                continue
-
-            yield FeatherFile(path=path_str, class_name=cls_name)
 
     def convert_stream_to_data(
         self,
@@ -2319,35 +2243,15 @@ class ParquetDataCatalog(BaseDataCatalog):
             Filter to only include data containing these identifiers in their instrument_ids or bar_types.
 
         """
-        feather_dir = Path(self.path) / subdirectory / instance_id
-        data_name = class_to_filename(data_cls)
-        data_dir = feather_dir / data_name
-
-        if self.fs.isdir(str(data_dir)):
-            sub_dirs = [d for d in self.fs.glob(str(data_dir / "*")) if self.fs.isdir(d)]
-            feather_files = []
-
-            if not identifiers:
-                for sub_dir in sub_dirs:
-                    feather_files.extend(sorted(self.fs.glob(str(Path(sub_dir) / "*.feather"))))
-            else:
-                for sub_dir in sub_dirs:
-                    sub_dir_name = Path(sub_dir).name
-
-                    for identifier in identifiers:
-                        if identifier in sub_dir_name:
-                            feather_files.extend(
-                                sorted(self.fs.glob(str(Path(sub_dir) / "*.feather"))),
-                            )
-        else:
-            # Data is in flat files (old format or non-per-instrument data)
-            feather_files = sorted(self.fs.glob(f"{feather_dir}/{data_name}_*.feather"))
-
         used_catalog = self if other_catalog is None else other_catalog
 
-        for feather_file in feather_files:
-            feather_table = self._read_feather_file(str(feather_file))
-
+        for feather_file in self._list_feather_data_files(
+            kind=subdirectory,
+            instance_id=instance_id,
+            data_cls=data_cls,
+            identifiers=identifiers,
+        ):
+            feather_table = self._read_feather_file(feather_file.path)
             if feather_table is None:
                 continue
 
@@ -2364,12 +2268,156 @@ class ParquetDataCatalog(BaseDataCatalog):
     ) -> pa.Table | None:
         if not self.fs.exists(path):
             return None
+
         try:
             with self.fs.open(path) as f:
                 reader = pa.ipc.open_stream(f)
                 return reader.read_all()
         except (pa.ArrowInvalid, OSError):
             return None
+
+    @staticmethod
+    def _handle_table_nautilus(
+        table: pa.Table | pd.DataFrame,
+        data_cls: type,
+        convert_bar_type_to_external: bool = False,
+    ) -> list[Data]:
+        if isinstance(table, pd.DataFrame):
+            table = pa.Table.from_pandas(table)
+
+        # Convert metadata from INTERNAL to EXTERNAL if requested
+        if convert_bar_type_to_external and table.schema.metadata:
+            metadata = dict(table.schema.metadata)
+
+            # Convert bar_type metadata (for Bar data)
+            if b"bar_type" in metadata:
+                bar_type_str = metadata[b"bar_type"].decode()
+
+                if bar_type_str.endswith("-INTERNAL"):
+                    metadata[b"bar_type"] = bar_type_str.replace("-INTERNAL", "-EXTERNAL").encode()
+
+            # Replace schema with updated metadata (shallow copy)
+            table = table.replace_schema_metadata(metadata)
+
+        data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
+        module = data[0].__class__.__module__
+
+        if "nautilus_pyo3" in module:
+            cython_cls = {
+                "OrderBookDelta": OrderBookDelta,
+                "OrderBookDeltas": OrderBookDelta,
+                "OrderBookDepth10": OrderBookDepth10,
+                "QuoteTick": QuoteTick,
+                "TradeTick": TradeTick,
+                "Bar": Bar,
+            }.get(data_cls.__name__, data_cls.__name__)
+            data = cython_cls.from_pyo3_list(data)
+
+        return data
+
+    def _list_feather_files(
+        self,
+        kind: str,
+        instance_id: str,
+        data_cls: type | None = None,
+        identifiers: list[str] | None = None,
+    ) -> Generator[FeatherFile, None, None]:
+        """
+        List feather files for a given instance.
+
+        Parameters
+        ----------
+        kind : str
+            The kind of data (e.g., "backtest", "live").
+        instance_id : str
+            The instance ID.
+        data_cls : type, optional
+            If provided, only list files for this specific data class.
+        identifiers : list[str], optional
+            If provided (and data_cls is also provided), only include files
+            from subdirectories containing these identifiers.
+
+        Yields
+        ------
+        FeatherFile
+            Named tuple containing path and class_name.
+
+        """
+        if data_cls is not None:
+            yield from self._list_feather_data_files(kind, instance_id, data_cls, identifiers)
+        else:
+            base_dir = Path(self.path) / kind / urisafe_identifier(instance_id)
+            discovered_classes: set[str] = set()
+
+            # Discover data classes from flat files
+            for path_str in self.fs.glob(str(base_dir / "*.feather")):
+                if not self.fs.isfile(path_str):
+                    continue
+
+                # Extract class name by removing .feather extension and timestamp suffix
+                path = Path(path_str)
+                cls_name = "_".join(path.stem.split("_")[:-1])
+
+                if not cls_name:
+                    raise ValueError(f"`cls_name` was empty when a value was expected: {path_str}")
+
+                discovered_classes.add(cls_name)
+
+            # Discover data classes from per-instrument subdirectories
+            # Use _list_directory_stems to get subdirectory names (data class names)
+            subdirs = self._list_directory_stems(f"{kind}/{urisafe_identifier(instance_id)}")
+            discovered_classes.update(subdirs)
+
+            # Use _list_feather_data_files for each discovered class
+            class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
+
+            for cls_name in discovered_classes:
+                if cls_name in class_mapping:
+                    yield from self._list_feather_data_files(
+                        kind,
+                        instance_id,
+                        class_mapping[cls_name],
+                        identifiers,
+                    )
+
+    def _list_directory_stems(self, subdirectory: str) -> list[str]:
+        glob_path = f"{self.path}/{subdirectory}/*"
+
+        return [Path(p).stem for p in self.fs.glob(glob_path)]
+
+    def _list_feather_data_files(
+        self,
+        kind: str,
+        instance_id: str,
+        data_cls: type,
+        identifiers: list[str] | None = None,
+    ) -> Generator[FeatherFile, None, None]:
+        """
+        List feather files for a specific data class.
+        """
+        base_dir = Path(self.path) / kind / instance_id
+        data_name = class_to_filename(data_cls)
+        data_dir = base_dir / data_name
+
+        if self.fs.isdir(str(data_dir)):
+            # Per-instrument feather files organized in subdirectories
+            sub_dirs = [d for d in self.fs.glob(str(data_dir / "*")) if self.fs.isdir(d)]
+
+            for sub_dir in sub_dirs:
+                # Apply identifier filter if provided
+                if identifiers:
+                    sub_dir_name = Path(sub_dir).name
+
+                    if not any(identifier in sub_dir_name for identifier in identifiers):
+                        continue
+
+                # Yield all feather files in this subdirectory
+                for path_str in sorted(self.fs.glob(str(Path(sub_dir) / "*.feather"))):
+                    yield FeatherFile(path=path_str, class_name=data_name)
+        else:
+            # Data is in flat files (old format or non-per-instrument data)
+            for path_str in sorted(self.fs.glob(str(base_dir / f"{data_name}_*.feather"))):
+                yield FeatherFile(path=path_str, class_name=data_name)
 
 
 def _timestamps_to_filename(timestamp_1: int, timestamp_2: int) -> str:
