@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 import pandas as pd
 
@@ -34,8 +35,6 @@ from nautilus_trader.adapters.bybit.endpoints.account.position_info import Bybit
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeverageEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeveragePostParams
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModePostParams
 from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModeEndpoint
@@ -91,7 +90,7 @@ if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
     from nautilus_trader.common.component import LiveClock
 
-# fmt: on
+
 
 
 class BybitAccountHttpAPI:

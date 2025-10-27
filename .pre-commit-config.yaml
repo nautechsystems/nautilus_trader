@@ -219,21 +219,6 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
-  - repo: https://github.com/asottile/add-trailing-comma
-    rev: v4.0.0
-    hooks:
-      - id: add-trailing-comma
-        name: add-trailing-comma
-        types: [python]
-
-  - repo: https://github.com/psf/black
-    rev: 25.9.0
-    hooks:
-      - id: black
-        types_or: [python, pyi]
-        entry: "black"
-        args: ["--config", "pyproject.toml"]
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
     hooks:
@@ -244,8 +229,8 @@ repos:
     rev: 7.0.0
     hooks:
       - id: isort
-        name: isort (cython)
-        types_or: [cython]
+        name: isort
+        types_or: [python, pyi, cython]
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
@@ -255,7 +240,8 @@ repos:
       - id: docformatter
         additional_dependencies: [tomli]
         args: [
-          "--black",
+          "--wrap-summaries", "88",
+          "--wrap-descriptions", "88",
           "--make-summary-multi-line",
           "--pre-summary-newline",
           "--blank",

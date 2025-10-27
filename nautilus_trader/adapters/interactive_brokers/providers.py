@@ -18,7 +18,6 @@ import copy
 import pandas as pd
 from ibapi.contract import ContractDetails
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -34,9 +33,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-
-
-# fmt: on
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):

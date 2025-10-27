@@ -17,7 +17,7 @@
 # Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
 
 # %%
-# fmt: off
+
 import os
 import threading
 import time
@@ -46,9 +46,6 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
-
-
-# fmt: on
 
 
 # %%

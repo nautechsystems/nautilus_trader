@@ -35,7 +35,7 @@ _AAPL = TestInstrumentProvider.equity("AAPL", "NASDAQ")
 _EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
 
 
-# fmt: off
+
 @pytest.mark.parametrize(
     "expected_order_type, expected_tif, nautilus_order",
     [
@@ -65,10 +65,10 @@ async def test_transform_order_to_ib_order_market(
         ib_order.orderType == expected_order_type
     ), f"{expected_order_type=}, but got {ib_order.orderType=}"
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
-# fmt: on
 
 
-# fmt: off
+
+
 @pytest.mark.parametrize(
     "expected_order_type, expected_tif, nautilus_order",
     [
@@ -98,7 +98,7 @@ async def test_transform_order_to_ib_order_limit(
         ib_order.orderType == expected_order_type
     ), f"{expected_order_type=}, but got {ib_order.orderType=}"
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
-# fmt: on
+
 
 
 @pytest.mark.asyncio

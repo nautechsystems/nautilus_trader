@@ -25,8 +25,6 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressGetParams
-
-# fmt: off
 from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import DYDXGetAssetPositionsEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import DYDXGetAssetPositionsGetParams
 from nautilus_trader.adapters.dydx.endpoints.account.fills import DYDXGetFillsEndpoint
@@ -46,8 +44,6 @@ from nautilus_trader.adapters.dydx.schemas.account.asset_positions import DYDXAs
 from nautilus_trader.adapters.dydx.schemas.account.fills import DYDXFillsResponse
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
 from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import DYDXPerpetualPositionsResponse
-
-# fmt: on
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 

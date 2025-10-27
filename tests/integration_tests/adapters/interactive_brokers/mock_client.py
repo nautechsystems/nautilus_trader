@@ -3,7 +3,6 @@ from collections.abc import Callable
 
 from ibapi.client import EClient
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IBContract

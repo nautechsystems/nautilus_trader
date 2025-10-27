@@ -16,7 +16,8 @@
 import datetime as dt
 from enum import Enum
 from io import TextIOWrapper
-from typing import Any, BinaryIO
+from typing import Any
+from typing import BinaryIO
 
 import fsspec
 import pandas as pd

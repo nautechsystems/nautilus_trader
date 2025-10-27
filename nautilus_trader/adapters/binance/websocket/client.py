@@ -204,7 +204,7 @@ class BinanceWebSocketClient:
         ----------
         client_id : int
             ID of the client to connect
-        streams : List[str]
+        streams : list[str]
             List of streams for this client
 
         """

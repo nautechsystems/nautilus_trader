@@ -61,7 +61,7 @@ def test_binance_ticker_repr():
     # Act, Assert
     assert (
         repr(ticker)
-        == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
+        == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1650000000000000000, ts_init=1650000000000000000)"
     )
 
 
@@ -101,7 +101,7 @@ def test_binance_ticker_pickle():
     assert unpickled == ticker
     assert (
         repr(unpickled)
-        == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
+        == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1650000000000000000, ts_init=1650000000000000000)"
     )
 
 
@@ -189,7 +189,7 @@ def test_binance_bar_repr():
     # Act, Assert
     assert (
         repr(bar)
-        == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
+        == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"
     )
 
 
@@ -263,7 +263,7 @@ def test_binance_bar_pickling():
     assert unpickled == bar
     assert (
         repr(bar)
-        == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
+        == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"
     )
     assert unpickled.quote_volume == bar.quote_volume
     assert unpickled.count == bar.count

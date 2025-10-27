@@ -67,11 +67,11 @@ def test_component_state_changed_event():
     assert ComponentStateChanged.from_dict(ComponentStateChanged.to_dict(event)) == event
     assert (
         str(event)
-        == f"ComponentStateChanged(trader_id=TESTER-000, component_id=MyActor-001, component_type=MyActor, state=RUNNING, config={{'do_something': True}}, event_id={uuid})"  # noqa
+        == f"ComponentStateChanged(trader_id=TESTER-000, component_id=MyActor-001, component_type=MyActor, state=RUNNING, config={{'do_something': True}}, event_id={uuid})"
     )
     assert (
         repr(event)
-        == f"ComponentStateChanged(trader_id=TESTER-000, component_id=MyActor-001, component_type=MyActor, state=RUNNING, config={{'do_something': True}}, event_id={uuid}, ts_init=0)"  # noqa
+        == f"ComponentStateChanged(trader_id=TESTER-000, component_id=MyActor-001, component_type=MyActor, state=RUNNING, config={{'do_something': True}}, event_id={uuid}, ts_init=0)"
     )
 
 
@@ -98,7 +98,7 @@ def test_serializing_component_state_changed_with_unserializable_config_raises()
 
         # Assert
         assert e.value == TypeError(
-            "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
+            "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",
         )
 
 

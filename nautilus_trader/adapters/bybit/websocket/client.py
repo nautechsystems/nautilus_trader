@@ -30,8 +30,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.enums import BybitWsOrderRequestMsgOP
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
@@ -73,7 +71,7 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-# fmt: on
+
 
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 

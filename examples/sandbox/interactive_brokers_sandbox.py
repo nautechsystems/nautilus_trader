@@ -16,7 +16,6 @@
 
 from decimal import Decimal
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -33,8 +32,6 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
-
-# fmt: on
 
 # Load instruments from a Parquet catalog
 CATALOG_PATH = "/path/to/catalog"

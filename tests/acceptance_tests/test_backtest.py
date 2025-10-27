@@ -231,13 +231,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert account is not None
         assert account.event_count == 1_519
         assert str(account.events[0]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_000_000.00 USD, locked=0.00 USD, free=1_000_000.00 USD)], margins=[]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_000_000.00 USD, locked=0.00 USD, free=1_000_000.00 USD)], margins=[]",
         )
         assert str(account.events[1]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",
         )
         assert str(account.events[2]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",
         )
         assert account.balance_total(USD) == Money(1_023_530.50, USD)
 
@@ -1528,13 +1528,13 @@ def test_correct_account_balance_from_issue_2632() -> None:
     assert account is not None
     assert account.event_count == 3
     assert str(account.events[0]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=True, balances=[AccountBalance(total=1_000_000.00000000 USDT, locked=0.00000000 USDT, free=1_000_000.00000000 USDT)], margins=[]",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=True, balances=[AccountBalance(total=1_000_000.00000000 USDT, locked=0.00000000 USDT, free=1_000_000.00000000 USDT)], margins=[]",
     )
     assert str(account.events[1]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=999_768.11500000 USDT, locked=1_159.42500000 USDT, free=998_608.69000000 USDT)], margins=[MarginBalance(initial=0.00000000 USDT, maintenance=1_159.42500000 USDT, instrument_id=BTCUSDT-PERP.BINANCE)],",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=999_768.11500000 USDT, locked=1_159.42500000 USDT, free=998_608.69000000 USDT)], margins=[MarginBalance(initial=0.00000000 USDT, maintenance=1_159.42500000 USDT, instrument_id=BTCUSDT-PERP.BINANCE)],",
     )
     assert str(account.events[2]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=1_000_245.87500000 USDT, locked=0.00000000 USDT, free=1_000_245.87500000 USDT)], margins=[]",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=1_000_245.87500000 USDT, locked=0.00000000 USDT, free=1_000_245.87500000 USDT)], margins=[]",
     )
     assert account.balance_total(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_free(USDT) == Money(1_000_245.87500000, USDT)

@@ -20,7 +20,8 @@ import importlib
 from collections.abc import Callable
 from decimal import Decimal
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import msgspec
 import pandas as pd

@@ -92,7 +92,6 @@ polymarket = [
 dev = [
   "cython==3.1.6",
   "setuptools>=75",
-  "black>=25.9.0,<26.0.0",
   "docformatter>=1.7.7,<2.0.0",
   "mypy>=1.18.2,<2.0.0",
   "pandas-stubs>=2.3.2,<3.0.0",
@@ -123,25 +122,20 @@ docs = [
   "sphinx-markdown-builder>=0.6.8,<1.0.0",
 ]
 
-[tool.isort] # Used by legacy isort for Cython modules
+[tool.isort]
 py_version = "312"
 skip_glob = ["**/core/rust/*"]
-combine_as_imports = true
-line_length = 100
+line_length = 150
 ensure_newline_before_comments = true
 force_single_line = true
 include_trailing_comma = true
-multi_line_output = 3
 lines_after_imports = 2
 use_parentheses = true
 filter_files = true
 
-[tool.black]
-target_version = ["py312", "py313"]
-line_length = 100
-
 [tool.docformatter]
-black = true
+wrap-summaries = 88
+wrap-descriptions = 88
 make-summary-multi-line = true
 pre-summary-new-line = true
 blank = true
@@ -150,7 +144,7 @@ in-place = true
 
 [tool.ruff]
 target-version = "py312"
-line-length = 150 # Reduce to 100
+line-length = 100
 
 exclude = [
   ".benchmarks",
@@ -182,7 +176,7 @@ select = [
   # "PT",
   "PYI",
   "Q",
-  "I",
+  # "I",  # Disabled - using isort instead
   "RSE",
   "TID",
   # "SIM",
@@ -211,6 +205,7 @@ ignore = [
   "D413", # Missing blank line after last section ('Parameters')
   "D415", # First line should end with a period, question mark, or exclamation point (not always a first line)
   "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
+  "E501",
   "E741", # Ambiguous variable name (single char)
   "PD901", # `df` is a bad variable name. Be kinder to your future self
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
@@ -220,19 +215,21 @@ ignore = [
   "S106", # Use of hardcoded password (spurious)
   "S113", # Probable use of requests call without timeout **fix**
   "S603", # `subprocess` call: check for execution of untrusted input **fix**
+  "UP006", # Use list instead of List - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
+  "UP035", # typing.List is deprecated - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
 fixable = ["ALL"]
 
-unfixable = []
+# E4 = import-related rules (E401: multiple imports on one line, E402: module level import not at top)
+# E501 = line too long
+# UP006 = Use list instead of List for type annotation (field name 'list' shadows built-in in Bybit schemas)
+# UP035 = typing.List is deprecated (field name 'list' shadows built-in in Bybit schemas)
+# These are ignored and linted separately (see .pre-commit-config.yaml)
+unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
-[tool.ruff.lint.isort]
-force-single-line = true
-single-line-exclusions = ["typing"]
-lines-after-imports = 2
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

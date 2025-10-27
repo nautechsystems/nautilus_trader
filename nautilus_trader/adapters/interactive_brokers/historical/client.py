@@ -21,14 +21,11 @@ import msgspec
 import pandas as pd
 from ibapi.common import MarketDataTypeEnum
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
-
-# fmt: on
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.database import CacheDatabaseAdapter
