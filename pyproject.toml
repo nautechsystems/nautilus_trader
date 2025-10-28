@@ -232,6 +232,13 @@ unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+[tool.ruff.lint.isort]
+force-single-line = true
+lines-after-imports = 2
+split-on-trailing-comma = true
+force-sort-within-sections = true
+known-first-party = ["nautilus_trader"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 

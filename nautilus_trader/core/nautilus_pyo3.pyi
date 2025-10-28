@@ -7557,7 +7557,6 @@ def calculate_reconciliation_price(
     target_position_qty: Decimal,
     target_position_avg_px: Decimal | None,
 ) -> Decimal | None: ...
-
 def adjust_fills_for_partial_window(
     mass_status: ExecutionMassStatus,
     instrument: Any,  # PyO3 InstrumentAny

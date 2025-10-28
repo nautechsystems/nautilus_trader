@@ -217,6 +217,13 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v4.0.0
+    hooks:
+      - id: add-trailing-comma
+        name: add-trailing-comma
+        types: [python]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
     hooks:
