@@ -648,6 +648,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    /// Whether to close the entire position.
+    #[builder(default)]
+    #[serde(rename = "closePosition", skip_serializing_if = "Option::is_none")]
+    pub close_position: Option<bool>,
     /// Target currency for net orders.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
