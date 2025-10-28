@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 from typing import Any
 
 import msgspec
@@ -23,6 +24,8 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENU
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
+from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
@@ -80,14 +83,50 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 "instrument_id.venue",
                 "POLYMARKET",
             )
+        if self._config.use_gamma_markets:
+            # Extract condition IDs from instrument IDs for filtering
+            condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
 
-        if len(instrument_ids) > 200:
-            self._log.warning(
-                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
-            )
-            await self._load_markets(instrument_ids, filters)
+            markets = list_markets(filters=filters) # Usually, you would use filters={"is_active": True} to skip archived markets
+            for market in markets:
+                condition_id = market.get("conditionId")
+                if not condition_id:
+                    continue
+
+                # Filter by condition IDs if specified
+                if condition_ids and condition_id not in condition_ids:
+                    continue
+
+                # Gamma API returns clobTokenIds and outcomes as parallel arrays
+                clob_token_ids = market.get("clobTokenIds", [])
+                outcomes = market.get("outcomes", [])
+
+                # Parse JSON strings if needed
+                if isinstance(clob_token_ids, str):
+                    clob_token_ids = json.loads(clob_token_ids)
+                if isinstance(outcomes, str):
+                    outcomes = json.loads(outcomes)
+
+                if len(clob_token_ids) != len(outcomes):
+                    self._log.warning(
+                        f"Market {condition_id} has mismatched token IDs and outcomes: "
+                        f"{len(clob_token_ids)} tokens vs {len(outcomes)} outcomes"
+                    )
+                    continue
+
+                # Normalize Gamma API format to CLOB API format
+                normalized_market = normalize_gamma_market_to_clob_format(market)
+
+                for token_id, outcome in zip(clob_token_ids, outcomes):
+                    self._load_instrument(normalized_market, token_id, outcome)
         else:
-            await self._load_markets_seq(instrument_ids, filters)
+            if len(instrument_ids) > 200:
+                self._log.warning(
+                    f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
+                )
+                await self._load_markets(instrument_ids, filters)
+            else:
+                await self._load_markets_seq(instrument_ids, filters)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")

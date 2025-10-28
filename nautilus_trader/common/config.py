@@ -448,6 +448,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
+    use_gamma_markets: bool = False  # If True, use Gamma Markets API to get instruments. This is much faster, but contains less data about the instruments.
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):

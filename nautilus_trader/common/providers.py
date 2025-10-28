@@ -44,7 +44,7 @@ class InstrumentProvider:
         if config is None:
             config = InstrumentProviderConfig()
         self._log = Logger(name=type(self).__name__)
-
+        self._config = config
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}
 
