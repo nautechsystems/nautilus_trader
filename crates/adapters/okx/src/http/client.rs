@@ -2161,7 +2161,7 @@ impl OKXHttpClient {
                 inst.price_precision(),
                 inst.size_precision(),
                 ts_init,
-            );
+            )?;
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns

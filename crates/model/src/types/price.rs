@@ -395,6 +395,18 @@ impl From<&Price> for f64 {
     }
 }
 
+impl From<Price> for Decimal {
+    fn from(value: Price) -> Self {
+        value.as_decimal()
+    }
+}
+
+impl From<&Price> for Decimal {
+    fn from(value: &Price) -> Self {
+        value.as_decimal()
+    }
+}
+
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);

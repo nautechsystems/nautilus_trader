@@ -43,7 +43,7 @@ use nautilus_model::{
 
 use crate::{
     config::LiveExecEngineConfig,
-    reconciliation::{ExecutionReport, ReconciliationConfig, ReconciliationManager},
+    reconciliation::manager::{ExecutionReport, ReconciliationConfig, ReconciliationManager},
 };
 
 /// Live execution engine that manages execution state and reconciliation.
@@ -260,7 +260,13 @@ impl LiveExecutionEngine {
     pub fn reconcile_execution_report(&mut self, report: ExecutionReport) {
         log::debug!("{RECV} {report:?}");
 
-        let events = self.reconciliation.reconcile_report(report);
+        let events = match self.reconciliation.reconcile_report(report) {
+            Ok(events) => events,
+            Err(e) => {
+                log::error!("Failed to reconcile execution report: {e}");
+                return;
+            }
+        };
 
         // Publish events to execution engine
         for event in events {

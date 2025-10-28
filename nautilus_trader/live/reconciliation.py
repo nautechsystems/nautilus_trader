@@ -18,9 +18,14 @@ Reconciliation functions for live trading.
 
 from decimal import Decimal
 
+from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
+from nautilus_trader.common.component import Logger
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.currencies import register_currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import OrderAccepted
@@ -33,78 +38,13 @@ from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
-
-
-def calculate_reconciliation_price(
-    current_position_qty: Decimal,
-    current_position_avg_px: Decimal | None,
-    target_position_qty: Decimal,
-    target_position_avg_px: Decimal | None,
-    instrument: Instrument,
-) -> Price | None:
-    """
-    Calculate the price needed for a reconciliation order to achieve target position.
-
-    This is a pure function that calculates what price a fill would need to have
-    to move from the current position state to the target position state with the
-    correct average price.
-
-    Parameters
-    ----------
-    current_position_qty : Decimal
-        The current signed position quantity (positive for long, negative for short).
-    current_position_avg_px : Decimal, optional
-        The current position average price (can be None for flat position).
-    target_position_qty : Decimal
-        The target signed position quantity.
-    target_position_avg_px : Decimal, optional
-        The target position average price.
-    instrument : Instrument
-        The instrument for price precision.
-
-    Returns
-    -------
-    Price or ``None``
-
-    Notes
-    -----
-    The function calculates the reconciliation price using the formula:
-    (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
-
-    """
-    # If target average price is not provided, we cannot calculate
-    if target_position_avg_px is None or target_position_avg_px == 0:
-        return None
-
-    # Calculate the difference in quantity
-    qty_diff = target_position_qty - current_position_qty
-
-    if qty_diff == 0:
-        return None  # No reconciliation needed
-
-    # If current position is flat, the reconciliation price equals target avg price
-    if current_position_qty == 0 or current_position_avg_px is None:
-        return instrument.make_price(target_position_avg_px)
-
-    # Calculate the price needed to achieve target average
-    # Formula: (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
-    # Solving for reconciliation_px:
-    target_value = target_position_qty * target_position_avg_px
-    current_value = current_position_qty * current_position_avg_px
-    diff_value = target_value - current_value
-
-    if qty_diff != 0:
-        reconciliation_px = diff_value / qty_diff
-        # Ensure price is positive
-        if reconciliation_px > 0:
-            return instrument.make_price(reconciliation_px)
-
-    return None
 
 
 def create_order_rejected_event(
@@ -512,3 +452,127 @@ def create_inferred_order_filled_event(
         ts_init=ts_now,
         reconciliation=True,
     )
+
+
+def calculate_reconciliation_price(
+    current_position_qty: Decimal,
+    current_position_avg_px: Decimal | None,
+    target_position_qty: Decimal,
+    target_position_avg_px: Decimal | None,
+    instrument: Instrument,
+) -> Price | None:
+    """
+    Calculate the price needed for a reconciliation order to achieve target position.
+
+    This is a pure function that calculates what price a fill would need to have
+    to move from the current position state to the target position state with the
+    correct average price, accounting for the netting simulation logic.
+
+    Parameters
+    ----------
+    current_position_qty : Decimal
+        The current signed position quantity (positive for long, negative for short).
+    current_position_avg_px : Decimal, optional
+        The current position average price (can be None for flat position).
+    target_position_qty : Decimal
+        The target signed position quantity.
+    target_position_avg_px : Decimal, optional
+        The target position average price.
+    instrument : Instrument
+        The instrument for price precision.
+
+    Returns
+    -------
+    Price or ``None``
+
+    Notes
+    -----
+    The function handles three scenarios:
+    1. Flat to position: reconciliation_px = target_avg_px
+    2. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
+    3. Accumulation/reduction: weighted average formula
+
+    """
+    result = nautilus_pyo3.calculate_reconciliation_price(
+        current_position_qty,
+        current_position_avg_px,
+        target_position_qty,
+        target_position_avg_px,
+    )
+
+    if result is None:
+        return None
+
+    return instrument.make_price(result)
+
+
+def adjust_fills_for_partial_window(
+    mass_status: ExecutionMassStatus,
+    instrument: Instrument,
+    logger: Logger | None = None,
+) -> tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]:
+    """
+    Adjust fills to account for incomplete position lifecycle at window start.
+
+    This function analyzes fill reports from a lookback window and adjusts them
+    to ensure the simulated position matches the venue's reported position, accounting
+    for scenarios where:
+    - The position lifecycle started before the lookback window
+    - Multiple position lifecycles occurred (with zero-crossings)
+    - Fill reports from old lifecycles should be excluded
+
+    Parameters
+    ----------
+    mass_status : ExecutionMassStatus
+        The execution mass status containing order, fill, and position reports.
+    instrument : Instrument
+        The instrument to adjust fills for.
+    logger : Logger, optional
+        The logger for diagnostic output.
+
+    Returns
+    -------
+    tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]
+        Tuple of (adjusted order reports, adjusted fill reports) matching venue position.
+
+    """
+    # Register all required commission currencies
+    seen_currencies: set[Currency] = set()
+    for fill_list in mass_status.fill_reports.values():
+        for fill in fill_list:
+            currency = fill.commission.currency
+            if currency not in seen_currencies:
+                register_currency(currency)
+                seen_currencies.add(currency)
+
+    pyo3_mass_status = mass_status.to_pyo3()
+    pyo3_instrument = transform_instrument_to_pyo3(instrument)
+
+    pyo3_orders, pyo3_fills = nautilus_pyo3.adjust_fills_for_partial_window(
+        pyo3_mass_status,
+        pyo3_instrument,
+    )
+
+    orders: dict[VenueOrderId, OrderStatusReport] = {}
+
+    for venue_order_id_str, pyo3_order in pyo3_orders.items():
+        venue_order_id = VenueOrderId(venue_order_id_str)
+        order = OrderStatusReport.from_pyo3(pyo3_order)
+        orders[venue_order_id] = order
+
+    fills: dict[VenueOrderId, list[FillReport]] = {}
+
+    for venue_order_id_str, pyo3_reports in pyo3_fills.items():
+        venue_order_id = VenueOrderId(venue_order_id_str)
+        reports = []
+
+        for pyo3_report in pyo3_reports:
+            report = FillReport.from_pyo3(pyo3_report)
+            reports.append(report)
+
+        fills[venue_order_id] = reports
+
+    if logger:
+        logger.info(f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills")
+
+    return orders, fills

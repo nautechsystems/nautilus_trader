@@ -62,6 +62,7 @@ config_node = TradingNodeConfig(
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=False,
+        position_check_interval_secs=5.0,
         manage_own_order_books=True,
         own_books_audit_interval_secs=1.0,
         # snapshot_orders=True,

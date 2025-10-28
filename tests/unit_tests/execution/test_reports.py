@@ -49,6 +49,131 @@ AUDUSD_IDEALPRO = TestIdStubs.audusd_idealpro_id()
 
 
 class TestExecutionReports:
+    def test_order_status_report_to_pyo3_with_trailing_offset_type_none(self):
+        """
+        Test that OrderStatusReport.to_pyo3() handles trailing_offset_type=None
+        correctly.
+
+        This is a regression test for a bug where calling to_pyo3() with
+        trailing_offset_type=None would crash with TypeError because the helper function
+        expected a TrailingOffsetType enum, not None.
+
+        This is the common case for most orders (non-trailing orders).
+
+        """
+        # Arrange
+        report_id = UUID4()
+        report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("TEST-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.from_int(0),
+            price=Price.from_str("0.90000"),
+            trailing_offset_type=None,  # Common case: non-trailing order
+            report_id=report_id,
+            ts_accepted=1_000_000,
+            ts_last=2_000_000,
+            ts_init=3_000_000,
+        )
+
+        # Act - should not raise TypeError
+        pyo3_report = report.to_pyo3()
+
+        # Assert
+        # When trailing_offset_type is None in Python, it converts to NO_TRAILING_OFFSET in Rust
+        assert pyo3_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        assert pyo3_report.account_id.value == "SIM-001"
+        assert pyo3_report.venue_order_id.value == "TEST-001"
+        assert pyo3_report.order_side == nautilus_pyo3.OrderSide.BUY
+
+    def test_order_status_report_to_pyo3_with_trailing_offset_type_set(self):
+        """
+        Test that OrderStatusReport.to_pyo3() handles trailing_offset_type when set.
+
+        Ensures the conversion works correctly for trailing orders.
+
+        """
+        # Arrange
+        report_id = UUID4()
+        report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("TEST-002"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.TRAILING_STOP_MARKET,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.from_int(0),
+            trailing_offset=Decimal("0.0010"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            report_id=report_id,
+            ts_accepted=1_000_000,
+            ts_last=2_000_000,
+            ts_init=3_000_000,
+        )
+
+        # Act
+        pyo3_report = report.to_pyo3()
+
+        # Assert
+        assert pyo3_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.PRICE
+        assert pyo3_report.trailing_offset == Decimal("0.0010")
+
+    def test_execution_mass_status_to_pyo3_with_non_trailing_order(self):
+        """
+        Test ExecutionMassStatus.to_pyo3() with a non-trailing order.
+
+        This tests the complete reconciliation flow path where orders are converted to
+        pyo3 format. This is critical for reconciliation to work without crashes.
+
+        """
+        # Arrange
+        report_id = UUID4()
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            account_id=AccountId("SIM-001"),
+            venue=Venue("IDEALPRO"),
+            report_id=report_id,
+            ts_init=0,
+        )
+
+        order_report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("TEST-003"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.IOC,
+            order_status=OrderStatus.FILLED,
+            quantity=Quantity.from_int(50_000),
+            filled_qty=Quantity.from_int(50_000),
+            trailing_offset_type=None,  # Non-trailing order - common case
+            avg_px=Decimal("0.90050"),
+            report_id=UUID4(),
+            ts_accepted=1_000_000,
+            ts_last=2_000_000,
+            ts_init=3_000_000,
+        )
+
+        mass_status.add_order_reports([order_report])
+
+        # Act - should not crash with TypeError
+        pyo3_mass_status = mass_status.to_pyo3()
+
+        # Assert
+        assert len(pyo3_mass_status.order_reports) == 1
+        pyo3_order_report = next(iter(pyo3_mass_status.order_reports.values()))
+        # When trailing_offset_type is None in Python, it converts to NO_TRAILING_OFFSET in Rust
+        assert pyo3_order_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        assert pyo3_order_report.avg_px == Decimal("0.90050")
+
+
     def test_instantiate_order_status_report(self):
         # Arrange, Act
         report_id = UUID4()
@@ -588,7 +713,7 @@ class TestExecutionReports:
             limit_offset=Decimal("0.00010"),
             trailing_offset=Decimal("0.00020"),
             trailing_offset_type=nautilus_pyo3.TrailingOffsetType.BASIS_POINTS,
-            avg_px=1.00055,
+            avg_px=Decimal("1.00055"),
             display_qty=nautilus_pyo3.Quantity.from_str("25000"),
             post_only=True,
             reduce_only=True,
@@ -619,7 +744,7 @@ class TestExecutionReports:
         assert report.limit_offset == Decimal("0.00010")
         assert report.trailing_offset == Decimal("0.00020")
         assert report.trailing_offset_type == TrailingOffsetType.BASIS_POINTS
-        assert report.avg_px == 1.00055
+        assert report.avg_px == Decimal("1.00055")
         assert report.display_qty == Quantity.from_str("25000")
         assert report.post_only is True
         assert report.reduce_only is True
@@ -993,3 +1118,173 @@ class TestExecutionReports:
         assert report.ts_triggered == 0
         assert report.order_status == OrderStatus.ACCEPTED
         assert report.filled_qty == Quantity.zero(0)
+
+    def test_position_status_report_to_pyo3_round_trip(self):
+        # Arrange
+        report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("100000"),
+            venue_position_id=PositionId("P-003"),
+            avg_px_open=Decimal("1.25000"),
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        pyo3_report = report.to_pyo3()
+        restored = PositionStatusReport.from_pyo3(pyo3_report)
+
+        # Assert
+        assert restored.account_id == report.account_id
+        assert restored.instrument_id == report.instrument_id
+        assert restored.position_side == report.position_side
+        assert restored.quantity == report.quantity
+        assert restored.venue_position_id == report.venue_position_id
+        assert restored.avg_px_open == report.avg_px_open
+        assert restored.ts_last == report.ts_last
+        assert restored.ts_init == report.ts_init
+
+    def test_order_status_report_to_pyo3_round_trip(self):
+        # Arrange
+        report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("V123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.zero(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        pyo3_report = report.to_pyo3()
+        restored = OrderStatusReport.from_pyo3(pyo3_report)
+
+        # Assert
+        assert restored.account_id == report.account_id
+        assert restored.instrument_id == report.instrument_id
+        assert restored.client_order_id == report.client_order_id
+        assert restored.venue_order_id == report.venue_order_id
+        assert restored.order_side == report.order_side
+        assert restored.order_type == report.order_type
+        assert restored.time_in_force == report.time_in_force
+        assert restored.order_status == report.order_status
+        assert restored.price == report.price
+        assert restored.quantity == report.quantity
+        assert restored.filled_qty == report.filled_qty
+
+    def test_fill_report_to_pyo3_round_trip(self):
+        # Arrange
+        report = FillReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            client_order_id=ClientOrderId("O-789456"),
+            venue_order_id=VenueOrderId("V789"),
+            venue_position_id=PositionId("P-002"),
+            trade_id=TradeId("T123"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_str("10000"),
+            last_px=Price.from_str("1.00055"),
+            commission=Money("2.50", USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        pyo3_report = report.to_pyo3()
+        restored = FillReport.from_pyo3(pyo3_report)
+
+        # Assert
+        assert restored.account_id == report.account_id
+        assert restored.instrument_id == report.instrument_id
+        assert restored.client_order_id == report.client_order_id
+        assert restored.venue_order_id == report.venue_order_id
+        assert restored.venue_position_id == report.venue_position_id
+        assert restored.trade_id == report.trade_id
+        assert restored.order_side == report.order_side
+        assert restored.last_qty == report.last_qty
+        assert restored.last_px == report.last_px
+        assert restored.commission == report.commission
+        assert restored.liquidity_side == report.liquidity_side
+        assert restored.ts_event == report.ts_event
+        assert restored.ts_init == report.ts_init
+
+    def test_execution_mass_status_to_pyo3_round_trip(self):
+        # Arrange
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("SIM"),
+            account_id=AccountId("SIM-001"),
+            venue=Venue("SIM"),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+
+        order_report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("V123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(100_000),
+            filled_qty=Quantity.zero(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        fill_report = FillReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("V123"),
+            trade_id=TradeId("T123"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(100_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money("2.50", USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position_report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100_000),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status.add_order_reports([order_report])
+        mass_status.add_fill_reports([fill_report])
+        mass_status.add_position_reports([position_report])
+
+        # Act
+        pyo3_mass_status = mass_status.to_pyo3()
+
+        # Assert
+        assert pyo3_mass_status.client_id.value == "SIM"
+        assert pyo3_mass_status.account_id.value == "SIM-001"
+        assert pyo3_mass_status.venue.value == "SIM"
+        assert len(pyo3_mass_status.order_reports) == 1
+        assert len(pyo3_mass_status.fill_reports) == 1
+        assert len(pyo3_mass_status.position_reports) == 1

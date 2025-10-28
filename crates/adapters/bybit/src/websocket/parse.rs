@@ -474,7 +474,7 @@ pub fn parse_ws_order_status_report(
             .avg_price
             .parse::<f64>()
             .with_context(|| format!("Failed to parse avg_price='{}' as f64", order.avg_price))?;
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if !order.trigger_price.is_empty() && order.trigger_price != "0" {
@@ -967,7 +967,7 @@ mod tests {
         assert_eq!(report.quantity, instrument.make_qty(0.100, None));
         assert_eq!(report.filled_qty, instrument.make_qty(0.100, None));
         assert_eq!(report.price, Some(instrument.make_price(30000.50)));
-        assert_eq!(report.avg_px, Some(30000.50));
+        assert_eq!(report.avg_px, Some(Decimal::try_from(30000.50).unwrap()));
         assert_eq!(
             report.client_order_id.as_ref().unwrap().to_string(),
             "test-client-order-001"

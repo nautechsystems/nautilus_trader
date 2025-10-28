@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
+- Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
 
 ### Breaking Changes
 - Dropped support for Python 3.11
