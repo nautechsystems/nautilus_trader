@@ -2367,6 +2367,14 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topic to receive the instrument
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{ETHUSDT_BINANCE.id.venue}.{ETHUSDT_BINANCE.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstrument(
             instrument_id=ETHUSDT_BINANCE.id,
             start=None,
@@ -2385,13 +2393,26 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [ETHUSDT_BINANCE]
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert instruments_received == [ETHUSDT_BINANCE]
 
     def test_request_instruments_reaches_client(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topics to receive the instruments
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{BTCUSDT_BINANCE.id.venue}.{BTCUSDT_BINANCE.id.symbol}",
+            handler=instruments_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{ETHUSDT_BINANCE.id.venue}.{ETHUSDT_BINANCE.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstruments(
             start=None,
             end=None,
@@ -2409,7 +2430,8 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert instruments_received == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
@@ -2424,6 +2446,14 @@ class TestDataEngine:
 
         # Act
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topic to receive the instrument
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{instrument.id.venue}.{instrument.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstrument(
             instrument_id=instrument.id,
             start=None,
@@ -2442,12 +2472,10 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert (
-            isinstance(handler[0].data, list)
-            and len(handler[0].data) == 1
-            and isinstance(handler[0].data[0], Instrument)
-        )
-        assert handler[0].data[0].id == instrument.id
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
+        assert isinstance(instruments_received[0], Instrument)
+        assert instruments_received[0].id == instrument.id
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
@@ -2462,6 +2490,14 @@ class TestDataEngine:
 
         # Act
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topic to receive the instrument
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{instrument.id.venue}.{instrument.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstruments(
             start=None,
             end=None,
@@ -2479,7 +2515,8 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert len(handler[0].data) == 1
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_with_different_ts_init_values(self):
@@ -2587,6 +2624,14 @@ class TestDataEngine:
 
         # Test 1: Request without time constraints should return the latest instrument (v3)
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topic to receive the instrument
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{base_instrument.id.venue}.{base_instrument.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstrument(
             instrument_id=base_instrument.id,
             start=None,
@@ -2603,16 +2648,16 @@ class TestDataEngine:
 
         # Should return the latest instrument (v3)
         assert len(handler) == 1
-        assert (
-            isinstance(handler[0].data, list)
-            and len(handler[0].data) == 1
-            and isinstance(handler[0].data[0], Instrument)
-        )
-        assert handler[0].data[0].id == base_instrument.id
-        assert handler[0].data[0].ts_init == ts_3
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
+        assert isinstance(instruments_received[0], Instrument)
+        assert instruments_received[0].id == base_instrument.id
+        assert instruments_received[0].ts_init == ts_3
 
         # Test 2: Request with end time between ts_1 and ts_2 should return v1
         handler.clear()
+        instruments_received.clear()
+
         request = RequestInstrument(
             instrument_id=base_instrument.id,
             start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
@@ -2629,16 +2674,16 @@ class TestDataEngine:
 
         # Should return instrument v1
         assert len(handler) == 1
-        assert (
-            isinstance(handler[0].data, list)
-            and len(handler[0].data) == 1
-            and isinstance(handler[0].data[0], Instrument)
-        )
-        assert handler[0].data[0].id == base_instrument.id
-        assert handler[0].data[0].ts_init == ts_1
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
+        assert isinstance(instruments_received[0], Instrument)
+        assert instruments_received[0].id == base_instrument.id
+        assert instruments_received[0].ts_init == ts_1
 
         # Test 3: Request with end time between ts_2 and ts_3 should return v2
         handler.clear()
+        instruments_received.clear()
+
         request = RequestInstrument(
             instrument_id=base_instrument.id,
             start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
@@ -2655,13 +2700,11 @@ class TestDataEngine:
 
         # Should return instrument v2
         assert len(handler) == 1
-        assert (
-            isinstance(handler[0].data, list)
-            and len(handler[0].data) == 1
-            and isinstance(handler[0].data[0], Instrument)
-        )
-        assert handler[0].data[0].id == base_instrument.id
-        assert handler[0].data[0].ts_init == ts_2
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
+        assert isinstance(instruments_received[0], Instrument)
+        assert instruments_received[0].id == base_instrument.id
+        assert instruments_received[0].ts_init == ts_2
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_with_different_ts_init_values_and_only_last(self):
@@ -2768,6 +2811,18 @@ class TestDataEngine:
 
         # Test 1: Request with only_last=True (default) should return only latest version of each instrument
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topics to receive the instruments
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{audusd_base.id.venue}.{audusd_base.id.symbol}",
+            handler=instruments_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{eurusd_base.id.venue}.{eurusd_base.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstruments(
             start=None,
             end=None,
@@ -2783,10 +2838,11 @@ class TestDataEngine:
 
         # Should return 2 instruments: latest AUD/USD (v2) and EUR/USD (v1)
         assert len(handler) == 1
-        assert len(handler[0].data) == 2
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 2
 
         # Sort by instrument ID for consistent testing
-        instruments = sorted(handler[0].data, key=lambda x: str(x.id))
+        instruments = sorted(instruments_received, key=lambda x: str(x.id))
 
         # First should be AUD/USD v2 (latest)
         assert instruments[0].id == audusd_base.id
@@ -2798,6 +2854,8 @@ class TestDataEngine:
 
         # Test 2: Request with only_last=False should return all instruments
         handler.clear()
+        instruments_received.clear()
+
         request = RequestInstruments(
             start=None,
             end=None,
@@ -2813,10 +2871,11 @@ class TestDataEngine:
 
         # Should return 3 instruments: both AUD/USD versions and EUR/USD
         assert len(handler) == 1
-        assert len(handler[0].data) == 3
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 3
 
         # Sort by ts_init for consistent testing
-        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+        instruments = sorted(instruments_received, key=lambda x: x.ts_init)
 
         # First should be AUD/USD v1
         assert instruments[0].id == audusd_base.id
@@ -2934,6 +2993,22 @@ class TestDataEngine:
 
         # Test 1: Request instruments from start to middle time (should get AUD/USD and EUR/USD)
         handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topics to receive the instruments
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{audusd_base.id.venue}.{audusd_base.id.symbol}",
+            handler=instruments_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{eurusd_base.id.venue}.{eurusd_base.id.symbol}",
+            handler=instruments_received.append,
+        )
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{gbpusd_base.id.venue}.{gbpusd_base.id.symbol}",
+            handler=instruments_received.append,
+        )
+
         request = RequestInstruments(
             start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
             end=unix_nanos_to_dt(ts_2 + 500_000_000_000_000_000),  # After ts_2, before ts_3
@@ -2949,10 +3024,11 @@ class TestDataEngine:
 
         # Should return 2 instruments: AUD/USD and EUR/USD (not GBP/USD which is after end time)
         assert len(handler) == 1
-        assert len(handler[0].data) == 2
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 2
 
         # Sort by ts_init for consistent testing
-        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+        instruments = sorted(instruments_received, key=lambda x: x.ts_init)
 
         assert instruments[0].id == audusd_base.id
         assert instruments[0].ts_init == ts_1
@@ -2961,6 +3037,8 @@ class TestDataEngine:
 
         # Test 2: Request instruments from middle to late time (should get EUR/USD and GBP/USD)
         handler.clear()
+        instruments_received.clear()
+
         request = RequestInstruments(
             start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
             end=unix_nanos_to_dt(ts_3 + 500_000_000_000_000_000),  # After ts_3
@@ -2976,10 +3054,11 @@ class TestDataEngine:
 
         # Should return 2 instruments: EUR/USD and GBP/USD (not AUD/USD which is before start time)
         assert len(handler) == 1
-        assert len(handler[0].data) == 2
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 2
 
         # Sort by ts_init for consistent testing
-        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+        instruments = sorted(instruments_received, key=lambda x: x.ts_init)
 
         assert instruments[0].id == eurusd_base.id
         assert instruments[0].ts_init == ts_2
@@ -2988,6 +3067,8 @@ class TestDataEngine:
 
         # Test 3: Request instruments with narrow time window (should get only EUR/USD)
         handler.clear()
+        instruments_received.clear()
+
         request = RequestInstruments(
             start=unix_nanos_to_dt(ts_2 - 100_000_000_000_000_000),  # Just before ts_2
             end=unix_nanos_to_dt(ts_2 + 100_000_000_000_000_000),  # Just after ts_2
@@ -3003,9 +3084,10 @@ class TestDataEngine:
 
         # Should return 1 instrument: only EUR/USD
         assert len(handler) == 1
-        assert len(handler[0].data) == 1
-        assert handler[0].data[0].id == eurusd_base.id
-        assert handler[0].data[0].ts_init == ts_2
+        assert handler[0].data == []  # Data is published to message bus, not in response
+        assert len(instruments_received) == 1
+        assert instruments_received[0].id == eurusd_base.id
+        assert instruments_received[0].ts_init == ts_2
 
     def test_request_order_book_snapshot_reaches_client(self):
         # Arrange
@@ -3691,7 +3773,6 @@ class TestDataEngine:
         params["include_external_data"] = True
         params["update_subscriptions"] = False
         params["update_catalog"] = False
-        params["bars_market_data_type"] = "bars"
 
         request = RequestBars(
             bar_type=bar_types[0].composite(),
@@ -3833,7 +3914,6 @@ class TestDataEngine:
         params["include_external_data"] = False
         params["update_subscriptions"] = False
         params["update_catalog"] = False
-        params["bars_market_data_type"] = "quote_ticks"
 
         request = RequestQuoteTicks(
             instrument_id=bar_types[0].instrument_id,
@@ -3955,7 +4035,6 @@ class TestDataEngine:
         params["include_external_data"] = False
         params["update_subscriptions"] = False
         params["update_catalog"] = False
-        params["bars_market_data_type"] = "trade_ticks"
 
         request = RequestTradeTicks(
             instrument_id=bar_types[0].instrument_id,
@@ -5423,3 +5502,163 @@ class TestDataEngineQuoteFromBook:
 
         # Assert - no quote tick should be created because there's no bid
         assert len(quote_handler) == 0
+
+
+class TestTimeRangeGenerator:
+    def setup(self):
+        import pandas as pd
+
+        from nautilus_trader.data.engine import default_time_range_generator
+        from nautilus_trader.data.engine import get_time_range_generator
+        from nautilus_trader.data.engine import register_time_range_generator
+
+        self.default_time_range_generator = default_time_range_generator
+        self.register_time_range_generator = register_time_range_generator
+        self.get_time_range_generator = get_time_range_generator
+
+        # Create a sample request for testing
+        self.start_dt = pd.Timestamp("2024-01-01 00:00:00", tz="UTC")
+        self.end_dt = pd.Timestamp("2024-01-01 00:10:00", tz="UTC")  # 10 minutes
+
+    def test_default_time_range_generator_single_chunk(self):
+        # Arrange
+        request = RequestData(
+            data_type=DataType(Bar),
+            instrument_id=None,
+            start=self.start_dt,
+            end=self.end_dt,
+            limit=0,
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            callback=None,
+            request_id=UUID4(),
+            ts_init=0,
+            params={"durations_seconds": [600]},  # Single 10-minute chunk
+        )
+
+        # Act
+        generator = self.default_time_range_generator(request)
+        start_ns, end_ns = next(generator)
+
+        # Assert
+        assert start_ns == self.start_dt.value
+        assert end_ns == self.end_dt.value
+
+        # Should stop after one chunk
+        with pytest.raises(StopIteration):
+            next(generator)
+
+    def test_default_time_range_generator_multiple_chunks(self):
+        # Arrange
+        request = RequestData(
+            data_type=DataType(Bar),
+            instrument_id=None,
+            start=self.start_dt,
+            end=self.end_dt,
+            limit=0,
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            callback=None,
+            request_id=UUID4(),
+            ts_init=0,
+            params={"durations_seconds": [120]},  # 2-minute chunks
+        )
+
+        # Act
+        generator = self.default_time_range_generator(request)
+
+        # First chunk: 0-2 minutes
+        start_ns1, end_ns1 = next(generator)
+        assert start_ns1 == self.start_dt.value
+
+        # Send feedback that data was received
+        start_ns2, end_ns2 = generator.send(True)
+        # The second chunk should start right after the first
+        assert start_ns2 > start_ns1
+
+        # Continue until end
+        chunks = [(start_ns1, end_ns1), (start_ns2, end_ns2)]
+        try:
+            while True:
+                start_ns, end_ns = generator.send(True)
+                chunks.append((start_ns, end_ns))
+        except StopIteration:
+            pass
+
+        # Assert - should have 5 chunks (10 minutes / 2 minutes)
+        assert len(chunks) == 5
+
+    def test_default_time_range_generator_with_no_data_feedback(self):
+        # Arrange
+        request = RequestData(
+            data_type=DataType(Bar),
+            instrument_id=None,
+            start=self.start_dt,
+            end=self.end_dt,
+            limit=0,
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            callback=None,
+            request_id=UUID4(),
+            ts_init=0,
+            params={"durations_seconds": [60, 120]},  # Try 1-min, then 2-min chunks
+        )
+
+        # Act
+        generator = self.default_time_range_generator(request)
+
+        # First chunk
+        start_ns1, end_ns1 = next(generator)
+        assert start_ns1 == self.start_dt.value
+
+        # Send feedback that no data was received - should try next duration
+        start_ns2, end_ns2 = generator.send(False)
+        # Should get a different time range
+        assert start_ns2 >= start_ns1
+
+        # Send feedback that data was received - should continue
+        start_ns3, end_ns3 = generator.send(True)
+        assert start_ns3 > start_ns2
+
+    def test_default_time_range_generator_point_data(self):
+        # Arrange
+        request = RequestData(
+            data_type=DataType(Bar),
+            instrument_id=None,
+            start=self.start_dt,
+            end=self.end_dt,
+            limit=0,
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            callback=None,
+            request_id=UUID4(),
+            ts_init=0,
+            params={"durations_seconds": [60], "point_data": True},
+        )
+
+        # Act
+        generator = self.default_time_range_generator(request)
+
+        # First chunk: point data (start == end)
+        start_ns1, end_ns1 = next(generator)
+        assert start_ns1 == self.start_dt.value
+        assert end_ns1 == start_ns1  # Point data has same start and end
+
+    def test_register_and_get_time_range_generator(self):
+        # Arrange
+        def custom_generator(request):
+            yield (0, 1000)
+
+        # Act
+        self.register_time_range_generator("custom", custom_generator)
+        retrieved_generator = self.get_time_range_generator("custom")
+
+        # Assert
+        assert retrieved_generator == custom_generator
+
+    def test_get_time_range_generator_returns_default_for_unknown(self):
+        # Arrange, Act
+        retrieved_generator = self.get_time_range_generator("unknown_generator")
+
+        # Assert
+        assert retrieved_generator == self.default_time_range_generator

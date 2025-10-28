@@ -233,7 +233,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
     cpdef void _handle_request_data(self, DataClient client, RequestData request)
     cpdef void _query_catalog(self, RequestData request)
-    cpdef void _init_historical_aggregators(self, RequestData request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
@@ -261,7 +260,6 @@ cdef class DataEngine(Component):
     cdef DataResponse _handle_request_group_aux(self, DataResponse response)
     cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties)
     cpdef void _check_bounds(self, DataResponse response)
-    cpdef void _handle_aggregated_bars(self, DataResponse response)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
@@ -269,17 +267,22 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
-    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *)
-    cpdef void _unsubscribe_historical_bar_aggregator(self, BarType bar_type)
-    cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
     cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)
     cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update)
     cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update)
 
+# -- INTERNAL - Bar Aggregators --------------------------------------------------------------------
+
+    cpdef void _init_historical_aggregators(self, RequestData request)
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
+    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
+    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *)
+    cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
+    cpdef void _handle_aggregated_bars(self, DataResponse response)
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *)
+    cpdef void _unsubscribe_aggregator(self, MarketDataClient client, UnsubscribeBars command)
 
 cdef class SnapshotInfo:
     cdef InstrumentId instrument_id

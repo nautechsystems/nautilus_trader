@@ -217,6 +217,7 @@ cdef class Request:
 
     def __repr__(self) -> str:
         correlation_str = f", correlation_id={self.correlation_id}" if self.correlation_id is not None else ""
+
         return f"{type(self).__name__}(id={self.id}, callback={self.callback}, ts_init={self.ts_init}{correlation_str})"
 
 
