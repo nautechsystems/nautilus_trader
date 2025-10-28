@@ -120,7 +120,7 @@ impl HyperliquidEip712Signer {
         } else {
             // Fallback: serialize JSON Value with MessagePack
             rmp_serde::to_vec_named(&request.action)
-                .map_err(|e| Error::transport(format!("Failed to serialize action: {}", e)))?
+                .map_err(|e| Error::transport(format!("Failed to serialize action: {e}")))?
         };
 
         // Append timestamp as big-endian u64
@@ -133,7 +133,7 @@ impl HyperliquidEip712Signer {
             // Parse vault address and append bytes
             let vault_hex = vault_addr.trim_start_matches("0x");
             let vault_bytes = hex::decode(vault_hex)
-                .map_err(|e| Error::transport(format!("Invalid vault address: {}", e)))?;
+                .map_err(|e| Error::transport(format!("Invalid vault address: {e}")))?;
             bytes.extend_from_slice(&vault_bytes);
         } else {
             bytes.push(0); // no vault
@@ -179,7 +179,7 @@ impl HyperliquidEip712Signer {
         // Verifying contract address (needs to be the actual Hyperliquid contract)
         // This is a placeholder and needs to be replaced with the actual contract address
         let verifying_contract = hex::decode("0000000000000000000000000000000000000000")
-            .map_err(|e| Error::transport(format!("Failed to decode verifying contract: {}", e)))?;
+            .map_err(|e| Error::transport(format!("Failed to decode verifying contract: {e}")))?;
         let mut contract_bytes = [0u8; 32];
         contract_bytes[12..].copy_from_slice(&verifying_contract);
 
@@ -221,7 +221,7 @@ impl HyperliquidEip712Signer {
 
         // Create PrivateKeySigner from hex string
         let signer = PrivateKeySigner::from_str(key_hex)
-            .map_err(|e| Error::transport(format!("Failed to create signer: {}", e)))?;
+            .map_err(|e| Error::transport(format!("Failed to create signer: {e}")))?;
 
         // Convert [u8; 32] to B256 for signing
         let hash_b256 = B256::from(*hash);
@@ -229,7 +229,7 @@ impl HyperliquidEip712Signer {
         // Sign the hash - alloy-signer handles the signing internally
         let signature = signer
             .sign_hash_sync(&hash_b256)
-            .map_err(|e| Error::transport(format!("Failed to sign hash: {}", e)))?;
+            .map_err(|e| Error::transport(format!("Failed to sign hash: {e}")))?;
 
         // Extract r, s, v components for Ethereum signature format
         // Ethereum signature format: 0x + r (64 hex) + s (64 hex) + v (2 hex) = 132 total
@@ -306,7 +306,7 @@ impl HyperliquidEip712Signer {
 
         // Create PrivateKeySigner from hex string
         let signer = PrivateKeySigner::from_str(key_hex)
-            .map_err(|e| Error::transport(format!("Failed to create signer: {}", e)))?;
+            .map_err(|e| Error::transport(format!("Failed to create signer: {e}")))?;
 
         // Get address from signer and format it properly (not Debug format)
         let address = format!("{:#x}", signer.address());

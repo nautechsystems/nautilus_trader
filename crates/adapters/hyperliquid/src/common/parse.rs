@@ -101,7 +101,8 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    data::bar::BarType,
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{InstrumentId, Symbol, Venue},
     orders::{Order, any::OrderAny},
     types::{AccountBalance, Currency, MarginBalance, Money},
@@ -110,11 +111,14 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 
-use crate::http::models::{
-    AssetId, Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
-    HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
-    HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
-    HyperliquidExecTriggerParams,
+use crate::{
+    common::enums::HyperliquidBarInterval,
+    http::models::{
+        AssetId, Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
+        HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
+        HyperliquidExecTriggerParams,
+    },
 };
 
 /// Serializes decimal as string (lossless, no scientific notation).
@@ -395,6 +399,55 @@ fn determine_tpsl_type(
             }
         }
     }
+}
+
+/// Converts a Nautilus `BarType` to a Hyperliquid bar interval.
+///
+/// # Errors
+///
+/// Returns an error if the bar type uses an unsupported aggregation or step value.
+pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBarInterval> {
+    use crate::common::enums::HyperliquidBarInterval::{
+        EightHours, FifteenMinutes, FiveMinutes, FourHours, OneDay, OneHour, OneMinute, OneMonth,
+        OneWeek, ThirtyMinutes, ThreeDays, ThreeMinutes, TwelveHours, TwoHours,
+    };
+
+    let spec = bar_type.spec();
+    let step = spec.step.get();
+
+    anyhow::ensure!(
+        bar_type.aggregation_source() == AggregationSource::External,
+        "Only EXTERNAL aggregation is supported"
+    );
+
+    let interval = match spec.aggregation {
+        BarAggregation::Minute => match step {
+            1 => OneMinute,
+            3 => ThreeMinutes,
+            5 => FiveMinutes,
+            15 => FifteenMinutes,
+            30 => ThirtyMinutes,
+            _ => anyhow::bail!("Unsupported minute step: {step}"),
+        },
+        BarAggregation::Hour => match step {
+            1 => OneHour,
+            2 => TwoHours,
+            4 => FourHours,
+            8 => EightHours,
+            12 => TwelveHours,
+            _ => anyhow::bail!("Unsupported hour step: {step}"),
+        },
+        BarAggregation::Day => match step {
+            1 => OneDay,
+            3 => ThreeDays,
+            _ => anyhow::bail!("Unsupported day step: {step}"),
+        },
+        BarAggregation::Week if step == 1 => OneWeek,
+        BarAggregation::Month if step == 1 => OneMonth,
+        a => anyhow::bail!("Hyperliquid does not support {a:?} aggregation"),
+    };
+
+    Ok(interval)
 }
 
 /// Converts a Nautilus order into a Hyperliquid order request.

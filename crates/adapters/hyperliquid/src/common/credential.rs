@@ -15,7 +15,12 @@
 
 #![allow(unused_assignments)] // Fields are accessed via methods, false positive from nightly
 
-use std::{env, fmt, fs, path::Path};
+use std::{
+    env,
+    fmt::{self, Debug, Display},
+    fs,
+    path::Path,
+};
 
 use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -79,13 +84,13 @@ impl EvmPrivateKey {
     }
 }
 
-impl fmt::Debug for EvmPrivateKey {
+impl Debug for EvmPrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("EvmPrivateKey(***redacted***)")
     }
 }
 
-impl fmt::Display for EvmPrivateKey {
+impl Display for EvmPrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("EvmPrivateKey(***redacted***)")
     }
@@ -133,14 +138,14 @@ impl VaultAddress {
     }
 }
 
-impl fmt::Debug for VaultAddress {
+impl Debug for VaultAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let hex = self.to_hex();
         write!(f, "VaultAddress({}...{})", &hex[..6], &hex[hex.len() - 4..])
     }
 }
 
-impl fmt::Display for VaultAddress {
+impl Display for VaultAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_hex())
     }
@@ -154,7 +159,7 @@ pub struct Secrets {
     pub is_testnet: bool,
 }
 
-impl fmt::Debug for Secrets {
+impl Debug for Secrets {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
@@ -264,7 +269,7 @@ impl Secrets {
         }
 
         let raw: RawSecrets = serde_json::from_str(json)
-            .map_err(|e| Error::bad_request(format!("Invalid JSON: {}", e)))?;
+            .map_err(|e| Error::bad_request(format!("Invalid JSON: {e}")))?;
 
         let private_key = EvmPrivateKey::new(raw.private_key)?;
 

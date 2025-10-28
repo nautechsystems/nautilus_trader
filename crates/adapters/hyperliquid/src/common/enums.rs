@@ -13,9 +13,94 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{fmt::Display, str::FromStr};
+
 use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HyperliquidBarInterval {
+    #[serde(rename = "1m")]
+    OneMinute,
+    #[serde(rename = "3m")]
+    ThreeMinutes,
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "15m")]
+    FifteenMinutes,
+    #[serde(rename = "30m")]
+    ThirtyMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
+    #[serde(rename = "2h")]
+    TwoHours,
+    #[serde(rename = "4h")]
+    FourHours,
+    #[serde(rename = "8h")]
+    EightHours,
+    #[serde(rename = "12h")]
+    TwelveHours,
+    #[serde(rename = "1d")]
+    OneDay,
+    #[serde(rename = "3d")]
+    ThreeDays,
+    #[serde(rename = "1w")]
+    OneWeek,
+    #[serde(rename = "1M")]
+    OneMonth,
+}
+
+impl HyperliquidBarInterval {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OneMinute => "1m",
+            Self::ThreeMinutes => "3m",
+            Self::FiveMinutes => "5m",
+            Self::FifteenMinutes => "15m",
+            Self::ThirtyMinutes => "30m",
+            Self::OneHour => "1h",
+            Self::TwoHours => "2h",
+            Self::FourHours => "4h",
+            Self::EightHours => "8h",
+            Self::TwelveHours => "12h",
+            Self::OneDay => "1d",
+            Self::ThreeDays => "3d",
+            Self::OneWeek => "1w",
+            Self::OneMonth => "1M",
+        }
+    }
+}
+
+impl FromStr for HyperliquidBarInterval {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "1m" => Ok(Self::OneMinute),
+            "3m" => Ok(Self::ThreeMinutes),
+            "5m" => Ok(Self::FiveMinutes),
+            "15m" => Ok(Self::FifteenMinutes),
+            "30m" => Ok(Self::ThirtyMinutes),
+            "1h" => Ok(Self::OneHour),
+            "2h" => Ok(Self::TwoHours),
+            "4h" => Ok(Self::FourHours),
+            "8h" => Ok(Self::EightHours),
+            "12h" => Ok(Self::TwelveHours),
+            "1d" => Ok(Self::OneDay),
+            "3d" => Ok(Self::ThreeDays),
+            "1w" => Ok(Self::OneWeek),
+            "1M" => Ok(Self::OneMonth),
+            _ => anyhow::bail!("Invalid Hyperliquid bar interval: {s}"),
+        }
+    }
+}
+
+impl Display for HyperliquidBarInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// Represents the order side (Buy or Sell).
 #[derive(

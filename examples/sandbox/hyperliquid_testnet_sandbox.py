@@ -30,7 +30,7 @@ import uuid
 
 from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidHttpClient  # type: ignore
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidHttpClient
 from nautilus_trader.core.nautilus_pyo3 import LimitOrder
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import Price

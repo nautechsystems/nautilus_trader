@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use alloy_primitives::Address;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::common::enums::{
@@ -376,7 +378,7 @@ impl HyperliquidSignature {
         let r = format!("0x{}", &sig_hex[0..64]);
         let s = format!("0x{}", &sig_hex[64..128]);
         let v = u64::from_str_radix(&sig_hex[128..130], 16)
-            .map_err(|e| format!("Failed to parse v component: {}", e))?;
+            .map_err(|e| format!("Failed to parse v component: {e}"))?;
 
         Ok(Self { r, s, v })
     }
@@ -747,84 +749,71 @@ mod tests {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Exchange execution endpoint models
-////////////////////////////////////////////////////////////////////////////////
+/// A 128-bit client order ID represented as a hex string with `0x` prefix.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Cloid(pub [u8; 16]);
 
-/// Custom serde module for handling 128-bit hex client order IDs.
-pub mod execution_cloid {
-    use std::fmt;
+impl Cloid {
+    /// Creates a new `Cloid` from a hex string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the string is not a valid 128-bit hex with `0x` prefix.
+    pub fn from_hex<S: AsRef<str>>(s: S) -> Result<Self, String> {
+        let hex_str = s.as_ref();
+        let without_prefix = hex_str
+            .strip_prefix("0x")
+            .ok_or("CLOID must start with '0x'")?;
 
-    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
-
-    /// A 128-bit client order ID represented as a hex string with `0x` prefix.
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct Cloid(pub [u8; 16]);
-
-    impl Cloid {
-        /// Creates a new `Cloid` from a hex string.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if the string is not a valid 128-bit hex with `0x` prefix.
-        pub fn from_hex<S: AsRef<str>>(s: S) -> Result<Self, String> {
-            let hex_str = s.as_ref();
-            let without_prefix = hex_str
-                .strip_prefix("0x")
-                .ok_or("CLOID must start with '0x'")?;
-
-            if without_prefix.len() != 32 {
-                return Err("CLOID must be exactly 32 hex characters (128 bits)".to_string());
-            }
-
-            let mut bytes = [0u8; 16];
-            for i in 0..16 {
-                let byte_str = &without_prefix[i * 2..i * 2 + 2];
-                bytes[i] = u8::from_str_radix(byte_str, 16)
-                    .map_err(|_| "Invalid hex character in CLOID".to_string())?;
-            }
-
-            Ok(Self(bytes))
+        if without_prefix.len() != 32 {
+            return Err("CLOID must be exactly 32 hex characters (128 bits)".to_string());
         }
 
-        /// Converts the CLOID to a hex string with `0x` prefix.
-        pub fn to_hex(&self) -> String {
-            let mut result = String::with_capacity(34);
-            result.push_str("0x");
-            for byte in &self.0 {
-                result.push_str(&format!("{:02x}", byte));
-            }
-            result
+        let mut bytes = [0u8; 16];
+        for i in 0..16 {
+            let byte_str = &without_prefix[i * 2..i * 2 + 2];
+            bytes[i] = u8::from_str_radix(byte_str, 16)
+                .map_err(|_| "Invalid hex character in CLOID".to_string())?;
         }
+
+        Ok(Self(bytes))
     }
 
-    impl fmt::Display for Cloid {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.to_hex())
+    /// Converts the CLOID to a hex string with `0x` prefix.
+    pub fn to_hex(&self) -> String {
+        let mut result = String::with_capacity(34);
+        result.push_str("0x");
+        for byte in &self.0 {
+            result.push_str(&format!("{:02x}", byte));
         }
-    }
-
-    impl Serialize for Cloid {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            serializer.serialize_str(&self.to_hex())
-        }
-    }
-
-    impl<'de> Deserialize<'de> for Cloid {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let s = String::deserialize(deserializer)?;
-            Self::from_hex(&s).map_err(D::Error::custom)
-        }
+        result
     }
 }
 
-pub use execution_cloid::Cloid;
+impl Display for Cloid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
+
+impl Serialize for Cloid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_hex())
+    }
+}
+
+impl<'de> Deserialize<'de> for Cloid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_hex(&s).map_err(serde::de::Error::custom)
+    }
+}
 
 /// Asset ID type for Hyperliquid.
 ///

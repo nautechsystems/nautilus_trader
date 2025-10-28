@@ -16,7 +16,7 @@
 use std::{env, error::Error, time::Duration};
 
 use nautilus_hyperliquid::{
-    common::consts::ws_url,
+    common::{consts::ws_url, enums::HyperliquidBarInterval::OneMinute},
     websocket::{
         client::HyperliquidWebSocketInnerClient,
         messages::{HyperliquidWsMessage, SubscriptionRequest},
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tracing::info!("Subscribing to candles for {symbol}");
             let subscription = SubscriptionRequest::Candle {
                 coin,
-                interval: "1m".to_string(),
+                interval: OneMinute,
             };
             client.ws_subscribe(subscription).await?;
         }
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tracing::info!("- Subscribing to candles");
             let subscription = SubscriptionRequest::Candle {
                 coin,
-                interval: "1m".to_string(),
+                interval: OneMinute,
             };
             if let Err(e) = client.ws_subscribe(subscription).await {
                 tracing::error!("Failed to subscribe to candles: {e}");

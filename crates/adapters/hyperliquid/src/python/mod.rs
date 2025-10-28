@@ -18,6 +18,7 @@
 pub mod enums;
 pub mod http;
 pub mod urls;
+pub mod websocket;
 
 use pyo3::prelude::*;
 
