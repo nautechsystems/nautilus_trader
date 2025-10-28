@@ -120,10 +120,19 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of requests per minute (rolling window).
         Defaults to 120 for authenticated clients (per BitMEX documentation).
         Note: Execution clients are always authenticated.
-    canceller_pool_size : PositiveInt, default 3
+    submitter_pool_size : PositiveInt, optional
+        The number of redundant HTTP clients in the submit broadcaster pool.
+        Broadcasting is opt-in via `params={"submit_tries": N}` on submit commands (N > 1).
+        When broadcasting, up to N submit requests are fanned out in parallel for redundancy,
+        with the first successful response short-circuiting remaining requests.
+        If submit_tries exceeds pool_size, it will be capped at pool_size (with warning).
+        If not specified, defaults to 1 (single client, no redundancy).
+        Recommended maximum pool size of 3.
+    canceller_pool_size : PositiveInt, optional
         The number of redundant HTTP clients in the cancel broadcaster pool.
         Cancel requests are fanned out to multiple clients in parallel for redundancy,
         with the first successful response short-circuiting remaining requests.
+        Recommended maximum pool size of 3.
 
     """
 
@@ -139,4 +148,5 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     recv_window_ms: PositiveInt | None = 10_000
     max_requests_per_second: PositiveInt = 10
     max_requests_per_minute: PositiveInt = 120
-    canceller_pool_size: PositiveInt = 3
+    submitter_pool_size: PositiveInt | None = None
+    canceller_pool_size: PositiveInt | None = None

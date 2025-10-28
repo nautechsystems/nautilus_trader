@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -39,6 +39,7 @@ pub struct SubmitOrder {
     pub order: OrderAny,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
+    pub params: Option<HashMap<String, String>>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -60,6 +61,7 @@ impl SubmitOrder {
         order: OrderAny,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
+        params: Option<HashMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -73,6 +75,7 @@ impl SubmitOrder {
             order,
             exec_algorithm_id,
             position_id,
+            params,
             command_id,
             ts_init,
         })

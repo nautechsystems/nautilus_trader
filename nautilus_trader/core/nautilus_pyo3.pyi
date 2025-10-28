@@ -7031,6 +7031,49 @@ class BitmexWebSocketClient:
     async def unsubscribe_margin(self) -> None: ...
     async def unsubscribe_wallet(self) -> None: ...
 
+class SubmitBroadcaster:
+    def __init__(
+        self,
+        pool_size: int,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        health_check_interval_secs: int = 30,
+        health_check_timeout_secs: int = 5,
+        expected_reject_patterns: list[str] | None = None,
+    ) -> None: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def broadcast_submit(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
+        display_qty: Quantity | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        order_list_id: OrderListId | None = None,
+        contingency_type: ContingencyType | None = None,
+        submit_tries: int | None = None,
+    ) -> OrderStatusReport: ...
+    def get_metrics(self) -> dict[str, int]: ...
+    def get_client_stats(self) -> list[dict[str, Any]]: ...
+    def add_instrument(self, instrument: Any) -> None: ...
+
 class CancelBroadcaster:
     def __init__(
         self,
@@ -7072,6 +7115,7 @@ class CancelBroadcaster:
     ) -> list[OrderStatusReport]: ...
     def get_metrics(self) -> dict[str, int]: ...
     def get_client_stats(self) -> list[dict[str, Any]]: ...
+    def add_instrument(self, instrument: Any) -> None: ...
 
 # Hyperliquid
 

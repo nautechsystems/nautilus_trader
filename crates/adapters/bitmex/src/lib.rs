@@ -67,6 +67,7 @@ pub use crate::{
     execution::{
         BitmexExecutionClient,
         canceller::{BroadcasterMetrics, CancelBroadcaster, CancelBroadcasterConfig, ClientStats},
+        submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
     http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{client::BitmexWebSocketClient, error::BitmexWsError},

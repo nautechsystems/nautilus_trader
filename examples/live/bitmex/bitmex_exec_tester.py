@@ -42,8 +42,9 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 testnet = True  # If clients use the testnet API
-symbol = "XBTUSD"  # Bitcoin perpetual swap
-order_qty = Decimal("100")  # Contract size in USD
+# symbol = "XBTUSD"  # Bitcoin perpetual swap
+symbol = "ETHUSD"  # Ether perpetual swap
+order_qty = Decimal("10")  # Contract size in USD
 
 # symbol = "SOLUSDT"  # Solana quoted in USDT spot
 # order_qty = Decimal("0.1")  # Fractional size
@@ -55,6 +56,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
+        # log_level_file="DEBUG",
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
@@ -62,9 +64,9 @@ config_node = TradingNodeConfig(
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=False,
-        position_check_interval_secs=5.0,
-        manage_own_order_books=True,
-        own_books_audit_interval_secs=1.0,
+        # position_check_interval_secs=60.0,
+        # manage_own_order_books=True,
+        # own_books_audit_interval_secs=1.0,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -87,6 +89,8 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=testnet,  # If client uses the testnet API
+            submitter_pool_size=1,
+            canceller_pool_size=3,
         ),
     },
     timeout_connection=10.0,
@@ -101,6 +105,7 @@ config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # order_params={"broadcast_submit_tries": 3},
     # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
     # subscribe_book=True,
     enable_buys=True,

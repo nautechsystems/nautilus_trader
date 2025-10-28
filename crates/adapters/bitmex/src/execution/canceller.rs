@@ -31,6 +31,8 @@
 // lands so we can drop the per-call heap allocation
 
 use std::{
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -75,9 +77,7 @@ trait CancelExecutor: Send + Sync {
     fn add_instrument(&self, instrument: InstrumentAny);
 
     /// Performs a health check on the executor.
-    fn health_check(
-        &self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>;
+    fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>>;
 
     /// Cancels a single order.
     fn cancel_order(
@@ -85,9 +85,7 @@ trait CancelExecutor: Send + Sync {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
-    >;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>;
 
     /// Cancels multiple orders.
     fn cancel_orders(
@@ -95,18 +93,14 @@ trait CancelExecutor: Send + Sync {
         instrument_id: InstrumentId,
         client_order_ids: Option<Vec<ClientOrderId>>,
         venue_order_ids: Option<Vec<VenueOrderId>>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
-    >;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>>;
 
     /// Cancels all orders for an instrument.
     fn cancel_all_orders(
         &self,
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
-    >;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>>;
 }
 
 impl CancelExecutor for BitmexHttpClient {
@@ -114,9 +108,7 @@ impl CancelExecutor for BitmexHttpClient {
         Self::add_instrument(self, instrument);
     }
 
-    fn health_check(
-        &self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+    fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
         Box::pin(async move {
             Self::http_get_server_time(self)
                 .await
@@ -130,9 +122,7 @@ impl CancelExecutor for BitmexHttpClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>> {
         Box::pin(async move {
             Self::cancel_order(self, instrument_id, client_order_id, venue_order_id).await
         })
@@ -143,9 +133,7 @@ impl CancelExecutor for BitmexHttpClient {
         instrument_id: InstrumentId,
         client_order_ids: Option<Vec<ClientOrderId>>,
         venue_order_ids: Option<Vec<VenueOrderId>>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>> {
         Box::pin(async move {
             Self::cancel_orders(self, instrument_id, client_order_ids, venue_order_ids).await
         })
@@ -154,10 +142,8 @@ impl CancelExecutor for BitmexHttpClient {
     fn cancel_all_orders(
         &self,
         instrument_id: InstrumentId,
-        order_side: Option<nautilus_model::enums::OrderSide>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>,
-    > {
+        order_side: Option<OrderSide>,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>> {
         Box::pin(async move { Self::cancel_all_orders(self, instrument_id, order_side).await })
     }
 }
@@ -276,6 +262,14 @@ impl TransportClient {
         self.healthy.store(false, Ordering::Relaxed);
     }
 
+    fn get_cancel_count(&self) -> u64 {
+        self.cancel_count.load(Ordering::Relaxed)
+    }
+
+    fn get_error_count(&self) -> u64 {
+        self.error_count.load(Ordering::Relaxed)
+    }
+
     async fn health_check(&self, timeout_secs: u64) -> bool {
         match tokio::time::timeout(
             Duration::from_secs(timeout_secs),
@@ -322,14 +316,6 @@ impl TransportClient {
                 Err(e)
             }
         }
-    }
-
-    fn get_cancel_count(&self) -> u64 {
-        self.cancel_count.load(Ordering::Relaxed)
-    }
-
-    fn get_error_count(&self) -> u64 {
-        self.error_count.load(Ordering::Relaxed)
     }
 }
 
@@ -627,7 +613,6 @@ impl CancelBroadcaster {
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        // Filter for healthy clients and clone them
         let transports_guard = self.transports.read().await;
         let healthy_transports: Vec<TransportClient> = transports_guard
             .iter()
@@ -641,7 +626,6 @@ impl CancelBroadcaster {
             anyhow::bail!("No healthy transport clients available");
         }
 
-        // Spawn tasks for all healthy clients
         let mut handles = Vec::new();
         for transport in healthy_transports {
             let handle = tokio::spawn(async move {
@@ -681,7 +665,6 @@ impl CancelBroadcaster {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        // Filter for healthy clients and clone them
         let transports_guard = self.transports.read().await;
         let healthy_transports: Vec<TransportClient> = transports_guard
             .iter()
@@ -695,7 +678,6 @@ impl CancelBroadcaster {
             anyhow::bail!("No healthy transport clients available");
         }
 
-        // Spawn tasks for all healthy clients
         let mut handles = Vec::new();
 
         for transport in healthy_transports {
@@ -733,11 +715,10 @@ impl CancelBroadcaster {
     pub async fn broadcast_cancel_all(
         &self,
         instrument_id: InstrumentId,
-        order_side: Option<nautilus_model::enums::OrderSide>,
+        order_side: Option<OrderSide>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        // Filter for healthy clients and clone them
         let transports_guard = self.transports.read().await;
         let healthy_transports: Vec<TransportClient> = transports_guard
             .iter()
@@ -751,7 +732,6 @@ impl CancelBroadcaster {
             anyhow::bail!("No healthy transport clients available");
         }
 
-        // Spawn tasks for all healthy clients
         let mut handles = Vec::new();
         for transport in healthy_transports {
             let handle = tokio::spawn(async move {
@@ -843,7 +823,7 @@ impl CancelBroadcaster {
     }
 
     /// Adds an instrument to all HTTP clients in the pool for caching.
-    pub fn add_instrument(&self, instrument: nautilus_model::instruments::any::InstrumentAny) {
+    pub fn add_instrument(&self, instrument: InstrumentAny) {
         let transports = self.transports.blocking_read();
         for transport in transports.iter() {
             transport.executor.add_instrument(instrument.clone());
@@ -933,9 +913,9 @@ mod tests {
                     InstrumentId,
                     Option<ClientOrderId>,
                     Option<VenueOrderId>,
-                ) -> std::pin::Pin<
-                    Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send>,
-                > + Send
+                )
+                    -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send>>
+                + Send
                 + Sync,
         >,
     }
@@ -947,7 +927,7 @@ mod tests {
                 + Send
                 + Sync
                 + 'static,
-            Fut: std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
+            Fut: Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
         {
             Self {
                 handler: Arc::new(move |id, cid, vid| Box::pin(handler(id, cid, vid))),
@@ -956,10 +936,7 @@ mod tests {
     }
 
     impl CancelExecutor for MockExecutor {
-        fn health_check(
-            &self,
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>
-        {
+        fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
             Box::pin(async { Ok(()) })
         }
 
@@ -968,9 +945,7 @@ mod tests {
             instrument_id: InstrumentId,
             client_order_id: Option<ClientOrderId>,
             venue_order_id: Option<VenueOrderId>,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>,
-        > {
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>> {
             (self.handler)(instrument_id, client_order_id, venue_order_id)
         }
 
@@ -979,27 +954,17 @@ mod tests {
             _instrument_id: InstrumentId,
             _client_order_ids: Option<Vec<ClientOrderId>>,
             _venue_order_ids: Option<Vec<VenueOrderId>>,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>>
-                    + Send
-                    + '_,
-            >,
-        > {
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>>
+        {
             Box::pin(async { Ok(Vec::new()) })
         }
 
         fn cancel_all_orders(
             &self,
             instrument_id: InstrumentId,
-            _order_side: Option<nautilus_model::enums::OrderSide>,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<Output = anyhow::Result<Vec<OrderStatusReport>>>
-                    + Send
-                    + '_,
-            >,
-        > {
+            _order_side: Option<OrderSide>,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OrderStatusReport>>> + Send + '_>>
+        {
             // Try to get result from the single-order handler to propagate errors
             let handler = Arc::clone(&self.handler);
             Box::pin(async move {
@@ -1012,7 +977,7 @@ mod tests {
             })
         }
 
-        fn add_instrument(&self, _instrument: nautilus_model::instruments::any::InstrumentAny) {
+        fn add_instrument(&self, _instrument: InstrumentAny) {
             // No-op for mock
         }
     }
@@ -1060,7 +1025,7 @@ mod tests {
             + Send
             + Sync
             + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
+        Fut: Future<Output = anyhow::Result<OrderStatusReport>> + Send + 'static,
     {
         let executor = MockExecutor::new(handler);
         TransportClient::new(executor, client_id.to_string())

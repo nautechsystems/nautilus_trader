@@ -120,6 +120,7 @@ fn test_deny_order_on_price_precision_exceeded(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -192,6 +193,7 @@ fn test_deny_order_exceeding_max_notional(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -280,6 +282,7 @@ fn get_stub_submit_order(
         market_order_buy(instrument_eth_usdt),
         None,
         None,
+        None, // params
         UUID4::new(),
         UnixNanos::from(10),
     )
@@ -596,6 +599,7 @@ fn test_given_random_command_then_logs_and_continues(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -661,6 +665,7 @@ fn test_submit_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -715,6 +720,7 @@ fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -789,6 +795,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -825,6 +832,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -856,6 +864,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order3,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -929,6 +938,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -965,6 +975,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1052,6 +1063,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
         order,
         None,
         Some(PositionId::new("CUSTOM-001")), // <-- Custom position ID
+        None,                                // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1246,6 +1258,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1315,6 +1328,7 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1388,6 +1402,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1458,6 +1473,7 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1528,6 +1544,7 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1596,6 +1613,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1664,6 +1682,7 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1735,6 +1754,7 @@ fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1814,6 +1834,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1899,6 +1920,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1981,6 +2003,7 @@ fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2063,6 +2086,7 @@ fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2133,6 +2157,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2401,6 +2426,7 @@ fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
         order1,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2425,6 +2451,7 @@ fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
         order2,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2521,6 +2548,7 @@ fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
         order1,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2545,6 +2573,7 @@ fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
         order2,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2609,6 +2638,7 @@ fn test_submit_order_when_trading_halted_then_denies_order(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2676,6 +2706,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
             order.clone(),
             None,
             None,
+            None, // params
             UUID4::new(),
             risk_engine.clock.borrow().timestamp_ns(),
         )
@@ -2853,6 +2884,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         long,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2981,6 +3013,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         short,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3397,6 +3430,7 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3482,6 +3516,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_be
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3556,6 +3591,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3647,6 +3683,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         clock.timestamp_ns(),
     )
@@ -3759,6 +3796,7 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3880,6 +3918,7 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
