@@ -39,6 +39,109 @@ An instantiated `BacktestEngine` can accept the following:
 
 This approach offers detailed control over the backtesting process, allowing you to manually configure each component.
 
+### Loading large datasets efficiently
+
+When working with large amounts of data across multiple instruments, the way you load data
+can significantly impact performance.
+
+#### The performance consideration
+
+By default, `BacktestEngine.add_data()` sorts the entire data stream (existing data + newly
+added data) on each call when `sort=True` (the default). This means:
+
+- First call with 1M bars: sorts 1M bars.
+- Second call with 1M bars: sorts 2M bars.
+- Third call with 1M bars: sorts 3M bars.
+- And so on...
+
+This repeated sorting of increasingly large datasets can become a bottleneck when loading
+data for multiple instruments.
+
+#### Optimization strategies
+
+**Strategy 1: Defer sorting until the end (recommended for multiple instruments)**
+
+```python
+from nautilus_trader.backtest.engine import BacktestEngine
+
+engine = BacktestEngine()
+
+# Setup venue and instruments
+engine.add_venue(...)
+engine.add_instrument(instrument1)
+engine.add_instrument(instrument2)
+engine.add_instrument(instrument3)
+
+# Load all data WITHOUT sorting on each call
+engine.add_data(instrument1_bars, sort=False)
+engine.add_data(instrument2_bars, sort=False)
+engine.add_data(instrument3_bars, sort=False)
+
+# Sort once at the end - much more efficient!
+engine.sort_data()
+
+# Now run your backtest
+engine.add_strategy(strategy)
+engine.run()
+```
+
+**Strategy 2: Collect and add in a single batch**
+
+```python
+# Collect all data first
+all_bars = []
+all_bars.extend(instrument1_bars)
+all_bars.extend(instrument2_bars)
+all_bars.extend(instrument3_bars)
+
+# Add once with sorting
+engine.add_data(all_bars, sort=True)
+```
+
+**Strategy 3: Use streaming API for very large datasets**
+
+For datasets that don't fit in memory, use the streaming API:
+
+```python
+def data_generator():
+    # Yield chunks of pre-sorted data
+    yield load_chunk_1()
+    yield load_chunk_2()
+    yield load_chunk_3()
+
+engine.add_data_iterator(
+    data_name="my_data_stream",
+    generator=data_generator(),
+)
+```
+
+:::tip Performance impact
+For a backtest with 10 instruments, each with 1M bars:
+
+- Sorting on each call: ~10 sorts of increasing size (1M, 2M, 3M, ... 10M bars).
+- Sorting once at the end: 1 sort of 10M bars.
+
+The deferred sorting approach can be **orders of magnitude faster** for large datasets.
+:::
+
+### Data loading contract
+
+The `BacktestEngine` enforces important invariants to ensure data integrity:
+
+**Requirements:**
+
+- All data must be sorted and synced to the internal iterator before calling `run()`.
+- When using `sort=False`, you **must** call `sort_data()` or add more data with `sort=True` before running.
+- The engine validates this requirement and raises `RuntimeError` if violated.
+
+**Safety guarantees:**
+
+- Data lists are always copied internally to prevent external mutations from affecting engine state.
+- You can safely clear or modify data lists after passing them to `add_data()`.
+- Adding data with `sort=True` makes it immediately available for backtesting.
+
+This design ensures data integrity while enabling performance optimizations for large datasets.
+
 ## High-level API
 
 The high-level API centers around a `BacktestNode`, which orchestrates the management of multiple `BacktestEngine` instances,

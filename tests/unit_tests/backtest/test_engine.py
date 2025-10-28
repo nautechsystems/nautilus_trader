@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -1421,3 +1422,296 @@ class TestBacktestEngineStreaming:
 
         # Verify data was processed
         assert self.engine.iteration > initial_iteration
+
+
+class TestBacktestEngineDataSorting:
+    """
+    Tests for BacktestEngine data sorting optimization and validation.
+    """
+
+    def setup(self):
+        self.engine = BacktestEngine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
+        self.engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            starting_balances=[Money(1_000_000, USD)],
+        )
+
+        self.instrument = GBPUSD_SIM
+        self.engine.add_instrument(self.instrument)
+
+        # Create simple test bars
+        from nautilus_trader.model.data import Bar
+        from nautilus_trader.model.enums import BarAggregation
+        from nautilus_trader.model.enums import PriceType
+        from nautilus_trader.model.objects import Price
+        from nautilus_trader.model.objects import Quantity
+
+        bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=BarSpecification(
+                step=1,
+                aggregation=BarAggregation.MINUTE,
+                price_type=PriceType.BID,
+            ),
+            aggregation_source=AggregationSource.EXTERNAL,
+        )
+
+        self.bars1 = [
+            Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00010"),
+                high=Price.from_str("1.00020"),
+                low=Price.from_str("1.00010"),
+                close=Price.from_str("1.00020"),
+                volume=Quantity.from_int(1000),
+                ts_event=1_000_000_000,
+                ts_init=1_000_000_000,
+            ),
+            Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00020"),
+                high=Price.from_str("1.00030"),
+                low=Price.from_str("1.00020"),
+                close=Price.from_str("1.00030"),
+                volume=Quantity.from_int(1000),
+                ts_event=2_000_000_000,
+                ts_init=2_000_000_000,
+            ),
+        ]
+        self.bars2 = [
+            Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00030"),
+                high=Price.from_str("1.00040"),
+                low=Price.from_str("1.00030"),
+                close=Price.from_str("1.00040"),
+                volume=Quantity.from_int(1000),
+                ts_event=3_000_000_000,
+                ts_init=3_000_000_000,
+            ),
+            Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00040"),
+                high=Price.from_str("1.00050"),
+                low=Price.from_str("1.00040"),
+                close=Price.from_str("1.00050"),
+                volume=Quantity.from_int(1000),
+                ts_event=4_000_000_000,
+                ts_init=4_000_000_000,
+            ),
+        ]
+        self.bars3 = [
+            Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00050"),
+                high=Price.from_str("1.00060"),
+                low=Price.from_str("1.00050"),
+                close=Price.from_str("1.00060"),
+                volume=Quantity.from_int(1000),
+                ts_event=5_000_000_000,
+                ts_init=5_000_000_000,
+            ),
+        ]
+
+    def test_add_data_with_sort_false_then_sort_data_succeeds(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=False)
+        self.engine.add_data(self.bars2, sort=False)
+        self.engine.add_data(self.bars3, sort=False)
+
+        # Act
+        self.engine.sort_data()
+        self.engine.add_strategy(Strategy())
+
+        # Assert - should process ALL bars
+        self.engine.run()
+        expected_bars = len(self.bars1) + len(self.bars2) + len(self.bars3)
+        assert self.engine.iteration == expected_bars
+
+    def test_add_data_with_sort_false_without_sorting_raises_runtime_error(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=False)
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
+            self.engine.run()
+
+    def test_add_data_sorted_then_unsorted_without_resort_raises_runtime_error(self):
+        # Arrange - add some data with sorting
+        self.engine.add_data(self.bars1, sort=True)
+
+        # Act - add more data without sorting
+        self.engine.add_data(self.bars2, sort=False)
+
+        # Assert - should raise because bars2 not synced to iterator
+        with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
+            self.engine.run()
+
+    def test_add_data_sorted_then_unsorted_then_sorted_succeeds(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=True)
+        self.engine.add_data(self.bars2, sort=False)
+
+        # Act - re-sort to include bars2
+        self.engine.sort_data()
+        self.engine.add_strategy(Strategy())
+
+        # Assert - should process ALL bars (bars1 + bars2)
+        self.engine.run()
+        expected_bars = len(self.bars1) + len(self.bars2)
+        assert self.engine.iteration == expected_bars
+
+    def test_list_mutation_does_not_affect_iterator(self):
+        # Arrange
+        mutable_bars = list(self.bars1)
+        self.engine.add_data(mutable_bars, sort=True)
+
+        # Act - mutate the original list
+        original_count = len(mutable_bars)
+        mutable_bars.clear()
+        mutable_bars.append(self.bars2[0])  # Add different data
+
+        # Assert - engine should still have original bars1, not the mutated list
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+        assert self.engine.iteration == original_count
+        # If mutation affected engine, iteration would be 1 instead of original_count
+
+    def test_sort_data_after_multiple_unsorted_adds(self):
+        # Arrange - add data in reverse chronological order
+        self.engine.add_data([self.bars3[0]], sort=False)
+        self.engine.add_data(self.bars2, sort=False)
+        self.engine.add_data(self.bars1, sort=False)
+
+        # Act
+        self.engine.sort_data()
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+
+        # Assert - data should be processed in correct chronological order
+        expected_bars = 1 + len(self.bars2) + len(self.bars1)
+        assert self.engine.iteration == expected_bars
+
+    def test_reset_maintains_sorted_flag(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=True)
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+
+        # Act
+        self.engine.reset()
+
+        # Assert - should be able to run again without re-sorting
+        # because reset() syncs data to iterator
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+        assert self.engine.iteration == len(self.bars1)
+
+    def test_reset_with_unsorted_data_raises_on_run(self):
+        """
+        Regression test: reset() should not blindly set _sorted=True.
+
+        If data is added with sort=False and reset() is called before run(),
+        the unsorted state should be preserved and run() should raise.
+        """
+        # Arrange
+        self.engine.add_data(self.bars1, sort=False)
+
+        # Act
+        self.engine.reset()
+
+        # Assert - should raise because data is still unsorted after reset
+        with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
+            self.engine.add_strategy(Strategy())
+            self.engine.run()
+
+    def test_clear_data_resets_sorted_flag(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=True)
+
+        # Act
+        self.engine.clear_data()
+        self.engine.add_data(self.bars2, sort=False)
+
+        # Assert - should raise because clear_data resets flag
+        with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
+            self.engine.run()
+
+    def test_sort_data_with_empty_data_succeeds(self):
+        # Arrange - no data added
+
+        # Act & Assert - should not raise
+        self.engine.sort_data()
+
+    def test_multiple_sort_calls_are_safe(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=False)
+
+        # Act - call sort multiple times
+        self.engine.sort_data()
+        self.engine.sort_data()
+        self.engine.sort_data()
+
+        # Assert
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+        assert self.engine.iteration == len(self.bars1)
+
+    def test_add_data_with_sort_true_is_immediately_runnable(self):
+        # Arrange
+        self.engine.add_data(self.bars1, sort=True)
+
+        # Act - no sort_data() call needed
+        self.engine.add_strategy(Strategy())
+
+        # Assert - should work immediately
+        self.engine.run()
+        assert self.engine.iteration == len(self.bars1)
+
+    def test_run_then_add_unsorted_without_resort_raises_error(self):
+        """
+        Regression test: Ensure stale iterator is detected after initial run.
+
+        This mirrors the scenario where a backtest runs successfully with initial data,
+        then more data is added without sorting, which would silently be dropped.
+        """
+        # Arrange - run once with sorted data
+        self.engine.add_data(self.bars1, sort=True)
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+        assert self.engine.iteration == len(self.bars1)
+
+        # Act - reset and add more data without sorting
+        self.engine.reset()
+        self.engine.add_data(self.bars2, sort=False)
+
+        # Assert - should raise because bars2 is not synced
+        with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
+            self.engine.run()
+
+    def test_load_pickled_data_sets_sorted_flag_and_syncs_iterator(self):
+        """
+        Regression test: load_pickled_data must mark data as sorted and sync iterator.
+
+        If user adds unsorted data (setting _sorted=False), then loads pickled data,
+        the engine should be immediately runnable without calling sort_data().
+        """
+        # Arrange - add unsorted data first to set _sorted=False
+        self.engine.add_data(self.bars1, sort=False)
+
+        # Create pickled data from sorted bars
+        sorted_bars = sorted(self.bars2, key=lambda x: x.ts_init)
+        pickled_data = pickle.dumps(sorted_bars)
+
+        # Act - load pickled data should override everything
+        self.engine.load_pickled_data(pickled_data)
+
+        # Assert - should be immediately runnable without calling sort_data()
+        # This would fail with RuntimeError if _sorted flag wasn't set correctly
+        self.engine.add_strategy(Strategy())
+        self.engine.run()
+        assert self.engine.iteration == len(sorted_bars)

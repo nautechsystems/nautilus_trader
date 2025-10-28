@@ -592,7 +592,7 @@ class BacktestNode:
         start: str | int | None = None,
         end: str | int | None = None,
     ) -> None:
-        # Load data
+        # Load data - defer sorting until all data is loaded for better performance
         for config in data_configs:
             t0 = pd.Timestamp.now()
             used_instrument_ids = get_instrument_ids(config)
@@ -616,11 +616,12 @@ class BacktestNode:
                 f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s",
             )
 
-            self._load_engine_data(engine=engine, result=result)
+            self._load_engine_data(engine=engine, result=result, sort=False)  # sort before run
 
             t2 = pd.Timestamp.now()
             engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
+        engine.sort_data()
         engine.run(start=start, end=end, run_config_id=run_config_id)
 
     @classmethod
@@ -669,11 +670,16 @@ class BacktestNode:
             fs_rust_storage_options=config.catalog_fs_rust_storage_options,
         )
 
-    def _load_engine_data(self, engine: BacktestEngine, result: CatalogDataResult) -> None:
+    def _load_engine_data(
+        self,
+        engine: BacktestEngine,
+        result: CatalogDataResult,
+        sort: bool = True,
+    ) -> None:
         if is_nautilus_class(result.data_cls):
             engine.add_data(
                 data=result.data,
-                sort=True,  # Already sorted from backend
+                sort=sort,
             )
         else:
             if not result.client_id:
@@ -684,7 +690,7 @@ class BacktestNode:
             engine.add_data(
                 data=result.data,
                 client_id=result.client_id,
-                sort=True,  # Already sorted from backend
+                sort=sort,
             )
 
     def log_backtest_exception(self, e: Exception, config: BacktestRunConfig) -> None:
