@@ -2836,7 +2836,7 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    let _ = engine_l2.process_order_book_delta(&orderbook_delta_sell);
 
     // Create two market orders with Protection
     // 1. Market SELL order will be rejected as the Bid Side of the book is empty
@@ -2925,7 +2925,7 @@ fn test_process_stop_orders_with_protection_rejeceted_and_valid(
             1,
         ))
         .build();
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    let _ = engine_l2.process_order_book_delta(&orderbook_delta_sell);
 
     // Create two Stop Market orders with Protection
     // 1. Stop Market SELL order will be rejected as the Bid Side of the book is empty
