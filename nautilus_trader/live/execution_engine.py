@@ -52,6 +52,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
 from nautilus_trader.live.reconciliation import create_inferred_order_filled_event
 from nautilus_trader.live.reconciliation import create_order_accepted_event
@@ -1798,9 +1799,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         self._msgbus.publish(
-            topic=f"reports.execution"
-            f".{report.instrument_id.venue}"
-            f".{report.instrument_id.symbol}",
+            topic=f"reports.execution.{report.instrument_id.venue}.{report.instrument_id.symbol}",
             msg=report,
         )
 
@@ -1831,13 +1830,19 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         # Adjust fills for instruments with incomplete first lifecycles
-        from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
-
         # Start with original orders and fills
         final_orders = dict(mass_status._order_reports)
         final_fills = dict(mass_status._fill_reports)
 
         for instrument_id in mass_status.position_reports.keys():
+            # Respect reconciliation_instrument_ids filter
+            if not self._consider_for_reconciliation(instrument_id):
+                self._log.debug(
+                    f"Skipping fill adjustment for {instrument_id}: "
+                    f"not in `reconciliation_instrument_ids` include list",
+                )
+                continue
+
             self._log.info(
                 f"Attempting to adjust fills for {instrument_id}",
                 LogColor.BLUE,
@@ -1882,6 +1887,38 @@ class LiveExecutionEngine(ExecutionEngine):
             f"Final order_reports contains {len(final_orders)} orders, fill_reports contains {len(final_fills)} fills across all instruments",
             LogColor.BLUE,
         )
+
+        # TODO: Extract logic to dedicated function
+        # Deduplicate orders by client_order_id before reconciliation
+        seen_client_order_ids: dict[ClientOrderId, VenueOrderId] = {}
+        duplicate_venue_order_ids: list[VenueOrderId] = []
+
+        for venue_order_id, order_report in mass_status._order_reports.items():
+            if order_report.client_order_id is not None:
+                if order_report.client_order_id in seen_client_order_ids:
+                    # Duplicate found - mark for removal
+                    duplicate_venue_order_ids.append(venue_order_id)
+                    self._log.warning(
+                        f"Deduplicating order: {order_report.client_order_id} "
+                        f"(venue_order_id={venue_order_id}, "
+                        f"keeping first occurrence {seen_client_order_ids[order_report.client_order_id]})",
+                    )
+                else:
+                    # First occurrence - track it
+                    seen_client_order_ids[order_report.client_order_id] = venue_order_id
+
+        # Remove duplicates
+        for venue_order_id in duplicate_venue_order_ids:
+            del mass_status._order_reports[venue_order_id]
+            # Also remove associated fills
+            if venue_order_id in mass_status._fill_reports:
+                del mass_status._fill_reports[venue_order_id]
+
+        if duplicate_venue_order_ids:
+            self._log.info(
+                f"Removed {len(duplicate_venue_order_ids)} duplicate order(s) from reconciliation",
+                LogColor.YELLOW,
+            )
 
         results: list[bool] = []
         reconciled_orders: set[ClientOrderId] = set()
@@ -1975,7 +2012,6 @@ class LiveExecutionEngine(ExecutionEngine):
         trades: list[FillReport],
         is_external: bool = True,
     ) -> bool:
-
         client_order_id: ClientOrderId = report.client_order_id
 
         if client_order_id is None:

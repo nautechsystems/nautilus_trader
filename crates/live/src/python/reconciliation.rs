@@ -174,7 +174,7 @@ pub fn py_adjust_fills_for_partial_window(
     // Validate chronological order and check for duplicate timestamps
     for window in fill_snapshots.windows(2) {
         if window[0].ts_event == window[1].ts_event {
-            log::warn!(
+            log::debug!(
                 "Duplicate timestamp detected in fills: {} for orders {} and {}",
                 window[0].ts_event,
                 window[0].venue_order_id,

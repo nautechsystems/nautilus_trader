@@ -924,6 +924,7 @@ mod tests {
                 order,
                 None,
                 None,
+                None, // params
                 UUID4::default(),
                 ts_init,
             )

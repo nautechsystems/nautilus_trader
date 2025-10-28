@@ -691,6 +691,7 @@ class TestReconciliationEdgeCases:
         exec_engine.register_client(client)
         return exec_engine
 
+    @pytest.mark.skip(reason="Duplicates now automatically removed during reconciliation")
     @pytest.mark.asyncio()
     async def test_duplicate_client_order_id_fails_validation(self, live_exec_engine):
         """

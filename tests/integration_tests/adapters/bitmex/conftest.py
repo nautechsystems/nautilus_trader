@@ -238,6 +238,26 @@ def mock_ws_client():
 
 
 @pytest.fixture()
+def mock_submitter():
+    """
+    Create a mock BitMEX submit broadcaster.
+    """
+    mock = MagicMock(spec=nautilus_pyo3.SubmitBroadcaster)
+
+    # Mock lifecycle methods
+    mock.start = AsyncMock()
+    mock.stop = AsyncMock()
+
+    # Mock instrument caching
+    mock.add_instrument = MagicMock()
+
+    # Mock submit operations
+    mock.broadcast_submit = AsyncMock()
+
+    return mock
+
+
+@pytest.fixture()
 def mock_canceller():
     """
     Create a mock BitMEX cancel broadcaster.
@@ -281,6 +301,7 @@ def exec_client(
     event_loop,
     mock_http_client,
     mock_ws_client,
+    mock_submitter,
     mock_canceller,
     msgbus,
     cache,
@@ -295,6 +316,12 @@ def exec_client(
     monkeypatch.setattr(
         "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.BitmexWebSocketClient",
         lambda *args, **kwargs: mock_ws_client,
+    )
+
+    # Patch the SubmitBroadcaster creation
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.SubmitBroadcaster",
+        lambda *args, **kwargs: mock_submitter,
     )
 
     # Patch the CancelBroadcaster creation
@@ -323,6 +350,7 @@ def exec_client(
     # Store the mocked clients for test access
     client._mock_http_client = mock_http_client
     client._mock_ws_client = mock_ws_client
+    client._mock_submitter = mock_submitter
     client._mock_canceller = mock_canceller
 
     return client

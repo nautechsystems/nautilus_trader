@@ -177,6 +177,10 @@ pub struct BitmexExecClientConfig {
     pub max_requests_per_second: Option<u32>,
     /// Maximum number of requests per minute (rolling window).
     pub max_requests_per_minute: Option<u32>,
+    /// Number of HTTP clients in the submit broadcaster pool (defaults to 1).
+    pub submitter_pool_size: Option<usize>,
+    /// Number of HTTP clients in the cancel broadcaster pool (defaults to 1).
+    pub canceller_pool_size: Option<usize>,
 }
 
 impl Default for BitmexExecClientConfig {
@@ -197,6 +201,8 @@ impl Default for BitmexExecClientConfig {
             account_id: None,
             max_requests_per_second: Some(10),
             max_requests_per_minute: Some(120),
+            submitter_pool_size: None,
+            canceller_pool_size: None,
         }
     }
 }
