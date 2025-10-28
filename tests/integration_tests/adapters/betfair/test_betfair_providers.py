@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import sys
 
 import msgspec
@@ -38,9 +37,10 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBetfairInstrumentProvider:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.clock = LiveClock()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
         self.provider = BetfairInstrumentProvider(
@@ -48,6 +48,8 @@ class TestBetfairInstrumentProvider:
             config=BetfairInstrumentProviderConfig(account_currency="GBP"),
         )
         self.parser = BetfairParser(currency="GBP")
+
+        yield
 
     @pytest.mark.asyncio()
     async def test_load_markets(self):

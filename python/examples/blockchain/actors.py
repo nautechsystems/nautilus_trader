@@ -15,20 +15,20 @@
 
 # ruff: noqa (under development)
 
-import pandas as pd
-
 from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
 from nautilus_trader.common import DataActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.common import LogColor  # type: ignore[attr-defined]
-from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import Block  # type: ignore[attr-defined]
+from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolFeeCollect  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolFlash  # type: ignore[attr-defined]
 from nautilus_trader.model import PoolLiquidityUpdate  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
 
 
 @dataclass
@@ -80,9 +80,13 @@ class BlockchainActor(DataActor):
             self.subscribe_pool(instrument_id, self.client_id)
             self.subscribe_pool_swaps(instrument_id, self.client_id)
             self.subscribe_pool_liquidity_updates(instrument_id, self.client_id)
+            self.subscribe_pool_fee_collects(instrument_id, self.client_id)
+            self.subscribe_pool_flash_events(instrument_id, self.client_id)
 
-        self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
-        self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
+        # TODO: Uncomment to demonstrate timers
+        # import pandas as pd
+        # self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
+        # self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
 
     def on_stop(self) -> None:
         """
@@ -94,6 +98,8 @@ class BlockchainActor(DataActor):
             self.unsubscribe_pool(instrument_id, self.client_id)
             self.unsubscribe_pool_swaps(instrument_id, self.client_id)
             self.unsubscribe_pool_liquidity_updates(instrument_id, self.client_id)
+            self.unsubscribe_pool_fee_collects(instrument_id, self.client_id)
+            self.unsubscribe_pool_flash_events(instrument_id, self.client_id)
 
     def on_time_event(self, event) -> None:
         """
@@ -101,11 +107,31 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(event), LogColor.BLUE)
 
+    def on_pool(self, pool) -> None:
+        self.log.info(f"Received pool: {pool.instrument_id}", LogColor.GREEN)
+
     def on_block(self, block: Block) -> None:
         """
         Actions to be performed on receiving a block.
         """
         self.log.info(repr(block), LogColor.CYAN)
+
+        for pool_id in self.pools:
+            pool = self.cache.pool_profiler(pool_id)
+            if pool is None:
+                continue
+            total_ticks = pool.get_active_tick_count()
+            total_positions = pool.get_total_active_positions()
+            liquidity = pool.get_active_liquidity()
+            liquidity_utilization_rate = pool.liquidity_utilization_rate()
+            self.log.info(
+                f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                LogColor.BLUE,
+            )
+            self.log.info(
+                f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%",
+                LogColor.BLUE,
+            )
 
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """
@@ -118,3 +144,15 @@ class BlockchainActor(DataActor):
         Actions to be performed on receiving a pool liquidity update.
         """
         self.log.info(repr(update), LogColor.CYAN)
+
+    def on_pool_fee_collect(self, update: PoolFeeCollect) -> None:
+        """
+        Actions to be performed on receiving a pool fee collect event.
+        """
+        self.log.info(repr(update), LogColor.CYAN)
+
+    def on_pool_flash(self, event: PoolFlash) -> None:
+        """
+        Actions to be performed on receiving a pool flash event.
+        """
+        self.log.info(repr(event), LogColor.CYAN)

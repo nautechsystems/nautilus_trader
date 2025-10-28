@@ -83,6 +83,7 @@ from nautilus_trader.data.messages cimport UnsubscribeData
 from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
@@ -104,6 +105,7 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -592,6 +594,22 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
+    cpdef void on_order_filled(self, OrderFilled event):
+        """
+        Actions to be performed when running and receives an order filled event.
+
+        Parameters
+        ----------
+        event : OrderFilled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
     cpdef void on_event(self, Event event):
         """
         Actions to be performed running and receives an event.
@@ -710,7 +728,8 @@ cdef class Actor(Component):
         Condition.type(executor, Executor, "executor")
 
         self._executor = ActorExecutor(loop, executor, logger=self._log)
-        self._log.debug(f"Registered {executor}")
+        if self._log is not None:
+            self._log.debug(f"Registered {executor}")
 
     cpdef void register_warning_event(self, type event):
         """
@@ -739,7 +758,8 @@ cdef class Actor(Component):
         Condition.not_none(event, "event")
 
         self._warning_events.discard(event)
-        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
+        if self._log is not None:
+            self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -990,9 +1010,10 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-        f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.debug(
+                f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
 
         return task_id
 
@@ -1050,9 +1071,10 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.debug(
+                f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
 
         return task_id
 
@@ -1139,7 +1161,8 @@ cdef class Actor(Component):
 
         """
         if self._executor is None:
-            self._log.warning(f"Executor: {task_id} not found")
+            if self._log is not None:
+                self._log.warning(f"Executor: {task_id} not found")
             return
 
         self._executor.cancel_task(task_id)
@@ -1167,10 +1190,12 @@ cdef class Actor(Component):
         cdef str name
 
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name})")
+            if self._log is not None:
+                self._log.info(f"Canceled Timer(name={name})")
 
         if self._executor is not None:
-            self._log.info(f"Canceling executor tasks")
+            if self._log is not None:
+                self._log.info(f"Canceling executor tasks")
             self._executor.cancel_all_tasks()
 
     cpdef void _resume(self):
@@ -1186,6 +1211,7 @@ cdef class Actor(Component):
         self._indicators_for_bars.clear()
 
     cpdef void _dispose(self):
+        Component._dispose(self)  # Call base cleanup (cancels timers)
         self.on_dispose()
 
     cpdef void _degrade(self):
@@ -1796,7 +1822,6 @@ cdef class Actor(Component):
         self,
         BarType bar_type,
         ClientId client_id = None,
-        bint await_partial = False,
         bint update_catalog = False,
         dict[str, object] params = None,
     ):
@@ -1813,9 +1838,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        await_partial : bool, default False
-            If the bar aggregator should await the arrival of a historical partial bar prior
-            to actively aggregating new bars.
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
             Only useful when downloading data during a backtest.
@@ -1836,7 +1858,6 @@ cdef class Actor(Component):
 
         cdef SubscribeBars command = SubscribeBars(
             bar_type=bar_type,
-            await_partial=await_partial,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             command_id=UUID4(),
@@ -1925,6 +1946,27 @@ cdef class Actor(Component):
             params=params,
         )
         self._send_data_cmd(command)
+
+    cpdef void subscribe_order_fills(self, InstrumentId instrument_id):
+        """
+        Subscribe to all order fills for the given instrument ID.
+
+        Once subscribed, any matching order fills published on the message bus are forwarded
+        to the `on_order_filled` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to fills for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"events.fills.{instrument_id}",
+            handler=self._handle_order_filled,
+        )
 
     cpdef void unsubscribe_data(
         self,
@@ -2418,12 +2460,12 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Unsubscribe to status updates of the given venue.
+        Unsubscribe from status updates for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument to unsubscribe to status updates for.
+            The instrument to unsubscribe from status updates for.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
@@ -2448,6 +2490,62 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus")
+
+    cpdef void unsubscribe_instrument_close(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from close updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from close updates for.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.venue.close_price.{instrument_id.to_str()}",
+            handler=self.handle_instrument_close,
+        )
+        cdef UnsubscribeInstrumentClose command = UnsubscribeInstrumentClose(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._send_data_cmd(command)
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentClose")
+
+    cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id):
+        """
+        Unsubscribe from all order fills for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from fills for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"events.fills.{instrument_id}",
+            handler=self._handle_order_filled,
+        )
 
     cpdef void publish_data(self, DataType data_type, Data data):
         """
@@ -3886,7 +3984,7 @@ cdef class Actor(Component):
         if length > 0:
             self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
         else:
-            self._log.warning(f"Received <Bar[{length}]> data for unknown bar type")
+            self._log.warning("Received empty bars response (no data returned)")
             return
 
         if length > 0 and first.ts_init > last.ts_init:
@@ -4090,6 +4188,19 @@ cdef class Actor(Component):
             self.handle_trade_ticks(response.data["trade_ticks"])
 
         self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_filled(self, OrderFilled event):
+        if str(event.strategy_id) == str(self.id):
+            # This represents a strategies automatic subscription to it's own
+            # order events, so we don't need to pass this event to the handler twice
+            return
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_filled(event)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(event)}", e)
+                raise
 
     cpdef void _finish_response(self, UUID4 request_id):
         callback: Callable | None = self._pending_requests.pop(request_id, None)

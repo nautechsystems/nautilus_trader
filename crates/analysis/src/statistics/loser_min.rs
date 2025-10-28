@@ -13,21 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
+use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct MinLoser {}
 
+impl Display for MinLoser {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Min Loser")
+    }
+}
+
 impl PortfolioStatistic for MinLoser {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(MinLoser).to_string()
+        self.to_string()
     }
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -35,13 +45,35 @@ impl PortfolioStatistic for MinLoser {
             return Some(0.0);
         }
 
-        realized_pnls
+        // Match old Python behavior: filters for x <= 0.0 (includes zero)
+        let losers: Vec<f64> = realized_pnls
             .iter()
-            .filter(|&&pnl| pnl < 0.0)
+            .filter(|&&pnl| pnl <= 0.0)
+            .copied()
+            .collect();
+
+        if losers.is_empty() {
+            return Some(0.0); // Match old Python behavior
+        }
+
+        losers
+            .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .copied()
     }
+
+    fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -63,7 +95,9 @@ mod tests {
         let min_loser = MinLoser {};
         let pnls = vec![10.0, 20.0, 30.0];
         let result = min_loser.calculate_from_realized_pnls(&pnls);
-        assert!(result.is_none());
+        assert!(result.is_some());
+        // Returns 0.0 when no losers (matches old Python behavior)
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -90,7 +124,8 @@ mod tests {
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
         let result = min_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), -20.0, epsilon = 1e-9));
+        // Includes zero in losers (x <= 0.0), so max is 0.0 (matches old Python behavior)
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -105,6 +140,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let min_loser = MinLoser {};
-        assert_eq!(min_loser.name(), "MinLoser");
+        assert_eq!(min_loser.name(), "Min Loser");
     }
 }

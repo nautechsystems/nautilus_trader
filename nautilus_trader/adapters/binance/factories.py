@@ -100,19 +100,27 @@ def get_cached_binance_http_client(
             raise ValueError(f"invalid `key_type`, was {key_type}")
 
     # Set up rate limit quotas
+    global_key = "binance:global"
+
     if account_type.is_spot:
         # Spot
-        ratelimiter_default_quota = Quota.rate_per_minute(6000)
+        global_quota = Quota.rate_per_minute(6000)
+        ratelimiter_default_quota = global_quota
         ratelimiter_quotas: list[tuple[str, Quota]] = [
-            ("order", Quota.rate_per_minute(3000)),
-            ("allOrders", Quota.rate_per_minute(int(3000 / 20))),
+            (global_key, global_quota),
+            ("binance:api/v3/order", Quota.rate_per_minute(3000)),
+            ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
+            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
         ]
     else:
         # Futures
-        ratelimiter_default_quota = Quota.rate_per_minute(2400)
+        global_quota = Quota.rate_per_minute(2400)
+        ratelimiter_default_quota = global_quota
         ratelimiter_quotas = [
-            ("order", Quota.rate_per_minute(1200)),
-            ("allOrders", Quota.rate_per_minute(int(1200 / 20))),
+            (global_key, global_quota),
+            ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
+            ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
+            ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
         ]
 
     return BinanceHttpClient(

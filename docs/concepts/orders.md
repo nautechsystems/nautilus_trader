@@ -573,7 +573,7 @@ more order margin.
 ### Introduction
 
 Before diving into the technical details, it's important to understand the fundamental purpose of emulated orders
-in Nautilus Trader. At its core, emulation allows you to use certain order types even when your trading venue
+in NautilusTrader. At its core, emulation allows you to use certain order types even when your trading venue
 doesn't natively support them.
 
 This works by having Nautilus locally mimic the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)

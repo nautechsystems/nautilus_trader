@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -36,9 +35,10 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBinanceFactories:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.clock = LiveClock()
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -54,6 +54,8 @@ class TestBinanceFactories:
         self.cache = Cache(
             database=self.cache_db,
         )
+
+        yield
 
     @pytest.mark.parametrize(
         ("account_type", "is_testnet", "is_us", "expected"),

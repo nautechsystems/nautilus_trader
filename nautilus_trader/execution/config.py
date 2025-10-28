@@ -53,6 +53,10 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If ``None`` then no additional snapshots will be taken.
         To include unrealized PnL in these snapshots, quotes for the position's instrument must be
         available in the cache.
+    convert_quote_qty_to_base : bool, default True
+        If quote-denominated order quantities should be converted to base units before submission.
+        Deprecated: future releases will remove this automatic conversion. Set ``False`` to keep
+        behaviour consistent with venues which expect quote-denominated quantities.
     external_clients : list[ClientId], optional
         Client IDs representing external execution streams.
         Commands with these client IDs will be published on the message bus only;
@@ -64,6 +68,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 
     load_cache: bool = True
     manage_own_order_books: bool = False
+    convert_quote_qty_to_base: bool = True
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None

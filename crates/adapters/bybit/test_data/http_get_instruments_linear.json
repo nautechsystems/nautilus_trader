@@ -1,0 +1,75 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": null,
+    "list": [
+      {
+        "symbol": "BTCUSDT",
+        "contractType": "LinearPerpetual",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USDT",
+        "launchTime": "1699990000000",
+        "deliveryTime": "1702592000000",
+        "deliveryFeeRate": "0.0005",
+        "priceScale": "2",
+        "leverageFilter": {
+          "minLeverage": "1",
+          "maxLeverage": "100",
+          "leverageStep": "1"
+        },
+        "priceFilter": {
+          "minPrice": "1",
+          "maxPrice": "1000000",
+          "tickSize": "0.5"
+        },
+        "lotSizeFilter": {
+          "maxOrderQty": "100.0",
+          "minOrderQty": "0.001",
+          "qtyStep": "0.001",
+          "postOnlyMaxOrderQty": "100.0",
+          "maxMktOrderQty": "50.0",
+          "minNotionalValue": "5"
+        },
+        "unifiedMarginTrade": true,
+        "fundingInterval": 8,
+        "settleCoin": "USDT"
+      },
+      {
+        "symbol": "ETHUSDT",
+        "contractType": "LinearPerpetual",
+        "status": "Trading",
+        "baseCoin": "ETH",
+        "quoteCoin": "USDT",
+        "launchTime": "1699990000000",
+        "deliveryTime": "1702592000000",
+        "deliveryFeeRate": "0.0005",
+        "priceScale": "2",
+        "leverageFilter": {
+          "minLeverage": "1",
+          "maxLeverage": "100",
+          "leverageStep": "1"
+        },
+        "priceFilter": {
+          "minPrice": "0.1",
+          "maxPrice": "100000",
+          "tickSize": "0.05"
+        },
+        "lotSizeFilter": {
+          "maxOrderQty": "1000.0",
+          "minOrderQty": "0.01",
+          "qtyStep": "0.01",
+          "postOnlyMaxOrderQty": "1000.0",
+          "maxMktOrderQty": "500.0",
+          "minNotionalValue": "5"
+        },
+        "unifiedMarginTrade": true,
+        "fundingInterval": 8,
+        "settleCoin": "USDT"
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

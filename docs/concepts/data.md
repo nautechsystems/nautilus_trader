@@ -100,6 +100,16 @@ The platform implements various aggregation methods:
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 | `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
 
+:::note
+The following bar aggregations are not currently implemented:
+
+- `VOLUME_IMBALANCE`
+- `VOLUME_RUNS`
+- `VALUE_IMBALANCE`
+- `VALUE_RUNS`
+
+:::
+
 ### Types of aggregation
 
 NautilusTrader implements three distinct data aggregation methods:
@@ -519,7 +529,7 @@ The NautilusTrader data catalog is built on a dual-backend architecture that com
 - **PyArrow backend**: Flexible fallback for custom data types and advanced filtering.
 - **fsspec integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
 
-**Key benefits:**
+**Key benefits**:
 
 - **Performance**: Rust backend provides optimized query performance for core market data types.
 - **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios.
@@ -595,7 +605,6 @@ catalog = ParquetDataCatalog(
     fs_storage_options={
         "key": "your-access-key-id",
         "secret": "your-secret-access-key",
-        "region": "us-east-1",
         "endpoint_url": "https://s3.amazonaws.com",  # Optional custom endpoint
     }
 )
@@ -614,12 +623,28 @@ catalog = ParquetDataCatalog(
 )
 ```
 
-**Azure Blob Storage (`abfs`):**
+**Azure Blob Storage :**
+
+`abfs` protocol
 
 ```python
 catalog = ParquetDataCatalog(
     path="abfs://container@account.dfs.core.windows.net/nautilus-data/",
     fs_protocol="abfs",
+    fs_storage_options={
+        "account_name": "your-storage-account",
+        "account_key": "your-account-key",
+        # Or use SAS token: "sas_token": "your-sas-token"
+    }
+)
+```
+
+`az` protocol
+
+```python
+catalog = ParquetDataCatalog(
+    path="az://container/nautilus-data/",
+    fs_protocol="az",
     fs_storage_options={
         "account_name": "your-storage-account",
         "account_key": "your-account-key",
@@ -643,7 +668,6 @@ catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
 catalog = ParquetDataCatalog.from_uri(
     "s3://my-bucket/nautilus-data/",
     storage_options={
-        "region": "us-east-1",
         "access_key_id": "your-key",
         "secret_access_key": "your-secret"
     }
@@ -1230,14 +1254,14 @@ greeks_data = catalog.query(
 
 The NautilusTrader data catalog provides comprehensive market data management:
 
-**Core features:**
+**Core features**:
 
 - **Dual Backend**: Rust performance + Python flexibility.
 - **Multi-Protocol**: Local, S3, GCS, Azure storage.
 - **Streaming**: Feather → Parquet conversion pipeline.
 - **Operations**: Reset file names, consolidate data, period-based organization.
 
-**Key use cases:**
+**Key use cases**:
 
 - **Backtesting**: Pre-configured data loading via BacktestDataConfig.
 - **Live Trading**: On-demand data access via DataCatalogConfig.

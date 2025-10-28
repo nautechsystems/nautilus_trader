@@ -168,7 +168,7 @@ class Trader(Component):
         """
         return list(self._strategies.values())
 
-    def exec_algorithms(self) -> list[Any]:  # ExecutonAlgorithm (circular import issues)
+    def exec_algorithms(self) -> list[Any]:  # ExecutionAlgorithm (circular import issues)
         """
         Return the execution algorithms loaded in the trader.
 

@@ -590,7 +590,7 @@ class TestCacheDatabaseAdapter:
         assert result == {_AUDUSD_SIM.id: _AUDUSD_SIM}
 
     @pytest.mark.asyncio
-    async def test_load_synthetic_when_no_synethic_instrument_in_database_returns_none(self):
+    async def test_load_synthetic_when_no_synthetic_instrument_in_database_returns_none(self):
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
 

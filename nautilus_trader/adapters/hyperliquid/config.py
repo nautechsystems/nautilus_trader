@@ -51,10 +51,12 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     ----------
     private_key : str, optional
         The Hyperliquid EVM private key.
-        If ``None`` then will source the `HYPERLIQUID_PK` environment variable.
+        If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
+        environment variable (depending on the `testnet` setting).
     vault_address : str, optional
         The vault address for vault trading.
-        If ``None`` then will source the `HYPERLIQUID_VAULT` environment variable.
+        If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
+        environment variable (depending on the `testnet` setting).
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional

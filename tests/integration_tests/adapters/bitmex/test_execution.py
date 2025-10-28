@@ -20,8 +20,12 @@ import pytest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -34,19 +38,14 @@ from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-pytestmark = pytest.mark.asyncio
-
-
 # ============================================================================
 # CLIENT CONNECTION AND LIFECYCLE TESTS
 # ============================================================================
 
 
+@pytest.mark.asyncio
 async def test_connect_success(exec_client):
-    """
-    Test successful client connection.
-    """
-    # Act
+    # Arrange, Act
     await exec_client._connect()
 
     # Assert
@@ -61,10 +60,8 @@ async def test_connect_success(exec_client):
     exec_client._mock_ws_client.subscribe_wallet.assert_called_once()
 
 
+@pytest.mark.asyncio
 async def test_disconnect_success(exec_client):
-    """
-    Test successful client disconnection.
-    """
     # Arrange
     await exec_client._connect()
 
@@ -80,10 +77,8 @@ async def test_disconnect_success(exec_client):
     exec_client._mock_ws_client.close.assert_called_once()
 
 
+@pytest.mark.asyncio
 async def test_account_id_updated_on_connect(exec_client):
-    """
-    Test that account ID is updated with actual account number on connect.
-    """
     # Act
     await exec_client._connect()
 
@@ -97,10 +92,8 @@ async def test_account_id_updated_on_connect(exec_client):
 # ============================================================================
 
 
+@pytest.mark.asyncio
 async def test_submit_market_order(exec_client, instrument, strategy):
-    """
-    Test submitting a market order.
-    """
     # Arrange
     order = MarketOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -132,10 +125,8 @@ async def test_submit_market_order(exec_client, instrument, strategy):
     assert call_args["quantity"].as_double() == 100.0
 
 
+@pytest.mark.asyncio
 async def test_submit_limit_order_post_only(exec_client, instrument, strategy):
-    """
-    Test submitting a limit order with post_only flag.
-    """
     # Arrange
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -171,10 +162,44 @@ async def test_submit_limit_order_post_only(exec_client, instrument, strategy):
     assert call_args["post_only"] is True
 
 
+@pytest.mark.asyncio
+async def test_submit_order_for_contingency(exec_client, instrument, strategy):
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-010"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(10),
+        price=Price.from_str("48000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        contingency_type=ContingencyType.OCO,
+        order_list_id=TestIdStubs.order_list_id(),
+        linked_order_ids=[ClientOrderId("O-011")],
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["contingency_type"] == nautilus_pyo3.ContingencyType.OCO
+    assert call_args["order_list_id"].value == order.order_list_id.value
+
+
+@pytest.mark.asyncio
 async def test_submit_stop_order(exec_client, instrument, strategy):
-    """
-    Test submitting a stop market order.
-    """
     # Arrange
     order = StopMarketOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -207,10 +232,8 @@ async def test_submit_stop_order(exec_client, instrument, strategy):
     assert call_args["trigger_price"].as_double() == 51000.0
 
 
+@pytest.mark.asyncio
 async def test_submit_order_rejection(exec_client, instrument, strategy):
-    """
-    Test order submission rejection handling.
-    """
     # Arrange
     exec_client._mock_http_client.submit_order.side_effect = Exception("Insufficient margin")
 
@@ -240,15 +263,49 @@ async def test_submit_order_rejection(exec_client, instrument, strategy):
     exec_client._mock_http_client.submit_order.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_submit_order_with_quote_quantity_denied(exec_client, instrument, strategy, mocker):
+    # Arrange
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-005"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(1000),
+        quote_quantity=True,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
+
+
 # ============================================================================
 # ORDER MODIFICATION TESTS
 # ============================================================================
 
 
+@pytest.mark.asyncio
 async def test_modify_order_price(exec_client, instrument, strategy, cache):
-    """
-    Test modifying an order's price.
-    """
     # Arrange
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -285,10 +342,8 @@ async def test_modify_order_price(exec_client, instrument, strategy, cache):
     assert call_args["price"].as_double() == 49500.0
 
 
+@pytest.mark.asyncio
 async def test_modify_order_quantity(exec_client, instrument, strategy, cache):
-    """
-    Test modifying an order's quantity.
-    """
     # Arrange
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -325,10 +380,8 @@ async def test_modify_order_quantity(exec_client, instrument, strategy, cache):
     assert call_args["quantity"].as_double() == 150.0
 
 
+@pytest.mark.asyncio
 async def test_modify_order_rejection(exec_client, instrument, strategy, cache):
-    """
-    Test order modification rejection handling.
-    """
     # Arrange
     exec_client._mock_http_client.modify_order.side_effect = Exception("Order not found")
 
@@ -370,10 +423,8 @@ async def test_modify_order_rejection(exec_client, instrument, strategy, cache):
 # ============================================================================
 
 
+@pytest.mark.asyncio
 async def test_cancel_order_by_client_id(exec_client, instrument, strategy, cache):
-    """
-    Test canceling an order by client order ID.
-    """
     # Arrange
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -402,15 +453,13 @@ async def test_cancel_order_by_client_id(exec_client, instrument, strategy, cach
     await exec_client._cancel_order(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_order.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_order.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel.call_args[1]
     assert call_args["client_order_id"].value == "O-008"
 
 
+@pytest.mark.asyncio
 async def test_cancel_order_by_venue_id(exec_client, instrument, strategy, cache):
-    """
-    Test canceling an order by venue order ID.
-    """
     # Arrange
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -439,15 +488,13 @@ async def test_cancel_order_by_venue_id(exec_client, instrument, strategy, cache
     await exec_client._cancel_order(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_order.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_order.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel.call_args[1]
     assert call_args["venue_order_id"].value == "V-67890"
 
 
+@pytest.mark.asyncio
 async def test_cancel_all_orders(exec_client, instrument, strategy):
-    """
-    Test canceling all orders.
-    """
     # Arrange
     command = CancelAllOrders(
         trader_id=TestIdStubs.trader_id(),
@@ -462,17 +509,15 @@ async def test_cancel_all_orders(exec_client, instrument, strategy):
     await exec_client._cancel_all_orders(command)
 
     # Assert
-    exec_client._mock_http_client.cancel_all_orders.assert_called_once()
-    call_args = exec_client._mock_http_client.cancel_all_orders.call_args[1]
+    exec_client._mock_canceller.broadcast_cancel_all.assert_called_once()
+    call_args = exec_client._mock_canceller.broadcast_cancel_all.call_args[1]
     assert call_args["instrument_id"].value == "XBTUSD.BITMEX"
 
 
+@pytest.mark.asyncio
 async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
-    """
-    Test order cancellation rejection handling.
-    """
     # Arrange
-    exec_client._mock_http_client.cancel_order.side_effect = Exception("Order already filled")
+    exec_client._mock_canceller.broadcast_cancel.side_effect = Exception("Order already filled")
 
     order = LimitOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -501,7 +546,7 @@ async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
     await exec_client._cancel_order(command)
 
     # Assert - rejection is handled internally
-    exec_client._mock_http_client.cancel_order.assert_called_once()
+    exec_client._mock_canceller.broadcast_cancel.assert_called_once()
 
 
 # ============================================================================
@@ -509,10 +554,8 @@ async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
 # ============================================================================
 
 
+@pytest.mark.asyncio
 async def test_handle_order_update_message(exec_client):
-    """
-    Test handling order update WebSocket message.
-    """
     # Arrange
     await exec_client._connect()
 
@@ -542,10 +585,8 @@ async def test_handle_order_update_message(exec_client):
     assert handler is not None
 
 
+@pytest.mark.asyncio
 async def test_handle_execution_message(exec_client):
-    """
-    Test handling execution/fill WebSocket message.
-    """
     # Arrange
     await exec_client._connect()
 
@@ -581,10 +622,8 @@ async def test_handle_execution_message(exec_client):
     assert handler is not None
 
 
+@pytest.mark.asyncio
 async def test_handle_position_update_message(exec_client):
-    """
-    Test handling position update WebSocket message.
-    """
     # Arrange
     await exec_client._connect()
 
@@ -618,10 +657,8 @@ async def test_handle_position_update_message(exec_client):
     assert handler is not None
 
 
+@pytest.mark.asyncio
 async def test_handle_account_state_update(exec_client):
-    """
-    Test handling account state update via WebSocket.
-    """
     # Arrange
     await exec_client._connect()
 
@@ -649,3 +686,161 @@ async def test_handle_account_state_update(exec_client):
 
     # Assert - handler was called without error
     assert handler is not None
+
+
+# ============================================================================
+# REPORT GENERATION TESTS
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_converts_results(
+    exec_client,
+    instrument,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.OrderStatusReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_order_status_reports.return_value = [pyo3_report]
+
+    command = GenerateOrderStatusReports(
+        instrument_id=instrument.id,
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_order_status_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_order_status_reports.assert_awaited_once_with(
+        instrument_id=instrument.id,
+        open_only=True,
+        limit=None,
+    )
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_handles_failure(exec_client, instrument):
+    # Arrange
+    exec_client._mock_http_client.request_order_status_reports.side_effect = Exception("boom")
+
+    reports = None
+    try:
+        command = GenerateOrderStatusReports(
+            instrument_id=instrument.id,
+            start=None,
+            end=None,
+            open_only=False,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+        # Act
+        reports = await exec_client.generate_order_status_reports(command)
+    finally:
+        exec_client._mock_http_client.request_order_status_reports.side_effect = None
+
+    # Assert
+    assert reports == []
+
+
+@pytest.mark.asyncio
+async def test_generate_fill_reports_converts_results(
+    exec_client,
+    instrument,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.FillReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_fill_reports.return_value = [pyo3_report]
+
+    command = GenerateFillReports(
+        instrument_id=instrument.id,
+        venue_order_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_fill_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_fill_reports.assert_awaited_once_with(
+        instrument_id=instrument.id,
+        limit=None,
+    )
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_converts_results(
+    exec_client,
+    monkeypatch,
+):
+    # Arrange
+    expected_report = MagicMock()
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.PositionStatusReport.from_pyo3",
+        lambda _obj: expected_report,
+    )
+
+    pyo3_report = MagicMock()
+    exec_client._mock_http_client.request_position_status_reports.return_value = [pyo3_report]
+
+    command = GeneratePositionStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_position_status_reports(command)
+
+    # Assert
+    exec_client._mock_http_client.request_position_status_reports.assert_awaited_once_with()
+    assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_handles_failure(exec_client):
+    # Arrange
+    exec_client._mock_http_client.request_position_status_reports.side_effect = Exception("boom")
+
+    reports = None
+    try:
+        command = GeneratePositionStatusReports(
+            instrument_id=None,
+            start=None,
+            end=None,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+        # Act
+        reports = await exec_client.generate_position_status_reports(command)
+    finally:
+        exec_client._mock_http_client.request_position_status_reports.side_effect = None
+
+    # Assert
+    assert reports == []

@@ -230,6 +230,7 @@ cdef class BacktestEngine:
         self._iteration: uint64_t = 0
         self._last_ns : uint64_t = 0
         self._end_ns : uint64_t = 0
+        self._sorted: bint = True
 
         # Timing
         self._run_started: pd.Timestamp | None = None
@@ -767,6 +768,30 @@ cdef class BacktestEngine:
         Caution if adding data without `sort` being True, as this could lead to running backtests
         on a stream which does not have monotonically increasing timestamps.
 
+        Notes
+        -----
+        For optimal performance when loading large datasets, consider using `sort=False` for all
+        calls to `add_data()`, then calling `sort_data()` once after all data has been added:
+
+        .. code-block:: python
+
+            # Add multiple data streams without sorting
+            engine.add_data(instrument1_bars, sort=False)
+            engine.add_data(instrument2_bars, sort=False)
+            engine.add_data(instrument3_bars, sort=False)
+
+            # Sort once at the end
+            engine.sort_data()
+
+        This approach avoids repeatedly sorting the entire data stream on each call,
+        significantly reducing load time for large datasets.
+
+        **Contract invariants:**
+
+        - When `sort=True`: Data is immediately available for backtesting via `run()`.
+        - When `sort=False`: You **must** call `sort_data()` or add data with `sort=True` before `run()`.
+        - The provided `data` list is always copied internally to prevent external mutations from affecting the engine state.
+
         """
         Condition.not_empty(data, "data")
         Condition.list_type(data, Data, "data")
@@ -822,8 +847,10 @@ cdef class BacktestEngine:
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
-
-        self._data_iterator.add_data("backtest_data", self._data)
+            self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+            self._sorted = True
+        else:
+            self._sorted = False
 
         for data_point in data:
             data_type = type(data_point)
@@ -1049,6 +1076,8 @@ cdef class BacktestEngine:
         """
         Condition.not_none(data, "data")
         self._data = pickle.loads(data)
+        self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+        self._sorted = True
 
         self._log.info(
             f"Loaded {len(self._data):_} data "
@@ -1137,10 +1166,16 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        All stateful fields are reset to their initial value.
+        All stateful fields are reset to their initial value, except for data and instruments which persist.
 
-        Note: instruments and data are not dropped/reset, this can be done through a
-        separate call to `.clear_data()` if desired.
+        Notes
+        -----
+        Data and instruments are retained across resets by default to enable repeated runs
+        with different strategies or parameters against the same dataset.
+
+        See Also
+        --------
+        https://nautilustrader.io/docs/concepts/backtesting#repeated-runs
 
         """
         self._log.debug(f"Resetting")
@@ -1185,7 +1220,10 @@ cdef class BacktestEngine:
         # Reset timing
         self._iteration = 0
         self._data_iterator = BacktestDataIterator()
-        self._data_iterator.add_data("backtest_data", self._data)
+
+        if self._sorted:
+            self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+
         self._run_started = None
         self._run_finished = None
         self._backtest_start = None
@@ -1198,7 +1236,9 @@ cdef class BacktestEngine:
         Sort the engines internal data stream.
 
         """
-        self._data.sort()
+        self._data = sorted(self._data, key=lambda x: x.ts_init)
+        self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+        self._sorted = True
 
     def clear_data(self) -> None:
         """
@@ -1212,6 +1252,7 @@ cdef class BacktestEngine:
         self._data.clear()
         self._data_len = 0
         self._data_iterator = BacktestDataIterator()
+        self._sorted = True
 
     def clear_actors(self) -> None:
         """
@@ -1288,6 +1329,16 @@ cdef class BacktestEngine:
             If no data has been added to the engine.
         ValueError
             If the `start` is >= the `end` datetime.
+        RuntimeError
+            If data has been added with `sort=False` but `sort_data()` has not been called.
+
+        Notes
+        -----
+        **Contract invariants:**
+
+        - All data added via `add_data()` must be sorted and synced to the internal iterator before calling `run()`.
+        - If any data was added with `sort=False`, you must call `sort_data()` or add data with `sort=True` before this method.
+        - The engine validates this requirement and will raise `RuntimeError` if unsorted data is detected.
 
         """
         self._run(start, end, run_config_id, streaming)
@@ -1387,6 +1438,13 @@ cdef class BacktestEngine:
         run_config_id: str | None = None,
         bint streaming = False,
     ):
+        # Validate data has been sorted and synced to iterator
+        if self._data and not self._sorted:
+            raise RuntimeError(
+                "Data has been added but not sorted, "
+                "call `engine.sort_data()` or use `engine.add_data(..., sort=True)` before running"
+            )
+
         # Validate data
         cdef:
             SimulatedExchange exchange
@@ -1956,7 +2014,13 @@ cdef class BacktestDataIterator:
         self._single_data_index = 0
         self._is_single_data = False
 
-    def add_data(self, data_name, list data, bint append_data=True):
+    def add_data(
+        self,
+        str data_name,
+        list data,
+        bint append_data = True,
+        bint presorted = False,
+    ) -> None:
         """
         Add (or replace) a named, pre-sorted data list for static data loading.
 
@@ -1973,6 +2037,9 @@ cdef class BacktestDataIterator:
             Controls stream priority for timestamp ties:
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
+        presorted : bool, default ``False``
+            If the data is guaranteed to be pre-sorted by `ts_init`.
+            When ``True``, skips internal sorting for better performance.
 
         Raises
         ------
@@ -1985,13 +2052,14 @@ cdef class BacktestDataIterator:
         if not data:
             return
 
-        def data_generator():
-            yield data
-            # Generator ends after yielding once
+        self._add_data(data_name, data, append_data, presorted)
 
-        self.init_data(data_name, data_generator(), append_data)
-
-    def init_data(self, str data_name, data_generator, bint append_data=True):
+    def init_data(
+        self,
+        str data_name,
+        data_generator,
+        bint append_data = True,
+    ) -> None:
         """
         Add (or replace) a named data generator for streaming large datasets.
 
@@ -2036,7 +2104,13 @@ cdef class BacktestDataIterator:
             # Generator is already exhausted, nothing to add
             pass
 
-    cdef void _add_data(self, str data_name, list data_list, bint append_data=True):
+    cdef void _add_data(
+        self,
+        str data_name,
+        list data_list,
+        bint append_data = True,
+        bint presorted = False,
+    ):
         if len(data_list) == 0:
             return
 
@@ -2056,7 +2130,12 @@ cdef class BacktestDataIterator:
         if self._is_single_data:
             self._deactivate_single_data()
 
-        self._data[data_priority] = sorted(data_list, key=lambda data: data.ts_init)
+        # Copy and optionally sort to avoid aliasing caller's list
+        if presorted:
+            self._data[data_priority] = list(data_list)
+        else:
+            self._data[data_priority] = sorted(data_list, key=lambda data: data.ts_init)
+
         self._data_name[data_priority] = data_name
         self._data_priority[data_name] = data_priority
         self._data_len[data_priority] = len(data_list)
@@ -5022,12 +5101,17 @@ cdef class OrderMatchingEngine:
 
         if simulated_book is not None:
             # Use simulated OrderBook for fill determination
-            return simulated_book.simulate_fills(
+            fills = simulated_book.simulate_fills(
                 order,
                 price_prec=self.instrument.price_precision,
                 size_prec=self.instrument.size_precision,
                 is_aggressive=True,
             )
+            # If simulation produced no fills (e.g., custom model removed best levels),
+            # fall back to standard market logic to preserve expected behavior.
+            if not fills:
+                return self.determine_market_price_and_volume(order)
+            return fills
         else:
             # Fall back to standard logic
             return self.determine_market_price_and_volume(order)

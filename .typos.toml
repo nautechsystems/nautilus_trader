@@ -1,0 +1,36 @@
+# Configuration for typos spell checker
+
+[default.extend-words]
+# Industry standard abbreviations and technical terms
+Pn = "Pn" # Part of PnL (Profit and Loss)
+PnL = "PnL" # Profit and Loss
+PnLs = "PnLs" # Plural of PnL
+
+# Variable naming conventions used throughout the codebase
+strat = "strat" # Common shorthand for strategy
+ACN = "ACN" # Domain-specific abbreviation
+
+# Windows system libraries
+secur = "secur" # Part of secur32.lib Windows security library
+secur32 = "secur32" # Windows security library (secur32.lib)
+
+# Intentional variable names and abbreviations
+NOO = "NOO" # Test data/identifier
+ot = "ot" # Order tag variable naming convention
+
+# External API terms (exact spelling from their documentation)
+HIGHTER = "HIGHTER" # Binance API error code (their official typo)
+Alo = "Alo" # Hyperliquid API: Add Liquidity Only (post-only TIF)
+BadAloPx = "BadAloPx" # Hyperliquid API: rejection code for post-only orders
+
+# Blockchain names (official branding)
+Superseed = "Superseed" # Superseed blockchain (chain ID 10001)
+SUPERSEED = "SUPERSEED" # Superseed blockchain constant
+
+# Test data and hex/encoded strings
+ba = "ba" # Hex digit in UUID test strings
+BA = "BA" # Base64/encoded characters in test data
+datas = "datas" # Intentional plural variable naming for vectors
+
+# NumPy/scientific computing functions
+arange = "arange" # NumPy array range function (not a typo of "arrange")

@@ -242,6 +242,10 @@ impl From<InstrumentClose> for Data {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct DataType {
     type_name: String,
     metadata: Option<IndexMap<String, String>>,
@@ -288,10 +292,10 @@ impl DataType {
 
     /// Returns a string representation of the metadata.
     pub fn metadata_str(&self) -> String {
-        self.metadata
-            .as_ref()
-            .map(|metadata| to_string(metadata).unwrap_or_default())
-            .unwrap_or_else(|| "null".to_string())
+        self.metadata.as_ref().map_or_else(
+            || "null".to_string(),
+            |metadata| to_string(metadata).unwrap_or_default(),
+        )
     }
 
     /// Returns the messaging topic for the data type.
@@ -525,7 +529,7 @@ mod tests {
         );
 
         let data_type1 = DataType::new("ExampleType", metadata.clone());
-        let data_type2 = DataType::new("ExampleType", metadata.clone());
+        let data_type2 = DataType::new("ExampleType", metadata);
 
         let mut hasher1 = DefaultHasher::new();
         data_type1.hash(&mut hasher1);

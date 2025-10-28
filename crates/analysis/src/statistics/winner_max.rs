@@ -13,21 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
+use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct MaxWinner {}
 
+impl Display for MaxWinner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Max Winner")
+    }
+}
+
 impl PortfolioStatistic for MaxWinner {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(MaxWinner).to_string()
+        self.to_string()
     }
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -35,13 +45,26 @@ impl PortfolioStatistic for MaxWinner {
             return Some(0.0);
         }
 
+        // Match old Python behavior: max(all_pnls) regardless of sign
+        // If all trades are losses, returns the "least bad" loss
         realized_pnls
             .iter()
-            .copied()
-            .filter(|&pnl| pnl > 0.0)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .copied()
+    }
+
+    fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -63,7 +86,9 @@ mod tests {
         let max_winner = MaxWinner {};
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
-        assert!(result.is_none());
+        assert!(result.is_some());
+        // Returns the "least bad" loss (matches old Python behavior)
+        assert!(approx_eq!(f64, result.unwrap(), -50.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -87,6 +112,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let max_winner = MaxWinner {};
-        assert_eq!(max_winner.name(), "MaxWinner");
+        assert_eq!(max_winner.name(), "Max Winner");
     }
 }

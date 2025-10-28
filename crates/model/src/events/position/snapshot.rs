@@ -107,7 +107,7 @@ impl PositionSnapshot {
             realized_return: Some(position.realized_return), // TODO: Standardize
             realized_pnl: position.realized_pnl,
             unrealized_pnl,
-            commissions: position.commissions.values().cloned().collect(), // TODO: Optimize
+            commissions: position.commissions.values().copied().collect(), // TODO: Optimize
             duration_ns: Some(position.duration_ns),                       // TODO: Standardize
             ts_opened: position.ts_opened,
             ts_closed: position.ts_closed,

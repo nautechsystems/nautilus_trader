@@ -38,6 +38,13 @@ use crate::{
 /// for the hypersync to index the block.
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
+/// Timeout in seconds for HyperSync HTTP requests.
+const HYPERSYNC_REQUEST_TIMEOUT_SECS: u64 = 30;
+
+/// Timeout in seconds for graceful task shutdown during disconnect.
+/// If the task doesn't finish within this time, it will be forcefully aborted.
+const DISCONNECT_TIMEOUT_SECS: u64 = 5;
+
 /// A client for interacting with a HyperSync API to retrieve blockchain data.
 #[derive(Debug)]
 pub struct HyperSyncClient {
@@ -47,10 +54,14 @@ pub struct HyperSyncClient {
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
+    /// Cancellation token for the blocks subscription task.
+    blocks_cancellation_token: Option<tokio_util::sync::CancellationToken>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     /// Index of pool addressed keyed by instrument ID.
     pool_addresses: AHashMap<InstrumentId, Address>,
+    /// Cancellation token for graceful shutdown of background tasks.
+    cancellation_token: tokio_util::sync::CancellationToken,
 }
 
 impl HyperSyncClient {
@@ -63,6 +74,7 @@ impl HyperSyncClient {
     pub fn new(
         chain: SharedChain,
         tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
@@ -74,8 +86,10 @@ impl HyperSyncClient {
             chain,
             client: Arc::new(client),
             blocks_task: None,
+            blocks_cancellation_token: None,
             tx,
             pool_addresses: AHashMap::new(),
+            cancellation_token,
         }
     }
 
@@ -89,8 +103,8 @@ impl HyperSyncClient {
     /// # Panics
     ///
     /// Panics if the DEX extended configuration cannot be retrieved or if stream creation fails.
-    pub async fn process_block_dex_contract_events(
-        &self,
+    pub fn process_block_dex_contract_events(
+        &mut self,
         dex: &DexType,
         block: u64,
         contract_addresses: Vec<Address>,
@@ -118,86 +132,105 @@ impl HyperSyncClient {
         let client = self.client.clone();
         let dex_extended =
             get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
+        let cancellation_token = self.cancellation_token.clone();
 
-        get_runtime().spawn(async move {
-            let mut rx = client
-                .stream(query, Default::default())
-                .await
-                .expect("Failed to create stream");
+        let _task = get_runtime().spawn(async move {
+            let mut rx = match client.stream(query, Default::default()).await {
+                Ok(rx) => rx,
+                Err(e) => {
+                    tracing::error!("Failed to create DEX event stream: {e}");
+                    return;
+                }
+            };
 
-            while let Some(response) = rx.recv().await {
-                let response = response.unwrap();
-
-                for batch in response.data.logs {
-                    for log in batch {
-                        let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
-                            Some(log_argument) => {
-                                format!("0x{}", hex::encode(log_argument.as_ref()))
-                            }
-                            None => continue,
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        tracing::debug!("DEX event processing task received cancellation signal");
+                        break;
+                    }
+                    response = rx.recv() => {
+                        let Some(response) = response else {
+                            break;
                         };
-                        if event_signature == swap_event_encoded_signature {
-                            match dex_extended.parse_swap_event(log.clone()) {
-                                Ok(swap_event) => {
-                                    if let Err(e) =
-                                        tx.send(BlockchainMessage::SwapEvent(swap_event))
-                                    {
-                                        tracing::error!("Failed to send swap event: {}", e);
+
+                        let response = match response {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                tracing::error!("Failed to receive DEX event stream response: {e}");
+                                break;
+                            }
+                        };
+
+                        for batch in response.data.logs {
+                            for log in batch {
+                                let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
+                                    Some(log_argument) => {
+                                        format!("0x{}", hex::encode(log_argument.as_ref()))
                                     }
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to parse swap with error '{:?}' for event: {:?}",
-                                        e,
-                                        log
-                                    );
+                                    None => continue,
+                                };
+                                if event_signature == swap_event_encoded_signature {
+                                    match dex_extended.parse_swap_event(log.clone()) {
+                                        Ok(swap_event) => {
+                                            if let Err(e) =
+                                                tx.send(BlockchainMessage::SwapEvent(swap_event))
+                                            {
+                                                tracing::error!("Failed to send swap event: {e}");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to parse swap with error '{e:?}' for event: {log:?}",
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                } else if event_signature == mint_event_encoded_signature {
+                                    match dex_extended.parse_mint_event(log.clone()) {
+                                        Ok(swap_event) => {
+                                            if let Err(e) =
+                                                tx.send(BlockchainMessage::MintEvent(swap_event))
+                                            {
+                                                tracing::error!("Failed to send mint event: {e}");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to parse mint with error '{e:?}' for event: {log:?}",
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                } else if event_signature == burn_event_encoded_signature {
+                                    match dex_extended.parse_burn_event(log.clone()) {
+                                        Ok(swap_event) => {
+                                            if let Err(e) =
+                                                tx.send(BlockchainMessage::BurnEvent(swap_event))
+                                            {
+                                                tracing::error!("Failed to send burn event: {e}");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to parse burn with error '{e:?}' for event: {log:?}",
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                } else {
+                                    tracing::error!("Unknown event signature: {event_signature}");
                                     continue;
                                 }
                             }
-                        } else if event_signature == mint_event_encoded_signature {
-                            match dex_extended.parse_mint_event(log.clone()) {
-                                Ok(swap_event) => {
-                                    if let Err(e) =
-                                        tx.send(BlockchainMessage::MintEvent(swap_event))
-                                    {
-                                        tracing::error!("Failed to send mint event: {}", e);
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to parse mint with error '{:?}' for event: {:?}",
-                                        e,
-                                        log
-                                    );
-                                    continue;
-                                }
-                            }
-                        } else if event_signature == burn_event_encoded_signature {
-                            match dex_extended.parse_burn_event(log.clone()) {
-                                Ok(swap_event) => {
-                                    if let Err(e) =
-                                        tx.send(BlockchainMessage::BurnEvent(swap_event))
-                                    {
-                                        tracing::error!("Failed to send burn event: {}", e);
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to parse burn with error '{:?}' for event: {:?}",
-                                        e,
-                                        log
-                                    );
-                                    continue;
-                                }
-                            }
-                        } else {
-                            tracing::error!("Unknown event signature: {}", event_signature);
-                            continue;
                         }
                     }
                 }
             }
         });
+
+        // Fire-and-forget: task is short-lived (processes one block), errors are logged,
+        // and it responds to cancellation_token for graceful shutdown
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
@@ -240,8 +273,38 @@ impl HyperSyncClient {
     }
 
     /// Disconnects from the HyperSync service and stops all background tasks.
-    pub fn disconnect(&mut self) {
-        self.unsubscribe_blocks();
+    pub async fn disconnect(&mut self) {
+        tracing::debug!("Disconnecting HyperSync client");
+        self.cancellation_token.cancel();
+
+        // Await blocks task with timeout, abort if it takes too long
+        if let Some(mut task) = self.blocks_task.take() {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                &mut task,
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    tracing::debug!("Blocks task completed gracefully");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Error awaiting blocks task: {e}");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "Blocks task did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, \
+                         aborting task (this is expected if Hypersync long-poll was in progress)"
+                    );
+                    task.abort();
+                    let _ = task.await;
+                }
+            }
+        }
+
+        // DEX event tasks are short-lived and self-clean via cancellation_token
+
+        tracing::debug!("HyperSync client disconnected");
     }
 
     /// Returns the current block
@@ -305,6 +368,11 @@ impl HyperSyncClient {
             return;
         };
 
+        // Create a child token that can be cancelled independently
+        let blocks_token = self.cancellation_token.child_token();
+        let cancellation_token = blocks_token.clone();
+        self.blocks_cancellation_token = Some(blocks_token);
+
         let task = get_runtime().spawn(async move {
             tracing::debug!("Starting task 'blocks_feed");
 
@@ -312,29 +380,56 @@ impl HyperSyncClient {
             let mut query = Self::construct_block_query(current_block_height, None);
 
             loop {
-                let response = client.get(&query).await.unwrap();
-                for batch in response.data.blocks {
-                    for received_block in batch {
-                        let block = transform_hypersync_block(chain, received_block).unwrap();
-                        let msg = BlockchainMessage::Block(block);
-                        if let Err(e) = tx.send(msg) {
-                            log::error!("Error sending message: {e}");
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        tracing::debug!("Blocks subscription task received cancellation signal");
+                        break;
+                    }
+                    result = tokio::time::timeout(
+                        std::time::Duration::from_secs(HYPERSYNC_REQUEST_TIMEOUT_SECS),
+                        client.get(&query)
+                    ) => {
+                        let response = match result {
+                            Ok(Ok(resp)) => resp,
+                            Ok(Err(e)) => {
+                                tracing::error!("Hypersync request failed: {e}");
+                                break;
+                            }
+                            Err(_) => {
+                                tracing::warn!("Hypersync request timed out after {HYPERSYNC_REQUEST_TIMEOUT_SECS}s, retrying...");
+                                continue;
+                            }
+                        };
+
+                        for batch in response.data.blocks {
+                            for received_block in batch {
+                                let block = transform_hypersync_block(chain, received_block).unwrap();
+                                let msg = BlockchainMessage::Block(block);
+                                if let Err(e) = tx.send(msg) {
+                                    log::error!("Error sending message: {e}");
+                                }
+                            }
                         }
+
+                        if let Some(archive_block_height) = response.archive_height
+                            && archive_block_height < response.next_block
+                        {
+                            while client.get_height().await.unwrap() < response.next_block {
+                                tokio::select! {
+                                    () = cancellation_token.cancelled() => {
+                                        tracing::debug!("Blocks subscription task received cancellation signal during polling");
+                                        return;
+                                    }
+                                    () = tokio::time::sleep(std::time::Duration::from_millis(
+                                        BLOCK_POLLING_INTERVAL_MS,
+                                    )) => {}
+                                }
+                            }
+                        }
+
+                        query.from_block = response.next_block;
                     }
                 }
-
-                if let Some(archive_block_height) = response.archive_height
-                    && archive_block_height < response.next_block
-                {
-                    while client.get_height().await.unwrap() < response.next_block {
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            BLOCK_POLLING_INTERVAL_MS,
-                        ))
-                        .await;
-                    }
-                }
-
-                query.from_block = response.next_block;
             }
         });
 
@@ -399,9 +494,15 @@ impl HyperSyncClient {
     }
 
     /// Unsubscribes from new blocks by stopping the background watch task.
-    pub fn unsubscribe_blocks(&mut self) {
+    pub async fn unsubscribe_blocks(&mut self) {
         if let Some(task) = self.blocks_task.take() {
-            task.abort();
+            // Cancel only the blocks child token, not the main cancellation token
+            if let Some(token) = self.blocks_cancellation_token.take() {
+                token.cancel();
+            }
+            if let Err(e) = task.await {
+                tracing::error!("Error awaiting blocks task during unsubscribe: {e}");
+            }
             tracing::debug!("Unsubscribed from blocks");
         }
     }

@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Coinbase International exchange integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_coinbase_intx"
@@ -24,6 +27,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -48,6 +52,7 @@ nautilus-network = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
@@ -55,23 +60,23 @@ derive_builder = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
-aws-lc-rs = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }  # Needed for example binaries
+tracing-subscriber = { workspace = true } # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
@@ -80,12 +85,12 @@ tracing-test = { workspace = true }
 
 [[bin]]
 name = "coinbase-intx-http-private"
-path = "bin/http-private.rs"
+path = "bin/http_private.rs"
 required-features = ["python"]
 
 [[bin]]
 name = "coinbase-intx-http-public"
-path = "bin/http-public.rs"
+path = "bin/http_public.rs"
 required-features = ["python"]
 
 [[bin]]

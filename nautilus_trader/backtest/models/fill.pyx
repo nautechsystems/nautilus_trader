@@ -238,38 +238,23 @@ class OneTickSlippageFillModel(FillModel):
             book_type=BookType.L2_MBP,
         )
 
-        # No volume at best prices
-        bid_order_top = BookOrder(
-            side=OrderSide.BUY,
-            price=best_bid,
-            size=Quantity(0, instrument.size_precision),
-            order_id=1,
-        )
-        ask_order_top = BookOrder(
-            side=OrderSide.SELL,
-            price=best_ask,
-            size=Quantity(0, instrument.size_precision),
-            order_id=2,
-        )
-
-        # Unlimited volume one tick away
-        bid_order_second = BookOrder(
+        # Only add liquidity one tick away from best price (simulates no liquidity at best)
+        # By not adding any orders at best_bid/best_ask, we guarantee slippage
+        bid_order = BookOrder(
             side=OrderSide.BUY,
             price=Price(best_bid.as_double() - tick.as_double(), instrument.price_precision),
             size=Quantity(UNLIMITED, instrument.size_precision),
-            order_id=3,
+            order_id=1,
         )
-        ask_order_second = BookOrder(
+        ask_order = BookOrder(
             side=OrderSide.SELL,
             price=Price(best_ask.as_double() + tick.as_double(), instrument.price_precision),
             size=Quantity(UNLIMITED, instrument.size_precision),
-            order_id=4,
+            order_id=2,
         )
 
-        book.add(bid_order_top, 0, 0)
-        book.add(ask_order_top, 0, 0)
-        book.add(bid_order_second, 0, 0)
-        book.add(ask_order_second, 0, 0)
+        book.add(bid_order, 0, 0)
+        book.add(ask_order, 0, 0)
 
         return book
 

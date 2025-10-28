@@ -38,7 +38,10 @@ def get_cached_okx_http_client(
     api_secret: str | None = None,
     api_passphrase: str | None = None,
     base_url: str | None = None,
-    timeout_secs: int = 60,
+    timeout_secs: int | None = None,
+    max_retries: int | None = None,
+    retry_delay_ms: int | None = None,
+    retry_delay_max_ms: int | None = None,
     is_demo: bool = False,
 ) -> nautilus_pyo3.OKXHttpClient:
     """
@@ -56,12 +59,16 @@ def get_cached_okx_http_client(
         The passphrase used to create the API key.
     base_url : str, optional
         The base URL for the API endpoints.
-    timeout_secs : int, default 60
+    timeout_secs : int, optional
         The timeout (seconds) for HTTP requests to OKX.
+    max_retries : int, optional
+        The maximum retry attempts for requests.
+    retry_delay_ms : int, optional
+        The initial delay (milliseconds) for retries.
+    retry_delay_max_ms : int, optional
+        The maximum delay (milliseconds) for exponential backoff.
     is_demo : bool, default False
-        If the client is connecting to the demo API.
-        Note: Currently only affects WebSocket URLs, HTTP requests to demo
-        require the x-simulated-trading header which is not yet implemented.
+        If the client is for the OKX demo API.
 
     Returns
     -------
@@ -74,6 +81,10 @@ def get_cached_okx_http_client(
         api_passphrase=api_passphrase,
         base_url=base_url,
         timeout_secs=timeout_secs,
+        max_retries=max_retries,
+        retry_delay_ms=retry_delay_ms,
+        retry_delay_max_ms=retry_delay_max_ms,
+        is_demo=is_demo,
     )
 
 
@@ -82,6 +93,7 @@ def get_cached_okx_instrument_provider(
     client: nautilus_pyo3.OKXHttpClient,
     instrument_types: tuple[OKXInstrumentType, ...],
     contract_types: tuple[OKXContractType, ...] | None = None,
+    instrument_families: tuple[str, ...] | None = None,
     config: InstrumentProviderConfig | None = None,
 ) -> OKXInstrumentProvider:
     """
@@ -97,6 +109,9 @@ def get_cached_okx_instrument_provider(
         The product types to load.
     contract_types : tuple[OKXInstrumentType, ...], optional
         The contract types of instruments to load.
+    instrument_families : tuple[str, ...], optional
+        The instrument families to load (e.g., "BTC-USD", "ETH-USD").
+        Required for OPTIONS. Optional for FUTURES/SWAP.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -109,6 +124,7 @@ def get_cached_okx_instrument_provider(
         client=client,
         instrument_types=instrument_types,
         contract_types=contract_types,
+        instrument_families=instrument_families,
         config=config,
     )
 
@@ -156,11 +172,16 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
             api_passphrase=config.api_passphrase,
             base_url=config.base_url_http,
             is_demo=config.is_demo,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
         provider = get_cached_okx_instrument_provider(
             client=client,
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
+            instrument_families=config.instrument_families,
             config=config.instrument_provider,
         )
         return OKXDataClient(
@@ -218,11 +239,16 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
             api_passphrase=config.api_passphrase,
             base_url=config.base_url_http,
             is_demo=config.is_demo,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
         provider = get_cached_okx_instrument_provider(
             client=client,
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
+            instrument_families=config.instrument_families,
             config=config.instrument_provider,
         )
         return OKXExecutionClient(

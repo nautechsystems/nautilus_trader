@@ -39,8 +39,8 @@ use nautilus_model::{
     data::{QuoteTick, stubs::quote_audusd},
     enums::{AccountType, LiquiditySide, OrderSide, OrderType, TimeInForce, TradingState},
     events::{
-        AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderEventType, OrderFilled,
-        OrderSubmitted, account::stubs::cash_account_state_million_usd,
+        AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
+        account::stubs::cash_account_state_million_usd,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -120,6 +120,7 @@ fn test_deny_order_on_price_precision_exceeded(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -192,6 +193,7 @@ fn test_deny_order_exceeding_max_notional(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -280,6 +282,7 @@ fn get_stub_submit_order(
         market_order_buy(instrument_eth_usdt),
         None,
         None,
+        None, // params
         UUID4::new(),
         UnixNanos::from(10),
     )
@@ -596,6 +599,7 @@ fn test_given_random_command_then_logs_and_continues(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -604,31 +608,6 @@ fn test_given_random_command_then_logs_and_continues(
     let random_command = TradingCommand::SubmitOrder(submit_order);
 
     risk_engine.execute(random_command);
-}
-
-#[rstest]
-fn test_given_random_event_then_logs_and_continues(instrument_audusd: InstrumentAny) {
-    let mut risk_engine = get_risk_engine(None, None, None, false);
-
-    let order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .price(Price::from_raw(100, 0))
-        .quantity(Quantity::from("1000"))
-        .build();
-
-    let random_event = OrderEventAny::Denied(OrderDenied::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        Ustr::from("DENIED"),
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    ));
-
-    risk_engine.process(random_event);
 }
 
 // SUBMIT ORDER TESTS
@@ -686,6 +665,7 @@ fn test_submit_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -740,6 +720,7 @@ fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -814,6 +795,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -850,6 +832,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -881,6 +864,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order3,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -954,6 +938,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -990,6 +975,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1077,6 +1063,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
         order,
         None,
         Some(PositionId::new("CUSTOM-001")), // <-- Custom position ID
+        None,                                // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1094,6 +1081,135 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from("Position CUSTOM-001 not found for reduce-only order")
+    );
+}
+
+#[rstest]
+fn test_check_orders_risk_allows_reduce_only_sell_with_cash_base_currency(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("100002 USD", "100000 USD", "2 USD"),
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .reduce_only(true)
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
+    assert!(allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert!(messages.is_empty());
+}
+
+#[rstest]
+fn test_check_orders_risk_allows_reduce_only_sell_with_multi_currency_cash_account(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+
+    let multi_account_state = AccountState::new(
+        account_id(),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100002 USD"),
+            Money::from("100000 USD"),
+            Money::from("2 USD"),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    );
+
+    cache
+        .add_account(AccountAny::Cash(cash_account(multi_account_state)))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .reduce_only(true)
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
+    assert!(allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert!(messages.is_empty());
+}
+
+#[rstest]
+fn test_check_orders_risk_non_reduce_sell_denies_on_free_balance(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: ShareableMessageHandler,
+    quote_audusd: QuoteTick,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("100002 USD", "100000 USD", "2 USD"),
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd).unwrap();
+
+    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .build();
+
+    let allowed = risk_engine.check_orders_risk(instrument_audusd, vec![order]);
+    assert!(!allowed);
+
+    let messages = get_process_order_event_handler_messages(process_order_event_handler);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].event_type(), OrderEventType::Denied);
+    let reason = messages[0].message().unwrap();
+    assert!(
+        reason
+            .as_str()
+            .contains("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE")
     );
 }
 
@@ -1142,6 +1258,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1211,6 +1328,7 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1284,6 +1402,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1354,6 +1473,7 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1424,6 +1544,7 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1492,6 +1613,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1560,6 +1682,7 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1631,6 +1754,7 @@ fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1710,6 +1834,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1795,6 +1920,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1877,6 +2003,7 @@ fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1959,6 +2086,7 @@ fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2029,6 +2157,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2223,7 +2352,8 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
     );
 }
 
-// TODO: After ExecutionClient
+// TODO: Implement test for multi-currency cash account over cumulative notional
+#[ignore = "TODO: Requires ExecutionClient implementation"]
 #[rstest]
 fn test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional() {}
 
@@ -2296,6 +2426,7 @@ fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
         order1,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2320,6 +2451,7 @@ fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
         order2,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2416,6 +2548,7 @@ fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
         order1,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2440,6 +2573,7 @@ fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
         order2,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2504,6 +2638,7 @@ fn test_submit_order_when_trading_halted_then_denies_order(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2571,6 +2706,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
             order.clone(),
             None,
             None,
+            None, // params
             UUID4::new(),
             risk_engine.clock.borrow().timestamp_ns(),
         )
@@ -2748,6 +2884,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         long,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2876,6 +3013,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         short,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3016,6 +3154,8 @@ fn test_submit_bracket_with_default_settings_sends_to_client(
     // assert_eq!(saved_process_messages.len(), 0);
 }
 
+// TODO: Verify bracket orders with emulated orders are sent to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_submit_bracket_with_emulated_orders_sends_to_emulator() {}
 
@@ -3103,6 +3243,8 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
     }
 }
 
+// TODO: Verify emulated orders are sent to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_submit_order_for_emulation_sends_command_to_emulator() {}
 
@@ -3288,6 +3430,7 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3320,6 +3463,8 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     );
 }
 
+// TODO: Verify modify order for emulated orders sends to emulator
+#[ignore = "TODO: Requires emulator implementation"]
 #[rstest]
 fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
 
@@ -3371,6 +3516,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_be
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3445,6 +3591,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3464,6 +3611,8 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     );
 }
 
+// TODO: Verify account balance updates correctly with partial and full fills
+#[ignore = "TODO: Requires account balance tracking implementation"]
 #[rstest]
 fn test_partial_fill_and_full_fill_account_balance_correct() {}
 
@@ -3534,6 +3683,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         clock.timestamp_ns(),
     )
@@ -3544,4 +3694,253 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     // TODO: Change command messages to not require owned orders
+}
+
+#[rstest]
+fn test_submit_order_with_quote_quantity_validates_correctly(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    process_order_event_handler: ShareableMessageHandler,
+    _cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    // Create a BTCUSDT spot instrument with max_quantity = 83 BTC
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6,
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),         // multiplier
+        Some(Quantity::from("0.000001")),  // lot_size
+        Some(Quantity::from("83")),        // max_quantity = 83 BTC
+        Some(Quantity::from("0.000011")),  // min_quantity
+        Some(Money::from("8000000 USDT")), // max_notional
+        Some(Money::from("5 USDT")),       // min_notional
+        None,
+        None,
+        Some(Decimal::from_str("0.1").unwrap()), // margin_init
+        Some(Decimal::from_str("0.1").unwrap()), // margin_maint
+        Some(Decimal::from_str("-0.00005").unwrap()), // maker_fee
+        Some(Decimal::from_str("0.00015").unwrap()), // taker_fee
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    // Create a cash account with USDT balance (not USD) to match the instrument
+    let usdt_account_state = AccountState::new(
+        AccountId::from("BYBIT-001"), // Match the venue from the instrument
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(Currency::USDT()),
+    );
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(usdt_account_state)))
+        .unwrap();
+
+    // Add a quote tick at $100,000 per BTC
+    // This means 100 USDT quote quantity = 0.001 BTC base quantity
+    let quote = QuoteTick::new(
+        btc_usdt.id(),
+        Price::from("100000.0"), // ask
+        Price::from("99999.9"),  // bid
+        Quantity::from("1.0"),   // ask_size
+        Quantity::from("1.0"),   // bid_size
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    // Create a market order with quote_quantity = 100 USDT
+    // This should convert to 0.001 BTC which is well below max_quantity of 83 BTC
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100")) // 100 USDT
+        .quote_quantity(true)
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    // The order should be accepted (not denied)
+    // If the bug exists, it would compare 100 > 83 and deny the order
+    // With the fix, it converts 100 USDT -> 0.001 BTC, then checks 0.001 < 83 (passes)
+    let saved_process_messages =
+        get_process_order_event_handler_messages(process_order_event_handler);
+
+    // Should have 1 event (submitted to exec engine, not denied)
+    assert_eq!(
+        saved_process_messages.len(),
+        0,
+        "Order should not be denied"
+    );
+}
+
+#[rstest]
+fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    process_order_event_handler: ShareableMessageHandler,
+    _cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        process_order_event_handler.clone(),
+    );
+
+    // Create a BTCUSDT spot instrument with max_quantity = 0.5 BTC
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6,
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),        // multiplier
+        Some(Quantity::from("0.000001")), // lot_size
+        Some(Quantity::from("0.5")),      // max_quantity = 0.5 BTC
+        Some(Quantity::from("0.000011")), // min_quantity
+        Some(Money::from("8000000 USDT")),
+        Some(Money::from("5 USDT")),
+        None,
+        None,
+        Some(Decimal::from_str("0.1").unwrap()),
+        Some(Decimal::from_str("0.1").unwrap()),
+        Some(Decimal::from_str("-0.00005").unwrap()),
+        Some(Decimal::from_str("0.00015").unwrap()),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    // Create a cash account with USDT balance (not USD) to match the instrument
+    let usdt_account_state = AccountState::new(
+        AccountId::from("BYBIT-001"), // Match the venue from the instrument
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(Currency::USDT()),
+    );
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(usdt_account_state)))
+        .unwrap();
+
+    // Add a quote tick at $100,000 per BTC
+    // 100,000 USDT quote quantity = 1 BTC base quantity
+    let quote = QuoteTick::new(
+        btc_usdt.id(),
+        Price::from("100000.0"),
+        Price::from("99999.9"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    // Create a market order with quote_quantity = 100,000 USDT
+    // This converts to 1 BTC which exceeds max_quantity of 0.5 BTC
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000")) // 100,000 USDT
+        .quote_quantity(true)
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    // The order should be denied because effective_quantity (1 BTC) > max_quantity (0.5 BTC)
+    let saved_process_messages =
+        get_process_order_event_handler_messages(process_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 1);
+
+    assert_eq!(
+        saved_process_messages.first().unwrap().event_type(),
+        OrderEventType::Denied
+    );
+    assert!(
+        saved_process_messages
+            .first()
+            .unwrap()
+            .message()
+            .unwrap()
+            .contains("QUANTITY_EXCEEDS_MAXIMUM")
+    );
 }

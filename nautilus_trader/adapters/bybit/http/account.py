@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 import pandas as pd
 
@@ -34,8 +35,6 @@ from nautilus_trader.adapters.bybit.endpoints.account.position_info import Bybit
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeverageEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeveragePostParams
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModePostParams
 from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModeEndpoint
@@ -91,7 +90,7 @@ if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
     from nautilus_trader.common.component import LiveClock
 
-# fmt: on
+
 
 
 class BybitAccountHttpAPI:
@@ -213,6 +212,7 @@ class BybitAccountHttpAPI:
 
         all_positions = []
         cursor = None
+
         while True:
             response = await self._endpoint_position_info.get(
                 PositionInfoGetParams(
@@ -243,14 +243,27 @@ class BybitAccountHttpAPI:
             case _:
                 settle_coin = self.default_settle_coin if symbol is None else None
 
-        response = await self._endpoint_open_orders.get(
-            BybitOpenOrdersGetParams(
-                category=product_type,
-                symbol=symbol,
-                settleCoin=settle_coin,
-            ),
-        )
-        return response.result.list
+        all_orders = []
+        cursor = None
+
+        while True:
+            response = await self._endpoint_open_orders.get(
+                BybitOpenOrdersGetParams(
+                    category=product_type,
+                    symbol=symbol,
+                    settleCoin=settle_coin,
+                    limit=50,
+                    cursor=cursor,
+                ),
+            )
+            all_orders.extend(response.result.list)
+
+            if hasattr(response.result, "nextPageCursor") and response.result.nextPageCursor:
+                cursor = response.result.nextPageCursor
+            else:
+                break
+
+        return all_orders
 
     async def query_order_history(  # noqa: C901 (too complex)
         self,
@@ -283,6 +296,7 @@ class BybitAccountHttpAPI:
             # Query open orders with pagination (openOnly=0)
             # Note: Bybit API returns open + recent closed orders even with openOnly=0
             cursor = None
+
             while True:
                 open_response = await self._endpoint_order_history.get(
                     BybitOrderHistoryGetParams(
@@ -308,6 +322,7 @@ class BybitAccountHttpAPI:
 
             # Query closed orders with pagination (openOnly=1)
             cursor = None
+
             while True:
                 closed_response = await self._endpoint_order_history.get(
                     BybitOrderHistoryGetParams(
@@ -352,6 +367,7 @@ class BybitAccountHttpAPI:
 
         all_orders = []
         cursor = None
+
         while True:
             response = await self._endpoint_order_history.get(
                 BybitOrderHistoryGetParams(
@@ -378,14 +394,31 @@ class BybitAccountHttpAPI:
         self,
         product_type: BybitProductType,
         symbol: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
     ) -> list[BybitExecution]:
-        response = await self._endpoint_trade_history.get(
-            BybitTradeHistoryGetParams(
-                category=product_type,
-                symbol=symbol,
-            ),
-        )
-        return response.result.list
+        all_executions = []
+        cursor = None
+
+        while True:
+            response = await self._endpoint_trade_history.get(
+                BybitTradeHistoryGetParams(
+                    category=product_type,
+                    symbol=symbol,
+                    startTime=start_time,
+                    endtime=end_time,
+                    limit=100,
+                    cursor=cursor,
+                ),
+            )
+            all_executions.extend(response.result.list)
+
+            if hasattr(response.result, "nextPageCursor") and response.result.nextPageCursor:
+                cursor = response.result.nextPageCursor
+            else:
+                break
+
+        return all_executions
 
     async def query_order(
         self,
@@ -473,6 +506,7 @@ class BybitAccountHttpAPI:
         sl_quantity: str | None = None,
         tp_limit_price: str | None = None,
         sl_limit_price: str | None = None,
+        active_price: str | None = None,
     ) -> BybitSetTradingStopResponse:
         position_idx = BybitPositionIdx.ONE_WAY  # TODO
         return await self._endpoint_set_trading_stop.post(
@@ -485,7 +519,7 @@ class BybitAccountHttpAPI:
                 trailingStop=trailing_offset,
                 slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
-                activePrice=None,  # Immediately active
+                activePrice=active_price,
                 tpslMode=tpsl_mode,
                 tpSize=tp_quantity,
                 slSize=sl_quantity,

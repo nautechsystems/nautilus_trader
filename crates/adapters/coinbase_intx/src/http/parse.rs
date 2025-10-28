@@ -357,7 +357,7 @@ pub fn parse_order_status_report(
         let avg_px = avg_price
             .parse::<f64>()
             .map_err(|e| anyhow::anyhow!("Invalid value for `avg_px`: {e}"))?;
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if let Some(text) = coinbase_order.text {

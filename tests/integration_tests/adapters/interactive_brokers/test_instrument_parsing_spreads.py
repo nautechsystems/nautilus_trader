@@ -21,17 +21,15 @@ instruments.
 
 import pytest
 
-# fmt: off
-# ruff: noqa: I001
-from nautilus_trader.adapters.interactive_brokers.common import IBContract, IBContractDetails
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-    parse_option_spread,
-    parse_spread_instrument_id,
-)
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_option_spread
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_spread_instrument_id
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import OptionSpread
-from nautilus_trader.model.objects import Currency, Price, Quantity
-# fmt: on
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class TestSpreadInstrumentParsing:
@@ -278,9 +276,7 @@ def test_spread_instrument_parsing_integration():
     """
     Test that spread instrument parsing integration works.
     """
-    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-        parse_spread_instrument_id,
-    )
+    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_spread_instrument_id
 
     # Test basic functionality
     leg1_id = InstrumentId.from_str("SPY C400.SMART")

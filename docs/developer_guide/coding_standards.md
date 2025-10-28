@@ -126,3 +126,36 @@ Here are some guidelines for the style of your commit messages:
 4. Optional: Provide # references to relevant issues or tickets.
 
 5. Optional: Provide any hyperlinks which are informative.
+
+#### Gitlint (optional)
+
+Gitlint is available to help enforce commit message standards automatically. It checks that commit messages follow the guidelines above (character limits, formatting, etc.). This is **opt-in** and not enforced in CI.
+
+**Benefits**: Encourages concise yet expressive commit messages, helps develop clear explanations of changes.
+
+**Installation**: First install gitlint to run it locally:
+
+```bash
+uv pip install gitlint
+```
+
+To enable gitlint as an automatic commit-msg hook:
+
+```bash
+pre-commit install --hook-type commit-msg
+```
+
+**Manual usage**: Check your last commit message:
+
+```bash
+gitlint
+```
+
+Configuration is in `.gitlint` at the repository root:
+
+- **60-character title limit**: Ensures clear rendering on GitHub and encourages brevity while remaining descriptive.
+- **79-character body width**: Aligns with Python's PEP 8 conventions and the traditional limit for git tooling.
+
+:::note
+Gitlint may be enforced in CI in the future, so adopting these practices early helps ensure a smooth transition.
+:::

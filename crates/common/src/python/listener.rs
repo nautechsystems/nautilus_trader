@@ -40,12 +40,12 @@ impl MessageBusListener {
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
-        self.close()
+        self.close();
     }
 
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: String, payload: Vec<u8>) {
-        self.publish(Ustr::from(&topic), Bytes::from(payload))
+        self.publish(Ustr::from(&topic), Bytes::from(payload));
     }
 
     #[pyo3(name = "stream")]

@@ -30,7 +30,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -159,6 +158,8 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     Z: str  # Cumulative quote asset transacted quantity
     Y: str  # Last quote asset transacted quantity (i.e. lastPrice * lastQty)
     Q: str  # Quote Order Qty
+    W: int | None = None  # Working Time (when order was added to the book)
+    V: str | None = None  # Self-Trade Prevention Mode
 
     def parse_to_order_status_report(
         self,
@@ -190,7 +191,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             order_side=order_side,
             order_type=enum_parser.parse_binance_order_type(self.o),
             time_in_force=enum_parser.parse_binance_time_in_force(self.f),
-            order_status=OrderStatus.ACCEPTED,
+            order_status=enum_parser.parse_binance_order_status(self.X),
             price=price,
             trigger_price=trigger_price,
             trigger_type=TriggerType.LAST_PRICE,
@@ -208,7 +209,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             ts_init=ts_init,
         )
 
-    def handle_execution_report(
+    def handle_execution_report(  # noqa: C901 (too complex)
         self,
         exec_client: BinanceCommonExecutionClient,
     ):
@@ -223,6 +224,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
         strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+
         if strategy_id is None:
             report = self.parse_to_order_status_report(
                 account_id=exec_client.account_id,
@@ -234,7 +236,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 enum_parser=exec_client._enum_parser,
             )
             exec_client._send_order_status_report(report)
-        elif self.x == BinanceExecutionType.NEW:
+            return
+
+        if self.x == BinanceExecutionType.NEW:
             exec_client.generate_order_accepted(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -242,17 +246,91 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
-        elif self.x == BinanceExecutionType.TRADE:
+
+            # Check if price changed (for price_match orders)
+            order = exec_client._cache.order(client_order_id)
+            if order and order.has_price:
+                instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+                if instrument is not None:
+                    price_precision = instrument.price_precision
+                    binance_price = Price(float(self.p), price_precision)
+                    if binance_price != order.price:
+                        # Preserve trigger price for stop orders (priceMatch only affects limit price)
+                        trigger_price = order.trigger_price if order.has_trigger_price else None
+                        exec_client.generate_order_updated(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            quantity=order.quantity,
+                            price=binance_price,
+                            trigger_price=trigger_price,
+                            ts_event=ts_event,
+                        )
+        elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
+            if self.x == BinanceExecutionType.CALCULATED:
+                exec_client._log.info(
+                    f"Received CALCULATED (liquidation) execution for order {venue_order_id}, "
+                    f"generating OrderFilled event",
+                )
+
+            if Decimal(self.L) == 0:
+                exec_client._log.warning(
+                    f"Received {self.x.value} execution with L=0 for order {venue_order_id}, "
+                    f"order status={self.X.value}",
+                )
+
+                # Route based on order status to ensure terminal events are generated
+                if self.X == BinanceOrderStatus.EXPIRED:
+                    exec_client.generate_order_expired(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        ts_event=ts_event,
+                    )
+                    return
+                elif self.X == BinanceOrderStatus.CANCELED:
+                    exec_client.generate_order_canceled(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        ts_event=ts_event,
+                    )
+                    return
+                elif self.X in (BinanceOrderStatus.FILLED, BinanceOrderStatus.PARTIALLY_FILLED):
+                    # Continue to generate fill with L=0 to close order
+                    # Better to have bad price data than stuck order
+                    exec_client._log.warning(
+                        f"Generating OrderFilled with L=0 for terminal state {self.X.value} "
+                        f"to prevent order from being stuck",
+                    )
+                else:
+                    # Non-terminal status with L=0, skip fill generation
+                    return
+
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot process fill for {instrument_id}: instrument not found in cache",
+                )
 
             # Determine commission
-            commission_asset: str = self.N
-            commission_amount: str = self.n
+            commission_asset = self.N
+            commission_amount = self.n
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
                 # Binance typically charges commission as base asset or BNB
                 commission = Money(0, instrument.base_currency)
+
+            # Liquidations are always taker, regular trades use the 'm' field
+            liquidity_side = (
+                LiquiditySide.TAKER
+                if self.x == BinanceExecutionType.CALCULATED
+                else (LiquiditySide.MAKER if self.m else LiquiditySide.TAKER)
+            )
 
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,
@@ -267,7 +345,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 last_px=Price.from_str(self.L),
                 quote_currency=instrument.quote_currency,
                 commission=commission,
-                liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
+                liquidity_side=liquidity_side,
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.CANCELED:
@@ -301,6 +379,12 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
+            )
+        elif self.x == BinanceExecutionType.TRADE_PREVENTION:
+            # Self-trade prevention triggered - no actual trade occurred
+            exec_client._log.info(
+                f"Self-trade prevention triggered for order {venue_order_id}, "
+                f"prevented qty={self.l} at price={self.L}",
             )
         else:
             # Event not handled

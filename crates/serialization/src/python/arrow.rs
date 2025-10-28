@@ -24,7 +24,8 @@ use nautilus_model::{
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
-        pyobjects_to_mark_prices, pyobjects_to_quotes, pyobjects_to_trades,
+        pyobjects_to_instrument_closes, pyobjects_to_mark_prices, pyobjects_to_quotes,
+        pyobjects_to_trades,
     },
 };
 use pyo3::{
@@ -80,6 +81,7 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         stringify!(Bar) => Bar::get_schema_map(),
         stringify!(MarkPriceUpdate) => MarkPriceUpdate::get_schema_map(),
         stringify!(IndexPriceUpdate) => IndexPriceUpdate::get_schema_map(),
+        stringify!(InstrumentClose) => InstrumentClose::get_schema_map(),
         _ => {
             return Err(PyTypeError::new_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -123,6 +125,13 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let deltas = pyobjects_to_book_deltas(data)?;
             py_book_deltas_to_arrow_record_batch_bytes(py, deltas)
         }
+        stringify!(OrderBookDepth10) => {
+            let depth_snapshots: Vec<OrderBookDepth10> = data
+                .into_iter()
+                .map(|obj| obj.extract::<OrderBookDepth10>())
+                .collect::<PyResult<Vec<OrderBookDepth10>>>()?;
+            py_book_depth10_to_arrow_record_batch_bytes(py, depth_snapshots)
+        }
         stringify!(QuoteTick) => {
             let quotes = pyobjects_to_quotes(data)?;
             py_quotes_to_arrow_record_batch_bytes(py, quotes)
@@ -144,8 +153,8 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             py_index_prices_to_arrow_record_batch_bytes(py, index_prices)
         }
         stringify!(InstrumentClose) => {
-            let closes = pyobjects_to_index_prices(data)?;
-            py_index_prices_to_arrow_record_batch_bytes(py, closes)
+            let closes = pyobjects_to_instrument_closes(data)?;
+            py_instrument_closes_to_arrow_record_batch_bytes(py, closes)
         }
         _ => Err(PyValueError::new_err(format!(
             "unsupported data type: {data_type}"

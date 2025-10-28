@@ -188,7 +188,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         order_side = parse_order_side(self.side)
         if self.trader_side == PolymarketLiquiditySide.TAKER:
             return order_side
-        else:
+        else:  # MAKER
             return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
 
     def venue_order_id(self, maker_address: str) -> VenueOrderId:

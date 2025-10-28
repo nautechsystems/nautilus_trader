@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Test helpers for loading BitMEX adapter fixtures.
+
 /// Load a test JSON file from the `test_data` directory.
 ///
 /// # Panics

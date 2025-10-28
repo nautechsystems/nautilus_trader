@@ -26,6 +26,7 @@ use nautilus_blockchain::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
+    log_warn,
     logging::log_info,
     runtime::get_runtime,
 };
@@ -36,6 +37,7 @@ use nautilus_model::{
     defi::{Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
     identifiers::{ClientId, InstrumentId, TraderId},
 };
+
 // Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
 // To see additional tracing logs `export RUST_LOG=debug,h2=off`
@@ -56,9 +58,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain = chains::ARBITRUM.clone();
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
-    // let from_block = Some(22_735_000_u64); // Ethereum
-    // let from_block = Some(348_860_000_u64); // Arbitrum
-    let from_block = None; // No sync
 
     let dex_pool_filter = DexPoolFilters::new(Some(true));
 
@@ -71,8 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None, // Multicall calls per RPC request
         Some(wss_rpc_url),
         true, // Use HyperSync for live data
-        // Some(from_block), // from_block
-        from_block,
+        None,
         Some(dex_pool_filter),
         Some(PostgresConnectOptions::default()),
     );
@@ -91,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![InstrumentId::from(
-        "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+        "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",
     )];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
@@ -141,6 +139,14 @@ impl BlockchainSubscriberActorConfig {
         Self::new(client_id, chain, pools)
     }
 
+    /// Returns a string representation of the configuration.
+    fn __repr__(&self) -> String {
+        format!(
+            "BlockchainSubscriberActorConfig(client_id={}, chain={:?}, pools={:?})",
+            self.client_id, self.chain, self.pools
+        )
+    }
+
     /// Returns the client ID.
     #[getter]
     const fn client_id(&self) -> ClientId {
@@ -157,14 +163,6 @@ impl BlockchainSubscriberActorConfig {
     #[getter]
     fn pools(&self) -> Vec<InstrumentId> {
         self.pools.clone()
-    }
-
-    /// Returns a string representation of the configuration.
-    fn __repr__(&self) -> String {
-        format!(
-            "BlockchainSubscriberActorConfig(client_id={}, chain={:?}, pools={:?})",
-            self.client_id, self.chain, self.pools
-        )
     }
 }
 
@@ -256,6 +254,35 @@ impl DataActor for BlockchainSubscriberActor {
         log_info!("Received {block}", color = LogColor::Cyan);
 
         self.received_blocks.push(block.clone());
+
+        {
+            let cache = self.cache();
+
+            for pool_id in &self.config.pools {
+                if let Some(pool_profiler) = cache.pool_profiler(pool_id) {
+                    let total_ticks = pool_profiler.get_active_tick_count();
+                    let total_positions = pool_profiler.get_total_active_positions();
+                    let liquidity = pool_profiler.get_active_liquidity();
+                    let liquidity_utilization_rate = pool_profiler.liquidity_utilization_rate();
+                    log_info!(
+                        "Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
+                        color = LogColor::Magenta
+                    );
+                    log_info!(
+                        "Pool {pool_id} has a liquidity utilization rate of {:.4}%",
+                        liquidity_utilization_rate * 100.0,
+                        color = LogColor::Magenta
+                    );
+                } else {
+                    log_warn!(
+                        "Pool profiler {} not found",
+                        pool_id,
+                        color = LogColor::Magenta
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 

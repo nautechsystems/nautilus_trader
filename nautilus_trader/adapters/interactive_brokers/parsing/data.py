@@ -16,7 +16,6 @@
 import datetime
 from decimal import Decimal
 
-# fmt: off
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarSpecification
@@ -26,8 +25,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 
-
-# fmt: on
 
 MKT_DEPTH_OPERATIONS = {
     0: BookAction.ADD,

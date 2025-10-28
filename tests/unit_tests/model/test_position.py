@@ -1588,6 +1588,7 @@ class TestPosition:
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
+            ts_event=1_000_000_000,  # Explicit non-zero timestamp
         )
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
@@ -1596,6 +1597,12 @@ class TestPosition:
         assert position.event_count == 1
         assert position.last_event is not None
         assert position.last_trade_id is not None
+
+        # Store original timestamps (should be non-zero)
+        original_ts_opened = position.ts_opened
+        original_ts_last = position.ts_last
+        assert original_ts_opened > 0
+        assert original_ts_last > 0
 
         # Act - Purge all events by purging the only order
         position.purge_events_for_order(fill.client_order_id)
@@ -1606,6 +1613,126 @@ class TestPosition:
         assert position.trade_ids == []
         assert position.last_event is None
         assert position.last_trade_id is None
+
+        # Verify timestamps are zeroed - empty shell has no meaningful history
+        assert position.ts_opened == 0
+        assert position.ts_last == 0
+        assert position.ts_closed == 0
+        assert position.duration_ns == 0
+
+        # Verify empty shell reports as closed (this was the bug we fixed!)
+        # is_closed must return True so cache purge logic recognizes empty shells
+        assert position.is_closed
+        assert not position.is_open
+        assert position.side == PositionSide.FLAT
+
+    def test_revive_from_empty_shell(self) -> None:
+        """
+        Test adding a fill to an empty shell position revives it with correct state.
+        """
+        # Arrange: Create position with a fill
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+
+        # Purge all events to create empty shell
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Verify it's an empty shell
+        assert position.is_closed
+        assert position.ts_closed == 0
+        assert position.event_count == 0
+
+        # Act: Add new fill to revive the position
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00020"),
+            ts_event=3_000_000_000,
+        )
+
+        position.apply(fill2)
+
+        # Assert: Position should be alive with new timestamps
+        assert position.is_long
+        assert not position.is_closed
+        # NOTE: Python uses 0 for "not closed", Rust uses None (semantic difference in representation)
+        assert position.ts_closed == 0  # Reset to 0 when reopened (Rust: None)
+        assert position.ts_opened == fill2.ts_event
+        assert position.ts_last == fill2.ts_event
+        assert position.event_count == 1
+        assert position.quantity == Quantity.from_int(50_000)
+
+    def test_empty_shell_position_invariants(self) -> None:
+        """
+        Property-based test: Any position with event_count == 0 must satisfy invariants.
+        This test documents the contract that empty shell positions MUST follow.
+        """
+        # Arrange: Create and purge position to get empty shell
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position.purge_events_for_order(order.client_order_id)
+
+        # INVARIANTS: When event_count == 0, the following MUST be true
+        assert position.event_count == 0, "Precondition: event_count must be 0"
+
+        # Invariant 1: Position must report as closed
+        assert position.is_closed, "INV1: Empty shell must report is_closed == True"
+        assert not position.is_open, "INV1: Empty shell must report is_open == False"
+
+        # Invariant 2: Position must be FLAT
+        assert position.side == PositionSide.FLAT, "INV2: Empty shell must be FLAT"
+
+        # Invariant 3: ts_closed must be 0 (not None, not preserved)
+        assert position.ts_closed == 0, "INV3: Empty shell ts_closed must be 0"
+
+        # Invariant 4: All lifecycle timestamps must be zeroed
+        assert position.ts_opened == 0, "INV4: Empty shell ts_opened must be 0"
+        assert position.ts_last == 0, "INV4: Empty shell ts_last must be 0"
+        assert position.duration_ns == 0, "INV4: Empty shell duration_ns must be 0"
+
+        # Invariant 5: Quantity must be zero
+        assert position.quantity == Quantity.zero(
+            AUDUSD_SIM.size_precision,
+        ), "INV5: Empty shell quantity must be 0"
+
+        # Invariant 6: No events or trade IDs
+        assert position.events == [], "INV6: Empty shell must have no events"
+        assert position.trade_ids == [], "INV6: Empty shell must have no trade IDs"
+        assert position.last_event is None, "INV6: Empty shell must have no last event"
+        assert position.last_trade_id is None, "INV6: Empty shell must have no last trade ID"
 
     def test_commission_accumulation_single_currency(self) -> None:
         """
@@ -2189,7 +2316,11 @@ class TestPosition:
 
     def test_purge_events_preserves_financial_state(self) -> None:
         """
-        Test that purging events doesn't affect financial calculations and state.
+        Test that purging events correctly rebuilds position state from remaining fills.
+
+        When the opening fill is purged, the remaining fill becomes the new opening
+        fill, causing the position to flip sides and recalculate all financial state.
+
         """
         # Arrange
         order1 = self.order_factory.market(
@@ -2223,34 +2354,29 @@ class TestPosition:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        # Capture state before purge
-        avg_px_open_before = position.avg_px_open
-        avg_px_close_before = position.avg_px_close
-        realized_pnl_before = position.realized_pnl
-        realized_return_before = position.realized_return
-        quantity_before = position.quantity
-        signed_qty_before = position.signed_qty
-        side_before = position.side
-        ts_opened_before = position.ts_opened
-        ts_closed_before = position.ts_closed
+        # Before purge: LONG 50,000 @ 1.00 avg open (partially closed at 1.10)
+        assert position.side == PositionSide.LONG
+        assert position.signed_qty == 50_000.0
+        assert position.avg_px_open == 1.0
+        assert position.avg_px_close == 1.1
 
-        # Act - Purge events for order1
+        # Act - Purge the opening BUY fill
         position.purge_events_for_order(order1.client_order_id)
 
-        # Assert - Financial state should be unchanged
-        assert position.avg_px_open == avg_px_open_before
-        assert position.avg_px_close == avg_px_close_before
-        assert position.realized_pnl == realized_pnl_before
-        assert position.realized_return == realized_return_before
-        assert position.quantity == quantity_before
-        assert position.signed_qty == signed_qty_before
-        assert position.side == side_before
-        assert position.ts_opened == ts_opened_before
-        assert position.ts_closed == ts_closed_before
-
-        # But events should be reduced
+        # Assert - Position rebuilt from remaining SELL fill
+        # The SELL now becomes the opening fill, creating a SHORT position
         assert position.event_count == 1  # Only fill2 remains
         assert len(position.trade_ids) == 1
+
+        # State should be recalculated from the remaining fill
+        assert position.side == PositionSide.SHORT  # Flipped to SHORT
+        assert position.signed_qty == -50_000.0  # Now short
+        assert position.quantity == Quantity.from_int(50_000)
+        assert position.avg_px_open == 1.1  # The SELL @ 1.10 is now the opening price
+        assert position.avg_px_close == 0.0  # No closing fills yet
+        assert position.realized_return == 0.0  # No realized return yet
+        assert position.ts_opened == fill2.ts_event  # Opened at fill2, not fill1
+        assert position.ts_closed == 0  # Still open
 
     def test_peak_quantity_tracking(self) -> None:
         """

@@ -39,11 +39,11 @@ impl Default for SyntheticInstrument {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
-        SyntheticInstrument::new(
+        Self::new(
             Symbol::new("BTC-LTC"),
             2,
             vec![btc_binance, ltc_binance],
-            formula.clone(),
+            formula,
             0.into(),
             0.into(),
         )
@@ -201,6 +201,7 @@ pub fn crypto_option_btc_deribit(
         size_precision,
         price_increment,
         size_increment,
+        Some(Quantity::from(1)),
         Some(Quantity::from(1)),
         Some(Quantity::from("9000.0")),
         Some(Quantity::from("0.1")),

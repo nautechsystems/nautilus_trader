@@ -16,8 +16,10 @@
 import asyncio
 
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.currencies import register_currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
@@ -181,18 +183,15 @@ class InstrumentProvider:
                 self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
 
                 await self.load_ids_async(instrument_ids, self._filters)
-        except Exception as e:
-            # Catch unexpected exception to ensure that the self._loading flag
-            # is reset to False
-            self._log.exception("Failed to load instruments", e)
+        finally:
+            # Always reset loading flag
+            self._loading = False
 
         if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")
         else:
             self._log.warning("No instruments were loaded, verify config if this is unexpected")
 
-        # Set state flags
-        self._loading = False
         self._loaded = True
 
         self._log.info("Initialized instruments")
@@ -208,7 +207,8 @@ class InstrumentProvider:
             The venue specific instrument loading filters to apply.
 
         """
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_all_async(filters))
             self._tasks.add(task)
@@ -234,7 +234,8 @@ class InstrumentProvider:
         """
         PyCondition.not_none(instrument_ids, "instrument_ids")
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_ids_async(instrument_ids, filters))
             self._tasks.add(task)
@@ -260,7 +261,8 @@ class InstrumentProvider:
         """
         PyCondition.not_none(instrument_id, "instrument_id")
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_async(instrument_id, filters))
             self._tasks.add(task)
@@ -280,7 +282,7 @@ class InstrumentProvider:
         PyCondition.not_none(currency, "currency")
 
         self._currencies[currency.code] = currency
-        Currency.register(currency, overwrite=False)
+        register_currency(currency, overwrite=False)
 
     def add(self, instrument: Instrument) -> None:
         """

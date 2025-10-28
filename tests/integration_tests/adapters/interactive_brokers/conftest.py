@@ -18,7 +18,6 @@ from unittest.mock import patch
 
 import pytest
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
@@ -34,9 +33,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.mock_client import MockInteractiveBrokersClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
-
-
-# fmt: on
 
 
 def mocked_ib_client(
@@ -122,6 +118,10 @@ def ib_client_running(ib_client):
     ib_client._account_ids = {"DU123456,"}
     ib_client.start()
     yield ib_client
+
+    # Cleanup: stop the client and cancel its background tasks
+    if not ib_client.is_stopped:
+        ib_client.stop()
 
 
 @pytest.fixture()

@@ -13,21 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Final, Generic, TypeVar
+from typing import Any
+from typing import Final
 
 import msgspec
 
 
-T = TypeVar("T")
-
 BYBIT_PONG: Final[str] = "pong"
 
 
-class BybitListResult(Generic[T], msgspec.Struct):
+class BybitListResult[T](msgspec.Struct):
     list: list[T]
 
 
-class BybitListResultWithCursor(BybitListResult[T]):
+class BybitListResultWithCursor[T](BybitListResult[T]):
     nextPageCursor: str | None = None
 
 

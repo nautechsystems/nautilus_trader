@@ -15,7 +15,7 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::{enums::OrderType, identifiers::Venue};
 use ustr::Ustr;
 
 pub const HYPERLIQUID: &str = "HYPERLIQUID";
@@ -31,6 +31,40 @@ pub const HYPERLIQUID_EXCHANGE_URL: &str = "https://api.hyperliquid.xyz/exchange
 pub const HYPERLIQUID_TESTNET_WS_URL: &str = "wss://api.hyperliquid-testnet.xyz/ws";
 pub const HYPERLIQUID_TESTNET_INFO_URL: &str = "https://api.hyperliquid-testnet.xyz/info";
 pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-testnet.xyz/exchange";
+
+/// Hyperliquid supported order types.
+///
+/// # Notes
+///
+/// - All order types support trigger prices except Market and Limit.
+/// - Conditional orders follow patterns from OKX, Bybit, and BitMEX adapters.
+/// - Stop orders (StopMarket/StopLimit) are protective stops (sl).
+/// - If Touched orders (MarketIfTouched/LimitIfTouched) are profit-taking or entry orders (tp).
+/// - Post-only orders are implemented via ALO (Add Liquidity Only) time-in-force.
+///
+/// # Trigger Semantics
+///
+/// Hyperliquid uses last traded price for trigger evaluation.
+/// Future enhancement: Add support for mark/index price triggers if API supports it.
+pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,          // IOC limit order
+    OrderType::Limit,           // Standard limit with GTC/IOC/ALO
+    OrderType::StopMarket,      // Protective stop with market execution
+    OrderType::StopLimit,       // Protective stop with limit price
+    OrderType::MarketIfTouched, // Profit-taking/entry with market execution
+    OrderType::LimitIfTouched,  // Profit-taking/entry with limit price
+];
+
+/// Conditional order types that use trigger orders on Hyperliquid.
+///
+/// These order types require a trigger_price and are implemented using
+/// HyperliquidExecOrderKind::Trigger with appropriate parameters.
+pub const HYPERLIQUID_CONDITIONAL_ORDER_TYPES: &[OrderType] = &[
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
 
 /// Gets WebSocket URL for the specified network.
 pub fn ws_url(is_testnet: bool) -> &'static str {

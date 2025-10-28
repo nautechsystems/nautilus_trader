@@ -54,9 +54,11 @@ if [[ "$branch_name" == "develop" ]]; then
         for i in {1..5}; do
           if aws s3 rm "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/$file" \
             --endpoint-url="${CLOUDFLARE_R2_URL}" --cli-connect-timeout 10 --cli-read-timeout 60; then
-            success=true; break
+            success=true
+            break
           else
-            echo "Delete failed for $file, retrying ($i/5)..."; sleep $((2**i))
+            echo "Delete failed for $file, retrying ($i/5)..."
+            sleep $((2 ** i))
           fi
         done
         if [ "$success" = false ]; then
@@ -115,9 +117,11 @@ if [[ "$branch_name" == "nightly" ]]; then
         for i in {1..5}; do
           if aws s3 rm "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/$file" \
             --endpoint-url="${CLOUDFLARE_R2_URL}" --cli-connect-timeout 10 --cli-read-timeout 60; then
-            success=true; break
+            success=true
+            break
           else
-            echo "Delete failed for $file, retrying ($i/5)..."; sleep $((2**i))
+            echo "Delete failed for $file, retrying ($i/5)..."
+            sleep $((2 ** i))
           fi
         done
         if [ "$success" = false ]; then

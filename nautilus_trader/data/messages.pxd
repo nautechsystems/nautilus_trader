@@ -84,8 +84,6 @@ cdef class SubscribeFundingRates(SubscribeData):
 cdef class SubscribeBars(SubscribeData):
     cdef readonly BarType bar_type
     """The bar type for the subscription."""
-    cdef readonly bint await_partial
-    """If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars."""
 
 
 cdef class SubscribeInstrumentStatus(SubscribeData):

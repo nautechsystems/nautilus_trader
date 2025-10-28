@@ -127,7 +127,7 @@ impl NautilusKernel {
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
             config.trader_id(),
             instance_id,
-            Some(name.to_string()),
+            Some(name.clone()),
             None,
         )));
         set_message_bus(msgbus);

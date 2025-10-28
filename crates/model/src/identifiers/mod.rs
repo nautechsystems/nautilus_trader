@@ -93,8 +93,8 @@ impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 
 /// Print interned string cache statistics for debugging purposes.
 pub fn interned_string_stats() {
-    dbg!(ustr::total_allocated());
-    dbg!(ustr::total_capacity());
+    ustr::total_allocated();
+    ustr::total_capacity();
 
     ustr::string_cache_iter().for_each(|s| println!("{s}"));
 }

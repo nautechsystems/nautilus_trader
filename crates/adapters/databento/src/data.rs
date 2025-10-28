@@ -40,7 +40,7 @@ use nautilus_common::{
     },
     runner::get_data_event_sender,
 };
-use nautilus_core::time::AtomicTime;
+use nautilus_core::{MUTEX_POISONED, time::AtomicTime};
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     enums::BarAggregation,
@@ -187,7 +187,7 @@ impl DatabentoDataClient {
     ///
     /// Returns an error if the feed handler cannot be created.
     fn get_or_create_feed_handler(&self, dataset: &str) -> anyhow::Result<()> {
-        let mut channels = self.cmd_channels.lock().unwrap();
+        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
 
         if !channels.contains_key(dataset) {
             tracing::info!("Creating new feed handler for dataset: {dataset}");
@@ -206,7 +206,7 @@ impl DatabentoDataClient {
     ///
     /// Returns an error if the command cannot be sent.
     fn send_command_to_dataset(&self, dataset: &str, cmd: LiveCommand) -> anyhow::Result<()> {
-        let channels = self.cmd_channels.lock().unwrap();
+        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
         if let Some(tx) = channels.get(dataset) {
             tx.send(cmd)
                 .map_err(|e| anyhow::anyhow!("Failed to send command to dataset {dataset}: {e}"))?;
@@ -310,7 +310,7 @@ impl DatabentoDataClient {
         });
 
         {
-            let mut handles = self.task_handles.lock().unwrap();
+            let mut handles = self.task_handles.lock().expect(MUTEX_POISONED);
             handles.push(feed_handle);
             handles.push(msg_handle);
         }
@@ -353,7 +353,7 @@ impl DataClient for DatabentoDataClient {
         self.cancellation_token.cancel();
 
         // Send close command to all active feed handlers
-        let channels = self.cmd_channels.lock().unwrap();
+        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
         for (dataset, tx) in channels.iter() {
             if let Err(e) = tx.send(LiveCommand::Close) {
                 tracing::error!("Failed to send close command to dataset {dataset}: {e}");
@@ -394,7 +394,7 @@ impl DataClient for DatabentoDataClient {
 
         // Send close command to all active feed handlers
         {
-            let channels = self.cmd_channels.lock().unwrap();
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             for (dataset, tx) in channels.iter() {
                 if let Err(e) = tx.send(LiveCommand::Close) {
                     tracing::error!("Failed to send close command to dataset {dataset}: {e}");
@@ -404,7 +404,7 @@ impl DataClient for DatabentoDataClient {
 
         // Wait for all spawned tasks to complete
         let handles = {
-            let mut task_handles = self.task_handles.lock().unwrap();
+            let mut task_handles = self.task_handles.lock().expect(MUTEX_POISONED);
             std::mem::take(&mut *task_handles)
         };
 
@@ -419,7 +419,7 @@ impl DataClient for DatabentoDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
 
         {
-            let mut channels = self.cmd_channels.lock().unwrap();
+            let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             channels.clear();
         }
 
@@ -446,7 +446,7 @@ impl DataClient for DatabentoDataClient {
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let was_new_handler = {
-            let channels = self.cmd_channels.lock().unwrap();
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             !channels.contains_key(&dataset)
         };
 
@@ -482,7 +482,7 @@ impl DataClient for DatabentoDataClient {
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let was_new_handler = {
-            let channels = self.cmd_channels.lock().unwrap();
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             !channels.contains_key(&dataset)
         };
 
@@ -518,7 +518,7 @@ impl DataClient for DatabentoDataClient {
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let was_new_handler = {
-            let channels = self.cmd_channels.lock().unwrap();
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             !channels.contains_key(&dataset)
         };
 
@@ -557,7 +557,7 @@ impl DataClient for DatabentoDataClient {
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let was_new_handler = {
-            let channels = self.cmd_channels.lock().unwrap();
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
             !channels.contains_key(&dataset)
         };
 

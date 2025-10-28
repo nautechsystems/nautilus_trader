@@ -45,7 +45,7 @@ pub async fn run_analyze_pool(
         .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
     let pool_address = validate_address(&pool_address)?;
 
-    let dex_type = find_dex_type_case_insensitive(&dex, &chain).ok_or_else(|| {
+    let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
         let supported_dexes = get_supported_dexes_for_chain(chain.name);
         if supported_dexes.is_empty() {
             anyhow::anyhow!(
@@ -93,7 +93,8 @@ pub async fn run_analyze_pool(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
     data_client.cache.initialize_chain().await;
     data_client
@@ -101,9 +102,37 @@ pub async fn run_analyze_pool(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {}", e))?;
     data_client
-        .sync_pool_events(&dex_type, pool_address, from_block, to_block, reset)
+        .sync_pool_events(&dex_type, &pool_address, from_block, to_block, reset)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {}", e))?;
 
+    // Profile pool events from database
+    log::info!("Profiling pool events from database...");
+    let pool = data_client
+        .cache
+        .get_pool(&pool_address)
+        .expect("Pool not found in cache")
+        .clone();
+    let (profiler, already_valid) = data_client.bootstrap_latest_pool_profiler(&pool).await?;
+    let snapshot = profiler.extract_snapshot();
+
+    // Save complete pool snapshot to database (includes state, positions, and ticks)
+    log::info!(
+        "Saving pool snapshot with {} positions and {} ticks to database...",
+        snapshot.positions.len(),
+        snapshot.ticks.len()
+    );
+    data_client
+        .cache
+        .add_pool_snapshot(&pool.address, &snapshot)
+        .await?;
+    log::info!("Saved complete pool snapshot to database");
+    data_client
+        .check_snapshot_validity(&profiler, already_valid)
+        .await?;
+    log::info!(
+        "Pool liquidity utilization rate is {:.4}%",
+        profiler.liquidity_utilization_rate() * 100.0
+    );
     Ok(())
 }

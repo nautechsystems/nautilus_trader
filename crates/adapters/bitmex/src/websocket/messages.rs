@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX WebSocket message structures and helper types.
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
@@ -22,6 +24,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::Value;
 use strum::Display;
 use ustr::Ustr;
 use uuid::Uuid;
@@ -122,6 +125,9 @@ pub enum BitmexWsMessage {
         heartbeat_enabled: bool,
         /// Rate limit information.
         limit: BitmexRateLimit,
+        /// Application name (testnet only).
+        #[serde(rename = "appName")]
+        app_name: Option<String>,
     },
     /// Subscription response messages.
     Subscription {
@@ -129,6 +135,8 @@ pub enum BitmexWsMessage {
         success: bool,
         /// The subscription topic if successful.
         subscribe: Option<String>,
+        /// Original request metadata (present for subscribe/auth/unsubscribe).
+        request: Option<BitmexHttpRequest>,
         /// Error message if subscription failed.
         error: Option<String>,
     },
@@ -147,14 +155,14 @@ pub enum BitmexWsMessage {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct BitmexHttpRequest {
     pub op: String,
-    pub args: Vec<String>,
+    pub args: Vec<Value>,
 }
 
 /// Rate limit information from BitMEX API.
 #[derive(Debug, Deserialize)]
 pub struct BitmexRateLimit {
     /// Number of requests remaining in the current time window.
-    pub remaining: i32,
+    pub remaining: Option<i32>,
 }
 
 /// Represents table-based messages.
@@ -482,7 +490,7 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct BitmexExecutionMsg {
     #[serde(rename = "execID")]
-    pub exec_id: Uuid,
+    pub exec_id: Option<Uuid>,
     #[serde(rename = "orderID")]
     pub order_id: Option<Uuid>,
     #[serde(rename = "clOrdID")]

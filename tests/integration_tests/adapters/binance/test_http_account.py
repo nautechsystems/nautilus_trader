@@ -353,3 +353,31 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://fapi.binance.com/fapi/v1/positionSide/dual"
         assert request["params"].startswith("recvWindow=5000&timestamp=")
+
+    @pytest.mark.asyncio()
+    async def test_query_futures_symbol_config_sends_expected_request(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
+
+        # Act
+        await self.futures_api.query_futures_symbol_config(recv_window="5000")
+
+        # Assert
+        request = mock_send_request.call_args.kwargs
+        assert request["method"] == "GET"
+        assert request["url"] == "https://fapi.binance.com/fapi/v1/symbolConfig"
+        assert request["params"].startswith("recvWindow=5000&timestamp=")
+
+    @pytest.mark.asyncio()
+    async def test_query_futures_symbol_config_with_symbol_sends_expected_request(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
+
+        # Act
+        await self.futures_api.query_futures_symbol_config(symbol="ETHUSDT", recv_window="5000")
+
+        # Assert
+        request = mock_send_request.call_args.kwargs
+        assert request["method"] == "GET"
+        assert request["url"] == "https://fapi.binance.com/fapi/v1/symbolConfig"
+        assert request["params"].startswith("symbol=ETHUSDT&recvWindow=5000&timestamp=")

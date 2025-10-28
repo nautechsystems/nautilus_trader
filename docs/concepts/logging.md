@@ -271,3 +271,16 @@ for i in range(number_of_backtests):
 - **Multiple LogGuards per process**: The system supports up to 255 concurrent `LogGuard` instances per process. Each guard increments a reference counter when created and decrements it when dropped.
 - **Thread safety**: The logging subsystem, including `LogGuard`, is thread-safe, ensuring consistent behavior even in multi-threaded environments.
 - **Automatic cleanup**: When the last `LogGuard` is dropped (reference count reaches zero), the logging thread is properly joined to ensure all pending logs are written before the process terminates.
+
+## Platform-specific considerations
+
+### Windows shutdown behavior
+
+On Windows, non-deterministic garbage collection during interpreter shutdown can occasionally
+prevent the logging thread from joining properly. When the last `LogGuard` is dropped, the
+logging subsystem signals the background thread to close and joins it to ensure all pending
+messages are written. If Python's garbage collector delays dropping the guard until after
+interpreter shutdown has begun, this join may not complete, resulting in truncated logs.
+
+This issue is tracked in GitHub [issue #3027](https://github.com/nautechsystems/nautilus_trader/issues/3027).
+A more deterministic shutdown mechanism is under consideration.

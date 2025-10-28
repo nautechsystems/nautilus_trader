@@ -330,7 +330,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::from(1)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {

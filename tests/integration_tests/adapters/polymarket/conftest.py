@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -21,11 +20,6 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENU
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.model.identifiers import Venue
-
-
-@pytest.fixture(scope="session")
-def loop():
-    return asyncio.get_event_loop()
 
 
 @pytest.fixture(scope="session")

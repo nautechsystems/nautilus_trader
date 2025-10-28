@@ -16,7 +16,7 @@
 import pandas as pd
 from numpy import float64
 
-from nautilus_trader.analysis.statistics.win_rate import WinRate
+from nautilus_trader.analysis import WinRate
 
 
 class TestWinRatePortfolioStatistic:

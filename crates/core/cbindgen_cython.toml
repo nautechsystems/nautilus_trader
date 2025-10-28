@@ -9,11 +9,7 @@ tab_width = 4
 header = '"../includes/core.h"'
 
 [cython.cimports]
-"libc.stdint" = [
-    "uint8_t",
-    "uint64_t",
-    "uintptr_t",
-]
+"libc.stdint" = ["uint8_t", "uint64_t", "uintptr_t"]
 
 [export]
 # A list of additional items to always include in the generated bindings if they're

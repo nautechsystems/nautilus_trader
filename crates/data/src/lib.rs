@@ -61,5 +61,8 @@ pub mod aggregation;
 pub mod client;
 pub mod engine;
 
+#[cfg(feature = "defi")]
+pub mod defi;
+
 // Re-exports
 pub use client::{DataClient, DataClientAdapter};

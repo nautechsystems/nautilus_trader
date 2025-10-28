@@ -19,7 +19,6 @@ which may be presented directly by a venue, or through a broker intermediary.
 
 import asyncio
 import functools
-import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
@@ -35,6 +34,7 @@ from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import MILLISECONDS_IN_SECOND
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -214,10 +214,7 @@ class LiveExecutionClient(ExecutionClient):
             return
 
         if e:
-            tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            self._log.error(
-                f"Error on '{task.get_name()}': {task.exception()!r}\n{tb_str}",
-            )
+            self._log.exception(f"Error on '{task.get_name()}'", e)
         else:
             if actions:
                 try:
@@ -523,6 +520,44 @@ class LiveExecutionClient(ExecutionClient):
             return
 
         self._send_order_status_report(report)
+
+    async def _await_account_registered(
+        self,
+        timeout_secs: float = 30.0,
+        log_registered: bool = True,
+    ) -> None:
+        # This method polls the cache to ensure the account state event has been
+        # processed and the account is available. This prevents race conditions
+        # during startup where strategies or portfolio calculations may try to
+        # access the account before it's registered.
+
+        if not self.account_id:
+            self._log.warning("Cannot await account registration: account_id not set")
+            return
+
+        # Check if account already registered first
+        if self._cache.account(self.account_id):
+            if log_registered:
+                self._log_account_registered()
+            return
+
+        interval_ms = 10  # Check every 10ms
+        interval_secs = interval_ms / MILLISECONDS_IN_SECOND
+        max_attempts = int((timeout_secs * MILLISECONDS_IN_SECOND) / interval_ms)
+
+        for _ in range(1, max_attempts + 1):
+            if self._cache.account(self.account_id):
+                if log_registered:
+                    self._log_account_registered()
+                return
+            await asyncio.sleep(interval_secs)
+
+        raise RuntimeError(
+            f"Account {self.account_id} not registered in cache after {timeout_secs}s timeout",
+        )
+
+    def _log_account_registered(self) -> None:
+        self._log.info(f"Account {self.account_id} registered in cache", LogColor.GREEN)
 
     ############################################################################
     # Coroutines to implement

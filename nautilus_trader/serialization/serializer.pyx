@@ -16,11 +16,13 @@
 import re
 from typing import Any
 
-from libc.stdint cimport uint64_t
-
 import pandas as pd
 import pytz
 from msgspec import msgpack
+
+from nautilus_trader.common.config import msgspec_encoding_hook as _base_msgspec_encoding_hook
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
@@ -86,7 +88,7 @@ cdef class MsgSpecSerializer(Serializer):
             delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
             if delegate is None:
                 if isinstance(obj, _PRIMITIVES):
-                    return self._encode(obj)
+                    return self._encode(obj, enc_hook=_serializer_encoding_hook)
                 else:
                     raise RuntimeError(f"cannot serialize object: unrecognized type {type(obj)}")
             obj_dict = delegate(obj)
@@ -107,7 +109,7 @@ cdef class MsgSpecSerializer(Serializer):
                 if value is not None:
                     obj_dict[key] = str(value)
 
-        return self._encode(obj_dict)
+        return self._encode(obj_dict, enc_hook=_serializer_encoding_hook)
 
     cpdef object deserialize(self, bytes obj_bytes):
         """
@@ -158,3 +160,11 @@ cdef class MsgSpecSerializer(Serializer):
             return obj_dict
 
         return delegate(obj_dict)
+
+
+def _serializer_encoding_hook(obj: Any) -> Any:
+    if isinstance(obj, pd.Timestamp):
+        return obj.value
+    if isinstance(obj, pd.Timedelta):
+        return obj.value
+    return _base_msgspec_encoding_hook(obj)

@@ -233,7 +233,6 @@ mod tests {
 
     #[rstest]
     fn test_instrument_id_to_symbol_string_updates_map() {
-        use nautilus_model::identifiers::Venue;
         let symbol = Symbol::from("TEST");
         let venue = Venue::from("XNAS");
         let instrument_id = InstrumentId::new(symbol, venue);

@@ -13,7 +13,7 @@ for i in {1..5}; do
     break
   else
     echo "Failed to upload index.html, retrying ($i/5)..."
-    sleep $((2**i))
+    sleep $((2 ** i))
   fi
 done
 

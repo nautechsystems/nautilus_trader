@@ -36,6 +36,8 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The `fsspec` filesystem protocol for the catalog.
     fs_storage_options : dict, optional
         The `fsspec` storage options.
+    fs_rust_storage_options : dict, optional
+        The `fsspec` storage options for the Rust backend.
     flush_interval_ms : int, optional
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
@@ -59,6 +61,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
     catalog_path: str
     fs_protocol: str | None = None
     fs_storage_options: dict | None = None
+    fs_rust_storage_options: dict | None = None
     flush_interval_ms: int | None = None
     replace_existing: bool = False
     include_types: list[type] | None = None
@@ -79,6 +82,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
             path=self.catalog_path,
             fs_protocol=self.fs_protocol,
             fs_storage_options=self.fs_storage_options,
+            fs_rust_storage_options=self.fs_rust_storage_options,
         )
 
 
@@ -94,10 +98,13 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
         The fsspec file system protocol for the data catalog.
     fs_storage_options : dict, optional
         The fsspec storage options for the data catalog.
+    fs_rust_storage_options : dict, optional
+        The fsspec storage options for the Rust backend.
 
     """
 
     path: str
     fs_protocol: str | None = None
     fs_storage_options: dict | None = None
+    fs_rust_storage_options: dict | None = None
     name: str | None = None

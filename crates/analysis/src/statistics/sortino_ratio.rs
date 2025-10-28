@@ -13,10 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the Sortino ratio for portfolio returns.
+///
+/// The Sortino ratio is a variation of the Sharpe ratio that only penalizes downside
+/// volatility, making it more appropriate for strategies with asymmetric return distributions.
+///
+/// Formula: `Mean Return / Downside Deviation * sqrt(period)`
+///
+/// Where downside deviation is calculated as:
+/// `sqrt(sum(negative_returns^2) / total_observations)`
+///
+/// Note: Uses total observations count (not just negative returns) as per Sortino's methodology.
+///
+/// # References
+///
+/// - Sortino, F. A., & van der Meer, R. (1991). "Downside Risk". *Journal of Portfolio Management*, 17(4), 27-31.
+/// - Sortino, F. A., & Price, L. N. (1994). "Performance Measurement in a Downside Risk Framework".
+///   *Journal of Investing*, 3(3), 59-64.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
@@ -35,11 +56,17 @@ impl SortinoRatio {
     }
 }
 
+impl Display for SortinoRatio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Sortino Ratio ({} days)", self.period)
+    }
+}
+
 impl PortfolioStatistic for SortinoRatio {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(SortinoRatio).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
@@ -67,7 +94,18 @@ impl PortfolioStatistic for SortinoRatio {
 
         Some(annualized_ratio)
     }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -126,6 +164,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let ratio = SortinoRatio::new(None);
-        assert_eq!(ratio.name(), "SortinoRatio");
+        assert_eq!(ratio.name(), "Sortino Ratio (252 days)");
     }
 }

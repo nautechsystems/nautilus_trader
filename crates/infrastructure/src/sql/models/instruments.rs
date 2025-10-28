@@ -497,6 +497,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
         let multiplier = row
             .try_get::<String, _>("multiplier")
             .map(|res| Quantity::from(res.as_str()))?;
+        let lot_size = row
+            .try_get::<String, _>("lot_size")
+            .map(|res| Quantity::from(res.as_str()))?;
         let max_quantity = row
             .try_get::<Option<String>, _>("max_quantity")
             .ok()
@@ -552,6 +555,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
             price_increment,
             size_increment,
             Some(multiplier),
+            Some(lot_size),
             max_quantity,
             min_quantity,
             max_notional,

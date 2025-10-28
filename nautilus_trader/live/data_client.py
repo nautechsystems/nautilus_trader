@@ -22,7 +22,6 @@ It could also be possible to write clients for specialized data providers.
 
 import asyncio
 import functools
-import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
@@ -204,10 +203,7 @@ class LiveDataClient(DataClient):
             return
 
         if e:
-            tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            self._log.error(
-                f"Error on '{task.get_name()}': {task.exception()!r}\n{tb_str}",
-            )
+            self._log.exception(f"Error on '{task.get_name()}'", e)
         else:
             if actions:
                 try:
@@ -512,12 +508,7 @@ class LiveMarketDataClient(MarketDataClient):
         exception: BaseException | None = None,
     ) -> None:
         if exception:
-            tb_str = "".join(
-                traceback.format_exception(type(exception), exception, exception.__traceback__),
-            )
-            self._log.error(
-                f"Error running '{coro_name}': {exception!r}\n{tb_str}",
-            )
+            self._log.exception(f"Error running '{coro_name}'", exception)
         else:
             self._log.debug(f"Coroutine '{coro_name}' completed")
 

@@ -34,6 +34,7 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
@@ -51,11 +52,14 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -349,6 +353,312 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert self.exec_engine.command_count == 1  # <-- Initial account event
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_reduce_only_order_when_closing_full_cash_position_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        exit_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-None-1"),
+            order=exit_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+        self.exec_engine.process(TestEventStubs.order_submitted(exit_order))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(exit_order, venue_order_id=VenueOrderId("2")),
+        )
+        self.exec_engine.process(TestEventStubs.order_filled(exit_order, _AUDUSD_SIM))
+
+        # Assert
+        assert entry_order.status == OrderStatus.FILLED
+        assert exit_order.status == OrderStatus.FILLED
+        assert self.exec_engine.command_count == 2
+        assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
+
+    def test_submit_reduce_only_order_with_missing_position_denies_cash(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        exit_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("INVALID-POS"),
+            order=exit_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+
+        # Assert
+        assert exit_order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 1  # Only the entry was forwarded
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_reduce_only_order_when_quantity_exceeds_position_denies_cash(self):
+        # Arrange
+        self.exec_engine.start()
+
+        limited_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(0, USD),
+                    Money(100_002, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_cash_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, _AUDUSD_SIM))
+
+        filled_cash_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_002, USD),
+                    Money(100_000, USD),
+                    Money(2, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(filled_cash_state)
+
+        oversize_exit = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_001),
+            reduce_only=True,
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-None-1"),
+            order=oversize_exit,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+
+        # Assert
+        assert oversize_exit.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 1  # Only the entry was forwarded
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_reduce_only_order_when_position_already_closed_then_denies(self):
@@ -1333,10 +1643,37 @@ class TestRiskEngineWithCashAccount:
 
     def test_submit_order_when_quote_quantity_buy_within_balance_then_allows(self):
         # Arrange - Setup crypto instrument for quote quantity orders
-        self.cache.add_instrument(_ETHUSDT_BINANCE)
+        # Create ETHUSD with SIM venue to match the test account (USD not USDT to match account currency)
+        ethusd_sim = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETHUSD"),
+                venue=self.venue,  # Use SIM venue
+            ),
+            raw_symbol=Symbol("ETHUSD"),
+            base_currency=ETH,
+            quote_currency=USD,  # USD to match account currency
+            price_precision=2,
+            size_precision=5,
+            price_increment=Price(0.01, precision=2),
+            size_increment=Quantity(0.00001, precision=5),
+            lot_size=None,
+            max_quantity=Quantity(9000, precision=5),
+            min_quantity=Quantity(0.00001, precision=5),
+            max_notional=None,
+            min_notional=Money(10.00, USD),
+            max_price=Price(1000000, precision=2),
+            min_price=Price(0.01, precision=2),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0001"),
+            taker_fee=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(ethusd_sim)
 
         quote = TestDataStubs.quote_tick(
-            instrument=_ETHUSDT_BINANCE,
+            instrument=ethusd_sim,
             bid_price=2000.0,
             ask_price=2010.0,
         )
@@ -1354,12 +1691,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Create order with quote_quantity=True
-        # Account has 1M USD, order for 400 USDT (quote currency)
+        # Account has 1M USD, order for 400 USD (quote currency)
         # At price 2010, this equals ~0.199 ETH (base currency)
         order = strategy.order_factory.market(
-            _ETHUSDT_BINANCE.id,
+            ethusd_sim.id,
             OrderSide.BUY,
-            Quantity.from_int(400),  # 400 USDT quote quantity
+            Quantity.from_int(400),  # 400 USD quote quantity
             quote_quantity=True,
         )
 
@@ -1381,10 +1718,37 @@ class TestRiskEngineWithCashAccount:
 
     def test_submit_order_when_quote_quantity_buy_over_balance_then_denies(self):
         # Arrange - Setup crypto instrument for quote quantity orders
-        self.cache.add_instrument(_ETHUSDT_BINANCE)
+        # Create ETHUSD with SIM venue to match the test account (USD not USDT to match account currency)
+        ethusd_sim = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETHUSD"),
+                venue=self.venue,  # Use SIM venue
+            ),
+            raw_symbol=Symbol("ETHUSD"),
+            base_currency=ETH,
+            quote_currency=USD,  # USD to match account currency
+            price_precision=2,
+            size_precision=5,
+            price_increment=Price(0.01, precision=2),
+            size_increment=Quantity(0.00001, precision=5),
+            lot_size=None,
+            max_quantity=Quantity(9000, precision=5),
+            min_quantity=Quantity(0.00001, precision=5),
+            max_notional=None,
+            min_notional=Money(10.00, USD),
+            max_price=Price(1000000, precision=2),
+            min_price=Price(0.01, precision=2),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0001"),
+            taker_fee=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(ethusd_sim)
 
         quote = TestDataStubs.quote_tick(
-            instrument=_ETHUSDT_BINANCE,
+            instrument=ethusd_sim,
             bid_price=2000.0,
             ask_price=2010.0,
         )
@@ -1402,11 +1766,11 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Create order with quote_quantity=True that exceeds balance
-        # Account has 1M USD, order for 2M USDT (quote currency) - exceeds balance
+        # Account has 1M USD, order for 2M USD (quote currency) - exceeds balance
         order = strategy.order_factory.market(
-            _ETHUSDT_BINANCE.id,
+            ethusd_sim.id,
             OrderSide.BUY,
-            Quantity.from_int(2_000_000),  # 2M USDT quote quantity - exceeds 1M USD balance
+            Quantity.from_int(2_000_000),  # 2M USD quote quantity - exceeds 1M USD balance
             quote_quantity=True,
         )
 
@@ -1422,7 +1786,168 @@ class TestRiskEngineWithCashAccount:
         # Act
         self.risk_engine.execute(submit_order)
 
-        # Assert - Order should be denied since 2M USDT exceeds 1M USD balance
+        # Assert - Order should be denied since 2M USD exceeds 1M USD balance
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0
+
+    def test_submit_order_with_quote_quantity_validates_against_effective_quantity(self):
+        # Arrange - Create BTCUSDT instrument with max_quantity = 83 BTC
+        btc_usdt = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT"),
+                venue=self.venue,  # Use SIM venue to match the default account
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            price_precision=1,
+            size_precision=6,
+            price_increment=Price(0.1, precision=1),
+            size_increment=Quantity(0.000001, precision=6),
+            lot_size=Quantity(0.000001, precision=6),
+            max_quantity=Quantity(83, precision=6),  # 83 BTC max
+            min_quantity=Quantity(0.000011, precision=6),
+            max_notional=Money(8_000_000, USDT),
+            min_notional=Money(5, USDT),
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal("-0.00005"),
+            taker_fee=Decimal("0.00015"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(btc_usdt)
+
+        # Prepare market - BTC price at $100,000
+        # This means 100 USDT quote quantity = 0.001 BTC base quantity
+        quote = QuoteTick(
+            instrument_id=btc_usdt.id,
+            bid_price=Price(99999.9, precision=1),
+            ask_price=Price(100000.0, precision=1),
+            bid_size=Quantity(1.0, precision=6),
+            ask_size=Quantity(1.0, precision=6),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity = 100 USDT
+        # Effective quantity: 100 USDT / $100,000 = 0.001 BTC
+        # Should be ALLOWED since 0.001 < 83 BTC max_quantity
+        # Before fix: Would compare 100 > 83 and incorrectly DENY
+        order = strategy.order_factory.market(
+            btc_usdt.id,
+            OrderSide.BUY,
+            Quantity.from_int(100),  # 100 USDT quote quantity
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be allowed (effective quantity 0.001 BTC < 83 BTC)
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1
+
+    def test_submit_order_with_quote_quantity_exceeds_max_after_conversion(self):
+        # Arrange - Create BTCUSDT instrument with max_quantity = 0.5 BTC (small limit)
+        btc_usdt = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT"),
+                venue=self.venue,  # Use SIM venue to match the default account
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            price_precision=1,
+            size_precision=6,
+            price_increment=Price(0.1, precision=1),
+            size_increment=Quantity(0.000001, precision=6),
+            lot_size=Quantity(0.000001, precision=6),
+            max_quantity=Quantity(0.5, precision=6),  # 0.5 BTC max (small limit)
+            min_quantity=Quantity(0.000011, precision=6),
+            max_notional=Money(8_000_000, USDT),
+            min_notional=Money(5, USDT),
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal("-0.00005"),
+            taker_fee=Decimal("0.00015"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(btc_usdt)
+
+        # Prepare market - BTC price at $100,000
+        # This means 100,000 USDT quote quantity = 1 BTC base quantity
+        quote = QuoteTick(
+            instrument_id=btc_usdt.id,
+            bid_price=Price(99999.9, precision=1),
+            ask_price=Price(100000.0, precision=1),
+            bid_size=Quantity(1.0, precision=6),
+            ask_size=Quantity(1.0, precision=6),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity = 100,000 USDT
+        # Effective quantity: 100,000 USDT / $100,000 = 1 BTC
+        # Should be DENIED since 1 > 0.5 BTC max_quantity
+        order = strategy.order_factory.market(
+            btc_usdt.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),  # 100,000 USDT quote quantity
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be denied (effective quantity 1 BTC > 0.5 BTC)
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0
 

@@ -1,0 +1,12 @@
+{
+  "execID": "00000000-006d-1000-0000-001e7f5081ad",
+  "orderID": "ece0a2cc-7729-4f4c-bc6c-65d7c723e75b",
+  "account": 1667725,
+  "execType": "CancelReject",
+  "ordStatus": "Rejected",
+  "workingIndicator": false,
+  "ordRejReason": "Invalid orderID",
+  "text": "Invalid orderID",
+  "transactTime": "2025-09-05T05:38:28.001Z",
+  "timestamp": "2025-09-05T05:38:28.001Z"
+}

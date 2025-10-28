@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import threading
 from asyncio import Future
 from asyncio import Queue
 from collections.abc import Callable
@@ -79,9 +80,9 @@ class ActorExecutor:
 
     Warnings
     --------
-    This executor is not thread-safe and must be invoked from the same thread in which
-    it was created. Special care should be taken to ensure thread consistency when integrating
-    with multi-threaded applications.
+    This executor is not fully thread-safe. Only `queue_for_executor` can be safely called
+    from other threads. All other methods (`cancel_task`, `get_future`, `reset`, etc.) must
+    be invoked from the same thread in which the executor was created (the event loop thread).
 
     """
 
@@ -111,7 +112,6 @@ class ActorExecutor:
 
         """
         self.cancel_all_tasks()
-        self._drain_queue()
 
         self._active_tasks.clear()
         self._future_index.clear()
@@ -137,7 +137,7 @@ class ActorExecutor:
         """
         Shutdown the executor in an async context.
 
-        This will cancel the inner worker task.
+        This will cancel the inner worker task and shutdown the underlying executor.
 
         """
         self._worker_task.cancel()
@@ -148,11 +148,22 @@ class ActorExecutor:
         except TimeoutError:
             self._log.error("Executor: TimeoutError shutting down worker")
 
+        # Use a dedicated thread to avoid self-join issue when the executor
+        # is also the loop's default executor
+        def _shutdown_executor():
+            self._executor.shutdown(wait=True)
+
+        shutdown_thread = threading.Thread(target=_shutdown_executor, daemon=False)
+        shutdown_thread.start()
+
+        while shutdown_thread.is_alive():
+            await asyncio.sleep(0.01)
+
     def _drain_queue(self) -> None:
         # Drain the internal task queue (this will not execute the tasks)
         while not self._queue.empty():
             task_id, _, _, _ = self._queue.get_nowait()
-            self._log.info(f"Executor: Dequeued {task_id} prior to execution")
+            self._log.debug(f"Executor: Dequeued {task_id} prior to execution")
         self._queued_tasks.clear()
 
     def _add_active_task(self, task_id: TaskId, task: Future[Any]) -> None:
@@ -162,18 +173,33 @@ class ActorExecutor:
     async def _worker(self) -> None:
         try:
             while True:
-                task_id, func, args, kwargs = await self._queue.get()
-                if task_id not in self._queued_tasks:
-                    continue  # Already canceled
+                task_id = None
+                item_dequeued = False
 
-                task = self._submit_to_executor(func, *args, **kwargs)
+                try:
+                    task_id, func, args, kwargs = await self._queue.get()
+                    item_dequeued = True
 
-                self._add_active_task(task_id, task)
-                self._log.debug(f"Executor: Scheduled {task_id}, {task}")
+                    if task_id not in self._queued_tasks:
+                        continue  # Already canceled
 
-                # Sequentially execute tasks
-                await asyncio.wrap_future(self._active_tasks[task_id])
-                self._queue.task_done()
+                    self._queued_tasks.discard(task_id)
+
+                    task = self._submit_to_executor(func, *args, **kwargs)
+
+                    self._add_active_task(task_id, task)
+                    self._log.debug(f"Executor: Scheduled {task_id}, {task}")
+
+                    await asyncio.wrap_future(self._active_tasks[task_id])
+                except asyncio.CancelledError:
+                    current_task = asyncio.current_task()
+                    if current_task and current_task.cancelling() > 0:
+                        raise  # Worker shutdown, propagate up
+                    self._log.debug(f"Executor: Task {task_id} cancelled during execution")
+                finally:
+                    # Only call task_done if we actually dequeued an item
+                    if item_dequeued:
+                        self._queue.task_done()
         except asyncio.CancelledError:
             self._log.debug("Executor: Canceled inner worker task")
 
@@ -189,13 +215,13 @@ class ActorExecutor:
         if task.done():
             try:
                 if task.exception() is not None:
-                    self._log.error(f"Executor: Exception in {task_id}: {task.exception()}")
+                    self._log.exception(f"Executor: Exception in {task_id}", task.exception())
                     return
             except asyncio.CancelledError:
-                # Make this a warning level for now
                 self._log.warning(f"Executor: Canceled {task_id}")
                 return
-            self._log.info(f"Executor: Completed {task_id}")
+
+            self._log.debug(f"Executor: Completed {task_id}")
 
     def _submit_to_executor(
         self,
@@ -260,7 +286,7 @@ class ActorExecutor:
         TaskId
 
         """
-        self._log.info(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
+        self._log.debug(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
         task: Future = self._submit_to_executor(func, *args, **kwargs)
 
         task_id = TaskId.create()
@@ -328,7 +354,7 @@ class ActorExecutor:
         """
         if task_id in self._queued_tasks:
             self._queued_tasks.discard(task_id)
-            self._log.info(f"Executor: Canceled {task_id} prior to execution")
+            self._log.debug(f"Executor: Canceled {task_id} prior to execution")
             return
 
         task: Future | None = self._active_tasks.pop(task_id, None)
@@ -339,7 +365,7 @@ class ActorExecutor:
         self._future_index.pop(task, None)
 
         result = task.cancel()
-        self._log.info(f"Executor: Canceled {task_id} with result {result}")
+        self._log.debug(f"Executor: Canceled {task_id} with result {result}")
 
     def cancel_all_tasks(self) -> None:
         """
@@ -352,3 +378,5 @@ class ActorExecutor:
 
         for task_id in self._active_tasks.copy():
             self.cancel_task(task_id)
+
+        self._worker_task = self._loop.create_task(self._worker())

@@ -14,11 +14,7 @@ after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;
 rename_variants = "ScreamingSnakeCase"
 
 [export]
-exclude = [
-    "BarAggregation",
-    "OrderId",
-    "OrderSideSpecified",
-]
+exclude = ["BarAggregation", "OrderId", "OrderSideSpecified"]
 
 [export.rename]
 "u128" = "uint128_t"

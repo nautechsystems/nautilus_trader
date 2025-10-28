@@ -15,7 +15,38 @@
 
 from typing import Final
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.objects import Currency
+
+
+def register_currency(currency: Currency, overwrite: bool = False) -> None:
+    """
+    Register a currency in both Cython and PyO3 currency maps.
+
+    This ensures the currency is available to both the Cython-based code
+    (nautilus_trader.model.objects.Currency) and PyO3-based code
+    (nautilus_trader.core.nautilus_pyo3.Currency).
+
+    Parameters
+    ----------
+    currency : Currency
+        The currency to register.
+    overwrite : bool, default False
+        If the currency in the internal currency maps should be overwritten.
+
+    """
+    Currency.register(currency, overwrite)
+
+    pyo3_currency_type = nautilus_pyo3.CurrencyType.from_str(currency.currency_type.name)
+
+    pyo3_currency = nautilus_pyo3.Currency(
+        code=currency.code,
+        precision=currency.precision,
+        iso4217=currency.iso4217,
+        name=currency.name,
+        currency_type=pyo3_currency_type,
+    )
+    nautilus_pyo3.Currency.register(pyo3_currency, overwrite)
 
 
 # Fiat currencies

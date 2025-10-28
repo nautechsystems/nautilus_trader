@@ -13,27 +13,46 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
+use crate::{Returns, statistic::PortfolioStatistic};
 
 /// Calculates the win rate of a trading strategy based on realized PnLs.
 ///
 /// Win rate is the percentage of profitable trades out of total trades:
-/// Number of Winning Trades / Total Number of Trades
+/// `Count(Trades with PnL > 0) / Total Trades`
 ///
 /// Returns a value between 0.0 and 1.0, where 1.0 represents 100% winning trades.
+///
+/// Note: While a high win rate is desirable, it should be considered alongside
+/// average win/loss sizes and profit factor for complete system evaluation.
+///
+/// # References
+///
+/// - Standard trading performance metric across the industry
+/// - Tharp, V. K. (1998). *Trade Your Way to Financial Freedom*. McGraw-Hill.
+/// - Kaufman, P. J. (2013). *Trading Systems and Methods* (5th ed.). Wiley.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct WinRate {}
 
+impl Display for WinRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Win Rate")
+    }
+}
+
 impl PortfolioStatistic for WinRate {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(WinRate).to_string()
+        self.to_string()
     }
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -47,7 +66,18 @@ impl PortfolioStatistic for WinRate {
         let total_trades = winners.len() + losers.len();
         Some(winners.len() as f64 / total_trades.max(1) as f64)
     }
+    fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -94,6 +124,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let win_rate = WinRate {};
-        assert_eq!(win_rate.name(), "WinRate");
+        assert_eq!(win_rate.name(), "Win Rate");
     }
 }

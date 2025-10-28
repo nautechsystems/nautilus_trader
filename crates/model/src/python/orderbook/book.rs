@@ -40,8 +40,7 @@ impl OrderBook {
     }
 
     fn __str__(&self) -> String {
-        // TODO: Return debug string for now
-        format!("{self:?}")
+        self.to_string()
     }
 
     #[getter]
@@ -134,13 +133,13 @@ impl OrderBook {
     }
 
     #[pyo3(name = "apply_delta")]
-    fn py_apply_delta(&mut self, delta: &OrderBookDelta) {
-        self.apply_delta(delta);
+    fn py_apply_delta(&mut self, delta: &OrderBookDelta) -> PyResult<()> {
+        self.apply_delta(delta).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "apply_deltas")]
-    fn py_apply_deltas(&mut self, deltas: &OrderBookDeltas) {
-        self.apply_deltas(deltas);
+    fn py_apply_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
+        self.apply_deltas(deltas).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "apply_depth")]

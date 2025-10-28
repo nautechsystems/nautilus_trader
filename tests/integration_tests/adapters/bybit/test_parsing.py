@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
+from nautilus_trader.adapters.bybit.schemas.account.balance import BybitCoinBalance
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -206,3 +209,40 @@ class TestBybitParsing:
         # Assert
         assert result_buy is None
         assert result_sell is None
+
+
+def test_parse_wallet_balance_with_spot_borrow():
+    """
+    Test that spotBorrow is correctly subtracted from walletBalance.
+    """
+    coin_data = {
+        "availableToBorrow": "5000",
+        "bonus": "0",
+        "accruedInterest": "0.50",
+        "availableToWithdraw": "800.00",
+        "totalOrderIM": "0",
+        "equity": "1000.00",
+        "usdValue": "1000.00",
+        "borrowAmount": "200.00",
+        "totalPositionMM": "0",
+        "totalPositionIM": "0",
+        "walletBalance": "1200.00",
+        "unrealisedPnl": "0",
+        "cumRealisedPnl": "100.00",
+        "locked": "0",
+        "collateralSwitch": True,
+        "marginCollateral": True,
+        "coin": "USDT",
+        "spotBorrow": "200.00",
+    }
+
+    coin_balance = BybitCoinBalance(**coin_data)
+    account_balance = coin_balance.parse_to_account_balance()
+
+    # Verify: actual_balance = walletBalance - spotBorrow = 1200 - 200 = 1000
+    assert account_balance.total.as_decimal() == Decimal("1000.00")
+    assert account_balance.locked.as_decimal() == Decimal("0")
+    assert account_balance.free.as_decimal() == Decimal("1000.00")
+
+    # Verify invariant: total = locked + free
+    assert account_balance.total.raw == account_balance.locked.raw + account_balance.free.raw

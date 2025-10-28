@@ -126,6 +126,8 @@ cdef class DataEngine(Component):
     cdef readonly int _time_bars_build_delay
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
+    cdef readonly bint _emit_quotes_from_book
+    cdef readonly bint _emit_quotes_from_book_depths
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -259,7 +261,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_order_book_depths(self, list depths)
-    cpdef void _handle_bars(self, list bars, Bar partial)
+    cpdef void _handle_bars(self, list bars)
     cpdef dict _handle_aggregated_bars(self, DataResponse response)
     cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 

@@ -20,7 +20,6 @@ from functools import partial
 import pytest
 from ibapi.order_state import OrderState as IBOrderState
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
@@ -36,8 +35,6 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
-
-# fmt: on
 
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 

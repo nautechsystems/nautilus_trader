@@ -14,6 +14,21 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Common `Currency` constants.
+//!
+//! Precision and metadata references:
+//! - ISO 4217 Maintenance Agency dataset (<https://github.com/datasets/currency-codes>):
+//!   authoritative alphabetic codes, numeric codes, and minor units for fiat and commodity-backed entries.
+//! - Cardano ledger documentation (<https://docs.cardano.org/native-tokens/understanding-assets>):
+//!   1 ADA = 1,000,000 lovelace, underpinning the six-decimal crypto precision we retain.
+//! - XRPL documentation on drops (<https://xrpl.org/xrp-ledger-tokens.html#drops-and-xrp>):
+//!   1 XRP = 1,000,000 drops, confirming the six-decimal allowance for XRP.
+//! - Tezos protocol reference (<https://tezos.gitlab.io/active/numismatics.html>):
+//!   1 tez = 1,000,000 mutez, informing the six-decimal precision for XTZ.
+//! - Stablecoin contract metadata on Etherscan for USDC, USDP, and BRZ
+//!   (e.g. <https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#readContract>,
+//!   <https://etherscan.io/token/0x8e870d67f660d95d5be530380d0ec0bd388289e1#readContract>,
+//!   <https://etherscan.io/token/0x01d33fd36ec67c6ada32cf36b31e88ee190b1839#readContract>):
+//!   each exposes 6–18 on-chain decimals; we clamp to an 8-decimal internal default.
 
 use std::{
     collections::HashMap,
@@ -71,6 +86,7 @@ static ONEINCH_LOCK: OnceLock<Currency> = OnceLock::new();
 static AAVE_LOCK: OnceLock<Currency> = OnceLock::new();
 static ACA_LOCK: OnceLock<Currency> = OnceLock::new();
 static ADA_LOCK: OnceLock<Currency> = OnceLock::new();
+static APT_LOCK: OnceLock<Currency> = OnceLock::new();
 static ARB_LOCK: OnceLock<Currency> = OnceLock::new();
 static AVAX_LOCK: OnceLock<Currency> = OnceLock::new();
 static BCH_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -97,15 +113,18 @@ static LINK_LOCK: OnceLock<Currency> = OnceLock::new();
 static LTC_LOCK: OnceLock<Currency> = OnceLock::new();
 static LUNA_LOCK: OnceLock<Currency> = OnceLock::new();
 static NBT_LOCK: OnceLock<Currency> = OnceLock::new();
+static POL_LOCK: OnceLock<Currency> = OnceLock::new();
 static PROVE_LOCK: OnceLock<Currency> = OnceLock::new();
 static SOL_LOCK: OnceLock<Currency> = OnceLock::new();
 static SUI_LOCK: OnceLock<Currency> = OnceLock::new();
+static TON_LOCK: OnceLock<Currency> = OnceLock::new();
 static TRX_LOCK: OnceLock<Currency> = OnceLock::new();
 static TRYB_LOCK: OnceLock<Currency> = OnceLock::new();
 static TUSD_LOCK: OnceLock<Currency> = OnceLock::new();
 static SHIB_LOCK: OnceLock<Currency> = OnceLock::new();
 static UNI_LOCK: OnceLock<Currency> = OnceLock::new();
 static VTC_LOCK: OnceLock<Currency> = OnceLock::new();
+static WBTC_LOCK: OnceLock<Currency> = OnceLock::new();
 static WSB_LOCK: OnceLock<Currency> = OnceLock::new();
 static XBT_LOCK: OnceLock<Currency> = OnceLock::new();
 static XEC_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -557,6 +576,18 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
+    pub fn APT() -> Self {
+        *APT_LOCK.get_or_init(|| Self {
+            code: Ustr::from("APT"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("Aptos"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
     pub fn ARB() -> Self {
         *ARB_LOCK.get_or_init(|| Self {
             code: Ustr::from("ARB"),
@@ -644,7 +675,7 @@ impl Currency {
     pub fn BRZ() -> Self {
         *BRZ_LOCK.get_or_init(|| Self {
             code: Ustr::from("BRZ"),
-            precision: 6,
+            precision: 8,
             iso4217: 0,
             name: Ustr::from("Brazilian Digital Token"),
             currency_type: CurrencyType::Crypto,
@@ -869,6 +900,18 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
+    pub fn POL() -> Self {
+        *POL_LOCK.get_or_init(|| Self {
+            code: Ustr::from("POL"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("Polygon"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
     pub fn PROVE() -> Self {
         *PROVE_LOCK.get_or_init(|| Self {
             code: Ustr::from("PROVE"),
@@ -917,6 +960,18 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
+    pub fn TON() -> Self {
+        *TON_LOCK.get_or_init(|| Self {
+            code: Ustr::from("TON"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("Toncoin"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
     pub fn TRX() -> Self {
         *TRX_LOCK.get_or_init(|| Self {
             code: Ustr::from("TRX"),
@@ -934,7 +989,7 @@ impl Currency {
             code: Ustr::from("TRYB"),
             precision: 8,
             iso4217: 0,
-            name: Ustr::from("BiLibra"),
+            name: Ustr::from("BiLira"),
             currency_type: CurrencyType::Crypto,
         })
     }
@@ -971,6 +1026,18 @@ impl Currency {
             precision: 8,
             iso4217: 0,
             name: Ustr::from("Vertcoin"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn WBTC() -> Self {
+        *WBTC_LOCK.get_or_init(|| Self {
+            code: Ustr::from("WBTC"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("Wrapped Bitcoin"),
             currency_type: CurrencyType::Crypto,
         })
     }
@@ -1100,7 +1167,7 @@ impl Currency {
     pub fn USDP() -> Self {
         *USDP_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDP"),
-            precision: 4,
+            precision: 8,
             iso4217: 0,
             name: Ustr::from("Pax Dollar"),
             currency_type: CurrencyType::Crypto,
@@ -1163,6 +1230,7 @@ pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::
     map.insert(Currency::AAVE().code.to_string(), Currency::AAVE());
     map.insert(Currency::ACA().code.to_string(), Currency::ACA());
     map.insert(Currency::ADA().code.to_string(), Currency::ADA());
+    map.insert(Currency::APT().code.to_string(), Currency::APT());
     map.insert(Currency::ARB().code.to_string(), Currency::ARB());
     map.insert(Currency::AVAX().code.to_string(), Currency::AVAX());
     map.insert(Currency::BCH().code.to_string(), Currency::BCH());
@@ -1188,14 +1256,17 @@ pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::
     map.insert(Currency::LTC().code.to_string(), Currency::LTC());
     map.insert(Currency::LUNA().code.to_string(), Currency::LUNA());
     map.insert(Currency::NBT().code.to_string(), Currency::NBT());
+    map.insert(Currency::POL().code.to_string(), Currency::POL());
     map.insert(Currency::PROVE().code.to_string(), Currency::PROVE());
     map.insert(Currency::SOL().code.to_string(), Currency::SOL());
     map.insert(Currency::SUI().code.to_string(), Currency::SUI());
+    map.insert(Currency::TON().code.to_string(), Currency::TON());
     map.insert(Currency::TRX().code.to_string(), Currency::TRX());
     map.insert(Currency::TRYB().code.to_string(), Currency::TRYB());
     map.insert(Currency::TUSD().code.to_string(), Currency::TUSD());
     map.insert(Currency::UNI().code.to_string(), Currency::UNI());
     map.insert(Currency::VTC().code.to_string(), Currency::VTC());
+    map.insert(Currency::WBTC().code.to_string(), Currency::WBTC());
     map.insert(Currency::WSB().code.to_string(), Currency::WSB());
     map.insert(Currency::XBT().code.to_string(), Currency::XBT());
     map.insert(Currency::XEC().code.to_string(), Currency::XEC());

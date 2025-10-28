@@ -1,0 +1,13 @@
+# Zizmor configuration for GitHub Actions security auditing
+#
+# The github-env rule flags all writes to $GITHUB_ENV as potentially dangerous.
+# While this is a valid security concern in general, our usage is safe because:
+# - All values written are from trusted sources (system commands, file reads)
+# - No user-controlled or external input is written to GITHUB_ENV
+# - These are standard patterns in GitHub Actions workflows
+#
+# We disable this rule to reduce noise from low-confidence false positives.
+
+rules:
+  github-env:
+    disable: true

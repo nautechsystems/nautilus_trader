@@ -24,6 +24,7 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -328,6 +329,124 @@ def test_maintains_both_orders_on_quote_tick(
     assert tester.sell_order is not None
     assert tester.buy_order.side == OrderSide.BUY
     assert tester.sell_order.side == OrderSide.SELL
+
+
+def test_bracket_buy_order_on_quote_tick(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_buys=True,
+        enable_sells=False,
+        enable_brackets=True,
+        bracket_offset_ticks=5,
+        tob_offset_ticks=2,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_order.contingency_type == ContingencyType.OTO
+    order_list_id = tester.buy_order.order_list_id
+    assert order_list_id is not None
+
+    order_list = tester.cache.order_list(order_list_id)
+    assert order_list is not None
+    assert len(order_list.orders) == 3
+
+    tp_order = next(order for order in order_list.orders if "TAKE_PROFIT" in (order.tags or []))
+    sl_order = next(order for order in order_list.orders if "STOP_LOSS" in (order.tags or []))
+
+    expected_entry_price = instrument.make_price(Decimal("100.0") - tester.price_offset)
+    assert tester.buy_order.price == expected_entry_price
+
+    increment = instrument.price_increment
+    expected_tp_price = instrument.make_price(
+        Decimal(str(expected_entry_price)) + increment * config.bracket_offset_ticks,
+    )
+    expected_sl_trigger = instrument.make_price(
+        Decimal(str(expected_entry_price)) - increment * config.bracket_offset_ticks,
+    )
+
+    assert tp_order.price == expected_tp_price
+    assert tp_order.contingency_type == ContingencyType.OUO
+    assert sl_order.trigger_price == expected_sl_trigger
+    assert sl_order.contingency_type == ContingencyType.OUO
+
+
+def test_bracket_and_stop_orders_can_run_together(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_buys=True,
+        enable_sells=False,
+        enable_brackets=True,
+        enable_stop_buys=True,
+        bracket_offset_ticks=5,
+        stop_offset_ticks=3,
+        tob_offset_ticks=2,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.order_list_id is None
+
+    stop_offset = instrument.price_increment * config.stop_offset_ticks
+    expected_stop_trigger = instrument.make_price(Decimal("101.0") + stop_offset)
+    assert tester.buy_stop_order.trigger_price == expected_stop_trigger
 
 
 def test_post_only_with_test_reject(

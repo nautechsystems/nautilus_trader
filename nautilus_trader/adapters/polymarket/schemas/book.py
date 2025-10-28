@@ -50,8 +50,15 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         self,
         instrument: BinaryOption,
         ts_init: int,
-    ) -> OrderBookDeltas:
+    ) -> OrderBookDeltas | None:
         ts_event = millis_to_nanos(float(self.timestamp))
+
+        bids_len = len(self.bids)
+        asks_len = len(self.asks)
+
+        # Skip if both bids and asks are empty (can occur near market resolution)
+        if bids_len == 0 and asks_len == 0:
+            return None
 
         deltas: list[OrderBookDelta] = []
 
@@ -63,9 +70,6 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             ts_init=ts_init,
         )
         deltas.append(clear)
-
-        bids_len = len(self.bids)
-        asks_len = len(self.asks)
 
         for idx, bid in enumerate(self.bids):
             flags = 0

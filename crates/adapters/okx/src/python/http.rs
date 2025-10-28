@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings exposing OKX HTTP helper functions and data conversions.
+
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TriggerType},
@@ -23,19 +25,30 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{
+    conversion::IntoPyObjectExt,
     prelude::*,
     types::{PyDict, PyList},
 };
 
 use crate::{
-    common::enums::{OKXInstrumentType, OKXPositionMode, OKXTradeMode},
-    http::client::OKXHttpClient,
+    common::enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
+    http::{client::OKXHttpClient, error::OKXHttpError},
 };
 
 #[pymethods]
 impl OKXHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[pyo3(signature = (
+        api_key=None,
+        api_secret=None,
+        api_passphrase=None,
+        base_url=None,
+        timeout_secs=None,
+        max_retries=None,
+        retry_delay_ms=None,
+        retry_delay_max_ms=None,
+        is_demo=false,
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -46,6 +59,7 @@ impl OKXHttpClient {
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        is_demo: bool,
     ) -> PyResult<Self> {
         Self::with_credentials(
             api_key,
@@ -56,6 +70,7 @@ impl OKXHttpClient {
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
+            is_demo,
         )
         .map_err(to_pyvalue_err)
     }
@@ -125,16 +140,18 @@ impl OKXHttpClient {
     }
 
     #[pyo3(name = "request_instruments")]
+    #[pyo3(signature = (instrument_type, instrument_family=None))]
     fn py_request_instruments<'py>(
         &self,
         py: Python<'py>,
         instrument_type: OKXInstrumentType,
+        instrument_family: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client
-                .request_instruments(instrument_type)
+                .request_instruments(instrument_type, instrument_family)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -285,6 +302,67 @@ impl OKXHttpClient {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[pyo3(name = "request_algo_order_status_reports")]
+    #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, algo_id=None, algo_client_order_id=None, state=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_request_algo_order_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+        instrument_type: Option<OKXInstrumentType>,
+        instrument_id: Option<InstrumentId>,
+        algo_id: Option<String>,
+        algo_client_order_id: Option<ClientOrderId>,
+        state: Option<OKXOrderStatus>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_algo_order_status_reports(
+                    account_id,
+                    instrument_type,
+                    instrument_id,
+                    algo_id,
+                    algo_client_order_id,
+                    state,
+                    limit,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[pyo3(name = "request_algo_order_status_report")]
+    fn py_request_algo_order_status_report<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let report = client
+                .request_algo_order_status_report(account_id, instrument_id, client_order_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| match report {
+                Some(report) => Ok(report.into_py_any_unwrap(py)),
+                None => Ok(py.None()),
             })
         })
     }
@@ -446,5 +524,67 @@ impl OKXHttpClient {
                 Ok(dict.into_py_any_unwrap(py))
             })
         })
+    }
+
+    #[pyo3(name = "http_get_server_time")]
+    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let timestamp = client
+                .http_get_server_time()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| timestamp.into_py_any(py))
+        })
+    }
+
+    #[pyo3(name = "http_get_balance")]
+    fn py_http_get_balance<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let accounts = client
+                .inner
+                .http_get_balance()
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let details: Vec<_> = accounts
+                .into_iter()
+                .flat_map(|account| account.details)
+                .collect();
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, details)?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+}
+
+impl From<OKXHttpError> for PyErr {
+    fn from(error: OKXHttpError) -> Self {
+        match error {
+            // Runtime/operational errors
+            OKXHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
+            OKXHttpError::HttpClientError(e) => to_pyruntime_err(format!("Network error: {e}")),
+            OKXHttpError::UnexpectedStatus { status, body } => {
+                to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            // Validation/configuration errors
+            OKXHttpError::MissingCredentials => {
+                to_pyvalue_err("Missing credentials for authenticated request")
+            }
+            OKXHttpError::ValidationError(msg) => {
+                to_pyvalue_err(format!("Parameter validation error: {msg}"))
+            }
+            OKXHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            OKXHttpError::OkxError {
+                error_code,
+                message,
+            } => to_pyvalue_err(format!("OKX error {error_code}: {message}")),
+        }
     }
 }

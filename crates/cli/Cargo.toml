@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Command-line interface for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -19,19 +22,29 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
-hypersync = ["nautilus-blockchain"]
+defi = [
+  "dep:alloy-primitives",
+  "dep:nautilus-blockchain",
+  "nautilus-model/defi",
+]
 
 [dependencies]
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
-nautilus-blockchain = { workspace = true, features = ["hypersync"], optional = true }
-nautilus-model = { workspace = true, features = ["defi"] }
+nautilus-model = { workspace = true }
+nautilus-blockchain = { workspace = true, features = [
+  "hypersync",
+], optional = true }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
 log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
 
 [[bin]]
 name = "nautilus"

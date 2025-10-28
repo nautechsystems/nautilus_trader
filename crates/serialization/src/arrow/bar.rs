@@ -129,7 +129,7 @@ impl EncodeToRecordBatch for Bar {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        Bar::get_metadata(&self.bar_type, self.open.precision, self.volume.precision)
+        Self::get_metadata(&self.bar_type, self.open.precision, self.volume.precision)
     }
 }
 
@@ -253,7 +253,7 @@ mod tests {
         expected_map.insert("high".to_string(), fixed_size_binary.clone());
         expected_map.insert("low".to_string(), fixed_size_binary.clone());
         expected_map.insert("close".to_string(), fixed_size_binary.clone());
-        expected_map.insert("volume".to_string(), fixed_size_binary.clone());
+        expected_map.insert("volume".to_string(), fixed_size_binary);
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(schema_map, expected_map);
@@ -368,8 +368,6 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
-
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 

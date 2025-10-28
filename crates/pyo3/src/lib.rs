@@ -50,9 +50,17 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
-use pyo3::prelude::*;
+use pyo3::{prelude::*, pyfunction};
+
+const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
+
+#[pyfunction]
+fn _shutdown_nautilus_runtime() -> PyResult<()> {
+    nautilus_common::runtime::shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
+    Ok(())
+}
 
 /// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -74,6 +82,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
+
+    let n = "analysis";
+    let submodule = pyo3::wrap_pymodule!(nautilus_analysis::python::analysis);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
 
     let n = "core";
     let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);
@@ -159,10 +174,19 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    ////////////////////////////////////////////////////////////////////////////////
     // Adapters
+    ////////////////////////////////////////////////////////////////////////////////
 
     let n = "bitmex";
     let submodule = pyo3::wrap_pymodule!(nautilus_bitmex::python::bitmex);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
+    let n = "bybit";
+    let submodule = pyo3::wrap_pymodule!(nautilus_bybit::python::bybit);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]
@@ -212,6 +236,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         #[cfg(feature = "cython-compat")]
         re_export_module_attributes(m, n)?;
     }
+
+    // Register a lightweight shutdown hook so the interpreter waits for the Tokio
+    // runtime to yield once before `Py_Finalize` tears it down.
+    m.add_function(pyo3::wrap_pyfunction!(_shutdown_nautilus_runtime, m)?)?;
+    let shutdown_callable = m.getattr("_shutdown_nautilus_runtime")?;
+    let atexit = PyModule::import(py, "atexit")?;
+    atexit.call_method1("register", (shutdown_callable,))?;
 
     Ok(())
 }

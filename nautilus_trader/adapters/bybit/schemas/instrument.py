@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_MULTIPLIERS
 from nautilus_trader.adapters.bybit.common.enums import BybitContractType
 from nautilus_trader.adapters.bybit.common.enums import BybitOptionType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
@@ -42,6 +43,40 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
+def _strip_multiplier_prefix(code: str, symbol: str) -> str:
+    """
+    Strip multiplier prefix from Bybit currency codes.
+
+    Bybit uses numerical prefixes in LINEAR contract symbols for low-value tokens.
+    The multiplier appears in both the symbol and the coin code.
+    Examples: symbol="1000000MOGUSDT", baseCoin="1000000MOG" -> "MOG"
+
+    This prevents incorrectly stripping currencies like "1INCH" or "100X".
+
+    Parameters
+    ----------
+    code : str
+        The currency code to check.
+    symbol : str
+        The instrument symbol to validate against.
+
+    Returns
+    -------
+    str
+        The stripped currency code or original if no multiplier found.
+
+    """
+    for multiplier in BYBIT_MULTIPLIERS:
+        prefix = str(multiplier)
+        # Only strip if BOTH symbol and code start with the multiplier
+        if code.startswith(prefix) and symbol.startswith(prefix):
+            stripped = code[len(prefix) :]
+            # Validate: remaining part should be alphabetic (3-10 chars for valid crypto tickers)
+            if stripped and stripped.isalpha() and 3 <= len(stripped) <= 10:
+                return stripped
+    return code
+
+
 class BybitInstrumentSpot(msgspec.Struct):
     symbol: str
     baseCoin: str
@@ -60,8 +95,8 @@ class BybitInstrumentSpot(msgspec.Struct):
         ts_event: int,
         ts_init: int,
     ) -> CurrencyPair:
-        assert base_currency.code == self.baseCoin
-        assert quote_currency.code == self.quoteCoin
+        assert base_currency.code == _strip_multiplier_prefix(self.baseCoin, self.symbol)
+        assert quote_currency.code == _strip_multiplier_prefix(self.quoteCoin, self.symbol)
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
         instrument_id = bybit_symbol.to_instrument_id()
         price_increment = Price.from_str(self.priceFilter.tickSize)
@@ -155,8 +190,8 @@ class BybitInstrumentLinear(msgspec.Struct):
         ts_event: int,
         ts_init: int,
     ) -> CryptoPerpetual:
-        assert base_currency.code == self.baseCoin
-        assert quote_currency.code == self.quoteCoin
+        assert base_currency.code == _strip_multiplier_prefix(self.baseCoin, self.symbol)
+        assert quote_currency.code == _strip_multiplier_prefix(self.quoteCoin, self.symbol)
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
         instrument_id = bybit_symbol.to_instrument_id()
         if self.settleCoin == self.baseCoin:
@@ -260,8 +295,8 @@ class BybitInstrumentInverse(msgspec.Struct):
         ts_event: int,
         ts_init: int,
     ) -> CryptoPerpetual:
-        assert base_currency.code == self.baseCoin
-        assert quote_currency.code == self.quoteCoin
+        assert base_currency.code == _strip_multiplier_prefix(self.baseCoin, self.symbol)
+        assert quote_currency.code == _strip_multiplier_prefix(self.quoteCoin, self.symbol)
         bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
         instrument_id = bybit_symbol.to_instrument_id()
         if self.settleCoin == self.baseCoin:
@@ -356,7 +391,7 @@ class BybitInstrumentOption(msgspec.Struct):
         self,
         quote_currency: Currency,
     ) -> OptionContract:
-        assert quote_currency.code == self.quoteCoin
+        assert quote_currency.code == _strip_multiplier_prefix(self.quoteCoin, self.symbol)
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
         instrument_id = bybit_symbol.to_instrument_id()
         price_increment = Price.from_str(self.priceFilter.tickSize)

@@ -46,9 +46,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 @pytest.mark.skip(reason="WIP")
 class TestBinanceSpotDataClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -90,6 +91,8 @@ class TestBinanceSpotDataClient:
             clock=self.clock,
             instrument_provider=self.provider,
         )
+
+        yield
 
     @pytest.mark.asyncio()
     async def test_connect(self, monkeypatch):

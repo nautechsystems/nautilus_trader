@@ -13,15 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{self, Display};
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
 /// Calculates the annualized volatility (standard deviation) of portfolio returns.
 ///
 /// Volatility is calculated as the standard deviation of returns, annualized by
-/// multiplying the daily standard deviation by the square root of the period.
+/// multiplying the daily standard deviation by the square root of the period:
+/// `Standard Deviation * sqrt(period)`
+///
+/// Uses Bessel's correction (ddof=1) for sample standard deviation.
 /// This provides a measure of the portfolio's risk or uncertainty of returns.
+///
+/// # References
+///
+/// - CFA Institute Level I Curriculum: Quantitative Methods
+/// - Hull, J. C. (2018). *Options, Futures, and Other Derivatives* (10th ed.). Pearson.
+/// - Fabozzi, F. J., et al. (2002). *The Handbook of Financial Instruments*. Wiley.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
@@ -41,11 +54,17 @@ impl ReturnsVolatility {
     }
 }
 
+impl Display for ReturnsVolatility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Returns Volatility ({} days)", self.period)
+    }
+}
+
 impl PortfolioStatistic for ReturnsVolatility {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(ReturnsVolatility).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
@@ -58,7 +77,18 @@ impl PortfolioStatistic for ReturnsVolatility {
         let annualized_std = daily_std * (self.period as f64).sqrt();
         Some(annualized_std)
     }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -124,6 +154,6 @@ mod tests {
     #[rstest]
     fn test_name() {
         let volatility = ReturnsVolatility::new(None);
-        assert_eq!(volatility.name(), "ReturnsVolatility");
+        assert_eq!(volatility.name(), "Returns Volatility (252 days)");
     }
 }

@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! OKX API credential storage and request signing helpers.
+
+#![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
@@ -72,7 +76,7 @@ impl Credential {
         body: Option<&[u8]>,
     ) -> String {
         let mut message = Vec::with_capacity(
-            timestamp.len() + method.len() + endpoint.len() + body.map(|b| b.len()).unwrap_or(0),
+            timestamp.len() + method.len() + endpoint.len() + body.map_or(0, |b| b.len()),
         );
         message.extend_from_slice(timestamp.as_bytes());
         message.extend_from_slice(method.as_bytes());

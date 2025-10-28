@@ -55,9 +55,10 @@ pub struct TypedMessageHandler<T: 'static + ?Sized, F: Fn(&T) + 'static> {
 impl<T: 'static, F: Fn(&T) + 'static> TypedMessageHandler<T, F> {
     /// Creates a new handler with an optional custom ID.
     pub fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
-        let id_ustr = id
-            .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(|| generate_handler_id(&callback));
+        let id_ustr = id.map_or_else(
+            || generate_handler_id(&callback),
+            |s| Ustr::from(s.as_ref()),
+        );
 
         Self {
             id: id_ustr,
@@ -93,9 +94,10 @@ impl<T: 'static, F: Fn(&T) + 'static> MessageHandler for TypedMessageHandler<T, 
 impl<F: Fn(&dyn Any) + 'static> TypedMessageHandler<dyn Any, F> {
     /// Creates a new handler for dynamic Any messages with an optional custom ID.
     pub fn new_any<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
-        let id_ustr = id
-            .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(|| generate_handler_id(&callback));
+        let id_ustr = id.map_or_else(
+            || generate_handler_id(&callback),
+            |s| Ustr::from(s.as_ref()),
+        );
 
         Self {
             id: id_ustr,

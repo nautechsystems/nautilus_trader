@@ -20,14 +20,7 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::{
-    extended::DexExtended,
-    parsing::uniswap_v3::{
-        burn::parse_burn_event, collect::parse_collect_event, mint::parse_mint_event,
-        pool_created::parse_pool_created_event, swap::parse_swap_event,
-        trade_data::convert_to_trade_data,
-    },
-};
+use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
 
 /// Uniswap V3 DEX on Ethereum.
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
@@ -44,14 +37,16 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Collect(address,address,int24,int24,uint128,uint128)",
     );
     dex.set_initialize_event("Initialize(uint160,int24)");
+    dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
     let mut dex_extended = DexExtended::new(dex);
 
-    dex_extended.set_pool_created_event_parsing(parse_pool_created_event);
-    dex_extended.set_swap_event_parsing(parse_swap_event);
-    dex_extended.set_convert_trade_data(convert_to_trade_data);
-    dex_extended.set_mint_event_parsing(parse_mint_event);
-    dex_extended.set_burn_event_parsing(parse_burn_event);
-    dex_extended.set_collect_event_parsing(parse_collect_event);
+    dex_extended.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
+    dex_extended.set_swap_event_parsing(uniswap_v3::swap::parse_swap_event);
+    dex_extended.set_convert_trade_data(uniswap_v3::trade_data::convert_to_trade_data);
+    dex_extended.set_mint_event_parsing(uniswap_v3::mint::parse_mint_event);
+    dex_extended.set_burn_event_parsing(uniswap_v3::burn::parse_burn_event);
+    dex_extended.set_collect_event_parsing(uniswap_v3::collect::parse_collect_event);
+    dex_extended.set_flash_event_parsing(uniswap_v3::flash::parse_flash_event);
 
     dex_extended
 });

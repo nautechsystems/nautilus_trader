@@ -31,7 +31,6 @@ from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
 from ibapi.utils import current_fn_name
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
@@ -50,9 +49,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
-
-
-# fmt: on
 
 
 class InteractiveBrokersClient(
@@ -140,13 +136,13 @@ class InteractiveBrokersClient(
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
         self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
         self._reconnect_delay: int = 5  # seconds
+        self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
-        self._bar_timeout_tasks: dict[str, asyncio.Task] = (
-            {}
-        )  # Track timeout tasks for each bar type
+        self._bar_timeout_tasks: dict[str, asyncio.Task] = {}  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
+        self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
         # OrderMixin
         self._exec_id_details: dict[
@@ -182,10 +178,7 @@ class InteractiveBrokersClient(
         while not self._is_ib_connected.is_set():
             try:
                 self._connection_attempts += 1
-                if (
-                    not self._indefinite_reconnect
-                    and self._connection_attempts > self._max_connection_attempts
-                ):
+                if not self._indefinite_reconnect and self._connection_attempts > self._max_connection_attempts:
                     self._log.error("Max connection attempts reached, connection failed")
                     self._stop()
                     break
@@ -389,6 +382,7 @@ class InteractiveBrokersClient(
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
 
+        self._last_disconnection_ns = self._clock.timestamp_ns()
         await asyncio.sleep(5)
         await self._handle_reconnect()
 
@@ -499,7 +493,7 @@ class InteractiveBrokersClient(
         request: Request,
         timeout: int,
         default_value: Any | None = None,
-        supress_timeout_warning: bool = False,
+        suppress_timeout_warning: bool = False,
     ) -> Any:
         """
         Await the completion of a request within a specified timeout.
@@ -512,7 +506,7 @@ class InteractiveBrokersClient(
             The maximum time to wait for the request to complete, in seconds.
         default_value : Any, optional
             The default value to return if the request times out or fails. Defaults to None.
-        supress_timeout_warning: bool, optional
+        suppress_timeout_warning: bool, optional
             Suppress the timeout warning. Defaults to False.
 
         Returns
@@ -525,7 +519,7 @@ class InteractiveBrokersClient(
             return await asyncio.wait_for(request.future, timeout)
         except TimeoutError as e:
             msg = f"Request timed out for {request}. Ending request."
-            self._log.debug(msg) if supress_timeout_warning else self._log.warning(msg)
+            self._log.debug(msg) if suppress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value
@@ -611,9 +605,7 @@ class InteractiveBrokersClient(
         self._log.debug("Client internal message queue processor started")
 
         try:
-            while (
-                self._eclient.conn and self._eclient.conn.isConnected()
-            ) or not self._internal_msg_queue.empty():
+            while (self._eclient.conn and self._eclient.conn.isConnected()) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
 
                 if not await self._process_message(msg):

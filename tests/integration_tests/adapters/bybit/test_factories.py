@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -34,8 +33,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBybitFactories:
-    def setup(self):
-        self.loop = asyncio.get_event_loop()
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        self.loop = request.getfixturevalue("event_loop")
         self.clock = LiveClock()
 
         self.trader_id = TestIdStubs.trader_id()
@@ -49,6 +49,8 @@ class TestBybitFactories:
 
         self.cache_db = MockCacheDatabase()
         self.cache = Cache(database=self.cache_db)
+
+        yield
 
     @pytest.mark.parametrize(
         ("is_demo", "is_testnet", "expected"),

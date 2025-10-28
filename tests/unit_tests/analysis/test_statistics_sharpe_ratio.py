@@ -20,7 +20,8 @@ from numpy import float64
 from numpy import linspace
 from numpy import nan
 
-from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
+from nautilus_trader.analysis import SharpeRatio
+from tests.unit_tests.analysis.conftest import convert_series_to_dict
 
 
 class TestSharpeRatioPortfolioStatistic:
@@ -41,7 +42,7 @@ class TestSharpeRatioPortfolioStatistic:
         stat = SharpeRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result
@@ -55,7 +56,7 @@ class TestSharpeRatioPortfolioStatistic:
         stat = SharpeRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result
@@ -69,7 +70,7 @@ class TestSharpeRatioPortfolioStatistic:
         stat = SharpeRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result == 0.0
@@ -82,7 +83,7 @@ class TestSharpeRatioPortfolioStatistic:
         stat = SharpeRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result

@@ -37,6 +37,21 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
+def validate_ethereum_address(address: str) -> None:
+    if not address.startswith("0x") or len(address) != 42:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Expected 0x prefix with 40 hexadecimal characters",
+        )
+    try:
+        int(address[2:], 16)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Address contains non-hexadecimal characters",
+        ) from e
+
+
 def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
     match order_side:
         case PolymarketOrderSide.BUY:
@@ -67,6 +82,8 @@ def parse_time_in_force(order_type: PolymarketOrderType) -> TimeInForce:
             return TimeInForce.GTD
         case PolymarketOrderType.FOK:
             return TimeInForce.FOK
+        case PolymarketOrderType.FAK:
+            return TimeInForce.IOC
         case _:
             # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid order type, was {order_type}")
@@ -74,11 +91,11 @@ def parse_time_in_force(order_type: PolymarketOrderType) -> TimeInForce:
 
 def parse_order_status(order_status: PolymarketOrderStatus) -> OrderStatus:
     match order_status:
-        case PolymarketOrderStatus.UNMATCHED:
+        case PolymarketOrderStatus.INVALID | PolymarketOrderStatus.UNMATCHED:
             return OrderStatus.REJECTED
         case PolymarketOrderStatus.LIVE | PolymarketOrderStatus.DELAYED:
             return OrderStatus.ACCEPTED
-        case PolymarketOrderStatus.CANCELED:
+        case PolymarketOrderStatus.CANCELED | PolymarketOrderStatus.CANCELED_MARKET_RESOLVED:
             return OrderStatus.CANCELED
         case PolymarketOrderStatus.MATCHED:
             return OrderStatus.FILLED

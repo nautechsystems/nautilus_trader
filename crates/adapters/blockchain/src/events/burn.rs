@@ -18,7 +18,6 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
     identifiers::InstrumentId,
-    types::Quantity,
 };
 
 /// Represents a burn event that occurs when liquidity is removed from a position in a liquidity pool.
@@ -93,9 +92,6 @@ impl BurnEvent {
         dex: SharedDex,
         instrument_id: InstrumentId,
         pool_address: Address,
-        liquidity: Quantity,
-        amount0: Quantity,
-        amount1: Quantity,
         timestamp: Option<UnixNanos>,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
@@ -110,9 +106,9 @@ impl BurnEvent {
             self.log_index,
             None,
             self.owner,
-            liquidity,
-            amount0,
-            amount1,
+            self.amount,
+            self.amount0,
+            self.amount1,
             self.tick_lower,
             self.tick_upper,
             timestamp,

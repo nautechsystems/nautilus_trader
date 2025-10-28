@@ -24,7 +24,7 @@ use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, future::join_all, pin_mut};
 use heck::ToSnakeCase;
-use nautilus_core::{UnixNanos, parsing::precision_from_str};
+use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, parsing::precision_from_str};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
@@ -169,7 +169,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     }
 
     tracing::info!("Starting tardis-machine stream");
-    let stream = machine_client.replay(config.options).await;
+    let stream = machine_client.replay(config.options).await?;
     pin_mut!(stream);
 
     // Initialize date cursors
@@ -188,24 +188,38 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     let mut msg_count = 0;
 
-    while let Some(msg) = stream.next().await {
-        match msg {
-            Data::Deltas(msg) => {
-                handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
-            }
-            Data::Depth10(msg) => {
-                handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
-            }
-            Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
-            Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
-            Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
-            Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
-            _ => panic!("Not implemented"),
-        }
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(msg) => {
+                match msg {
+                    Data::Deltas(msg) => {
+                        handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
+                    }
+                    Data::Depth10(msg) => {
+                        handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
+                    }
+                    Data::Quote(msg) => {
+                        handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path);
+                    }
+                    Data::Trade(msg) => {
+                        handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path);
+                    }
+                    Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
+                    Data::Delta(_) => {
+                        panic!("Individual delta message not implemented (or required)")
+                    }
+                    _ => panic!("Not implemented"),
+                }
 
-        msg_count += 1;
-        if msg_count % 100_000 == 0 {
-            tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+                msg_count += 1;
+                if msg_count % 100_000 == 0 {
+                    tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+                }
+            }
+            Err(e) => {
+                tracing::error!("Stream error: {e:?}");
+                break;
+            }
         }
     }
 
@@ -436,23 +450,87 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     }
 }
 
+/// Asserts that the given date is on or after the UNIX epoch (1970-01-01).
+///
+/// # Panics
+///
+/// Panics if the date is before 1970-01-01, as pre-epoch dates cannot be
+/// reliably represented as UnixNanos without overflow issues.
+fn assert_post_epoch(date: NaiveDate) {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("UNIX epoch must exist");
+    if date < epoch {
+        panic!("Tardis replay filenames require dates on or after 1970-01-01; received {date}");
+    }
+}
+
+/// Converts an ISO 8601 timestamp to a filesystem-safe format.
+///
+/// This function replaces colons and dots with hyphens to make the timestamp
+/// safe for use in filenames across different filesystems.
+fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
+    iso_timestamp.replace([':', '.'], "-")
+}
+
+/// Converts timestamps to a filename using ISO 8601 format.
+///
+/// This function converts two Unix nanosecond timestamps to a filename that uses
+/// ISO 8601 format with filesystem-safe characters, matching the catalog convention.
+fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> String {
+    let datetime_1 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_1));
+    let datetime_2 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_2));
+
+    format!("{datetime_1}_{datetime_2}.parquet")
+}
+
 fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDate) -> PathBuf {
+    assert_post_epoch(date);
+
     let typename = typename.to_snake_case();
     let instrument_id_str = instrument_id.to_string().replace('/', "");
-    let date_str = date.to_string().replace('-', "");
+
+    let start_utc = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let end_utc = date.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
+
+    let start_nanos = start_utc
+        .timestamp_nanos_opt()
+        .expect("valid nanosecond timestamp");
+    let end_nanos = (end_utc.and_utc())
+        .timestamp_nanos_opt()
+        .expect("valid nanosecond timestamp");
+
+    let filename = timestamps_to_filename(
+        UnixNanos::from(start_nanos as u64),
+        UnixNanos::from(end_nanos as u64),
+    );
+
     PathBuf::new()
         .join(typename)
         .join(instrument_id_str)
-        .join(format!("{date_str}.parquet"))
+        .join(filename)
 }
 
 fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
+    assert_post_epoch(date);
+
     let bar_type_str = bar_type.to_string().replace('/', "");
-    let date_str = date.to_string().replace('-', "");
-    PathBuf::new()
-        .join("bar")
-        .join(bar_type_str)
-        .join(format!("{date_str}.parquet"))
+
+    // Calculate start and end timestamps for the day (UTC)
+    let start_utc = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let end_utc = date.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
+
+    let start_nanos = start_utc
+        .timestamp_nanos_opt()
+        .expect("valid nanosecond timestamp");
+    let end_nanos = (end_utc.and_utc())
+        .timestamp_nanos_opt()
+        .expect("valid nanosecond timestamp");
+
+    let filename = timestamps_to_filename(
+        UnixNanos::from(start_nanos as u64),
+        UnixNanos::from(end_nanos as u64),
+    );
+
+    PathBuf::new().join("bar").join(bar_type_str).join(filename)
 }
 
 fn write_batch(

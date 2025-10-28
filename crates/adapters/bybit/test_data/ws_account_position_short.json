@@ -1,0 +1,39 @@
+{
+  "id": "2004076014fb7eedb-c7e6-45d6-a8c1-270f0169171b",
+  "topic": "position",
+  "creationTime": 1697682417044,
+  "data": [
+    {
+      "positionIdx": 2,
+      "tradeMode": 0,
+      "riskId": 1,
+      "riskLimitValue": "2000000",
+      "symbol": "ETHUSDT",
+      "side": "Sell",
+      "size": "2.5",
+      "avgPrice": "2450.75",
+      "leverage": "5",
+      "positionValue": "6126.875",
+      "positionBalance": "1225.375",
+      "markPrice": "2460.25",
+      "positionIM": "1225.375",
+      "positionMM": "61.26875",
+      "takeProfit": "2400",
+      "stopLoss": "2500",
+      "trailingStop": "0",
+      "unrealisedPnl": "-23.75",
+      "curRealisedPnl": "0",
+      "cumRealisedPnl": "50.25",
+      "createdTime": "1694402496913",
+      "updatedTime": "1697682417038",
+      "tpslMode": "Full",
+      "liqPrice": "2550.50",
+      "bustPrice": "2575.00",
+      "positionStatus": "Normal",
+      "adlRankIndicator": 2,
+      "autoAddMargin": 0,
+      "seq": 8327597864,
+      "isReduceOnly": false
+    }
+  ]
+}

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -34,7 +34,7 @@ This will test the new spread execution functionality and verify:
 """
 
 # %%
-# fmt: off
+
 import os
 import threading
 import time
@@ -62,9 +62,6 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
-
-
-# fmt: on
 
 
 # %%

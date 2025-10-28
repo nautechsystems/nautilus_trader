@@ -29,7 +29,7 @@ impl SharpeRatio {
     }
 
     fn __repr__(&self) -> String {
-        format!("SharpeRatio({})", self.name(),)
+        self.to_string()
     }
 
     #[getter]
@@ -41,5 +41,15 @@ impl SharpeRatio {
     #[pyo3(name = "calculate_from_returns")]
     fn py_calculate_from_returns(&mut self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
         self.calculate_from_returns(&transform_returns(raw_returns))
+    }
+
+    #[pyo3(name = "calculate_from_realized_pnls")]
+    fn py_calculate_from_realized_pnls(&mut self, _realized_pnls: Vec<f64>) -> Option<f64> {
+        None
+    }
+
+    #[pyo3(name = "calculate_from_positions")]
+    fn py_calculate_from_positions(&mut self, _positions: Vec<Py<PyAny>>) -> Option<f64> {
+        None
     }
 }

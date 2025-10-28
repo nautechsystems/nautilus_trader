@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX-specific enumerations shared by HTTP and WebSocket components.
+
 use nautilus_model::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
 };
@@ -468,6 +470,7 @@ pub enum BitmexExecInstruction {
 }
 
 impl BitmexExecInstruction {
+    /// Joins execution instructions into the comma-separated string expected by BitMEX.
     pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()
@@ -586,8 +589,10 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FMXXS")]
     Unknown2, // TODO: Determine name (option)
 
+    /// Prediction Markets (non-standardized financial future on index, cash settled).
+    /// CFI code FFICSX - traders predict outcomes of events.
     #[serde(rename = "FFICSX")]
-    Unknown3, // TODO: Determine name (option)
+    PredictionMarket,
 
     /// Perpetual Contracts.
     #[serde(rename = "FFWCSX")]
@@ -869,6 +874,10 @@ mod tests {
             serde_json::to_string(&BitmexInstrumentType::VolatilityIndex).unwrap(),
             r#""MRIXXX""#
         );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::PredictionMarket).unwrap(),
+            r#""FFICSX""#
+        );
     }
 
     #[rstest]
@@ -908,6 +917,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""MRIXXX""#).unwrap(),
             BitmexInstrumentType::VolatilityIndex
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFICSX""#).unwrap(),
+            BitmexInstrumentType::PredictionMarket
         );
 
         // Error case
@@ -1024,8 +1037,6 @@ mod tests {
 
     #[rstest]
     fn test_time_in_force_conversions() {
-        use nautilus_model::enums::TimeInForce;
-
         // BitMEX to Nautilus (all supported variants)
         assert_eq!(
             TimeInForce::try_from(BitmexTimeInForce::Day).unwrap(),

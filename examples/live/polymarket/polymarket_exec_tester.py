@@ -62,7 +62,7 @@ load_ids = [str(instrument_id)]
 instrument_provider_config = InstrumentProviderConfig(load_ids=frozenset(load_ids))
 
 # Order configuration
-order_qty = Decimal("10")  # Number of shares to trade
+order_qty = Decimal("10")  # Number of shares for limit orders, or notional value for market BUY
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -74,6 +74,7 @@ config_node = TradingNodeConfig(
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
+        convert_quote_qty_to_base=False,  # Required for submitting market BUY orders
         reconciliation=True,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile these instruments
         open_check_interval_secs=5.0,
@@ -117,7 +118,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
+            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
         ),
@@ -127,7 +128,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
+            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
@@ -153,9 +154,12 @@ config_tester = ExecTesterConfig(
     subscribe_quotes=True,
     subscribe_trades=True,
     # subscribe_book=True,
-    # enable_sells=False,
+    # enable_buys=False,
+    enable_sells=False,
+    tob_offset_ticks=10,
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
+    # use_quote_quantity=True,  # Required for submitting market BUY orders
     use_post_only=False,  # Polymarket does not support post-only orders
     # test_reject_post_only=True,
     reduce_only_on_stop=False,  # Polymarket does not support reduce-only orders

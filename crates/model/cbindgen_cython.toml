@@ -14,29 +14,22 @@ header = '"../includes/model.h"'
 
 [cython.cimports]
 "libc.stdint" = [
-    "uint8_t",
-    "uint16_t",
-    "uint32_t",
-    "uint64_t",
-    "uintptr_t",
-    "int32_t",
-    "int64_t",
+  "uint8_t",
+  "uint16_t",
+  "uint32_t",
+  "uint64_t",
+  "uintptr_t",
+  "int32_t",
+  "int64_t",
 ]
 
-"nautilus_trader.core.rust.core" = [
-    "CVec",
-    "UUID4_t",
-]
+"nautilus_trader.core.rust.core" = ["CVec", "UUID4_t"]
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
 
 [export]
-exclude = [
-    "BarAggregation",
-    "OrderId",
-    "OrderSideSpecified",
-]
+exclude = ["BarAggregation", "OrderId", "OrderSideSpecified"]
 
 [export.rename]
 "u128" = "uint128_t"

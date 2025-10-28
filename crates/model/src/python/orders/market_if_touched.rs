@@ -98,7 +98,7 @@ impl MarketIfTouchedOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(MarketIfTouchedOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]

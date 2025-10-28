@@ -83,7 +83,7 @@ pub struct Throttler<T, F> {
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The name of the timer.
-    timer_name: String,
+    timer_name: Ustr,
     /// The callback to send a message.
     output_send: F,
     /// The callback to drop a message.
@@ -147,7 +147,7 @@ where
             timestamps: VecDeque::with_capacity(limit),
             clock,
             interval,
-            timer_name,
+            timer_name: Ustr::from(&timer_name),
             output_send,
             output_drop,
             actor_id,
@@ -167,7 +167,7 @@ where
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
         let mut clock = self.clock.borrow_mut();
-        if clock.timer_names().contains(&self.timer_name.as_str()) {
+        if clock.timer_exists(&self.timer_name) {
             clock.cancel_timer(&self.timer_name);
         }
         let alert_ts = clock.timestamp_ns() + delta;
@@ -318,10 +318,9 @@ where
 
     pub fn get_timer_callback(&self) -> TimeEventCallback {
         let endpoint = self.endpoint.into(); // TODO: Optimize this
-        let process_callback = Rc::new(move |event: TimeEvent| {
+        TimeEventCallback::from(move |event: TimeEvent| {
             msgbus::send_any(endpoint, &(event));
-        });
-        TimeEventCallback::Rust(process_callback)
+        })
     }
 }
 
@@ -348,10 +347,9 @@ where
                 let endpoint = self.endpoint.into(); // TODO: Optimize this
 
                 // Send message to throttler process endpoint to resume
-                let process_callback = Rc::new(move |event: TimeEvent| {
+                throttler.set_timer(Some(TimeEventCallback::from(move |event: TimeEvent| {
                     msgbus::send_any(endpoint, &(event));
-                });
-                throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
+                })));
                 return;
             }
         }
@@ -370,12 +368,10 @@ where
     T: 'static + Debug,
     F: Fn(T) + 'static,
 {
-    let callback = Rc::new(move |_event: TimeEvent| {
+    TimeEventCallback::from(move |_event: TimeEvent| {
         let throttler = get_actor_unchecked::<Throttler<T, F>>(&actor_id);
         throttler.is_limiting = false;
-    });
-
-    TimeEventCallback::Rust(callback)
+    })
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -775,7 +771,7 @@ mod tests {
             }
 
             // Check the throttler rate limits on the appropriate conditions
-            // * Atleast one message is buffered
+            // * At least one message is buffered
             // * Timestamp queue is filled upto limit
             // * Least recent timestamp in queue exceeds interval
             let buffered_messages = throttler.qsize() > 0;

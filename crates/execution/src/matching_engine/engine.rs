@@ -247,24 +247,35 @@ impl OrderMatchingEngine {
     // -- DATA PROCESSING -------------------------------------------------------------------------
 
     /// Process the venues market for the given order book delta.
-    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the delta to the book fails.
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) -> anyhow::Result<()> {
         log::debug!("Processing {delta}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_delta(delta);
+            self.book.apply_delta(delta)?;
         }
 
         self.iterate(delta.ts_init);
+        Ok(())
     }
 
-    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+    /// Process the venues market for the given order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the deltas to the book fails.
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         log::debug!("Processing {deltas}");
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_deltas(deltas);
+            self.book.apply_deltas(deltas)?;
         }
 
         self.iterate(deltas.ts_init);
+        Ok(())
     }
 
     /// # Panics
@@ -615,7 +626,7 @@ impl OrderMatchingEngine {
                 }
             }
 
-            // Check fo valid order quantity precision
+            // Check for valid order quantity precision
             if order.quantity().precision != self.instrument.size_precision() {
                 self.generate_order_rejected(
                     order,
@@ -1663,9 +1674,9 @@ impl OrderMatchingEngine {
         if order.is_passive() && order.is_closed() {
             // Check if order exists in OrderMatching core, and delete it if it does
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self
-                    .core
-                    .delete_order(&PassiveOrderAny::from(order.clone()));
+                let _ = self.core.delete_order(
+                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                );
             }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
@@ -2089,7 +2100,9 @@ impl OrderMatchingEngine {
             }
         }
 
-        let _ = self.core.add_order(order.to_owned().into());
+        let _ = self.core.add_order(
+            PassiveOrderAny::try_from(order.to_owned()).expect("passive order conversion"),
+        );
     }
 
     fn expire_order(&mut self, order: &PassiveOrderAny) {
@@ -2116,9 +2129,9 @@ impl OrderMatchingEngine {
 
         // Check if order exists in OrderMatching core, and delete it if it does
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self
-                .core
-                .delete_order(&PassiveOrderAny::from(order.clone()));
+            let _ = self.core.delete_order(
+                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+            );
         }
         self.cached_filled_qty.remove(&order.client_order_id());
 

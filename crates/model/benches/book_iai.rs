@@ -78,7 +78,7 @@ fn bench_orderbook_apply_deltas() {
         ts_init: 2.into(),
     };
 
-    book.apply_deltas(&deltas);
+    book.apply_deltas(&deltas).unwrap();
     black_box(());
 }
 

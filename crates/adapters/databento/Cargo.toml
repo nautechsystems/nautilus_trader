@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Databento data integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_databento"
@@ -22,24 +25,18 @@ default = ["live"]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
-live = [
-  "nautilus-live",
-  "nautilus-system",
-  "dotenvy",
-  "tracing-subscriber",
-]
+live = ["nautilus-live", "nautilus-system", "dotenvy", "tracing-subscriber"]
 python = [
-  "nautilus-core/ffi",  # Temporary as python currently relies on the ffi CVec
+  "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
-high-precision = [
-  "nautilus-model/high-precision",
-]
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -57,22 +54,23 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 databento = { workspace = true }
-dotenvy = { workspace = true, optional = true }
 fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, optional = true }
-time = { workspace = true }
 ustr = { workspace = true }
+
+dotenvy = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

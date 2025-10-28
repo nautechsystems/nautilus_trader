@@ -463,7 +463,7 @@ class BybitEnumParser:
             TimeInForce.FOK: BybitTimeInForce.FOK,
         }
 
-        # fmt: off
+
         self.bybit_to_nautilus_order_status = {
             (OrderType.MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
             (OrderType.MARKET, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
@@ -545,7 +545,7 @@ class BybitEnumParser:
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
         }
-        # fmt: on
+
         self.bybit_to_nautilus_trigger_type = {
             BybitTriggerType.NONE: TriggerType.NO_TRIGGER,
             BybitTriggerType.LAST_PRICE: TriggerType.LAST_PRICE,

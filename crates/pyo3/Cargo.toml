@@ -1,18 +1,21 @@
 [package]
 name = "nautilus-pyo3"
 readme = "README.md"
-publish = false  # Do not publish to crates.io
+publish = false # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Python bindings for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_pyo3"
@@ -21,19 +24,19 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 cython-compat = []
-defi = [
-  "dep:nautilus-blockchain",
-  "nautilus-blockchain/python",
-]
+defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
+  "nautilus-analysis/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
+  "nautilus-bybit/extension-module",
   "nautilus-coinbase-intx/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-execution/extension-module",
+  "nautilus-hyperliquid/extension-module",
   "nautilus-indicators/extension-module",
   "nautilus-infrastructure/extension-module",
   "nautilus-live/extension-module",
@@ -65,6 +68,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-analysis = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true, features = ["python"] }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }
@@ -81,7 +85,10 @@ nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
 nautilus-bitmex = { workspace = true, features = ["python"] }
-nautilus-blockchain = { workspace = true, features = ["python"], optional = true }
+nautilus-blockchain = { workspace = true, features = [
+  "python",
+], optional = true }
+nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }

@@ -52,7 +52,7 @@ impl StateSnapshot {
     ///
     /// If this state snapshot is based on a negative rate limiting
     /// outcome, this method returns 0.
-    #[allow(dead_code)] // Under development
+    #[allow(dead_code, reason = "Under development")]
     pub fn remaining_burst_capacity(&self) -> u32 {
         let t0 = self.time_of_measurement + self.t;
         (cmp::min(

@@ -88,11 +88,22 @@ def get_bybit_http_client(
     http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
 
     # Set up rate limit quotas
-    # Current rate limit in bybit is 120 requests in any 5-second window,
-    # and that is 24 request per second.
+    # Current rate limit in Bybit is 120 requests in any 5-second window,
+    # and that is 24 requests per second.
     # https://bybit-exchange.github.io/docs/v5/rate-limit
-    ratelimiter_default_quota = Quota.rate_per_second(24)
-    ratelimiter_quotas: list[tuple[str, Quota]] = []
+    global_key = "bybit:global"
+    global_quota = Quota.rate_per_second(24)
+    ratelimiter_default_quota = global_quota
+    ratelimiter_quotas: list[tuple[str, Quota]] = [
+        (global_key, global_quota),
+        ("bybit:/v5/market/kline", Quota.rate_per_second(20)),
+        ("bybit:/v5/market/trades", Quota.rate_per_second(24)),
+        ("bybit:/v5/order/create", Quota.rate_per_second(10)),
+        ("bybit:/v5/order/cancel", Quota.rate_per_second(10)),
+        ("bybit:/v5/order/create-batch", Quota.rate_per_second(5)),
+        ("bybit:/v5/order/cancel-batch", Quota.rate_per_second(5)),
+        ("bybit:/v5/order/cancel-all", Quota.rate_per_second(2)),
+    ]
 
     return BybitHttpClient(
         clock=clock,

@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, I256, U160};
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +37,7 @@ pub struct PoolSwap {
     pub chain: SharedChain,
     /// The decentralized exchange where the swap was executed.
     pub dex: SharedDex,
-    /// The instrument ID.
+    /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
@@ -51,12 +51,24 @@ pub struct PoolSwap {
     pub log_index: u32,
     /// The blockchain address of the user or contract that initiated the swap.
     pub sender: Address,
+    /// The blockchain address that received the swapped tokens.
+    pub recipient: Address,
+    /// The sqrt price after the swap (Q64.96 format).
+    pub sqrt_price_x96: U160,
+    /// The amount of token0 involved in the swap.
+    pub amount0: I256,
+    /// The amount of token1 involved in the swap.
+    pub amount1: I256,
+    /// The liquidity of the pool after the swap occurred.
+    pub liquidity: u128,
+    /// The current tick of the pool after the swap occurred.
+    pub tick: i32,
     /// The direction of the swap from the perspective of the base token.
-    pub side: OrderSide,
+    pub side: Option<OrderSide>,
     /// The amount of tokens swapped.
-    pub size: Quantity,
+    pub size: Option<Quantity>,
     /// The exchange rate at which the swap occurred.
-    pub price: Price,
+    pub price: Option<Price>,
     /// UNIX timestamp (nanoseconds) when the swap occurred.
     pub timestamp: Option<UnixNanos>,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
@@ -78,9 +90,15 @@ impl PoolSwap {
         log_index: u32,
         timestamp: Option<UnixNanos>,
         sender: Address,
-        side: OrderSide,
-        size: Quantity,
-        price: Price,
+        recipient: Address,
+        amount0: I256,
+        amount1: I256,
+        sqrt_price_x96: U160,
+        liquidity: u128,
+        tick: i32,
+        side: Option<OrderSide>,
+        size: Option<Quantity>,
+        price: Option<Price>,
     ) -> Self {
         Self {
             chain,
@@ -93,6 +111,12 @@ impl PoolSwap {
             log_index,
             timestamp,
             sender,
+            recipient,
+            amount0,
+            amount1,
+            sqrt_price_x96,
+            liquidity,
+            tick,
             side,
             size,
             price,
@@ -105,12 +129,9 @@ impl Display for PoolSwap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, side={}, quantity={}, price={})",
+            "{}(instrument_id={})",
             stringify!(PoolSwap),
             self.instrument_id,
-            self.side,
-            self.size,
-            self.price,
         )
     }
 }

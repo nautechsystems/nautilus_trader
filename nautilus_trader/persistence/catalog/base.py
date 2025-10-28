@@ -205,9 +205,9 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[str]:
+    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[str] | dict[str, list[Data]]:
         raise NotImplementedError
 
     @abstractmethod
-    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[str]:
+    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[str] | dict[str, list[Data]]:
         raise NotImplementedError

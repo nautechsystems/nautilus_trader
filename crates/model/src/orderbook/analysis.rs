@@ -93,8 +93,7 @@ pub fn get_avg_px_qty_for_exposure(
     let mut cumulative_size_raw: QuantityRaw = 0;
     let mut final_price = levels
         .first_key_value()
-        .map(|(price, _)| price.value.as_f64())
-        .unwrap_or(0.0);
+        .map_or(0.0, |(price, _)| price.value.as_f64());
 
     for (book_price, level) in levels {
         let price = book_price.value.as_f64();
@@ -174,7 +173,8 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
         let best_bid = top_bid_level.price;
         let best_ask = top_ask_level.price;
 
-        if best_bid.value >= best_ask.value {
+        // Only strictly crossed books (bid > ask) are invalid; locked markets (bid == ask) are valid
+        if best_bid.value > best_ask.value {
             return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
         }
     }

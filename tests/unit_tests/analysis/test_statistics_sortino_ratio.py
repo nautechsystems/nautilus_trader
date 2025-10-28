@@ -17,7 +17,8 @@ import pandas as pd
 from numpy import float64
 from numpy import nan
 
-from nautilus_trader.analysis.statistics.sortino_ratio import SortinoRatio
+from nautilus_trader.analysis import SortinoRatio
+from tests.unit_tests.analysis.conftest import convert_series_to_dict
 
 
 class TestSortinoRatioPortfolioStatistic:
@@ -38,7 +39,7 @@ class TestSortinoRatioPortfolioStatistic:
         stat = SortinoRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert pd.isna(result)
@@ -51,7 +52,7 @@ class TestSortinoRatioPortfolioStatistic:
         stat = SortinoRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert pd.isna(result)
@@ -64,7 +65,7 @@ class TestSortinoRatioPortfolioStatistic:
         stat = SortinoRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result == 0.0
@@ -77,7 +78,7 @@ class TestSortinoRatioPortfolioStatistic:
         stat = SortinoRatio()
 
         # Act
-        result = stat.calculate_from_returns(data)
+        result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
         assert result == 9.16515138991168

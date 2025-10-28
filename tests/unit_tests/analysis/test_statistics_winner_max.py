@@ -16,7 +16,7 @@
 import pandas as pd
 from numpy import float64
 
-from nautilus_trader.analysis.statistics.winner_max import MaxWinner
+from nautilus_trader.analysis import MaxWinner
 
 
 class TestMaxWinnerPortfolioStatistic:

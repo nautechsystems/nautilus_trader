@@ -85,7 +85,13 @@ impl TardisHttpClient {
 
     async fn handle_error_response<T>(resp: Response) -> Result<T> {
         let status = resp.status().as_u16();
-        let error_text = resp.text().await.unwrap_or_default();
+        let error_text = match resp.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::warn!("Failed to extract error response body: {e}");
+                String::from("Failed to extract error response")
+            }
+        };
 
         if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&error_text) {
             Err(Error::ApiError {

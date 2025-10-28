@@ -240,6 +240,18 @@ impl FuturesContract {
     }
 
     #[getter]
+    #[pyo3(name = "maker_fee")]
+    fn py_maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "taker_fee")]
+    fn py_taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
+    #[getter]
     #[pyo3(name = "info")]
     fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())

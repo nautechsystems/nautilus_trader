@@ -6,6 +6,7 @@ from web3 import Web3
 from web3.constants import MAX_INT
 from web3.middleware import ExtraDataToPOAMiddleware
 
+
 # Before running this script you will need the following:
 # - Install the web3 Python package (pip install -U web3==7.12.1)
 # - A Polygon wallet funded with some MATIC

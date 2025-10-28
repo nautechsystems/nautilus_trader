@@ -120,22 +120,17 @@ class TestEnhancedFillModels:
         bids = list(result.bids())
         asks = list(result.asks())
 
-        # Should have at least 2 levels
-        assert len(bids) >= 2
-        assert len(asks) >= 2
+        # Should have exactly 1 level per side (one tick away from best)
+        # No liquidity at best price guarantees slippage
+        assert len(bids) == 1
+        assert len(asks) == 1
 
-        # First level should have zero volume
-        assert bids[0].price == best_bid
-        assert asks[0].price == best_ask
-        assert bids[0].size() == 0
-        assert asks[0].size() == 0
-
-        # Second level should have unlimited volume one tick away
+        # Only level should be one tick away from best price with unlimited volume
         tick = self.instrument.price_increment
-        assert bids[1].price == best_bid - tick
-        assert asks[1].price == best_ask + tick
-        assert bids[1].size() == 1_000_000
-        assert asks[1].size() == 1_000_000
+        assert bids[0].price == best_bid - tick
+        assert asks[0].price == best_ask + tick
+        assert bids[0].size() == 1_000_000
+        assert asks[0].size() == 1_000_000
 
     def test_two_tier_fill_model_creates_tiered_liquidity(self):
         """

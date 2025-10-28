@@ -39,12 +39,11 @@ use index::CacheIndex;
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{
-        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
+        check_key_not_in_map, check_predicate_false, check_slice_not_empty,
+        check_valid_string_ascii,
     },
     datetime::secs_to_nanos,
 };
-#[cfg(feature = "defi")]
-use nautilus_model::defi::Pool;
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
@@ -99,7 +98,7 @@ pub struct Cache {
     positions: AHashMap<PositionId, Position>,
     position_snapshots: AHashMap<PositionId, Bytes>,
     #[cfg(feature = "defi")]
-    pools: AHashMap<InstrumentId, Pool>,
+    pub(crate) defi: crate::defi::cache::DefiCache,
 }
 
 impl Debug for Cache {
@@ -173,7 +172,7 @@ impl Cache {
             positions: AHashMap::new(),
             position_snapshots: AHashMap::new(),
             #[cfg(feature = "defi")]
-            pools: AHashMap::new(),
+            defi: crate::defi::cache::DefiCache::default(),
         }
     }
 
@@ -900,6 +899,7 @@ impl Cache {
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
             if let Some(order) = self.orders.get(&client_order_id)
+                && order.is_closed()
                 && let Some(ts_closed) = order.ts_closed()
                 && ts_closed + buffer_ns <= ts_now
             {
@@ -935,6 +935,7 @@ impl Cache {
 
         for position_id in self.index.positions_closed.clone() {
             if let Some(position) = self.positions.get(&position_id)
+                && position.is_closed()
                 && let Some(ts_closed) = position.ts_closed
                 && ts_closed + buffer_ns <= ts_now
             {
@@ -945,50 +946,73 @@ impl Cache {
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
-    /// All `OrderFilled` events for the order will also be purged from any associated position.
+    /// For safety, an order is prevented from being purged if it's open.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
-        // Purge events from associated position if exists
-        if let Some(position_id) = self.index.order_position.get(&client_order_id)
-            && let Some(position) = self.positions.get_mut(position_id)
+        // Check if order exists and is safe to purge before removing
+        let order = self.orders.get(&client_order_id).cloned();
+
+        // SAFETY: Prevent purging open orders
+        if let Some(ref ord) = order
+            && ord.is_open()
         {
-            position.purge_events_for_order(client_order_id);
+            log::warn!("Order {client_order_id} found open when purging, skipping purge");
+            return;
         }
 
-        if let Some(order) = self.orders.remove(&client_order_id) {
+        // If order exists in cache, remove it and clean up order-specific indices
+        if let Some(ref ord) = order {
+            // Safe to purge
+            self.orders.remove(&client_order_id);
+
             // Remove order from venue index
-            if let Some(venue_orders) = self
-                .index
-                .venue_orders
-                .get_mut(&order.instrument_id().venue)
+            if let Some(venue_orders) = self.index.venue_orders.get_mut(&ord.instrument_id().venue)
             {
                 venue_orders.remove(&client_order_id);
             }
 
             // Remove venue order ID index if exists
-            if let Some(venue_order_id) = order.venue_order_id() {
+            if let Some(venue_order_id) = ord.venue_order_id() {
                 self.index.venue_order_ids.remove(&venue_order_id);
             }
 
             // Remove from instrument orders index
             if let Some(instrument_orders) =
-                self.index.instrument_orders.get_mut(&order.instrument_id())
+                self.index.instrument_orders.get_mut(&ord.instrument_id())
             {
                 instrument_orders.remove(&client_order_id);
             }
 
             // Remove from position orders index if associated with a position
-            if let Some(position_id) = order.position_id()
+            if let Some(position_id) = ord.position_id()
                 && let Some(position_orders) = self.index.position_orders.get_mut(&position_id)
             {
                 position_orders.remove(&client_order_id);
             }
 
             // Remove from exec algorithm orders index if it has an exec algorithm
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id()
+            if let Some(exec_algorithm_id) = ord.exec_algorithm_id()
                 && let Some(exec_algorithm_orders) =
                     self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
             {
                 exec_algorithm_orders.remove(&client_order_id);
+            }
+
+            // Clean up strategy orders reverse index
+            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&ord.strategy_id()) {
+                strategy_orders.remove(&client_order_id);
+                if strategy_orders.is_empty() {
+                    self.index.strategy_orders.remove(&ord.strategy_id());
+                }
+            }
+
+            // Clean up exec spawn reverse index (if this order is a spawned child)
+            if let Some(exec_spawn_id) = ord.exec_spawn_id()
+                && let Some(spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
+            {
+                spawn_orders.remove(&client_order_id);
+                if spawn_orders.is_empty() {
+                    self.index.exec_spawn_orders.remove(&exec_spawn_id);
+                }
             }
 
             log::info!("Purged order {client_order_id}");
@@ -996,12 +1020,25 @@ impl Cache {
             log::warn!("Order {client_order_id} not found when purging");
         }
 
-        // Remove from all other index collections regardless of whether order was found
+        // Always clean up order indices (even if order was not in cache)
         self.index.order_position.remove(&client_order_id);
-        self.index.order_strategy.remove(&client_order_id);
+        let strategy_id = self.index.order_strategy.remove(&client_order_id);
         self.index.order_client.remove(&client_order_id);
         self.index.client_order_ids.remove(&client_order_id);
+
+        // Clean up reverse index when order not in cache (using forward index)
+        if let Some(strategy_id) = strategy_id
+            && let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id)
+        {
+            strategy_orders.remove(&client_order_id);
+            if strategy_orders.is_empty() {
+                self.index.strategy_orders.remove(&strategy_id);
+            }
+        }
+
+        // Remove spawn parent entry if this order was a spawn root
         self.index.exec_spawn_orders.remove(&client_order_id);
+
         self.index.orders.remove(&client_order_id);
         self.index.orders_closed.remove(&client_order_id);
         self.index.orders_emulated.remove(&client_order_id);
@@ -1010,35 +1047,47 @@ impl Cache {
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
+    ///
+    /// For safety, a position is prevented from being purged if it's open.
     pub fn purge_position(&mut self, position_id: PositionId) {
-        if let Some(position) = self.positions.remove(&position_id) {
+        // Check if position exists and is safe to purge before removing
+        let position = self.positions.get(&position_id).cloned();
+
+        // SAFETY: Prevent purging open positions
+        if let Some(ref pos) = position
+            && pos.is_open()
+        {
+            log::warn!("Position {position_id} found open when purging, skipping purge");
+            return;
+        }
+
+        // If position exists in cache, remove it and clean up position-specific indices
+        if let Some(ref pos) = position {
+            self.positions.remove(&position_id);
+
             // Remove from venue positions index
-            if let Some(venue_positions) = self
-                .index
-                .venue_positions
-                .get_mut(&position.instrument_id.venue)
+            if let Some(venue_positions) =
+                self.index.venue_positions.get_mut(&pos.instrument_id.venue)
             {
                 venue_positions.remove(&position_id);
             }
 
             // Remove from instrument positions index
-            if let Some(instrument_positions) = self
-                .index
-                .instrument_positions
-                .get_mut(&position.instrument_id)
+            if let Some(instrument_positions) =
+                self.index.instrument_positions.get_mut(&pos.instrument_id)
             {
                 instrument_positions.remove(&position_id);
             }
 
             // Remove from strategy positions index
             if let Some(strategy_positions) =
-                self.index.strategy_positions.get_mut(&position.strategy_id)
+                self.index.strategy_positions.get_mut(&pos.strategy_id)
             {
                 strategy_positions.remove(&position_id);
             }
 
             // Remove position ID from orders that reference it
-            for client_order_id in position.client_order_ids() {
+            for client_order_id in pos.client_order_ids() {
                 self.index.order_position.remove(&client_order_id);
             }
 
@@ -1047,12 +1096,15 @@ impl Cache {
             log::warn!("Position {position_id} not found when purging");
         }
 
-        // Remove from all other index collections regardless of whether position was found
+        // Always clean up position indices (even if position not in cache)
         self.index.position_strategy.remove(&position_id);
         self.index.position_orders.remove(&position_id);
         self.index.positions.remove(&position_id);
         self.index.positions_open.remove(&position_id);
         self.index.positions_closed.remove(&position_id);
+
+        // Always clean up position snapshots (even if position not in cache)
+        self.position_snapshots.remove(&position_id);
     }
 
     /// Purges all account state events which are outside the lookback window.
@@ -1116,7 +1168,10 @@ impl Cache {
         self.yield_curves.clear();
 
         #[cfg(feature = "defi")]
-        self.pools.clear();
+        {
+            self.defi.pools.clear();
+            self.defi.pool_profilers.clear();
+        }
 
         self.clear_index();
 
@@ -1153,7 +1208,7 @@ impl Cache {
     ///
     /// Returns an error if persisting the entry to the backing database fails.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string(key, stringify!(key))?;
+        check_valid_string_ascii(key, stringify!(key))?;
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
         log::debug!("Adding general {key}");
@@ -1192,19 +1247,6 @@ impl Cache {
         log::debug!("Adding `OwnOrderBook` {}", own_book.instrument_id);
 
         self.own_books.insert(own_book.instrument_id, own_book);
-        Ok(())
-    }
-
-    /// Adds a `Pool` to the cache.
-    ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
-    #[cfg(feature = "defi")]
-    pub fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
-        log::debug!("Adding `Pool` {}", pool.instrument_id);
-
-        self.pools.insert(pool.instrument_id, pool);
         Ok(())
     }
 
@@ -1645,8 +1687,7 @@ impl Cache {
             .insert(client_order_id);
 
         // Update exec_algorithm -> orders index
-        // Update exec_algorithm -> orders index
-        if let (Some(exec_algorithm_id), Some(exec_spawn_id)) = (exec_algorithm_id, exec_spawn_id) {
+        if let Some(exec_algorithm_id) = exec_algorithm_id {
             self.index.exec_algorithms.insert(exec_algorithm_id);
 
             self.index
@@ -1654,7 +1695,10 @@ impl Cache {
                 .entry(exec_algorithm_id)
                 .or_default()
                 .insert(client_order_id);
+        }
 
+        // Update exec_spawn -> orders index
+        if let Some(exec_spawn_id) = exec_spawn_id {
             self.index
                 .exec_spawn_orders
                 .entry(exec_spawn_id)
@@ -1923,7 +1967,7 @@ impl Cache {
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
 
-        // Serialize the position (TODO: temporily just to JSON to remove a dependency)
+        // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
         let position_serialized = serde_json::to_vec(&copied_position)?;
 
         let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
@@ -2872,7 +2916,7 @@ impl Cache {
     ///
     /// Returns an error if the `key` is invalid.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string(key, stringify!(key))?;
+        check_valid_string_ascii(key, stringify!(key))?;
 
         Ok(self.general.get(key))
     }
@@ -2977,20 +3021,6 @@ impl Cache {
         self.own_books.get_mut(instrument_id)
     }
 
-    /// Gets a reference to the pool for the `instrument_id`.
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn pool(&self, instrument_id: &InstrumentId) -> Option<&Pool> {
-        self.pools.get(instrument_id)
-    }
-
-    /// Gets a mutable reference to the pool for the `instrument_id`.
-    #[cfg(feature = "defi")]
-    #[must_use]
-    pub fn pool_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut Pool> {
-        self.pools.get_mut(instrument_id)
-    }
-
     /// Gets a reference to the latest quote for the `instrument_id`.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
@@ -3007,7 +3037,7 @@ impl Cache {
             .and_then(|trades| trades.front())
     }
 
-    /// Gets a referenece to the latest mark price update for the `instrument_id`.
+    /// Gets a reference to the latest mark price update for the `instrument_id`.
     #[must_use]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
@@ -3015,7 +3045,7 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
-    /// Gets a referenece to the latest index price update for the `instrument_id`.
+    /// Gets a reference to the latest index price update for the `instrument_id`.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
         self.index_prices
@@ -3310,39 +3340,98 @@ impl Cache {
     ///
     /// This method adds, updates, or removes an order from the own order book
     /// based on the order's current state.
+    ///
+    /// Orders without prices (MARKET, etc.) are skipped as they cannot be
+    /// represented in own books.
     pub fn update_own_order_book(&mut self, order: &OrderAny) {
+        if !order.has_price() {
+            return;
+        }
+
         let instrument_id = order.instrument_id();
 
-        // Get or create the own order book for this instrument
         let own_book = self
             .own_books
             .entry(instrument_id)
             .or_insert_with(|| OwnOrderBook::new(instrument_id));
 
-        // Convert order to own book order
         let own_book_order = order.to_own_book_order();
 
         if order.is_closed() {
-            // Remove the order from the own book if it's closed
             if let Err(e) = own_book.delete(own_book_order) {
                 log::debug!(
-                    "Failed to delete order {} from own book: {}",
+                    "Failed to delete order {} from own book: {e}",
                     order.client_order_id(),
-                    e
                 );
             } else {
                 log::debug!("Deleted order {} from own book", order.client_order_id());
             }
         } else {
             // Add or update the order in the own book
-            own_book.update(own_book_order).unwrap_or_else(|e| {
+            if let Err(e) = own_book.update(own_book_order) {
                 log::debug!(
-                    "Failed to update order {} in own book: {}",
+                    "Failed to update order {} in own book: {e}; inserting instead",
                     order.client_order_id(),
-                    e
                 );
-            });
+                own_book.add(own_book_order);
+            }
             log::debug!("Updated order {} in own book", order.client_order_id());
         }
+    }
+
+    /// Force removal of an order from own order books and clean up all indexes.
+    ///
+    /// This method is used when order event application fails and we need to ensure
+    /// terminal orders are properly cleaned up from own books and all relevant indexes.
+    /// Replicates the index cleanup that update_order performs for closed orders.
+    pub fn force_remove_from_own_order_book(&mut self, client_order_id: &ClientOrderId) {
+        let order = match self.orders.get(client_order_id) {
+            Some(order) => order,
+            None => return,
+        };
+
+        self.index.orders_open.remove(client_order_id);
+        self.index.orders_pending_cancel.remove(client_order_id);
+        self.index.orders_inflight.remove(client_order_id);
+        self.index.orders_emulated.remove(client_order_id);
+
+        if let Some(own_book) = self.own_books.get_mut(&order.instrument_id())
+            && order.has_price()
+        {
+            let own_book_order = order.to_own_book_order();
+            if let Err(e) = own_book.delete(own_book_order) {
+                log::debug!("Could not force delete {client_order_id} from own book: {e}");
+            } else {
+                log::debug!("Force deleted {client_order_id} from own book");
+            }
+        }
+
+        self.index.orders_closed.insert(*client_order_id);
+    }
+
+    /// Audit all own order books against open and inflight order indexes.
+    ///
+    /// Ensures closed orders are removed from own order books. This includes both
+    /// orders tracked in `orders_open` (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
+    /// and `orders_inflight` (INITIALIZED, SUBMITTED) to prevent false positives
+    /// during venue latency windows.
+    pub fn audit_own_order_books(&mut self) {
+        log::debug!("Starting own books audit");
+        let start = std::time::Instant::now();
+
+        // Build union of open and inflight orders for audit,
+        // this prevents false positives for SUBMITTED orders during venue latency.
+        let valid_order_ids: HashSet<ClientOrderId> = self
+            .index
+            .orders_open
+            .union(&self.index.orders_inflight)
+            .copied()
+            .collect();
+
+        for own_book in self.own_books.values_mut() {
+            own_book.audit_open_orders(&valid_order_ids);
+        }
+
+        log::debug!("Completed own books audit in {:?}", start.elapsed());
     }
 }

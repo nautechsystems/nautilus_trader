@@ -251,7 +251,7 @@ async def main(args: argparse.Namespace) -> None:
 
     # Cache instruments
     inst_type = nautilus_pyo3.OKXInstrumentType.SWAP
-    instruments = await http_client.request_instruments(inst_type)
+    instruments = await http_client.request_instruments(inst_type, None)
     for inst in instruments:
         http_client.add_instrument(inst)
     logger.info(f"Cached {len(instruments)} {inst_type} instruments")

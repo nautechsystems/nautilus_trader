@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResultWithCursor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
@@ -101,5 +101,5 @@ class BybitExecution(msgspec.Struct, omit_defaults=True, kw_only=True):
 class BybitTradeHistoryResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitExecution]
+    result: BybitListResultWithCursor[BybitExecution]
     time: int

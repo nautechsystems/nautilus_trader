@@ -19,6 +19,7 @@ pub mod enums;
 pub mod error;
 pub mod messages;
 pub mod parse;
-pub mod post; // <-- NEW
+pub mod post;
 
 pub use client::{HyperliquidWebSocketClient, HyperliquidWebSocketInnerClient};
+pub use messages::{ExecutionReport, NautilusWsMessage};

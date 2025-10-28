@@ -17,7 +17,6 @@
 
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
-use anyhow;
 use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -224,7 +223,7 @@ pub struct PortfolioGreeksParams {
 
 impl std::fmt::Debug for PortfolioGreeksParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PortfolioGreeksParams")
+        f.debug_struct(stringify!(PortfolioGreeksParams))
             .field("underlyings", &self.underlyings)
             .field("venue", &self.venue)
             .field("instrument_id", &self.instrument_id)

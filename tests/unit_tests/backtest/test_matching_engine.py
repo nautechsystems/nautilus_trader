@@ -167,17 +167,31 @@ class TestOrderMatchingEngine:
         assert isinstance(messages[0], OrderFilled)
 
     def test_process_order_book_depth_10(self) -> None:
-        # Arrange
+        # Arrange - Create L2_MBP matching engine for depth10 data
+        matching_engine_l2 = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,  # L2 for multi-level depth data
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
         depth = TestDataStubs.order_book_depth10()
-        assert self.matching_engine.best_ask_price() is None
-        assert self.matching_engine.best_bid_price() is None
+        assert matching_engine_l2.best_ask_price() is None
+        assert matching_engine_l2.best_bid_price() is None
 
         # Act
-        self.matching_engine.process_order_book_depth10(depth)
+        matching_engine_l2.process_order_book_depth10(depth)
 
         # Assert
-        assert self.matching_engine.best_ask_price() == depth.asks[0].price
-        assert self.matching_engine.best_bid_price() == depth.bids[0].price
+        assert matching_engine_l2.best_ask_price() == depth.asks[0].price
+        assert matching_engine_l2.best_bid_price() == depth.bids[0].price
 
     def test_process_trade_buyer_aggressor(self) -> None:
         # Arrange

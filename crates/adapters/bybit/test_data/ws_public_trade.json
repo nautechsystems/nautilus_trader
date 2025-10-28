@@ -1,0 +1,16 @@
+{
+  "topic": "trade.linear.BTCUSDT",
+  "type": "snapshot",
+  "ts": 1709891679005,
+  "data": [
+    {
+      "T": 1709891679000,
+      "s": "BTCUSDT",
+      "S": "Buy",
+      "v": "0.010",
+      "p": "27451.00",
+      "i": "9dc75fca-4bdd-4773-9f78-6f5d7ab2a110",
+      "BT": false
+    }
+  ]
+}

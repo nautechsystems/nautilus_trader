@@ -348,6 +348,6 @@ mod tests {
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_binary_option = BinaryOption::py_from_dict(py, values).unwrap();
             assert_eq!(binary_option, new_binary_option);
-        })
+        });
     }
 }

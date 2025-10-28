@@ -50,7 +50,7 @@ impl OwnBookOrder {
         ts_init: u64,
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Self> {
-        Ok(OwnBookOrder::new(
+        Ok(Self::new(
             trader_id,
             client_order_id,
             venue_order_id,
@@ -234,8 +234,8 @@ impl OwnOrderBook {
 
         all_orders.extend(
             self.bids()
-                .flat_map(|level| level.orders.values().cloned())
-                .chain(self.asks().flat_map(|level| level.orders.values().cloned())),
+                .flat_map(|level| level.orders.values().copied())
+                .chain(self.asks().flat_map(|level| level.orders.values().copied())),
         );
 
         all_orders
@@ -244,14 +244,14 @@ impl OwnOrderBook {
     #[pyo3(name = "bids_to_list")]
     fn py_bids_to_list(&self) -> Vec<OwnBookOrder> {
         self.bids()
-            .flat_map(|level| level.orders.values().cloned())
+            .flat_map(|level| level.orders.values().copied())
             .collect()
     }
 
     #[pyo3(name = "asks_to_list")]
     fn py_asks_to_list(&self) -> Vec<OwnBookOrder> {
         self.asks()
-            .flat_map(|level| level.orders.values().cloned())
+            .flat_map(|level| level.orders.values().copied())
             .collect()
     }
 
@@ -305,7 +305,7 @@ impl OwnOrderBook {
 
     #[pyo3(name = "audit_open_orders")]
     fn py_audit_open_orders(&mut self, open_order_ids: HashSet<ClientOrderId>) {
-        self.audit_open_orders(&open_order_ids)
+        self.audit_open_orders(&open_order_ids);
     }
 
     #[pyo3(name = "pprint")]

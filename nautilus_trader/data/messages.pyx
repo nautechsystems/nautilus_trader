@@ -914,8 +914,6 @@ cdef class SubscribeBars(SubscribeData):
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    await_partial : bool
-        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -933,7 +931,6 @@ cdef class SubscribeBars(SubscribeData):
         Venue venue: Venue | None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        bint await_partial = False,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
@@ -946,13 +943,11 @@ cdef class SubscribeBars(SubscribeData):
             params,
         )
         self.bar_type = bar_type
-        self.await_partial = await_partial
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"bar_type={self.bar_type}, "
-            f"await_partial={self.await_partial}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue})"
         )
@@ -961,7 +956,6 @@ cdef class SubscribeBars(SubscribeData):
         return (
             f"{type(self).__name__}("
             f"bar_type={self.bar_type}, "
-            f"await_partial={self.await_partial}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"

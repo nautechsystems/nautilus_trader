@@ -1,0 +1,16 @@
+[
+  {
+    "symbol": "ETHUSDT",
+    "marginType": "CROSSED",
+    "isAutoAddMargin": false,
+    "leverage": 20,
+    "maxNotionalValue": "1000000"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "marginType": "ISOLATED",
+    "isAutoAddMargin": true,
+    "leverage": 25,
+    "maxNotionalValue": "2000000"
+  }
+]

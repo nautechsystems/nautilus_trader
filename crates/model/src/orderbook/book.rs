@@ -29,7 +29,7 @@ use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
     identifiers::InstrumentId,
-    orderbook::{InvalidBookOperation, ladder::BookLadder},
+    orderbook::{BookIntegrityError, InvalidBookOperation, ladder::BookLadder},
     types::{
         Price, Quantity,
         price::{PRICE_ERROR, PRICE_UNDEF},
@@ -94,8 +94,8 @@ impl OrderBook {
             sequence: 0,
             ts_last: UnixNanos::default(),
             update_count: 0,
-            bids: BookLadder::new(OrderSideSpecified::Buy),
-            asks: BookLadder::new(OrderSideSpecified::Sell),
+            bids: BookLadder::new(OrderSideSpecified::Buy, book_type),
+            asks: BookLadder::new(OrderSideSpecified::Sell, book_type),
         }
     }
 
@@ -263,24 +263,64 @@ impl OrderBook {
     }
 
     /// Applies a single order book delta operation.
-    pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
-        let order = delta.order;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
+    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    pub fn apply_delta(&mut self, delta: &OrderBookDelta) -> Result<(), BookIntegrityError> {
+        let mut order = delta.order;
+
+        if order.side == OrderSide::NoOrderSide && order.order_id != 0 {
+            match self.resolve_no_side_order(order) {
+                Ok(resolved) => order = resolved,
+                Err(BookIntegrityError::OrderNotFoundForSideResolution(order_id)) => {
+                    match delta.action {
+                        BookAction::Add => return Err(BookIntegrityError::NoOrderSide),
+                        BookAction::Update | BookAction::Delete => {
+                            // Already consistent
+                            log::debug!(
+                                "Skipping {:?} for unknown order_id={order_id}",
+                                delta.action
+                            );
+                            return Ok(());
+                        }
+                        BookAction::Clear => {} // Won't hit this (order_id != 0)
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        if order.side == OrderSide::NoOrderSide && delta.action != BookAction::Clear {
+            return Err(BookIntegrityError::NoOrderSide);
+        }
+
         let flags = delta.flags;
         let sequence = delta.sequence;
         let ts_event = delta.ts_event;
+
         match delta.action {
             BookAction::Add => self.add(order, flags, sequence, ts_event),
             BookAction::Update => self.update(order, flags, sequence, ts_event),
             BookAction::Delete => self.delete(order, flags, sequence, ts_event),
             BookAction::Clear => self.clear(sequence, ts_event),
         }
+
+        Ok(())
     }
 
     /// Applies multiple order book delta operations.
-    pub fn apply_deltas(&mut self, deltas: &OrderBookDeltas) {
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error encountered when applying deltas.
+    pub fn apply_deltas(&mut self, deltas: &OrderBookDeltas) -> Result<(), BookIntegrityError> {
         for delta in &deltas.deltas {
-            self.apply_delta(delta);
+            self.apply_delta(delta)?;
         }
+        Ok(())
     }
 
     /// Replaces current book state with a depth snapshot.
@@ -289,12 +329,59 @@ impl OrderBook {
         self.asks.clear();
 
         for order in depth.bids {
-            self.add(order, depth.flags, depth.sequence, depth.ts_event);
+            // Skip padding entries
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+
+            debug_assert_eq!(
+                order.side,
+                OrderSide::Buy,
+                "Bid order must have Buy side, was {:?}",
+                order.side
+            );
+
+            let order = pre_process_order(self.book_type, order, depth.flags);
+            self.bids.add(order);
         }
 
         for order in depth.asks {
-            self.add(order, depth.flags, depth.sequence, depth.ts_event);
+            // Skip padding entries
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+
+            debug_assert_eq!(
+                order.side,
+                OrderSide::Sell,
+                "Ask order must have Sell side, was {:?}",
+                order.side
+            );
+
+            let order = pre_process_order(self.book_type, order, depth.flags);
+            self.asks.add(order);
         }
+
+        self.increment(depth.sequence, depth.ts_event);
+    }
+
+    fn resolve_no_side_order(&self, mut order: BookOrder) -> Result<BookOrder, BookIntegrityError> {
+        let resolved_side = self
+            .bids
+            .cache
+            .get(&order.order_id)
+            .or_else(|| self.asks.cache.get(&order.order_id))
+            .map(|book_price| match book_price.side {
+                OrderSideSpecified::Buy => OrderSide::Buy,
+                OrderSideSpecified::Sell => OrderSide::Sell,
+            })
+            .ok_or(BookIntegrityError::OrderNotFoundForSideResolution(
+                order.order_id,
+            ))?;
+
+        order.side = resolved_side;
+
+        Ok(order)
     }
 
     /// Returns an iterator over bid price levels.
@@ -558,27 +645,44 @@ impl OrderBook {
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
-        debug_assert!(
-            sequence >= self.sequence,
-            "Sequence number should not go backwards: old={}, new={}",
-            self.sequence,
-            sequence
-        );
-        debug_assert!(
-            ts_event >= self.ts_last,
-            "Timestamp should not go backwards: old={}, new={}",
-            self.ts_last,
-            ts_event
-        );
-        debug_assert!(
-            self.update_count < u64::MAX,
-            "Update count approaching overflow: {}",
-            self.update_count
-        );
+        // Critical invariant checks: panic in debug, warn in release
+        if sequence < self.sequence {
+            let msg = format!(
+                "Sequence number should not go backwards: old={}, new={}",
+                self.sequence, sequence
+            );
+            debug_assert!(sequence >= self.sequence, "{}", msg);
+            log::warn!("{}", msg);
+        }
+
+        if ts_event < self.ts_last {
+            let msg = format!(
+                "Timestamp should not go backwards: old={}, new={}",
+                self.ts_last, ts_event
+            );
+            debug_assert!(ts_event >= self.ts_last, "{}", msg);
+            log::warn!("{}", msg);
+        }
+
+        if self.update_count == u64::MAX {
+            // Debug assert to catch in development
+            debug_assert!(
+                self.update_count < u64::MAX,
+                "Update count at u64::MAX limit (about to overflow): {}",
+                self.update_count
+            );
+
+            // Spam warnings in production when at/near u64::MAX
+            log::warn!(
+                "Update count at u64::MAX: {} (instrument_id={})",
+                self.update_count,
+                self.instrument_id
+            );
+        }
 
         self.sequence = sequence;
         self.ts_last = ts_event;
-        self.update_count += 1;
+        self.update_count = self.update_count.saturating_add(1);
     }
 
     /// Updates L1 book state from a quote tick. Only valid for L1_MBP book type.
@@ -625,6 +729,8 @@ impl OrderBook {
         self.update_book_bid(bid, quote.ts_event);
         self.update_book_ask(ask, quote.ts_event);
 
+        self.increment(self.sequence.saturating_add(1), quote.ts_event);
+
         Ok(())
     }
 
@@ -666,6 +772,8 @@ impl OrderBook {
 
         self.update_book_bid(bid, trade.ts_event);
         self.update_book_ask(ask, trade.ts_event);
+
+        self.increment(self.sequence.saturating_add(1), trade.ts_event);
 
         Ok(())
     }
@@ -710,6 +818,11 @@ fn group_levels<'a>(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut levels = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 

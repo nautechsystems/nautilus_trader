@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -36,7 +35,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -52,15 +50,6 @@ def account_id(venue):
 def has_live_components_marker(request) -> bool:
     marker_names = [mark.name for mark in request.node.iter_markers()]
     return "live_components" in marker_names
-
-
-@pytest.fixture()
-def event_loop():
-    loop = asyncio.get_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.set_debug(True)
-    yield loop
-    ensure_all_tasks_completed()
 
 
 @pytest.fixture()
@@ -256,7 +245,8 @@ def _collect_events(msgbus, filter_types: tuple[type, ...] | None = None):
         if filter_types is None or isinstance(event, filter_types):
             events.append(event)
 
-    msgbus.subscribe("events.*", handler=handler)
+    msgbus.subscribe("events.order.*", handler=handler)
+    msgbus.subscribe("events.position.*", handler=handler)
     return events
 
 

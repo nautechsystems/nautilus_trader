@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import traceback
 from collections import defaultdict
 
 from betfair_parser.exceptions import BetfairError
@@ -262,8 +261,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 # Session is invalid, need to reconnect
                 self._log.warning("Invalid session error, reconnecting...")
                 await self._reconnect()
-            except Exception:
-                self._log.error(f"Reconnection failed: {traceback.format_exc()}")
+            except Exception as e:
+                self._log.exception("Reconnection failed", e)
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
@@ -455,6 +454,20 @@ class BetfairExecutionClient(LiveExecutionClient):
         instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot submit order: no instrument found for {command.instrument_id}")
+            return
+
+        if command.order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {command.order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         self.generate_order_submitted(

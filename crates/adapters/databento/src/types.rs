@@ -30,7 +30,7 @@ use super::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 /// Represents a Databento publisher ID.
 pub type PublisherId = u16;
 
-/// Represents a Databento dataset code.
+/// Represents a Databento dataset ID.
 pub type Dataset = Ustr;
 
 /// Represents a Databento publisher.
@@ -42,7 +42,7 @@ pub type Dataset = Ustr;
 pub struct DatabentoPublisher {
     /// The publisher ID assigned by Databento, which denotes the dataset and venue.
     pub publisher_id: PublisherId,
-    /// The Databento dataset code for the publisher.
+    /// The Databento dataset ID for the publisher.
     pub dataset: dbn::Dataset,
     /// The venue for the publisher.
     pub venue: dbn::Venue,

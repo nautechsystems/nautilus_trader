@@ -87,7 +87,7 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result
 /// - `s` consists solely of whitespace characters.
 /// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
-pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
 
     if s.is_empty() {
@@ -112,6 +112,33 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
     Ok(())
 }
 
+/// Checks the string `s` has semantic meaning and allows UTF-8 characters.
+///
+/// This is a relaxed version of [`check_valid_string_ascii`] that permits non-ASCII UTF-8 characters.
+/// Use this for external identifiers (e.g., exchange symbols) that may contain Unicode characters.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `s` is an empty string.
+/// - `s` consists solely of whitespace characters.
+#[inline(always)]
+pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+    let s = s.as_ref();
+
+    if s.is_empty() {
+        anyhow::bail!("invalid string for '{param}', was empty");
+    }
+
+    let has_non_whitespace = s.chars().any(|c| !c.is_whitespace());
+
+    if !has_non_whitespace {
+        anyhow::bail!("invalid string for '{param}', was all whitespace");
+    }
+
+    Ok(())
+}
+
 /// Checks the string `s` if Some, contains only ASCII characters and has semantic meaning.
 ///
 /// # Errors
@@ -121,9 +148,12 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
 /// - `s` consists solely of whitespace characters.
 /// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
-pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_ascii_optional<T: AsRef<str>>(
+    s: Option<T>,
+    param: &str,
+) -> anyhow::Result<()> {
     if let Some(s) = s {
-        check_valid_string(s, param)?;
+        check_valid_string_ascii(s, param)?;
     }
     Ok(())
 }
@@ -578,8 +608,8 @@ mod tests {
     #[case("a a")]
     #[case(" a ")]
     #[case("abc")]
-    fn test_check_valid_string_with_valid_value(#[case] s: &str) {
-        assert!(check_valid_string(s, "value").is_ok());
+    fn test_check_valid_string_ascii_with_valid_value(#[case] s: &str) {
+        assert!(check_valid_string_ascii(s, "value").is_ok());
     }
 
     #[rstest]
@@ -587,8 +617,25 @@ mod tests {
     #[case(" ")] // <-- whitespace-only
     #[case("  ")] // <-- whitespace-only string
     #[case("🦀")] // <-- contains non-ASCII char
-    fn test_check_valid_string_with_invalid_values(#[case] s: &str) {
-        assert!(check_valid_string(s, "value").is_err());
+    fn test_check_valid_string_ascii_with_invalid_values(#[case] s: &str) {
+        assert!(check_valid_string_ascii(s, "value").is_err());
+    }
+
+    #[rstest]
+    #[case(" a")]
+    #[case("a ")]
+    #[case("abc")]
+    #[case("ETHUSDT")]
+    fn test_check_valid_string_utf8_with_valid_values(#[case] s: &str) {
+        assert!(check_valid_string_utf8(s, "value").is_ok());
+    }
+
+    #[rstest]
+    #[case("")] // <-- empty string
+    #[case(" ")] // <-- whitespace-only
+    #[case("  ")] // <-- whitespace-only string
+    fn test_check_valid_string_utf8_with_invalid_values(#[case] s: &str) {
+        assert!(check_valid_string_utf8(s, "value").is_err());
     }
 
     #[rstest]
@@ -598,8 +645,8 @@ mod tests {
     #[case(Some("a a"))]
     #[case(Some(" a "))]
     #[case(Some("abc"))]
-    fn test_check_valid_string_optional_with_valid_value(#[case] s: Option<&str>) {
-        assert!(check_valid_string_optional(s, "value").is_ok());
+    fn test_check_valid_string_ascii_optional_with_valid_value(#[case] s: Option<&str>) {
+        assert!(check_valid_string_ascii_optional(s, "value").is_ok());
     }
 
     #[rstest]

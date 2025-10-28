@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Strategy machinery and controllers for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_trading"
@@ -25,6 +28,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -53,9 +57,10 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

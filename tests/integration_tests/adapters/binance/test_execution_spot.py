@@ -51,9 +51,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceSpotExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -129,6 +130,8 @@ class TestBinanceSpotExecutionClient:
             cache=self.cache,
             clock=self.clock,
         )
+
+        yield
 
     @pytest.mark.skip(reason="Pending overhaul of testing")
     @pytest.mark.asyncio()
@@ -299,6 +302,42 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["newClientOrderId"] is not None
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_with_price_match_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "only supported for Binance futures" in reason
 
     @pytest.mark.asyncio()
     async def test_submit_stop_limit_order(self, mocker):

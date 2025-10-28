@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Tardis integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_tardis"
@@ -23,7 +26,9 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "python",
   "pyo3/extension-module",
+  "replay",
 ]
 python = [
   "nautilus-core/python",
@@ -31,6 +36,7 @@ python = [
   "nautilus-serialization/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "replay",
 ]
 replay = []
 
@@ -55,8 +61,6 @@ futures-util = { workspace = true }
 heck = { workspace = true }
 log = { workspace = true }
 parquet = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -73,6 +77,9 @@ tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

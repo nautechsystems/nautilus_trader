@@ -581,7 +581,6 @@ fn test_bars_subscription(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     ));
     adapter.execute_subscribe(&sub);
@@ -1180,7 +1179,6 @@ fn test_bars_unsubscribe_idempotent(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     ));
     adapter.execute_subscribe(&sub);

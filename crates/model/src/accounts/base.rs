@@ -273,34 +273,36 @@ impl BaseAccount {
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         let mut pnls: HashMap<Currency, Money> = HashMap::new();
-        let quote_currency = instrument.quote_currency();
         let base_currency = instrument.base_currency();
 
-        let fill_px = fill.last_px.as_f64();
-        let fill_qty = position.map_or(fill.last_qty.as_f64(), |pos| {
+        let fill_qty_value = position.map_or(fill.last_qty.as_f64(), |pos| {
             pos.quantity.as_f64().min(fill.last_qty.as_f64())
         });
+        let fill_qty = Quantity::new(fill_qty_value, fill.last_qty.precision);
+
+        let notional = instrument.calculate_notional_value(fill_qty, fill.last_px, None);
+
         if fill.order_side == OrderSide::Buy {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    Money::new(fill_qty, base_currency_value),
+                    Money::new(fill_qty_value, base_currency_value),
                 );
             }
             pnls.insert(
-                quote_currency,
-                Money::new(-(fill_qty * fill_px), quote_currency),
+                notional.currency,
+                Money::new(-notional.as_f64(), notional.currency),
             );
         } else if fill.order_side == OrderSide::Sell {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    Money::new(-fill_qty, base_currency_value),
+                    Money::new(-fill_qty_value, base_currency_value),
                 );
             }
             pnls.insert(
-                quote_currency,
-                Money::new(fill_qty * fill_px, quote_currency),
+                notional.currency,
+                Money::new(notional.as_f64(), notional.currency),
             );
         } else {
             panic!("Invalid `OrderSide` in base_calculate_pnls")
@@ -400,7 +402,7 @@ mod tests {
         );
 
         account.base_apply(event1);
-        account.base_apply(event2.clone());
+        account.base_apply(event2);
         account.base_apply(event3.clone());
 
         assert_eq!(account.events.len(), 4);

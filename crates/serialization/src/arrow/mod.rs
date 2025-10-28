@@ -81,12 +81,20 @@ pub enum EncodingError {
 
 #[inline]
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
-    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+    PriceRaw::from_le_bytes(
+        bytes
+            .try_into()
+            .expect("Price raw bytes must be exactly the size of PriceRaw"),
+    )
 }
 
 #[inline]
 fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
-    QuantityRaw::from_le_bytes(bytes.try_into().unwrap())
+    QuantityRaw::from_le_bytes(
+        bytes
+            .try_into()
+            .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
+    )
 }
 
 /// Provides Apache Arrow schema definitions for data types.
@@ -100,7 +108,7 @@ pub trait ArrowSchemaProvider {
         let schema = Self::get_schema(None);
         let mut map = HashMap::new();
         for field in schema.fields() {
-            let name = field.name().to_string();
+            let name = field.name().clone();
             let data_type = format!("{:?}", field.data_type());
             map.insert(name, data_type);
         }
@@ -135,7 +143,7 @@ where
         chunk
             .first()
             .map(|elem| elem.metadata())
-            .expect("Chunk must have atleast one element to encode")
+            .expect("Chunk must have at least one element to encode")
     }
 }
 
@@ -181,7 +189,7 @@ pub trait WriteStream {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError>;
 }
 
-impl<T: EncodeToRecordBatch + Write> WriteStream for T {
+impl<T: Write> WriteStream for T {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError> {
         let mut writer = StreamWriter::try_new(self, &record_batch.schema())?;
         writer.write(record_batch)?;

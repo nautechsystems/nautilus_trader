@@ -1,17 +1,25 @@
 # Installation
 
-NautilusTrader is officially supported for Python 3.11-3.13 on the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.12-3.13 on the following 64-bit platforms:
 
-| Operating System       | Supported Versions    | CPU Architecture  |
-|------------------------|-----------------------|-------------------|
-| Linux (Ubuntu)         | 22.04 and later       | x86_64            |
-| Linux (Ubuntu)         | 22.04 and later       | ARM64             |
-| macOS                  | 14.7 and later        | ARM64             |
-| Windows Server         | 2022 and later        | x86_64            |
+| Operating System       | Supported Versions | CPU Architecture  |
+|------------------------|--------------------|-------------------|
+| Linux (Ubuntu)         | 22.04 and later    | x86_64            |
+| Linux (Ubuntu)         | 22.04 and later    | ARM64             |
+| macOS                  | 15.0 and later     | ARM64             |
+| Windows Server         | 2022 and later     | x86_64            |
 
 :::note
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
 :::
+
+Continuous CI coverage comes from the GitHub Actions runners we build on:
+
+- `Linux (Ubuntu)` builds currently pin to `ubuntu-22.04` to keep glibc 2.35 compatibility even as `ubuntu-latest` moves ahead.
+- `macOS (ARM64)` builds run on `macos-latest`, so support tracks that runner image as it moves ahead.
+- `Windows (x86_64)` builds run on `windows-latest`, so support tracks that runner image as it moves ahead.
+
+On Linux, confirm your glibc version with `ldd --version` and ensure it reports 2.35 or newer before proceeding.
 
 We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
 
@@ -28,10 +36,10 @@ Conda and other Python distributions *may* work but aren’t officially supporte
 
 ## From PyPI
 
-To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
+To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI:
 
 ```bash
-pip install -U nautilus_trader
+uv pip install nautilus_trader
 ```
 
 ## Extras
@@ -43,11 +51,12 @@ Install optional dependencies as 'extras' for specific integrations:
 - `dydx`: dYdX adapter (integration) dependencies.
 - `ib`: Interactive Brokers adapter (integration) dependencies.
 - `polymarket`: Polymarket adapter (integration) dependencies.
+- `visualization`: Plotly-based interactive tearsheets and charts.
 
-To install with specific extras using pip:
+To install with specific extras:
 
 ```bash
-pip install -U "nautilus_trader[docker,ib]"
+uv pip install "nautilus_trader[docker,ib]"
 ```
 
 ## From the Nautech Systems package index
@@ -62,29 +71,34 @@ Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and 
 To install the latest stable release:
 
 ```bash
-pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader --index-url=https://packages.nautechsystems.io/simple
 ```
+
+:::tip
+Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to PyPI automatically:
+
+:::
 
 ### Development wheels
 
 Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
 
-**Note**: Wheels from the `develop` branch are only built for the Linux x86_64 platform to save time
-and compute resources, while `nightly` wheels support additional platforms as shown below.
+This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 | Platform           | Nightly | Develop |
 | :----------------- | :------ | :------ |
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | -       |
+| `macOS (ARM64)`    | ✓       | ✓       |
+| `Windows (x86_64)` | ✓       | ✓       |
 
-This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
-while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
-
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+**Note**: Development wheels from the `develop` branch publish for every supported platform except Linux ARM64.
+Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.
@@ -92,18 +106,18 @@ We do not recommend using development wheels in production environments, such as
 
 ### Installation commands
 
-By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, uv will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
 ```bash
-pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
-To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
+To install a specific development wheel (e.g., `1.221.0a20250912` for September 12, 2025):
 
 ```bash
-pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+uv pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 ### Available versions
@@ -113,7 +127,7 @@ You can view all available versions of `nautilus_trader` on the [package index](
 To programmatically request and list available versions:
 
 ```bash
-curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href="))[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
 ```
 
 ### Branch updates
@@ -139,7 +153,7 @@ curl https://sh.rustup.rs -sSf | sh
 
 - Windows:
   - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-  - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+  - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 - Verify (any system):
     from a terminal session run: `rustc --version`
 
@@ -162,14 +176,14 @@ sudo apt-get install clang
 
 - Windows:
 
-1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
+1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
 
-- Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+- Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
 
 2. Enable `clang` in the current shell:
 
 ```powershell
-[System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+[System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
 ```
 
 - Verify (any system):
@@ -181,8 +195,16 @@ clang --version
 
 3. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
+   - Linux and macOS:
+
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+- Windows (PowerShell):
+
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex
 ```
 
 4. Clone the source with `git`, and install from the project's root directory:
@@ -218,7 +240,7 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
 ```bash
-pip install <file-name>.whl
+uv pip install <file-name>.whl
 ```
 
 ## Versioning and releases

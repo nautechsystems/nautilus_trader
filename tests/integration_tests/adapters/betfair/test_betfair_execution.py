@@ -265,7 +265,7 @@ async def test_submit_order_error(
     _, submitted, rejected = test_order.events
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(rejected, OrderRejected)
-    expecter_error = "PERMISSION_DENIED (Business rules do not allow order to be placed. You are either attempting to place the order using a Delayed Application Key or from a restricted jurisdiction (i.e. USA))"  # noqa
+    expecter_error = "PERMISSION_DENIED (Business rules do not allow order to be placed. You are either attempting to place the order using a Delayed Application Key or from a restricted jurisdiction (i.e. USA))"
     assert rejected.reason == expecter_error
 
 

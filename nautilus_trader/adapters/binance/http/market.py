@@ -487,14 +487,18 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
     Endpoint of latest price for a symbol or symbols.
 
     `GET /api/v3/ticker/price`
-    `GET /fapi/v1/ticker/price`
+    `GET /fapi/v2/ticker/price`
     `GET /dapi/v1/ticker/price`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
-    https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Price-Ticker-v2
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
+
+    Notes
+    -----
+    USDT-margined futures uses v2 (v1 deprecated). Coin-margined remains on v1.
 
     """
 
@@ -506,7 +510,9 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         methods = {
             HttpMethod.GET: BinanceSecurityType.NONE,
         }
-        url_path = base_endpoint + "ticker/price"
+        # Only USDT-margined futures has v2, coin-margined still uses v1
+        endpoint = base_endpoint.replace("/fapi/v1/", "/fapi/v2/")
+        url_path = endpoint + "ticker/price"
         super().__init__(
             client,
             methods,
@@ -566,7 +572,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         methods = {
             HttpMethod.GET: BinanceSecurityType.NONE,
         }
-        url_path = base_endpoint + "ticker/price"
+        url_path = base_endpoint + "ticker/bookTicker"
         super().__init__(
             client,
             methods,

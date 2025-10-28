@@ -7,7 +7,7 @@ The example implements a "10th bar notification system" where the strategy:
 2. Publishes this event to the message bus when the 10th bar arrives.
 3. Subscribes to and handles these events within the same strategy.
 
-**Key learning points:**
+**Key learning points**:
 
 - Creating custom events with the message bus.
 - Implementing publish/subscribe pattern for self-communication.

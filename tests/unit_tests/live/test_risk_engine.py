@@ -37,7 +37,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -53,10 +52,10 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestLiveRiskEngine:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -123,12 +122,11 @@ class TestLiveRiskEngine:
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
 
-    def teardown(self):
+        yield
+
+        # Teardown
         if self.risk_engine.is_running:
             self.risk_engine.stop()
-
-        ensure_all_tasks_completed()
-
         self.risk_engine.dispose()
 
     @pytest.mark.asyncio()

@@ -35,7 +35,7 @@ use crate::{
 impl CryptoOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -54,6 +54,7 @@ impl CryptoOption {
         ts_event: u64,
         ts_init: u64,
         multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -81,6 +82,7 @@ impl CryptoOption {
             price_increment,
             size_increment,
             multiplier,
+            lot_size,
             max_quantity,
             min_quantity,
             max_notional,
@@ -373,6 +375,6 @@ mod tests {
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_crypto_future = CryptoOption::py_from_dict(py, values).unwrap();
             assert_eq!(crypto_option, new_crypto_future);
-        })
+        });
     }
 }

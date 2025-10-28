@@ -174,6 +174,11 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 /// - `name_ptr` is a valid C string pointer.
 /// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
+/// # Parameters
+///
+/// - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+/// - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+///
 /// # Panics
 ///
 /// Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -192,6 +197,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
+    // C API convention: 0 means None (use defaults)
     let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
     let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
@@ -233,8 +239,8 @@ pub unsafe extern "C" fn test_clock_advance_time(
     t.into()
 }
 
-// TODO: This struct implementation potentially leaks memory
-// TODO: Skip clippy check for now since it requires large modification
+// TODO: This drop helper may leak Python callbacks when handlers own Python objects.
+//       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
 #[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
@@ -408,6 +414,11 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 /// - `name_ptr` is a valid C string pointer.
 /// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
+/// # Parameters
+///
+/// - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+/// - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+///
 /// # Panics
 ///
 /// This function panics if:
@@ -428,6 +439,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
+    // C API convention: 0 means None (use defaults)
     let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
     let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {

@@ -16,7 +16,7 @@ and live deployment workloads.
 
 The platform is also universal and asset-class-agnostic — with any REST API or WebSocket stream able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
-including FX, Equities, Futures, Options, Crypto, DeFi, and Betting, enabling seamless operations across multiple venues simultaneously.
+including FX, Equities, Futures, Options, Crypto, DeFi, and Betting — enabling seamless operations across multiple venues simultaneously.
 
 ## Features
 
@@ -140,7 +140,7 @@ A valid UUID v4 consists of:
 
 Example: `2d89666b-1a1e-4a75-b193-4eb3b454c757`
 
-For the complete specification, refer to [RFC 4122: A Universally Unique IDentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
+For the complete specification, refer to [RFC 4122: A Universally Unique IIdentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
 
 ## Data types
 
@@ -185,6 +185,23 @@ The following `BarAggregation` methods are available:
 - `VOLUME_RUNS`
 - `VALUE_IMBALANCE`
 - `VALUE_RUNS`
+
+Currently implemented aggregations:
+
+- `MILLISECOND`
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `YEAR`
+- `TICK`
+- `VOLUME`
+- `VALUE`
+- `RENKO`
+
+Aggregations listed above that are not repeated in the implemented list are planned but not yet available.
 
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
 This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.

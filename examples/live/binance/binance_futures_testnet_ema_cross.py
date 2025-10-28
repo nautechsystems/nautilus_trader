@@ -38,6 +38,10 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# Strategy config params
+symbol = "ETHUSDT-PERP"
+instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
+order_qty = Decimal("0.02")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -105,12 +109,12 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = EMACrossConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
-    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
+    bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("0.010"),
+    trade_size=order_qty,
     order_id_tag="001",
     oms_type="HEDGING",
     subscribe_trade_ticks=True,

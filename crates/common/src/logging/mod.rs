@@ -189,43 +189,42 @@ pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
 
 /// Parses a string into a [`LevelFilter`].
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the provided string is not a valid `LevelFilter`.
-#[must_use]
-pub fn parse_level_filter_str(s: &str) -> LevelFilter {
+/// Returns an error if the provided string is not a valid `LevelFilter`.
+pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
     let mut log_level_str = s.to_string().to_uppercase();
     if log_level_str == "WARNING" {
         log_level_str = "WARN".to_string();
     }
     LevelFilter::from_str(&log_level_str)
-        .unwrap_or_else(|_| panic!("Invalid `LevelFilter` string, was {log_level_str}"))
+        .map_err(|_| anyhow::anyhow!("Invalid log level string: '{s}'"))
 }
 
-#[must_use]
 /// Parses component-specific log levels from a JSON value map.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if a JSON value in the map is not a string representing a log level.
+/// Returns an error if a JSON value in the map is not a string or is not a valid log level.
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
-) -> HashMap<Ustr, LevelFilter> {
+) -> anyhow::Result<HashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
             let mut new_map = HashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
-                // Expect the JSON value to be a string representing a log level
-                let s = value
-                    .as_str()
-                    .expect("Invalid component log level: expected string");
-                let lvl = parse_level_filter_str(s);
+                let s = value.as_str().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Component log level for '{key}' must be a string, got: {value}"
+                    )
+                })?;
+                let lvl = parse_level_filter_str(s)?;
                 new_map.insert(ustr_key, lvl);
             }
-            new_map
+            Ok(new_map)
         }
-        None => HashMap::new(),
+        None => Ok(HashMap::new()),
     }
 }
 
@@ -252,4 +251,112 @@ pub fn log_task_aborted(task_name: &str) {
 /// Logs that there was an error in a task `tracing::error!`.
 pub fn log_task_error(task_name: &str, e: &anyhow::Error) {
     tracing::error!("Error in task '{task_name}': {e}");
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("DEBUG", LevelFilter::Debug)]
+    #[case("debug", LevelFilter::Debug)]
+    #[case("Debug", LevelFilter::Debug)]
+    #[case("DeBuG", LevelFilter::Debug)]
+    #[case("INFO", LevelFilter::Info)]
+    #[case("info", LevelFilter::Info)]
+    #[case("WARNING", LevelFilter::Warn)]
+    #[case("warning", LevelFilter::Warn)]
+    #[case("WARN", LevelFilter::Warn)]
+    #[case("warn", LevelFilter::Warn)]
+    #[case("ERROR", LevelFilter::Error)]
+    #[case("error", LevelFilter::Error)]
+    #[case("OFF", LevelFilter::Off)]
+    #[case("off", LevelFilter::Off)]
+    #[case("TRACE", LevelFilter::Trace)]
+    #[case("trace", LevelFilter::Trace)]
+    fn test_parse_level_filter_str_case_insensitive(
+        #[case] input: &str,
+        #[case] expected: LevelFilter,
+    ) {
+        let result = parse_level_filter_str(input).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("INVALID")]
+    #[case("DEBG")]
+    #[case("WARNINGG")]
+    #[case("")]
+    #[case("INFO123")]
+    fn test_parse_level_filter_str_invalid_returns_error(#[case] invalid_input: &str) {
+        let result = parse_level_filter_str(invalid_input);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid log level")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_component_levels_valid() {
+        let mut map = HashMap::new();
+        map.insert(
+            "Strategy1".to_string(),
+            serde_json::Value::String("DEBUG".to_string()),
+        );
+        map.insert(
+            "Strategy2".to_string(),
+            serde_json::Value::String("info".to_string()),
+        );
+
+        let result = parse_component_levels(Some(map)).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[&Ustr::from("Strategy1")], LevelFilter::Debug);
+        assert_eq!(result[&Ustr::from("Strategy2")], LevelFilter::Info);
+    }
+
+    #[rstest]
+    fn test_parse_component_levels_non_string_value_returns_error() {
+        let mut map = HashMap::new();
+        map.insert(
+            "Strategy1".to_string(),
+            serde_json::Value::Number(123.into()),
+        );
+
+        let result = parse_component_levels(Some(map));
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be a string"));
+    }
+
+    #[rstest]
+    fn test_parse_component_levels_invalid_level_returns_error() {
+        let mut map = HashMap::new();
+        map.insert(
+            "Strategy1".to_string(),
+            serde_json::Value::String("INVALID_LEVEL".to_string()),
+        );
+
+        let result = parse_component_levels(Some(map));
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid log level")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_component_levels_none_returns_empty() {
+        let result = parse_component_levels(None).unwrap();
+        assert_eq!(result.len(), 0);
+    }
 }

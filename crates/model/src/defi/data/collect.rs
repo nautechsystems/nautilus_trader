@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
-    types::Quantity,
 };
 
 /// Represents a fee collection event in a decentralized exchange (DEX) pool.
@@ -36,7 +35,7 @@ pub struct PoolFeeCollect {
     pub chain: SharedChain,
     /// The decentralized exchange where the fee collection was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool instrument ID.
+    /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
     /// The blockchain address of the pool smart contract.
     pub pool_address: Address,
@@ -51,9 +50,9 @@ pub struct PoolFeeCollect {
     /// The blockchain address that owns the liquidity position.
     pub owner: Address,
     /// The amount of the first token fees collected.
-    pub fee0: Quantity,
+    pub amount0: u128,
     /// The amount of the second token fees collected.
-    pub fee1: Quantity,
+    pub amount1: u128,
     /// The lower price tick boundary of the liquidity position.
     pub tick_lower: i32,
     /// The upper price tick boundary of the liquidity position.
@@ -78,8 +77,8 @@ impl PoolFeeCollect {
         transaction_index: u32,
         log_index: u32,
         owner: Address,
-        fee0: Quantity,
-        fee1: Quantity,
+        amount0: u128,
+        amount1: u128,
         tick_lower: i32,
         tick_upper: i32,
         timestamp: Option<UnixNanos>,
@@ -94,8 +93,8 @@ impl PoolFeeCollect {
             transaction_index,
             log_index,
             owner,
-            fee0,
-            fee1,
+            amount0,
+            amount1,
             tick_lower,
             tick_upper,
             timestamp,
@@ -108,12 +107,10 @@ impl Display for PoolFeeCollect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PoolFeeCollect({}:{} {} fees collected: token0={}, token1={}, owner={}, tick_range=[{}, {}], tx={}:{}:{})",
-            self.chain.name,
-            self.dex.name,
+            "PoolFeeCollect({} fees collected: token0={}, token1={}, owner={}, tick_range=[{}, {}], tx={}:{}:{})",
             self.instrument_id,
-            self.fee0,
-            self.fee1,
+            self.amount0,
+            self.amount1,
             self.owner,
             self.tick_lower,
             self.tick_upper,

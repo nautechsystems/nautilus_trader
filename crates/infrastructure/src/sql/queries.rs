@@ -1168,7 +1168,7 @@ impl DatabaseQueries {
         "#,
         )
         .bind(signal.name.to_string())
-        .bind(signal.value.to_string())
+        .bind(signal.value.clone())
         .bind(signal.ts_event.to_string())
         .bind(signal.ts_init.to_string())
         .execute(pool)

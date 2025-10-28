@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
@@ -45,3 +46,25 @@ BINANCE_RETRY_WARNINGS: set[BinanceErrorCode] = {
     BinanceErrorCode.FOK_ORDER_REJECT,
     BinanceErrorCode.GTX_ORDER_REJECT,
 }
+
+# Valid `priceMatch` argument values for Binance Futures order placement.
+BINANCE_PRICE_MATCH_VALUES: Final[frozenset[str]] = frozenset(
+    {
+        "OPPONENT",
+        "OPPONENT_5",
+        "OPPONENT_10",
+        "OPPONENT_20",
+        "QUEUE",
+        "QUEUE_5",
+        "QUEUE_10",
+        "QUEUE_20",
+    },
+)
+
+BINANCE_PRICE_MATCH_ORDER_TYPES: Final[frozenset[OrderType]] = frozenset(
+    {
+        OrderType.LIMIT,
+        OrderType.STOP_LIMIT,
+        OrderType.LIMIT_IF_TOUCHED,
+    },
+)

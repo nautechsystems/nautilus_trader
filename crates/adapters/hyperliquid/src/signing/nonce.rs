@@ -19,6 +19,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use nautilus_core::MUTEX_POISONED;
+
 use super::types::SignerId;
 use crate::http::error::{Error, Result};
 
@@ -127,8 +129,13 @@ impl SignerState {
     }
 
     fn next_nonce(&mut self) -> TimeNonce {
+        // Always ensure we're at least at current time
+        let now = TimeNonce::now_millis().0;
+        self.next_nonce = self.next_nonce.max(now);
+
+        // Use and increment atomically to prevent reuse
         let nonce = TimeNonce::from_millis(self.next_nonce);
-        self.next_nonce = (self.next_nonce + 1).max(TimeNonce::now_millis().0);
+        self.next_nonce += 1;
 
         self.used_nonces.push_back(nonce);
         if self.used_nonces.len() > self.max_used {
@@ -196,7 +203,7 @@ impl NonceManager {
     ///
     /// Panics if the internal mutex is poisoned.
     pub fn next(&self, signer: SignerId) -> Result<TimeNonce> {
-        let mut states = self.signer_states.lock().unwrap();
+        let mut states = self.signer_states.lock().expect(MUTEX_POISONED);
         let state = states.entry(signer).or_insert_with(|| {
             SignerState::new(TimeNonce::now_millis().0, self.policy.keep_last_n)
         });
@@ -209,7 +216,7 @@ impl NonceManager {
     ///
     /// Panics if the internal mutex is poisoned.
     pub fn fast_forward_to(&self, now_ms: i128) {
-        let mut states = self.signer_states.lock().unwrap();
+        let mut states = self.signer_states.lock().expect(MUTEX_POISONED);
         for state in states.values_mut() {
             state.fast_forward_to(now_ms);
         }
@@ -221,7 +228,7 @@ impl NonceManager {
     ///
     /// Panics if the internal mutex is poisoned.
     pub fn validate_local(&self, signer: SignerId, nonce: TimeNonce) -> Result<()> {
-        let states = self.signer_states.lock().unwrap();
+        let states = self.signer_states.lock().expect(MUTEX_POISONED);
 
         // Always validate time window, even for new signers
         let now_ms = TimeNonce::now_millis().0;

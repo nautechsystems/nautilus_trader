@@ -61,6 +61,7 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
@@ -2028,6 +2029,94 @@ class TestActor:
         # Assert
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
+
+    def test_subscribe_order_fills(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_fills(AUDUSD_SIM.id)
+
+        # Assert
+        # Order fills are msgbus-only subscriptions (no data engine command)
+        subscriptions = self.msgbus.subscriptions(f"events.fills.{AUDUSD_SIM.id}")
+        assert len(subscriptions) == 1
+
+    def test_unsubscribe_order_fills(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_fills(AUDUSD_SIM.id)
+
+        # Act
+        actor.unsubscribe_order_fills(AUDUSD_SIM.id)
+
+        # Assert
+        subscriptions = self.msgbus.subscriptions(f"events.fills.{AUDUSD_SIM.id}")
+        assert len(subscriptions) == 0
+
+    def test_handle_order_filled_when_not_running_does_not_send_to_on_order_filled(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_fills(AUDUSD_SIM.id)
+
+        order = TestExecStubs.market_order()
+        fill = TestEventStubs.order_filled(order, AUDUSD_SIM)
+
+        # Act
+        self.msgbus.publish(
+            topic=f"events.fills.{AUDUSD_SIM.id}",
+            msg=fill,
+        )
+
+        # Assert
+        assert actor.calls == []
+        assert actor.store == []
+
+    def test_handle_order_filled_when_running_sends_to_on_order_filled(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_fills(AUDUSD_SIM.id)
+        actor.start()
+
+        order = TestExecStubs.market_order()
+        fill = TestEventStubs.order_filled(order, AUDUSD_SIM)
+
+        # Act
+        self.msgbus.publish(
+            topic=f"events.fills.{AUDUSD_SIM.id}",
+            msg=fill,
+        )
+
+        # Assert
+        assert actor.calls == ["on_start", "on_order_filled"]
+        assert actor.store[0] == fill
 
     def assert_successful_request(self, actor, request_id, method_name):
         """

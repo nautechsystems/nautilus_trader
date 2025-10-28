@@ -1,0 +1,62 @@
+{
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+        "list": [
+            {
+                "totalEquity": "3.31216591",
+                "accountIMRate": "0",
+                "totalMarginBalance": "3.00326056",
+                "totalInitialMargin": "0",
+                "accountType": "UNIFIED",
+                "totalAvailableBalance": "3.00326056",
+                "accountMMRate": "0",
+                "totalPerpUPL": "0",
+                "totalWalletBalance": "3.00326056",
+                "accountLTV": "0",
+                "totalMaintenanceMargin": "0",
+                "coin": [
+                    {
+                        "availableToBorrow": "3",
+                        "bonus": "0",
+                        "accruedInterest": "0",
+                        "availableToWithdraw": "0",
+                        "totalOrderIM": "0",
+                        "equity": "0",
+                        "totalPositionMM": "0",
+                        "usdValue": "0",
+                        "unrealisedPnl": "0",
+                        "borrowAmount": "0.0",
+                        "totalPositionIM": "0",
+                        "walletBalance": "0",
+                        "cumRealisedPnl": "0",
+                        "locked": "0",
+                        "collateralSwitch": true,
+                        "marginCollateral": true,
+                        "coin": "BTC",
+                        "spotBorrow": "0"
+                    },
+                    {
+                        "availableToBorrow": "5000",
+                        "bonus": "0",
+                        "accruedInterest": "0",
+                        "availableToWithdraw": "1000.50",
+                        "equity": "1000.50",
+                        "usdValue": "1000.50",
+                        "unrealisedPnl": "0",
+                        "borrowAmount": "0",
+                        "walletBalance": "1000.50",
+                        "cumRealisedPnl": "50.25",
+                        "locked": "0",
+                        "collateralSwitch": true,
+                        "marginCollateral": true,
+                        "coin": "USDT",
+                        "spotBorrow": "0"
+                    }
+                ]
+            }
+        ]
+    },
+    "retExtInfo": {},
+    "time": 1234567890
+}

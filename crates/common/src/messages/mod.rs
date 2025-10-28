@@ -19,7 +19,7 @@
 //! parts of the NautilusTrader system, including data requests, execution commands,
 //! and system control messages.
 
-use nautilus_model::data::Data;
+use nautilus_model::{data::Data, events::OrderEventAny};
 use strum::Display;
 
 pub mod data;
@@ -31,6 +31,7 @@ pub mod defi;
 
 // Re-exports
 pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
+pub use execution::ExecutionReport;
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
@@ -40,4 +41,12 @@ pub enum DataEvent {
     Data(Data),
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),
+}
+
+/// Execution event variants for order events and reports.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Display)]
+pub enum ExecutionEvent {
+    Order(OrderEventAny),
+    Report(ExecutionReport),
 }

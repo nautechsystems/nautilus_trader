@@ -19,7 +19,6 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
@@ -48,9 +47,6 @@ from nautilus_trader.model.instruments import OptionContract
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
-# fmt: on
-
-# fmt: off
 simplified_symbology_params = [
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR/USD.IDEALPRO"),
     (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL230217P00155000.SMART"),
@@ -73,9 +69,9 @@ simplified_symbology_params = [
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
 ]
-# fmt: on
 
-# fmt: off
+
+
 raw_symbology_params = [
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR.USD=CASH.IDEALPRO"),
     (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000=OPT.SMART"),
@@ -120,7 +116,7 @@ raw_symbology_params = [
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "SPX=IND.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "XJO=IND.ASX"),
 ]
-# fmt: on
+
 
 
 @pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
@@ -212,7 +208,7 @@ def test_regular_expression_crypto():
     assert result == expected
 
 
-# fmt: off
+
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
@@ -227,7 +223,7 @@ def test_regular_expression_option(symbol, expected):
 
     # Act, Assert
     assert result == expected
-# fmt: on
+
 
 
 @pytest.mark.parametrize(
@@ -275,7 +271,7 @@ def test_regular_expression_future_original(symbol, expected):
     assert result == expected
 
 
-# fmt: off
+
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
@@ -289,10 +285,10 @@ def test_regular_expression_future_options(symbol, expected):
 
     # Assert
     assert result == expected
-# fmt: on
 
 
-# fmt: off
+
+
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
@@ -306,7 +302,7 @@ def test_regular_expression_future_options_original(symbol, expected):
 
     # Assert
     assert result == expected
-# fmt: on
+
 
 
 @pytest.mark.parametrize(

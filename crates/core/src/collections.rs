@@ -21,6 +21,8 @@ use std::{
     hash::Hash,
 };
 
+use ustr::Ustr;
+
 /// Represents a generic set-like container with members.
 pub trait SetLike {
     /// The type of items stored in the set.
@@ -159,6 +161,24 @@ where
     }
 }
 
+/// Convert any iterator of string-like items into a `Vec<Ustr>`.
+#[must_use]
+pub fn into_ustr_vec<I, T>(iter: I) -> Vec<Ustr>
+where
+    I: IntoIterator<Item = T>,
+    T: AsRef<str>,
+{
+    let iter = iter.into_iter();
+    let (lower, _) = iter.size_hint();
+    let mut result = Vec::with_capacity(lower);
+
+    for item in iter {
+        result.push(Ustr::from(item.as_ref()));
+    }
+
+    result
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -170,6 +190,7 @@ mod tests {
     use ahash::{AHashMap, AHashSet};
     use indexmap::{IndexMap, IndexSet};
     use rstest::*;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -199,6 +220,25 @@ mod tests {
 
         let empty_set: IndexSet<String> = IndexSet::new();
         assert!(empty_set.is_empty());
+    }
+
+    #[rstest]
+    fn test_into_ustr_vec_from_strings() {
+        let items = vec!["foo".to_string(), "bar".to_string()];
+        let ustrs = super::into_ustr_vec(items);
+
+        assert_eq!(ustrs.len(), 2);
+        assert_eq!(ustrs[0], Ustr::from("foo"));
+        assert_eq!(ustrs[1], Ustr::from("bar"));
+    }
+
+    #[rstest]
+    fn test_into_ustr_vec_from_str_slices() {
+        let items = ["alpha", "beta", "gamma"];
+        let ustrs = super::into_ustr_vec(items);
+
+        assert_eq!(ustrs.len(), 3);
+        assert_eq!(ustrs[2], Ustr::from("gamma"));
     }
 
     #[rstest]

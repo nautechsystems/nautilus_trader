@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data structures modelling OKX WebSocket request and response payloads.
+
 use derive_builder::Builder;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},
@@ -28,9 +30,13 @@ use crate::{
     common::{
         enums::{
             OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType,
-            OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
-        parse::{deserialize_empty_string_as_none, deserialize_string_to_u64},
+        parse::{
+            deserialize_empty_string_as_none, deserialize_string_to_u64,
+            deserialize_target_currency_as_none,
+        },
     },
     websocket::enums::OKXSubscriptionEvent,
 };
@@ -112,7 +118,7 @@ pub struct OKXSubscription {
     pub args: Vec<OKXSubscriptionArg>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXSubscriptionArg {
     pub channel: OKXWsChannel,
@@ -136,6 +142,10 @@ pub enum OKXWebSocketEvent {
         arg: OKXWebSocketArg,
         #[serde(rename = "connId")]
         conn_id: String,
+        #[serde(default)]
+        code: Option<String>,
+        #[serde(default)]
+        msg: Option<String>,
     },
     ChannelConnCount {
         event: String,
@@ -166,6 +176,8 @@ pub enum OKXWebSocketEvent {
         msg: String,
     },
     #[serde(skip)]
+    Ping,
+    #[serde(skip)]
     Reconnected,
 }
 
@@ -178,6 +190,8 @@ pub struct OKXWebSocketArg {
     pub inst_id: Option<Ustr>,
     #[serde(default)]
     pub inst_type: Option<OKXInstrumentType>,
+    #[serde(default)]
+    pub inst_family: Option<Ustr>,
     #[serde(default)]
     pub bar: Option<Ustr>,
 }
@@ -477,12 +491,15 @@ pub struct OKXOrderMsg {
     /// Cancel source reason.
     #[serde(default)]
     pub cancel_source_reason: Option<String>,
-    /// Category.
-    pub category: Ustr,
+    /// Order category (normal, liquidation, ADL, etc.).
+    pub category: OKXOrderCategory,
     /// Currency.
     pub ccy: Ustr,
     /// Client order ID.
     pub cl_ord_id: String,
+    /// Parent algo client order ID if present.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub algo_cl_ord_id: Option<String>,
     /// Fee.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fee: Option<String>,
@@ -524,6 +541,9 @@ pub struct OKXOrderMsg {
     pub sz: String,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
+    /// Target currency (base_ccy or quote_ccy). Empty for margin modes.
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Trade ID.
     pub trade_id: String,
     /// Last update time, Unix timestamp in milliseconds.
@@ -607,6 +627,7 @@ pub struct WsPostOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ccy: Option<Ustr>,
     /// Unique client order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
     /// Order side: buy or sell.
@@ -630,7 +651,7 @@ pub struct WsPostOrderParams {
     /// Target currency for net orders.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tgt_ccy: Option<String>,
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Order tag for categorization.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -752,6 +773,7 @@ pub struct WsCancelAlgoOrderParams {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
@@ -812,6 +834,7 @@ mod tests {
                     event,
                     arg,
                     conn_id,
+                    ..
                 } = msg
                 {
                     assert_eq!(event, OKXSubscriptionEvent::Subscribe);
@@ -838,6 +861,7 @@ mod tests {
                     event,
                     arg,
                     conn_id,
+                    ..
                 } = msg
                 {
                     assert_eq!(event, OKXSubscriptionEvent::Subscribe);
@@ -1028,6 +1052,7 @@ mod tests {
                 event,
                 arg,
                 conn_id,
+                ..
             } => {
                 assert_eq!(
                     event,
@@ -1261,9 +1286,9 @@ mod tests {
         let error_msg = NautilusWsMessage::Error(error);
 
         match error_msg {
-            NautilusWsMessage::Error(err) => {
-                assert_eq!(err.code, "60012");
-                assert_eq!(err.message, "Invalid request");
+            NautilusWsMessage::Error(e) => {
+                assert_eq!(e.code, "60012");
+                assert_eq!(e.message, "Invalid request");
             }
             _ => panic!("Expected Error variant"),
         }

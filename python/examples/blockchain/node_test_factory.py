@@ -14,8 +14,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
+from nautilus_trader.infrastructure import PostgresConnectOptions
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
 
@@ -23,7 +26,24 @@ from nautilus_trader.model import TraderId
 def test_factory_approach():
     """
     Test creating and adding actors using factory approach.
+
+    Also tests PostgresConnectOptions Python bindings.
+
     """
+    # Test PostgresConnectOptions creation
+    postgres_config = PostgresConnectOptions(
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USERNAME", "nautilus"),
+        password=os.getenv("POSTGRES_PASSWORD", "pass"),
+        database=os.getenv("POSTGRES_DATABASE", "nautilus"),
+    )
+    print(f"PostgresConnectOptions created: {postgres_config}")
+    print(f"  host: {postgres_config.host}")
+    print(f"  port: {postgres_config.port}")
+    print(f"  username: {postgres_config.username}")
+    print(f"  database: {postgres_config.database}")
+
     trader_id = TraderId("TESTER-001")
     node = LiveNode.builder("test_factory", trader_id, Environment.SANDBOX).build()
 

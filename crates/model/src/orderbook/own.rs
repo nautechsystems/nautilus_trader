@@ -282,11 +282,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Deletes an own order from the book.
@@ -295,11 +300,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
             OrderSideSpecified::Sell => self.asks.delete(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Clears all orders from both sides of the book.
@@ -320,12 +330,12 @@ impl OwnOrderBook {
 
     /// Returns the client order IDs currently on the bid side.
     pub fn bid_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.bids.cache.keys().cloned().collect()
+        self.bids.cache.keys().copied().collect()
     }
 
     /// Returns the client order IDs currently on the ask side.
     pub fn ask_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.asks.cache.keys().cloned().collect()
+        self.asks.cache.keys().copied().collect()
     }
 
     /// Return whether the given client order ID is in the own book.
@@ -440,7 +450,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         // Audit asks
@@ -449,7 +459,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         for client_order_id in bids_to_remove {
@@ -474,6 +484,14 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
     );
 }
 
+/// Filters orders by status and accepted timestamp.
+///
+/// `accepted_buffer_ns` acts as a grace period after `ts_accepted`. Orders whose
+/// `ts_accepted` is still zero (e.g. SUBMITTED/PENDING state before an ACCEPTED
+/// event) will pass the buffer check once `ts_now` exceeds the buffer, even though
+/// they have not been venue-acknowledged yet. Callers that want to hide inflight
+/// orders must additionally filter by `OrderStatus` (for example, include only
+/// `ACCEPTED` / `PARTIALLY_FILLED`).
 fn filter_orders<'a>(
     levels: impl Iterator<Item = &'a OwnBookLevel>,
     status: Option<&HashSet<OrderStatus>>,
@@ -489,7 +507,7 @@ fn filter_orders<'a>(
                 .values()
                 .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
                 .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
-                .cloned()
+                .copied()
                 .collect::<Vec<OwnBookOrder>>();
 
             (level.price.value.as_decimal(), orders)
@@ -504,6 +522,11 @@ fn group_quantities(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut grouped = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 
@@ -568,14 +591,14 @@ impl OwnBookLadder {
 
     /// Returns the number of price levels in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
@@ -608,22 +631,38 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        let price = self.cache.get(&order.client_order_id).copied();
-        if let Some(price) = price
-            && let Some(level) = self.levels.get_mut(&price)
-        {
-            if order.price == level.price.value {
-                // Update at current price level
-                level.update(order);
-                return Ok(());
-            }
+        let Some(price) = self.cache.get(&order.client_order_id).copied() else {
+            log::error!(
+                "Own book update failed - order {client_order_id} not in cache",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (cache)",
+                order.client_order_id
+            );
+        };
 
-            // Price update: delete and insert at new level
-            self.cache.remove(&order.client_order_id);
-            level.delete(&order.client_order_id)?;
-            if level.is_empty() {
-                self.levels.remove(&price);
-            }
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book update failed - order {client_order_id} cached level {price:?} missing",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (level)",
+                order.client_order_id
+            );
+        };
+
+        if order.price == level.price.value {
+            level.update(order);
+            return Ok(());
+        }
+
+        level.delete(&order.client_order_id)?;
+        self.cache.remove(&order.client_order_id);
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
 
         self.add(order);
@@ -645,35 +684,49 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
-        if let Some(price) = self.cache.remove(client_order_id)
-            && let Some(level) = self.levels.get_mut(&price)
-        {
-            level.delete(client_order_id)?;
-            if level.is_empty() {
-                self.levels.remove(&price);
-            }
+        let Some(price) = self.cache.get(client_order_id).copied() else {
+            log::error!(
+                "Own book remove failed - order {client_order_id} not in cache",
+                client_order_id = client_order_id
+            );
+            anyhow::bail!("Order {client_order_id} not found in own book (cache)");
+        };
+
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book remove failed - order {client_order_id} cached level {price:?} missing",
+                client_order_id = client_order_id
+            );
+            anyhow::bail!("Order {client_order_id} not found in own book (level)");
+        };
+
+        level.delete(client_order_id)?;
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
+        self.cache.remove(client_order_id);
 
         Ok(())
     }
 
     /// Returns the total size of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn sizes(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn exposures(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code, reason = "Used in tests")]
     pub fn top(&self) -> Option<&OwnBookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),

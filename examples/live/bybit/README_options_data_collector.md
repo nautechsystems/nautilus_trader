@@ -1,20 +1,24 @@
 # Bybit Options Data Collector
 
-This script discovers all available options for a given underlying asset (e.g., BTC) on Bybit, subscribes to their quote and orderbook data, and stores the data in parquet files.
+This script discovers all available options for a given underlying asset (e.g., BTC) on Bybit,
+subscribes to their quote and orderbook data, and stores the data in parquet files.
 
 ## Features
 
-- **Automatic Discovery**: Connects to Bybit and discovers all available options for the specified underlying asset.
+- **Automatic Discovery**: Connects to Bybit and discovers all available options for the
+  specified underlying asset.
 - **Complete Data Collection**: Fetches both quote ticks and orderbook deltas for all discovered options.
 - **Spot Data**: Also collects data for the underlying spot instrument.
-- **Organized Storage**: Saves data in a hierarchical directory structure with separate files for each instrument.
+- **Organized Storage**: Saves data in a hierarchical directory structure with separate files
+  for each instrument.
 - **Real-time Processing**: Processes and stores data in real-time with configurable batch sizes.
-- **Comprehensive Logging**: Provides detailed logging of discovered instruments and data collection statistics.
+- **Comprehensive Logging**: Provides detailed logging of discovered instruments and data
+  collection statistics.
 
 ## Requirements
 
 - Python 3.8+
-- Nautilus Trader
+- NautilusTrader
 - Bybit API credentials (for live data access)
 
 ## Setup
@@ -47,7 +51,7 @@ strategy_config = BybitOptionsDataCollectorConfig(
 )
 ```
 
-## Data Structure
+## Data structure
 
 The script creates the following directory structure:
 
@@ -66,9 +70,10 @@ data/
             └── ... (one file pair per option)
 ```
 
-## Data Formats
+## Data formats
 
-### Quote Ticks Data
+### Quote ticks data
+
 Each quote tick record contains:
 
 - `timestamp`: When the data was received
@@ -80,7 +85,8 @@ Each quote tick record contains:
 - `ts_event`: Event timestamp
 - `ts_init`: Initialization timestamp
 
-### Orderbook Deltas Data
+### Orderbook deltas data
+
 Each orderbook delta record contains:
 
 - `timestamp`: When the data was received
@@ -92,32 +98,33 @@ Each orderbook delta record contains:
 - `bid_size`: Best bid size after applying deltas
 - `ask_size`: Best ask size after applying deltas
 
-## Usage Examples
+## Usage examples
 
-### Basic Usage
+### Basic usage
 
 ```bash
 # Collect data for all BTC options
 python examples/live/bybit/bybit_options_data_collector.py
 ```
 
-### Custom Configuration
+### Custom configuration
+
 You can modify the script to:
 
-- Change the underlying asset (e.g., ETH instead of BTC)
-- Adjust the orderbook depth
-- Change the data storage directory
-- Modify the logging interval
+- Change the underlying asset (e.g., ETH instead of BTC).
+- Adjust the orderbook depth.
+- Change the data storage directory.
+- Modify the logging interval.
 
 ## Monitoring
 
 The script provides real-time monitoring through logs:
 
-- Discovery phase: Shows all found options grouped by expiry
-- Data collection: Shows statistics every 60 seconds (configurable)
-- File operations: Logs when data is written to parquet files
+- Discovery phase: Shows all found options grouped by expiry.
+- Data collection: Shows statistics every 60 seconds (configurable).
+- File operations: Logs when data is written to parquet files.
 
-## Output Example
+## Output example
 
 ```
 2025-07-31T14:47:55.003958000Z [INFO] OPTIONS-COLLECTOR-001.BybitOptionsDataCollector: Discovering all available BTC options...
@@ -140,15 +147,17 @@ The script provides real-time monitoring through logs:
 
 ## Notes
 
-- The script will automatically discover and subscribe to all available options for the specified underlying asset
-- Data is stored in parquet format for efficient storage and querying
-- The script handles connection issues and will attempt to reconnect
-- All data is timestamped and can be used for backtesting or analysis
-- The script can be stopped with Ctrl+C and will save any remaining data before exiting
+- The script will automatically discover and subscribe to all available options for the
+  specified underlying asset.
+- Data is stored in parquet format for efficient storage and querying.
+- The script handles connection issues and will attempt to reconnect.
+- All data is timestamped and can be used for backtesting or analysis.
+- The script can be stopped with Ctrl+C and will save any remaining data before exiting.
 
 ## Troubleshooting
 
-1. **No options found**: Check that the underlying asset is correct and that Bybit has options available for that asset
-2. **Connection issues**: Verify your API credentials and internet connection
-3. **Memory issues**: Reduce the batch_size if collecting data for many options
-4. **Disk space**: Monitor disk usage as the script can generate large amounts of data
+1. **No options found**: Check that the underlying asset is correct and that Bybit has options
+   available for that asset.
+2. **Connection issues**: Verify your API credentials and internet connection.
+3. **Memory issues**: Reduce the batch_size if collecting data for many options.
+4. **Disk space**: Monitor disk usage as the script can generate large amounts of data.

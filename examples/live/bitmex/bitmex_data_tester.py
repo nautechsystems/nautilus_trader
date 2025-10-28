@@ -22,6 +22,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -37,8 +38,10 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Futures: XBTH25 (Bitcoin futures expiring March 2025)
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
+testnet = False  # If client uses the testnet API
 symbol = "XBTUSD"  # Bitcoin perpetual swap
 # symbol = "SOLUSDT"  # Solana spot
+# symbol = "ETHUSDT"  # Ethereum spot
 # symbol = ".BXBT"  # Bitcoin index
 
 # Configure the trading node
@@ -55,30 +58,34 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=False,  # If client uses the testnet API
+            testnet=testnet,  # If client uses the testnet API
         ),
     },
-    timeout_connection=30.0,
+    timeout_connection=10.0,
     timeout_reconciliation=10.0,
-    timeout_disconnection=10.0,
+    timeout_disconnection=2.0,
     timeout_post_stop=1.0,
 )
 
 # Configure the data tester actor
 config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
+    bar_types=[BarType.from_str(f"{symbol}.{BITMEX}-1-MINUTE-LAST-EXTERNAL")],
     subscribe_instrument=True,
     # subscribe_quotes=True,
     # subscribe_trades=True,
     # subscribe_mark_prices=True,
     # subscribe_index_prices=True,
     # subscribe_funding_rates=True,
+    # subscribe_bars=True,
     # subscribe_book_deltas=True,
-    # subscribe_book_depth=True,
+    # subscribe_book_depth=True,  # Not yet supported
     subscribe_book_at_interval=True,
     book_type=BookType.L2_MBP,
     book_depth=25,
-    book_interval_ms=100,
+    book_interval_ms=10,
+    # request_trades=True,
+    # request_bars=True,
 )
 
 # Setup and run the trading node
@@ -96,4 +103,5 @@ try:
     node.run()
 except KeyboardInterrupt:
     node.stop()
+finally:
     node.dispose()

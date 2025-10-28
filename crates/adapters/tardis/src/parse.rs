@@ -187,7 +187,10 @@ pub const fn parse_option_kind(value: TardisOptionType) -> OptionKind {
 pub fn parse_timestamp(value_us: u64) -> UnixNanos {
     value_us
         .checked_mul(NANOSECONDS_IN_MICROSECOND)
-        .map_or(UnixNanos::max(), UnixNanos::from)
+        .map_or_else(|| {
+            tracing::error!("Timestamp overflow: {value_us} microseconds exceeds maximum representable value");
+            UnixNanos::max()
+        }, UnixNanos::from)
 }
 
 /// Parses a Nautilus book action inferred from the given Tardis values.
@@ -258,7 +261,6 @@ pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> Strin
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;

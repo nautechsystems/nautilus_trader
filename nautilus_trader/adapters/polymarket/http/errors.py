@@ -50,5 +50,11 @@ def should_retry(error: BaseException) -> bool:
 
     """
     if isinstance(error, PolyApiException):
-        pass  # TBD error codes for retries
+        # https://github.com/Polymarket/py-clob-client/blob/main/py_clob_client/exceptions.py
+        status_code = getattr(error, "status_code", None)
+
+        # Retry on rate limits and server errors
+        if status_code == 429 or (status_code is not None and status_code >= 500):
+            return True
+
     return False

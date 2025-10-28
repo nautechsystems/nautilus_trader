@@ -21,7 +21,6 @@ from decimal import Decimal
 import pandas as pd
 from ibapi.contract import ContractDetails
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
@@ -47,8 +46,6 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
-
-# fmt: on
 
 VENUE_MEMBERS: dict[str, list[str]] = {
     # ICE Endex

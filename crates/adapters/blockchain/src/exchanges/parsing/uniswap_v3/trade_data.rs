@@ -78,14 +78,8 @@ pub fn convert_to_trade_data(
         );
     }
 
-    // Additional validation for extremely small or large prices
-    if !(1e-18..=1e18).contains(&price_f64) {
-        anyhow::bail!(
-            "Price outside reasonable bounds: {} (sqrt_price_x96: {})",
-            price_f64,
-            swap_event.sqrt_price_x96
-        );
-    }
+    // Additional validation for extremely small or large prices - removed arbitrary bounds
+    // The Price::from constructor will handle actual validation using PRICE_MIN/PRICE_MAX
 
     let price = Price::from(format!(
         "{:.precision$}",

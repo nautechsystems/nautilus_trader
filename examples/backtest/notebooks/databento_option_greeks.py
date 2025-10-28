@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -153,6 +153,13 @@ class OptionStrategy(Strategy):
     def on_start(self):
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
+        if not self.config.load_greeks:
+            self.bar_type_2 = BarType.from_str(
+                f"{self.config.future_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+            )
+        else:
+            self.bar_type_2 = BarType.from_str(f"{self.config.future_id}-2-MINUTE-LAST-EXTERNAL")
+
         self.request_instrument(self.config.option_id)
         self.request_instrument(self.config.option_id2)
         self.request_instrument(self.bar_type.instrument_id)
@@ -161,6 +168,7 @@ class OptionStrategy(Strategy):
         self.subscribe_quote_ticks(self.config.option_id)
         self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
+        self.subscribe_bars(self.bar_type_2)
 
         # Request spread instrument with ES options tick scheme properties
         self.request_instrument(
@@ -216,7 +224,7 @@ class OptionStrategy(Strategy):
 
     def on_bar(self, bar):
         self.user_log(
-            f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar.close}",
+            f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
         )
 
         if not self.start_orders_done:
@@ -276,8 +284,8 @@ class OptionStrategy(Strategy):
 # %%
 # BacktestEngineConfig
 
-# When load_greeks is False, the streamed greeks can be saved after the backtest
-# When load_greeks is True, the greeks are loaded from the catalog
+# When load_greeks is False, the streamed greeks and bars can be saved after the backtest to the catalog
+# When load_greeks is True, the greeks and previously internal bars are loaded from the catalog
 load_greeks = False
 
 actors = [
@@ -317,7 +325,7 @@ strategies = [
 streaming = StreamingConfig(
     catalog_path=catalog.path,
     fs_protocol="file",
-    include_types=[GreeksData],
+    include_types=[GreeksData, Bar],
 )
 
 logging = LoggingConfig(
@@ -440,6 +448,11 @@ if not load_greeks:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
+    )
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        Bar,
+        identifiers=("2-MINUTE",),
     )
 
 # %% [markdown]

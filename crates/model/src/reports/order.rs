@@ -68,6 +68,10 @@ pub struct OrderStatusReport {
     pub order_list_id: Option<OrderListId>,
     /// The position ID associated with the order (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
+    /// The reported linked client order IDs related to contingency orders.
+    pub linked_order_ids: Option<Vec<ClientOrderId>>,
+    /// The parent order ID for contingent child orders, if available.
+    pub parent_order_id: Option<ClientOrderId>,
     /// The orders contingency type.
     pub contingency_type: ContingencyType,
     /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
@@ -85,7 +89,7 @@ pub struct OrderStatusReport {
     /// The trailing offset type.
     pub trailing_offset_type: TrailingOffsetType,
     /// The order average fill price.
-    pub avg_px: Option<f64>,
+    pub avg_px: Option<Decimal>,
     /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
     /// If the order will only provide liquidity (make a market).
@@ -135,6 +139,8 @@ impl OrderStatusReport {
             ts_init,
             order_list_id: None,
             venue_position_id: None,
+            linked_order_ids: None,
+            parent_order_id: None,
             contingency_type: ContingencyType::default(),
             expire_time: None,
             price: None,
@@ -166,6 +172,23 @@ impl OrderStatusReport {
         self
     }
 
+    /// Sets the linked client order IDs.
+    #[must_use]
+    pub fn with_linked_order_ids(
+        mut self,
+        linked_order_ids: impl IntoIterator<Item = ClientOrderId>,
+    ) -> Self {
+        self.linked_order_ids = Some(linked_order_ids.into_iter().collect());
+        self
+    }
+
+    /// Sets the parent order ID.
+    #[must_use]
+    pub const fn with_parent_order_id(mut self, parent_order_id: ClientOrderId) -> Self {
+        self.parent_order_id = Some(parent_order_id);
+        self
+    }
+
     /// Sets the venue position ID.
     #[must_use]
     pub const fn with_venue_position_id(mut self, venue_position_id: PositionId) -> Self {
@@ -181,10 +204,27 @@ impl OrderStatusReport {
     }
 
     /// Sets the average price.
-    #[must_use]
-    pub const fn with_avg_px(mut self, avg_px: f64) -> Self {
-        self.avg_px = Some(avg_px);
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `avg_px` cannot be converted to a valid `Decimal`.
+    pub fn with_avg_px(mut self, avg_px: f64) -> anyhow::Result<Self> {
+        if !avg_px.is_finite() {
+            anyhow::bail!(
+                "avg_px must be finite, got: {} (is_nan: {}, is_infinite: {})",
+                avg_px,
+                avg_px.is_nan(),
+                avg_px.is_infinite()
+            );
+        }
+
+        self.avg_px = Some(Decimal::from_f64_retain(avg_px).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to convert avg_px to Decimal: {} (possible overflow/underflow)",
+                avg_px
+            )
+        })?);
+        Ok(self)
     }
 
     /// Sets the trigger price.
@@ -296,6 +336,8 @@ impl Display for OrderStatusReport {
                 client_order_id={:?}, \
                 order_list_id={:?}, \
                 venue_position_id={:?}, \
+                linked_order_ids={:?}, \
+                parent_order_id={:?}, \
                 contingency_type={}, \
                 expire_time={:?}, \
                 price={:?}, \
@@ -327,6 +369,8 @@ impl Display for OrderStatusReport {
             self.client_order_id,
             self.order_list_id,
             self.venue_position_id,
+            self.linked_order_ids,
+            self.parent_order_id,
             self.contingency_type,
             self.expire_time,
             self.price,
@@ -409,6 +453,8 @@ mod tests {
         // Test default values
         assert_eq!(report.order_list_id, None);
         assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.linked_order_ids, None);
+        assert_eq!(report.parent_order_id, None);
         assert_eq!(report.contingency_type, ContingencyType::default());
         assert_eq!(report.expire_time, None);
         assert_eq!(report.price, None);
@@ -452,13 +498,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_status_report_builder_methods() {
+    fn test_order_status_report_builder_methods() -> anyhow::Result<()> {
         let report = test_order_status_report()
             .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
             .with_order_list_id(OrderListId::from("OL-001"))
             .with_venue_position_id(PositionId::from("P-001"))
+            .with_parent_order_id(ClientOrderId::from("O-PARENT"))
             .with_price(Price::from("1.00000"))
-            .with_avg_px(1.00001)
+            .with_avg_px(1.00001)?
             .with_trigger_price(Price::from("0.99000"))
             .with_trigger_type(TriggerType::Default)
             .with_limit_offset(Decimal::from_f64_retain(0.0001).unwrap())
@@ -478,8 +525,15 @@ mod tests {
         );
         assert_eq!(report.order_list_id, Some(OrderListId::from("OL-001")));
         assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
+        assert_eq!(
+            report.parent_order_id,
+            Some(ClientOrderId::from("O-PARENT"))
+        );
         assert_eq!(report.price, Some(Price::from("1.00000")));
-        assert_eq!(report.avg_px, Some(1.00001));
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_f64_retain(1.00001).unwrap())
+        );
         assert_eq!(report.trigger_price, Some(Price::from("0.99000")));
         assert_eq!(report.trigger_type, Some(TriggerType::Default));
         assert_eq!(
@@ -498,6 +552,7 @@ mod tests {
         assert_eq!(report.cancel_reason, Some("User requested".to_string()));
         assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
         assert_eq!(report.contingency_type, ContingencyType::Oco);
+        Ok(())
     }
 
     #[rstest]
@@ -601,7 +656,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_status_report_with_optional_fields() {
+    fn test_order_status_report_with_optional_fields() -> anyhow::Result<()> {
         let mut report = test_order_status_report();
 
         // Initially no optional fields set
@@ -613,14 +668,18 @@ mod tests {
         // Test builder pattern with various optional fields
         report = report
             .with_price(Price::from("1.00000"))
-            .with_avg_px(1.00001)
+            .with_avg_px(1.00001)?
             .with_post_only(true)
             .with_reduce_only(true);
 
         assert_eq!(report.price, Some(Price::from("1.00000")));
-        assert_eq!(report.avg_px, Some(1.00001));
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_f64_retain(1.00001).unwrap())
+        );
         assert!(report.post_only);
         assert!(report.reduce_only);
+        Ok(())
     }
 
     #[rstest]

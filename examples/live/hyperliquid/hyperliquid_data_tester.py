@@ -47,7 +47,7 @@ if __name__ == "__main__":
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 instrument_provider=InstrumentProviderConfig(load_all=True),
-                testnet=True,  # Set to False for mainnet
+                testnet=True,  # If client uses the testnet
             ),
         },
         timeout_connection=20.0,

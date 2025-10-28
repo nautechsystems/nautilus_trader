@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data structures representing BitMEX REST API payloads.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -72,7 +74,7 @@ pub struct BitmexInstrument {
     pub state: BitmexInstrumentState,
     #[serde(rename = "typ")]
     pub instrument_type: BitmexInstrumentType,
-    pub listing: DateTime<Utc>,
+    pub listing: Option<DateTime<Utc>>,
     pub front: Option<DateTime<Utc>>,
     pub expiry: Option<DateTime<Utc>>,
     pub settle: Option<DateTime<Utc>>,
@@ -119,15 +121,21 @@ pub struct BitmexInstrument {
     pub prev_close_price: Option<f64>,
     pub limit_down_price: Option<f64>,
     pub limit_up_price: Option<f64>,
+    pub prev_total_volume: Option<f64>,
     pub total_volume: Option<f64>,
     pub volume: Option<f64>,
+    #[serde(rename = "volume24h")]
     pub volume_24h: Option<f64>,
     pub prev_total_turnover: Option<f64>,
     pub total_turnover: Option<f64>,
     pub turnover: Option<f64>,
+    #[serde(rename = "turnover24h")]
     pub turnover_24h: Option<f64>,
+    #[serde(rename = "homeNotional24h")]
     pub home_notional_24h: Option<f64>,
+    #[serde(rename = "foreignNotional24h")]
     pub foreign_notional_24h: Option<f64>,
+    #[serde(rename = "prevPrice24h")]
     pub prev_price_24h: Option<f64>,
     pub vwap: Option<f64>,
     pub high_price: Option<f64>,
@@ -158,6 +166,9 @@ pub struct BitmexInstrument {
     pub min_tick: Option<f64>,
     pub funding_base_rate: Option<f64>,
     pub funding_quote_rate: Option<f64>,
+    pub capped: Option<bool>,
+    pub opening_timestamp: Option<DateTime<Utc>>,
+    pub closing_timestamp: Option<DateTime<Utc>>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -763,6 +774,18 @@ pub struct BitmexUserPreferences {
 #[derive(Clone, Debug, Deserialize, Default)]
 #[allow(dead_code)]
 pub struct BitmexOrderBookBinning(serde_json::Value);
+
+/// Represents the response from `GET /api/v1` (root endpoint).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BitmexApiInfo {
+    /// API name.
+    pub name: String,
+    /// API version.
+    pub version: String,
+    /// Server timestamp in milliseconds.
+    pub timestamp: u64,
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

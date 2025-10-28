@@ -1,8 +1,8 @@
 ---
- name: Bug Report
- about: Bug – behavior that contradicts the platform’s documented or intended design
+name: Bug Report
+about: Bug – behavior that contradicts the platform's documented or intended design
 labels:
-- bug
+  - bug
 ---
 
 # Bug Report

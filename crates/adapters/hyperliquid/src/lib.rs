@@ -48,9 +48,19 @@
 
 pub mod common;
 pub mod config;
+pub mod data;
+pub mod execution;
 pub mod http;
 pub mod signing;
 pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+pub use crate::{
+    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    data::HyperliquidDataClient,
+    execution::HyperliquidExecutionClient,
+    http::client::HyperliquidHttpClient,
+    websocket::client::HyperliquidWebSocketClient,
+};

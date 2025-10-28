@@ -59,7 +59,7 @@ impl MessageHandler for StubMessageHandler {
 }
 
 #[must_use]
-#[allow(unused_must_use)] // TODO: Temporary to fix docs build
+#[allow(unused_must_use, reason = "TODO: Temporary to fix docs build")]
 pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
     // TODO: This reduces the need to come up with ID strings in tests.
     // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash

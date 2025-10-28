@@ -13,13 +13,14 @@ and also deploy those same strategies live, with no code changes.
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 
-## Feature Flags
+## Feature flags
 
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
+- `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
 
 ## Scripts
 
@@ -74,6 +75,24 @@ This script demonstrates how to use the blockchain data client to discover and c
 cargo run --bin sync_tokens_pools --features hypersync
 ```
 
+## Testing
+
+The crate includes both standard integration tests and deterministic network simulation tests using turmoil.
+
+To run standard tests:
+
+```bash
+cargo nextest run -p nautilus-blockchain
+```
+
+To run turmoil network simulation tests:
+
+```bash
+cargo nextest run -p nautilus-blockchain --features turmoil
+```
+
+The turmoil tests simulate various network conditions (reconnections, partitions, etc.) in a deterministic way, allowing reliable testing of network failure scenarios without flakiness.
+
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
@@ -85,6 +104,6 @@ NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
-<img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-<span style="font-size: 0.8em; color: #999;">© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.</span>
+© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.

@@ -105,8 +105,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
             else:
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet. "
-                    "All instruments will have zero fees.",
+                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    "all instruments will have zero fees",
                 )
                 fees_dict = {}
         except BinanceClientError as e:
@@ -146,13 +146,13 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             else:
                 fees_dict = {}
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet. "
-                    "All instruments will have zero fees.",
+                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    "all instruments will have zero fees.",
                 )
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                f"(this is needed to request the applicable account fee tier). {e.message}",
+                f"(this is needed to request the applicable account fee tier): {e.message}",
             )
             return
 
@@ -178,7 +178,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
+        self._log.debug(f"Loading instrument {instrument_id}{filters_str}")
 
         symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
@@ -189,14 +189,14 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
             else:
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet. "
-                    "All instruments will have zero fees.",
+                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    "all instruments will have zero fees",
                 )
                 fees_dict = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                f"(this is needed to request the applicable account fee tier). {e}",
+                f"(this is needed to request the applicable account fee tier): {e}",
             )
             return
 

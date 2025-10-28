@@ -83,7 +83,7 @@ class TestFundingRateUpdate:
         )
         assert (
             repr(funding_rate)
-            == 'FundingRateUpdate { instrument_id: "BTCUSDT-PERP.BINANCE", rate: 0.0001, next_funding_ns: None, ts_event: UnixNanos(1640000000000000000), ts_init: UnixNanos(1640000000000000000) }'  # noqa: E501
+            == 'FundingRateUpdate { instrument_id: "BTCUSDT-PERP.BINANCE", rate: 0.0001, next_funding_ns: None, ts_event: UnixNanos(1640000000000000000), ts_init: UnixNanos(1640000000000000000) }'
         )
 
     def test_equality(self):

@@ -7,7 +7,7 @@ use each tool and the conventions you should follow when adding new benches.
 
 ## Tooling overview
 
-Nautilus Trader relies on **two complementary benchmarking frameworks**:
+NautilusTrader relies on **two complementary benchmarking frameworks**:
 
 | Framework | What is it? | What it measures | When to prefer it |
 |-----------|-------------|------------------|-------------------|

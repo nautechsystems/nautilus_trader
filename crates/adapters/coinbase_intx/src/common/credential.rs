@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(unused_assignments)] // Fields are used in sign_ws and accessed externally, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
@@ -35,7 +37,7 @@ pub struct Credential {
 
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Credential")
+        f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
             .field("api_passphrase", &self.api_passphrase)
             .field("api_secret", &"<redacted>")

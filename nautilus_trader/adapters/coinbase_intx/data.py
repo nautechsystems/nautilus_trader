@@ -120,6 +120,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
+            heartbeat=20,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 

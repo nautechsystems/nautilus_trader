@@ -26,13 +26,13 @@ from nautilus_trader.model.identifiers import Venue
 
 _VENUES = [
     # Venue("ASCENDEX"),
-    # Venue("BINANCE"),
+    Venue("BINANCE"),
     # Venue("BINANCE_DELIVERY"),
     # Venue("BINANCE_US"),
     # Venue("BITFINEX"),
     # Venue("BITFLYER"),
     # Venue("BITGET"),
-    Venue("BITMEX"),
+    # Venue("BITMEX"),
     # Venue("BITNOMIAL"),
     # Venue("BITSTAMP"),
     # Venue("BLOCKCHAIN_COM"),

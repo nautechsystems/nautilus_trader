@@ -73,7 +73,7 @@ BYBIT_RETRY_ERRORS_UTA: Final[set[int]] = {
     110_063,  # Settlement in progress, not available for trading
     110_066,  # Trading is currently not allowed
     110_079,  # The order is processing and can not be operated
-    110_080,  # Operations Restriction: The current LTV ratio of your Institutional Lending has hit the liquidation threshold. Assets in your account are being liquidated (trade/risk limit/leverage)  # noqa: E501
+    110_080,  # Operations Restriction: The current LTV ratio of your Institutional Lending has hit the liquidation threshold. Assets in your account are being liquidated (trade/risk limit/leverage)
     110_082,  # You cannot lift Reduce-Only restrictions, as no Reduce-Only restrictions are applied to your position
     110_083,  # Reduce-Only restrictions must be lifted for both Long and Short positions at the same time
     110_089,  # Exceeds the maximum risk limit level
@@ -87,6 +87,8 @@ BYBIT_RETRY_ERRORS_UTA: Final[set[int]] = {
     3_400_071,  # The net asset is not satisfied
     3_400_139,  # The total value of your positions and orders has exceeded the risk limit for a Perpetual or Futures contract
 }
+
+BYBIT_MULTIPLIERS: Final[list[int]] = [1000000, 100000, 10000, 1000, 100, 10]
 
 BYBIT_MINUTE_INTERVALS: Final[tuple[int, ...]] = (1, 3, 5, 15, 30, 60, 120, 240, 360, 720)
 BYBIT_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)

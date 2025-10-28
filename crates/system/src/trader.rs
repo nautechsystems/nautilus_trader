@@ -259,8 +259,7 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the actor cannot be registered
-    /// in the component registry.
+    /// Returns an error if the actor cannot be registered in the component registry.
     pub fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
         T: DataActor + Component + Debug + 'static,
@@ -290,7 +289,7 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the actor ID is already tracked by this trader.
+    /// Returns an error if the actor ID is already tracked by this trader.
     pub fn add_actor_id_for_lifecycle(&mut self, actor_id: ActorId) -> anyhow::Result<()> {
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {

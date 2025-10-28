@@ -104,7 +104,7 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
     ],
 )
-def test_general_messsage(file_path: str) -> None:
+def test_general_message(file_path: str) -> None:
     """
     Test the general message parser.
     """

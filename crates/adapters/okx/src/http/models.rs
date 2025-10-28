@@ -13,10 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data transfer objects for deserializing OKX HTTP API payloads.
+
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::parse::{deserialize_empty_string_as_none, deserialize_empty_ustr_as_none};
+use crate::common::parse::{
+    deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+    deserialize_target_currency_as_none,
+};
 
 /// Represents a trade tick from the GET /api/v5/market/trades endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -63,8 +68,9 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderStatus,
-        OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory,
+        OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode,
+        OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -169,6 +175,7 @@ pub struct OKXAccount {
 /// Represents a balance detail for a single currency in an OKX account.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct OKXBalanceDetail {
     /// Available balance.
     pub avail_bal: String,
@@ -418,8 +425,8 @@ pub struct OKXPlaceOrderResponse {
     #[serde(default)]
     pub reduce_only: Option<String>,
     /// Target currency (optional).
-    #[serde(default)]
-    pub tgt_ccy: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Creation time.
     #[serde(default)]
     pub c_time: Option<String>,
@@ -436,6 +443,12 @@ pub struct OKXOrderHistory {
     pub ord_id: Ustr,
     /// Client order ID.
     pub cl_ord_id: Ustr,
+    /// Algo order ID (for conditional orders).
+    #[serde(default)]
+    pub algo_id: Option<Ustr>,
+    /// Client-supplied algo order ID (for conditional orders).
+    #[serde(default)]
+    pub algo_cl_ord_id: Option<Ustr>,
     /// Client account ID (may be omitted by OKX).
     #[serde(default)]
     pub cl_act_id: Option<Ustr>,
@@ -462,7 +475,8 @@ pub struct OKXOrderHistory {
     /// Reduce-only flag.
     pub reduce_only: String,
     /// Target currency (optional).
-    pub tgt_ccy: String,
+    #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Order state.
     pub state: OKXOrderStatus,
     /// Average price (optional).
@@ -497,14 +511,83 @@ pub struct OKXOrderHistory {
     /// Fee discount (optional).
     #[serde(default)]
     pub fee_discount: Option<String>,
-    /// Category (optional).
-    pub category: String,
+    /// Order category (normal, liquidation, ADL, etc.).
+    pub category: OKXOrderCategory,
     /// Last update time, Unix timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub u_time: u64,
     /// Creation time.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub c_time: u64,
+}
+
+/// Represents an algo order response from `/trade/order-algo-*` endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXOrderAlgo {
+    /// Algo order ID assigned by OKX.
+    pub algo_id: String,
+    /// Client-specified algo order ID.
+    #[serde(default)]
+    pub algo_cl_ord_id: String,
+    /// Client order ID (empty until triggered).
+    #[serde(default)]
+    pub cl_ord_id: String,
+    /// Venue order ID (empty until triggered).
+    #[serde(default)]
+    pub ord_id: String,
+    /// Instrument ID, e.g. `ETH-USDT-SWAP`.
+    pub inst_id: Ustr,
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Algo order type.
+    pub ord_type: OKXOrderType,
+    /// Current order state.
+    pub state: OKXOrderStatus,
+    /// Order side.
+    pub side: OKXSide,
+    /// Position side.
+    pub pos_side: OKXPositionSide,
+    /// Submitted size.
+    pub sz: String,
+    /// Trigger price (empty for certain algo styles).
+    #[serde(default)]
+    pub trigger_px: String,
+    /// Trigger price type (last/mark/index).
+    #[serde(default)]
+    pub trigger_px_type: Option<OKXTriggerType>,
+    /// Order price (-1 indicates market execution once triggered).
+    #[serde(default)]
+    pub ord_px: String,
+    /// Trade mode (cash/cross/isolated).
+    pub td_mode: OKXTradeMode,
+    /// Algo leverage configuration.
+    #[serde(default)]
+    pub lever: String,
+    /// Reduce-only flag.
+    #[serde(default)]
+    pub reduce_only: String,
+    /// Executed price (if triggered).
+    #[serde(default)]
+    pub actual_px: String,
+    /// Executed size (if triggered).
+    #[serde(default)]
+    pub actual_sz: String,
+    /// Notional value in USD.
+    #[serde(default)]
+    pub notional_usd: String,
+    /// Creation time (milliseconds).
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub c_time: u64,
+    /// Last update time (milliseconds).
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub u_time: u64,
+    /// Trigger timestamp (if triggered).
+    #[serde(default)]
+    pub trigger_time: String,
+    /// Optional tag supplied during submission.
+    #[serde(default)]
+    pub tag: String,
 }
 
 /// Represents a transaction detail (fill) from `GET /api/v5/trade/fills`.
@@ -641,7 +724,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub trigger_px_type: Option<OKXTriggerType>,
     /// Target currency (base_ccy or quote_ccy).
     #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
-    pub tgt_ccy: Option<String>,
+    pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Position side (net, long, short).
     #[serde(rename = "posSide", skip_serializing_if = "Option::is_none")]
     pub pos_side: Option<OKXPositionSide>,
@@ -681,13 +764,12 @@ pub struct OKXPlaceAlgoOrderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct OKXCancelAlgoOrderRequest {
     /// Instrument ID.
-    #[serde(rename = "instId")]
     pub inst_id: String,
     /// Algo order ID.
-    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_id: Option<String>,
     /// Client-supplied algo order ID.
-    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_cl_ord_id: Option<String>,
 }
 
@@ -705,17 +787,58 @@ pub struct OKXCancelAlgoOrderResponse {
     pub s_msg: Option<String>,
 }
 
+/// Represents the response from `GET /api/v5/public/time` (get system time).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXServerTime {
+    /// Server timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
+/// Represents a fee rate entry from `GET /api/v5/account/trade-fee`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXFeeRate {
+    /// Fee level (VIP tier) - indicates the user's VIP tier (0-9).
+    #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
+    pub level: OKXVipLevel,
+    /// Taker fee rate for crypto-margined contracts.
+    pub taker: String,
+    /// Maker fee rate for crypto-margined contracts.
+    pub maker: String,
+    /// Taker fee rate for USDT-margined contracts.
+    pub taker_u: String,
+    /// Maker fee rate for USDT-margined contracts.
+    pub maker_u: String,
+    /// Delivery fee rate.
+    #[serde(default)]
+    pub delivery: String,
+    /// Option exercise fee rate.
+    #[serde(default)]
+    pub exercise: String,
+    /// Instrument type (SPOT, MARGIN, SWAP, FUTURES, OPTION).
+    pub inst_type: OKXInstrumentType,
+    /// Fee schedule category (being deprecated).
+    #[serde(default)]
+    pub category: String,
+    /// Data return timestamp (Unix timestamp in milliseconds).
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use serde_json;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_algo_order_request_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "ETH-USDT-SWAP".to_string(),
@@ -751,7 +874,7 @@ mod tests {
         assert!(!json.contains("closePosition"));
     }
 
-    #[test]
+    #[rstest]
     fn test_algo_order_request_array_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "BTC-USDT".to_string(),
@@ -763,7 +886,7 @@ mod tests {
             trigger_px: Some("50000".to_string()),
             order_px: Some("49900".to_string()),
             trigger_px_type: Some(OKXTriggerType::Mark),
-            tgt_ccy: Some("base_ccy".to_string()),
+            tgt_ccy: Some(OKXTargetCurrency::BaseCcy),
             pos_side: Some(OKXPositionSide::Net),
             close_position: None,
             tag: None,
@@ -788,7 +911,7 @@ mod tests {
         assert!(json.contains("\"reduceOnly\":true"));
     }
 
-    #[test]
+    #[rstest]
     fn test_cancel_algo_order_request_serialization() {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: "ETH-USDT-SWAP".to_string(),
@@ -804,7 +927,7 @@ mod tests {
         assert!(!json.contains("algoClOrdId"));
     }
 
-    #[test]
+    #[rstest]
     fn test_cancel_algo_order_with_client_id_serialization() {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: "BTC-USDT".to_string(),

@@ -36,6 +36,8 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -46,6 +48,7 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -201,7 +204,13 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def on_data(self, data: Data) -> None:
         # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, OrderBookDelta):
+        if isinstance(data, Instrument):
+            self.exchange.update_instrument(data)
+        elif isinstance(data, InstrumentStatus):
+            self.exchange.process_instrument_status(data)
+        elif isinstance(data, InstrumentClose):
+            self.exchange.process_instrument_close(data)
+        elif isinstance(data, OrderBookDelta):
             self.exchange.process_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
             self.exchange.process_order_book_deltas(data)

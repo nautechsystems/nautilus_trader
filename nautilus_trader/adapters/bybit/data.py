@@ -19,7 +19,8 @@ import asyncio
 from collections import defaultdict
 from decimal import Decimal
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 import msgspec
 
@@ -648,7 +649,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

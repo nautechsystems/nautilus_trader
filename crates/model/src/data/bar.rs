@@ -474,24 +474,24 @@ impl BarType {
     /// Returns whether this instance is a standard bar type.
     pub fn is_standard(&self) -> bool {
         match &self {
-            BarType::Standard { .. } => true,
-            BarType::Composite { .. } => false,
+            Self::Standard { .. } => true,
+            Self::Composite { .. } => false,
         }
     }
 
     /// Returns whether this instance is a composite bar type.
     pub fn is_composite(&self) -> bool {
         match &self {
-            BarType::Standard { .. } => false,
-            BarType::Composite { .. } => true,
+            Self::Standard { .. } => false,
+            Self::Composite { .. } => true,
         }
     }
 
     /// Returns the standard bar type component.
     pub fn standard(&self) -> Self {
         match &self {
-            &&b @ BarType::Standard { .. } => b,
-            BarType::Composite {
+            &&b @ Self::Standard { .. } => b,
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -503,8 +503,8 @@ impl BarType {
     /// Returns any composite bar type component.
     pub fn composite(&self) -> Self {
         match &self {
-            &&b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
-            BarType::Composite {
+            &&b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source: _,
@@ -523,7 +523,7 @@ impl BarType {
     /// Returns the [`InstrumentId`] for this bar type.
     pub fn instrument_id(&self) -> InstrumentId {
         match &self {
-            BarType::Standard { instrument_id, .. } | BarType::Composite { instrument_id, .. } => {
+            Self::Standard { instrument_id, .. } | Self::Composite { instrument_id, .. } => {
                 *instrument_id
             }
         }
@@ -532,17 +532,17 @@ impl BarType {
     /// Returns the [`BarSpecification`] for this bar type.
     pub fn spec(&self) -> BarSpecification {
         match &self {
-            BarType::Standard { spec, .. } | BarType::Composite { spec, .. } => *spec,
+            Self::Standard { spec, .. } | Self::Composite { spec, .. } => *spec,
         }
     }
 
     /// Returns the [`AggregationSource`] for this bar type.
     pub fn aggregation_source(&self) -> AggregationSource {
         match &self {
-            BarType::Standard {
+            Self::Standard {
                 aggregation_source, ..
             }
-            | BarType::Composite {
+            | Self::Composite {
                 aggregation_source, ..
             } => *aggregation_source,
         }
@@ -666,14 +666,14 @@ impl From<&str> for BarType {
 impl Display for BarType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            BarType::Standard {
+            Self::Standard {
                 instrument_id,
                 spec,
                 aggregation_source,
             } => {
                 write!(f, "{instrument_id}-{spec}-{aggregation_source}")
             }
-            BarType::Composite {
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -866,6 +866,8 @@ impl HasTsInit for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::TimeZone;
     use rstest::rstest;
 
@@ -1055,6 +1057,25 @@ mod tests {
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
+    }
+
+    #[rstest]
+    fn test_bar_type_from_str_with_utf8_symbol() {
+        let non_ascii_instrument = "TËST-PÉRP.BINANCE";
+        let non_ascii_bar_type = "TËST-PÉRP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+
+        let bar_type = BarType::from_str(non_ascii_bar_type).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id(),
+            InstrumentId::from_str(non_ascii_instrument).unwrap()
+        );
+        assert_eq!(
+            bar_type.spec(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last)
+        );
+        assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
+        assert_eq!(bar_type.to_string(), non_ascii_bar_type);
     }
 
     #[rstest]

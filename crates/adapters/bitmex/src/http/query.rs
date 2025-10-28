@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Builder types for BitMEX REST query parameters and filters.
+
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize, Serializer};
@@ -65,6 +67,50 @@ pub struct GetTradeParams {
     )]
     pub filter: Option<Value>,
     /// Array of column names to fetch. If omitted, will return all columns.  Note that this method will always return item keys, even when not specified, so you may receive more columns that you expect.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
+    pub columns: Option<Value>,
+    /// Number of results to fetch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<i32>,
+    /// Starting point for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<i32>,
+    /// If true, will sort results newest first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reverse: Option<bool>,
+    /// Starting date filter for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<DateTime<Utc>>,
+    /// Ending date filter for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<DateTime<Utc>>,
+}
+
+/// Parameters for the GET /trade/bucketed endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetTradeBucketedParams {
+    /// Instrument symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Time interval for the bucketed data (e.g. "1m", "5m", "1h", "1d").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bin_size: Option<String>,
+    /// If true, will return partial bins even if the bin spans less than the full interval.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial: Option<bool>,
+    /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
+    pub filter: Option<Value>,
+    /// Array of column names to fetch. If omitted, will return all columns.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_json_as_string"

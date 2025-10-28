@@ -1,0 +1,42 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": null,
+    "list": [
+      {
+        "symbol": "BTCUSD",
+        "contractType": "InversePerpetual",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USD",
+        "launchTime": "1699980000000",
+        "deliveryTime": "1702582000000",
+        "deliveryFeeRate": "0.0005",
+        "priceScale": "1",
+        "leverageFilter": {
+          "minLeverage": "1",
+          "maxLeverage": "100",
+          "leverageStep": "1"
+        },
+        "priceFilter": {
+          "minPrice": "1",
+          "maxPrice": "1000000",
+          "tickSize": "0.5"
+        },
+        "lotSizeFilter": {
+          "maxOrderQty": "1000000",
+          "minOrderQty": "1",
+          "qtyStep": "1",
+          "postOnlyMaxOrderQty": "1000000",
+          "maxMktOrderQty": "500000"
+        },
+        "unifiedMarginTrade": true,
+        "fundingInterval": 8,
+        "settleCoin": "BTC"
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

@@ -133,7 +133,7 @@ impl LimitOrder {
         Ok(Self {
             core: OrderCore::new(init_order),
             price,
-            expire_time: expire_time.or(Some(UnixNanos::default())),
+            expire_time,
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
@@ -492,7 +492,7 @@ impl Order for LimitOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {

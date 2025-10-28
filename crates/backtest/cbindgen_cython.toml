@@ -9,25 +9,13 @@ tab_width = 4
 header = '"../includes/backtest.h"'
 
 [cython.cimports]
-"libc.stdint" = [
-    "uint8_t",
-    "uint64_t",
-    "uintptr_t",
-]
+"libc.stdint" = ["uint8_t", "uint64_t", "uintptr_t"]
 
-"cpython.object" = [
-    "PyObject",
-]
+"cpython.object" = ["PyObject"]
 
-"nautilus_trader.core.rust.common" = [
-    "TestClock_API",
-    "LiveClock_API",
-]
+"nautilus_trader.core.rust.common" = ["TestClock_API", "LiveClock_API"]
 
-"nautilus_trader.core.rust.core" = [
-    "CVec",
-    "UUID4_t",
-]
+"nautilus_trader.core.rust.core" = ["CVec", "UUID4_t"]
 
 [enum]
 rename_variants = "ScreamingSnakeCase"

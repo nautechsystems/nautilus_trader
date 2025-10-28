@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import datetime
 import re
 from typing import Literal
@@ -22,14 +21,11 @@ import msgspec
 import pandas as pd
 from ibapi.common import MarketDataTypeEnum
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
-
-# fmt: on
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.database import CacheDatabaseAdapter
@@ -38,6 +34,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import log_level_from_str
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
@@ -67,7 +64,8 @@ class HistoricInteractiveBrokersClient:
         log_level: str = "INFO",
         cache_config: CacheConfig | None = None,
     ) -> None:
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
+
         loop.set_debug(True)
         self._clock = LiveClock()
 

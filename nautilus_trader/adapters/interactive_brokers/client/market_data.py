@@ -19,7 +19,8 @@ from collections import defaultdict
 from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
-from typing import Any, ClassVar
+from typing import Any
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -30,7 +31,6 @@ from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBKRBookLevel
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
@@ -56,9 +56,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 
-# fmt: on
-
-
 class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     """
     Handles market data requests, subscriptions and data processing for the
@@ -76,6 +73,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
     # Instance variables that will be available when mixed into InteractiveBrokersClient
     _subscription_tick_data: dict[int, dict[int, Any]]
+    _subscription_start_times: dict[int, int]  # reqId -> start_ns (for bar filtering)
 
     _order_books: ClassVar[dict[int, dict[str, dict[int, IBKRBookLevel]]]] = {}
     """
@@ -441,18 +439,25 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         name = str(bar_type)
         now = self._clock.timestamp_ns()
-        start = params.get("start_ns")
+        start = params.pop("start_ns", None)
 
+        # A minimum number of bars needs to be requested so bars start to be received
+        # We then consider only bars which ts_init is after start
         if start is not None:
-            # start_time = pd.Timestamp(start)
             duration_str = timedelta_to_duration_str(
-                pd.Timedelta(now - start, "ns"),
+                max(
+                    pd.Timedelta(now - start, "ns"),
+                    pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec"),
+                ),  # Download at least approx 300 bars
             )
         else:
             start = now
             duration_str = timedelta_to_duration_str(
                 pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec"),
             )  # Download approx 300 bars
+
+        if "first_start_ns" not in params:
+            params["first_start_ns"] = start
 
         subscription = await self._subscribe(
             name,
@@ -462,8 +467,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             contract=contract,
             use_rth=use_rth,
             handle_revised_bars=handle_revised_bars,
-            start=start,
+            params=params,
         )
+
+        # In order to get missed bars after a disconnection
+        if (
+            self._last_disconnection_ns is not None
+            and self._last_disconnection_ns > params["first_start_ns"]
+        ):
+            start = self._last_disconnection_ns
+
+        # Store start time separately for bar filtering (not part of resubscription handle)
+        self._subscription_start_times[subscription.req_id] = start
 
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
         self._eclient.reqHistoricalData(
@@ -490,6 +505,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         """
         name = str(bar_type)
+
+        # Clean up stored start time before unsubscribing
+        subscription = self._subscriptions.get(name=name)
+        if subscription:
+            self._subscription_start_times.pop(subscription.req_id, None)
+
         await self._unsubscribe(name, self._eclient.cancelHistoricalData)
 
     async def get_historical_bars(
@@ -893,9 +914,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             if bar:
                 request.result.append(bar)
         elif subscription := self._subscriptions.get(req_id=req_id):
-            start = None
-            if isinstance(subscription.handle, functools.partial):
-                start = subscription.handle.keywords.get("start")
+            # Get start time from stored subscription start times
+            start = self._subscription_start_times.get(req_id)
 
             bar = await self._process_bar_data(
                 bar_type_str=str(subscription.name),

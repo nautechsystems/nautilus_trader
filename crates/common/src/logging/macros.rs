@@ -446,7 +446,7 @@ mod tests {
         );
 
         // Allow time for logs to be written
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(200));
 
         drop(log_guard);
 

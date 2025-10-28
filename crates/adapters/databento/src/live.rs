@@ -50,7 +50,10 @@ pub enum LiveCommand {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
+#[allow(
+    clippy::large_enum_variant,
+    reason = "TODO: Optimize this (largest variant 1096 vs 80 bytes)"
+)]
 pub enum LiveMessage {
     Data(Data),
     Instrument(InstrumentAny),
@@ -63,7 +66,7 @@ pub enum LiveMessage {
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
 ///
-/// [`LiveCommand`] messages are recieved synchronously across a channel,
+/// [`LiveCommand`] messages are received synchronously across a channel,
 /// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
 /// back to a message processing task.
 ///

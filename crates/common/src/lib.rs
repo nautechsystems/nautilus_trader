@@ -72,6 +72,9 @@ pub mod throttler;
 pub mod timer;
 pub mod xrate;
 
+#[cfg(feature = "defi")]
+pub mod defi;
+
 #[cfg(feature = "ffi")]
 pub mod ffi;
 

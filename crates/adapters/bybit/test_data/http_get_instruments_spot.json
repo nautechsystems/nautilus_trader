@@ -1,0 +1,30 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": "",
+    "list": [
+      {
+        "symbol": "BTCUSDT",
+        "baseCoin": "BTC",
+        "quoteCoin": "USDT",
+        "innovation": "0",
+        "status": "Trading",
+        "marginTrading": "utaOnly",
+        "lotSizeFilter": {
+          "basePrecision": "0.0001",
+          "quotePrecision": "0.01",
+          "minOrderQty": "0.001",
+          "maxOrderQty": "100.0",
+          "minOrderAmt": "10",
+          "maxOrderAmt": "1000000"
+        },
+        "priceFilter": {
+          "tickSize": "0.1"
+        }
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

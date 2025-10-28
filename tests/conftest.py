@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import gc
+import asyncio
+import inspect
 import os
-import tracemalloc
+import sys
 from pathlib import Path
 
-import psutil
 import pytest
 
 from nautilus_trader.common.component import init_logging
@@ -31,6 +31,82 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+@pytest.fixture(scope="session")
+def event_loop_policy():
+    """
+    Provide uvloop event loop policy for pytest-asyncio.
+
+    This ensures all tests run with uvloop when available (non-Windows platforms). The
+    session scope ensures the policy is set once for the entire test session.
+
+    """
+    if sys.platform == "win32":
+        # uvloop not supported on Windows, use default policy
+        return asyncio.DefaultEventLoopPolicy()
+
+    try:
+        import uvloop
+
+        return uvloop.EventLoopPolicy()
+    except ImportError:
+        # Fallback to default if uvloop not available
+        return asyncio.DefaultEventLoopPolicy()
+
+
+@pytest.fixture(scope="session")
+def session_event_loop(event_loop_policy):
+    """
+    Provide a session-scoped event loop for session-scoped fixtures.
+
+    This is used by fixtures that need an event loop at session scope (e.g., HTTP
+    clients). The loop is created once per test session and cleaned up at the end.
+
+    """
+    policy = event_loop_policy
+    loop = policy.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    yield loop
+
+    # Cleanup
+    try:
+        # Cancel all pending tasks
+        pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+
+        # Close the loop only if it's not running
+        if not loop.is_running():
+            loop.close()
+    except RuntimeError:
+        # Loop may already be closed or in an invalid state
+        pass
+    finally:
+        asyncio.set_event_loop(None)
+
+
+def pytest_pycollect_makeitem(collector, name, obj):
+    """
+    Prevent pytest from collecting Rust/PyO3 utility classes as test classes.
+
+    Classes like TestClock, TestTimer, etc. start with "Test" but are utility classes
+    from PyO3/Rust, not test classes. We skip collection for these to prevent pytest-
+    asyncio from trying to set attributes on immutable types.
+
+    """
+    if inspect.isclass(obj) and name.startswith("Test"):
+        module = getattr(obj, "__module__", "")
+        # Skip if from nautilus_trader non-test modules
+        if (
+            module.startswith("nautilus_trader.")
+            and ".tests" not in module
+            and not module.startswith("tests.")
+        ):
+            return []
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     """
     Return *name* environment variable interpreted as a boolean.
@@ -41,7 +117,7 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     Falsy values (case-insensitive):
     - "0", "false", "no", "n", "off", "" (empty string)
 
-    Any other value raises :class:`ValueError` so mis-spelled variables
+    Any other value raises :class:`ValueError` so misspelled variables
     fail fast instead of being silently treated as *default*.
 
     """
@@ -60,96 +136,6 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
         f"Unsupported boolean environment value for {name}: {value!r}. "
         "Expected one of '1', '0', 'true', 'false', etc.",
     )
-
-
-# -------------------------------------------------------------------------------------------------
-# Global memory tracking configuration
-# -------------------------------------------------------------------------------------------------
-
-MEMORY_TRACKING_ENABLED = _env_flag("MEMORY_TRACKING_ENABLED_PY", default=False)
-
-MEMORY_LEAK_THRESHOLD_BYTES = int(
-    os.getenv("MEMORY_LEAK_THRESHOLD_BYTES_PY", str(10 * 1024 * 1024)),  # 10 MB default
-)
-
-
-@pytest.fixture(autouse=True)
-def memory_tracker(request):
-    """
-    Automatic memory tracking fixture that runs for all tests.
-    """
-    if not MEMORY_TRACKING_ENABLED:
-        yield
-        return
-
-    # Start tracemalloc for detailed memory tracking
-    tracemalloc.start()
-    initial_tracemalloc, _ = tracemalloc.get_traced_memory()
-
-    # Force garbage collection before test
-    gc.collect()
-
-    # Store initial memory state
-    process = psutil.Process()
-    initial_memory_bytes = process.memory_info().rss
-
-    # Run the test
-    yield
-
-    # Force garbage collection after test
-    gc.collect()
-
-    final_tracemalloc, peak = tracemalloc.get_traced_memory()
-
-    # Calculate memory usage
-    process = psutil.Process()
-    final_memory_bytes = process.memory_info().rss
-    memory_increase_bytes = final_memory_bytes - initial_memory_bytes
-    tracemalloc_increase_bytes = final_tracemalloc - initial_tracemalloc
-
-    try:
-        # Only report and fail if memory increase is significant either in RSS or Python allocations
-        if (
-            memory_increase_bytes > MEMORY_LEAK_THRESHOLD_BYTES
-            or tracemalloc_increase_bytes > MEMORY_LEAK_THRESHOLD_BYTES
-        ):
-            test_name = request.node.nodeid
-            initial_mb = initial_memory_bytes / 1024 / 1024
-            final_mb = final_memory_bytes / 1024 / 1024
-            increase_mb = memory_increase_bytes / 1024 / 1024
-            initial_tracemalloc_mb = initial_tracemalloc / 1024 / 1024
-            final_tracemalloc_mb = final_tracemalloc / 1024 / 1024
-            tracemalloc_increase_mb = tracemalloc_increase_bytes / 1024 / 1024
-            peak_tracemalloc_mb = peak / 1024 / 1024
-            threshold_mb = MEMORY_LEAK_THRESHOLD_BYTES / 1024 / 1024
-
-            print(f"\nMemory Leak Detected in {test_name}")
-            print(f"  Initial RSS: {initial_mb:.2f} MB")
-            print(f"  Final RSS: {final_mb:.2f} MB")
-            print(f"  Memory Growth: {increase_mb:.2f} MB")
-            print(f"  Initial Tracemalloc: {initial_tracemalloc_mb:.2f} MB")
-            print(f"  Final Tracemalloc: {final_tracemalloc_mb:.2f} MB")
-            print(f"  Tracemalloc Growth: {tracemalloc_increase_mb:.2f} MB")
-            print(f"  Peak Tracemalloc: {peak_tracemalloc_mb:.2f} MB")
-            print(f"  Threshold: {threshold_mb:.2f} MB")
-            print("")
-
-            # Get and print top 10 memory allocations
-            snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics("lineno")
-
-            print("\n  Top 10 Memory Allocations:")
-            print("  " + "-" * 80)
-            for index, stat in enumerate(top_stats[:10], 1):
-                traceback = f"{stat.traceback}"
-                size_mb = stat.size / 1024 / 1024
-                print(f"  {index:2d}. {traceback:<60} {size_mb:>8.2f} MB ({stat.count:,} blocks)")
-            print("  " + "-" * 80)
-
-            raise MemoryError("Memory leak detected during test execution")
-    finally:
-        # Stop tracemalloc
-        tracemalloc.stop()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -215,6 +201,20 @@ def bypass_logging():
     yield guard
 
 
+@pytest.fixture
+def event_loop_for_setup(event_loop):
+    """
+    Provide an event loop for non-async setup methods.
+
+    This fixture delegates to pytest-asyncio's managed event_loop fixture,
+    ensuring proper lifecycle management across uvloop 0.22+ and pytest-asyncio 0.23+.
+
+    Note: This fixture is deprecated and will be removed. Use `event_loop` directly instead.
+
+    """
+    return event_loop
+
+
 @pytest.fixture(name="audusd_instrument")
 def fixture_audusd_instrument() -> CurrencyPair:
     return TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("SIM"))
@@ -232,3 +232,44 @@ def fixture_audusd_quote_ticks(
 ) -> list[QuoteTick]:
     wrangler = QuoteTickDataWrangler(instrument=audusd_instrument)
     return wrangler.process(data_provider.read_csv_ticks("truefx/audusd-ticks.csv"))
+
+
+@pytest.fixture(autouse=True)
+def cleanup_event_loop_tasks(event_loop):
+    """
+    Cleanup asyncio tasks after each test to prevent task leaks.
+
+    This fixture ensures all pending tasks are cancelled and waits for them to complete
+    their cancellation (executing finally blocks), preventing file descriptor leaks and
+    cross-test contamination.
+
+    """
+    yield
+    # After the test completes, cancel any remaining tasks and wait for cleanup
+    # Use event_loop fixture directly - it's managed by pytest-asyncio
+    if event_loop and not event_loop.is_closed():
+        pending = [task for task in asyncio.all_tasks(event_loop) if not task.done()]
+        if pending:
+            # Cancel all pending tasks
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+
+            # Wait for tasks to finish cancelling and run their finally blocks
+            # Critical for resource cleanup (sockets, queues, file descriptors)
+            try:
+                event_loop.run_until_complete(
+                    asyncio.wait_for(
+                        asyncio.gather(*pending, return_exceptions=True),
+                        timeout=2.0,
+                    ),
+                )
+            except (TimeoutError, asyncio.CancelledError):
+                # Some tasks didn't complete cancellation within timeout
+                pass
+            except RuntimeError:
+                # Loop may be running or in unexpected state
+                pass
+            except Exception:  # noqa: S110
+                # Catch any other exceptions during cleanup to prevent test failures
+                pass

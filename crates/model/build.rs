@@ -62,9 +62,8 @@ fn main() {
             .expect("unable to find cbindgen.toml configuration file");
 
         // Check HIGH_PRECISION environment variable for C header too
-        let high_precision_c = env::var("HIGH_PRECISION")
-            .map(|v| v.to_lowercase() == "true" || v == "1")
-            .unwrap_or_else(|_| {
+        let high_precision_c = env::var("HIGH_PRECISION").map_or_else(
+            |_| {
                 #[cfg(feature = "high-precision")]
                 {
                     true
@@ -73,7 +72,9 @@ fn main() {
                 {
                     false
                 }
-            });
+            },
+            |v| v.to_lowercase() == "true" || v == "1",
+        );
 
         if high_precision_c && let Some(mut includes) = config_c.after_includes {
             includes.insert_str(0, "\n#define HIGH_PRECISION\n");
@@ -90,9 +91,8 @@ fn main() {
             .expect("unable to find cbindgen_cython.toml configuration file");
 
         // Check HIGH_PRECISION environment variable first, then fall back to feature flag
-        let high_precision = env::var("HIGH_PRECISION")
-            .map(|v| v.to_lowercase() == "true" || v == "1")
-            .unwrap_or_else(|_| {
+        let high_precision = env::var("HIGH_PRECISION").map_or_else(
+            |_| {
                 #[cfg(feature = "high-precision")]
                 {
                     true
@@ -101,7 +101,9 @@ fn main() {
                 {
                     false
                 }
-            });
+            },
+            |v| v.to_lowercase() == "true" || v == "1",
+        );
 
         let flag = if high_precision {
             Some("\nDEF HIGH_PRECISION = True  # or False".to_string())

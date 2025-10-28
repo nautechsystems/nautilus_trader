@@ -46,6 +46,6 @@ pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
 
 impl From<CString> for TradeId {
     fn from(value: CString) -> Self {
-        TradeId::from_bytes(value.as_bytes_with_nul()).unwrap()
+        Self::from_bytes(value.as_bytes_with_nul()).unwrap()
     }
 }

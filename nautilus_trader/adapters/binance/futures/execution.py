@@ -175,8 +175,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             reported=True,
             ts_event=millis_to_nanos(account_info.updateTime),
         )
-        while self.get_account() is None:
-            await asyncio.sleep(0.1)
+
+        await self._await_account_registered(log_registered=False)
 
         if self._leverages:
             async with TaskGroup() as tg:
@@ -201,13 +201,19 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             for _, symbol, type_ in margin_tasks:
                 self._log.info(f"Set {symbol} margin type to {type_.value}")
 
+        # Initialize leverage for all symbols using symbolConfig endpoint
+        # This ensures leverage is set correctly even for symbols without active positions
         account: MarginAccount = self.get_account()
-        position_risks = await self._futures_http_account.query_futures_position_risk()
-        for position in position_risks:
-            instrument_id: InstrumentId = self._get_cached_instrument_id(position.symbol)
-            leverage = Decimal(position.leverage)
-            account.set_leverage(instrument_id, leverage)
-            self._log.debug(f"Set leverage {position.symbol} {leverage}X")
+        symbol_configs = await self._futures_http_account.query_futures_symbol_config()
+        for config in symbol_configs:
+            try:
+                instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
+                leverage = Decimal(config.leverage)
+                account.set_leverage(instrument_id, leverage)
+                self._log.debug(f"Set leverage {config.symbol} {leverage}X")
+            except KeyError:
+                # Symbol not loaded in instrument provider, skip
+                continue
 
     async def _init_dual_side_position(self) -> None:
         binance_futures_dual_side_position: BinanceFuturesDualSidePosition = (
@@ -263,31 +269,36 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _check_order_validity(self, order: Order) -> None:
+    def _check_order_validity(self, order: Order) -> str | None:
         # Check order type valid
         if order.order_type not in self._futures_enum_parser.futures_valid_order_types:
-            self._log.error(
-                f"Cannot submit order: {order_type_to_str(order.order_type)} "
-                f"orders not supported by the Binance exchange for FUTURES accounts. "
-                f"Use any of {[order_type_to_str(t) for t in self._futures_enum_parser.futures_valid_order_types]}",
+            valid_types = [
+                order_type_to_str(t) for t in self._futures_enum_parser.futures_valid_order_types
+            ]
+            return (
+                f"UNSUPPORTED_ORDER_TYPE: {order_type_to_str(order.order_type)} "
+                f"not supported for FUTURES accounts (valid: {valid_types})"
             )
-            return
+
         # Check time in force valid
         if order.time_in_force not in self._futures_enum_parser.futures_valid_time_in_force:
-            self._log.error(
-                f"Cannot submit order: "
-                f"{time_in_force_to_str(order.time_in_force)} "
-                f"not supported by the exchange. "
-                f"Use any of {[time_in_force_to_str(t) for t in self._futures_enum_parser.futures_valid_time_in_force]}",
+            valid_tifs = [
+                time_in_force_to_str(t)
+                for t in self._futures_enum_parser.futures_valid_time_in_force
+            ]
+            return (
+                f"UNSUPPORTED_TIME_IN_FORCE: {time_in_force_to_str(order.time_in_force)} "
+                f"not supported for FUTURES accounts (valid: {valid_tifs})"
             )
-            return
+
         # Check post-only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
-            self._log.error(
-                f"Cannot submit order: {order_type_to_str(order.order_type)} `post_only` order. "
-                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts",
+            return (
+                f"UNSUPPORTED_POST_ONLY: {order_type_to_str(order.order_type)} post_only order "
+                "not supported (only LIMIT post_only orders supported for FUTURES accounts)"
             )
-            return
+
+        return None
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         valid_cancels = self._filter_valid_cancels(command.cancels)

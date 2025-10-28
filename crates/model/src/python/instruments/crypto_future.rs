@@ -356,6 +356,6 @@ mod tests {
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_crypto_future = CryptoFuture::py_from_dict(py, values).unwrap();
             assert_eq!(crypto_future, new_crypto_future);
-        })
+        });
     }
 }

@@ -583,4 +583,172 @@ mod tests {
         assert!(result5 >= result4);
         assert!(result1.as_u64() > 1_650_000_000_000_000_000);
     }
+
+    #[rstest]
+    fn test_acquire_release_contract_static_mode() {
+        // This test explicitly proves the Acquire/Release memory ordering contract:
+        // - Writer thread uses set_time() which does Release store (see AtomicTime::set_time)
+        // - Reader thread uses get_time_ns() which does Acquire load (see AtomicTime::get_time_ns)
+        // - The Release-Acquire pair ensures all writes before Release are visible after Acquire
+
+        let clock = Arc::new(AtomicTime::new(false, UnixNanos::from(0)));
+        let aux_data = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+
+        // Writer thread: updates auxiliary data, then releases via set_time
+        let writer_clock = Arc::clone(&clock);
+        let writer_aux = Arc::clone(&aux_data);
+        let writer_done = Arc::clone(&done);
+
+        let writer = std::thread::spawn(move || {
+            for i in 1..=1_000u64 {
+                writer_aux.store(i, Ordering::Relaxed);
+
+                // Release store via set_time creates a release fence - all prior writes (including aux_data)
+                // must be visible to any thread that observes this time value via Acquire load
+                writer_clock.set_time(UnixNanos::from(i * 1000));
+
+                // Yield to encourage interleaving
+                std::thread::yield_now();
+            }
+            writer_done.store(true, Ordering::Release);
+        });
+
+        // Reader thread: acquires via get_time_ns, then checks auxiliary data
+        let reader_clock = Arc::clone(&clock);
+        let reader_aux = Arc::clone(&aux_data);
+        let reader_done = Arc::clone(&done);
+
+        let reader = std::thread::spawn(move || {
+            let mut last_time = 0u64;
+            let mut max_aux_seen = 0u64;
+
+            // Poll until writer is done, with no iteration limit
+            while !reader_done.load(Ordering::Acquire) {
+                let current_time = reader_clock.get_time_ns().as_u64();
+
+                if current_time > last_time {
+                    // The Acquire in get_time_ns synchronizes with the Release in set_time,
+                    // making aux_data visible
+                    let aux_value = reader_aux.load(Ordering::Relaxed);
+
+                    // Invariant: aux_value must never go backwards (proves Release-Acquire sync works)
+                    if aux_value > 0 {
+                        assert!(
+                            aux_value >= max_aux_seen,
+                            "Acquire/Release contract violated: aux went backwards from {} to {}",
+                            max_aux_seen,
+                            aux_value
+                        );
+                        max_aux_seen = aux_value;
+                    }
+
+                    last_time = current_time;
+                }
+
+                std::thread::yield_now();
+            }
+
+            // Check final state after writer completes to ensure we observe updates
+            let final_time = reader_clock.get_time_ns().as_u64();
+            if final_time > last_time {
+                let final_aux = reader_aux.load(Ordering::Relaxed);
+                if final_aux > 0 {
+                    assert!(
+                        final_aux >= max_aux_seen,
+                        "Acquire/Release contract violated: final aux {} < max {}",
+                        final_aux,
+                        max_aux_seen
+                    );
+                    max_aux_seen = final_aux;
+                }
+            }
+
+            max_aux_seen
+        });
+
+        writer.join().unwrap();
+        let max_observed = reader.join().unwrap();
+
+        // Ensure the reader actually observed updates (not vacuously satisfied)
+        assert!(max_observed > 0, "Reader must observe writer updates");
+    }
+
+    #[rstest]
+    fn test_acquire_release_contract_increment_time() {
+        // Similar test for increment_time, which uses fetch_update with AcqRel (see AtomicTime::increment_time)
+
+        let clock = Arc::new(AtomicTime::new(false, UnixNanos::from(0)));
+        let aux_data = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+
+        let writer_clock = Arc::clone(&clock);
+        let writer_aux = Arc::clone(&aux_data);
+        let writer_done = Arc::clone(&done);
+
+        let writer = std::thread::spawn(move || {
+            for i in 1..=1_000u64 {
+                writer_aux.store(i, Ordering::Relaxed);
+                let _ = writer_clock.increment_time(1000).unwrap();
+                std::thread::yield_now();
+            }
+            writer_done.store(true, Ordering::Release);
+        });
+
+        let reader_clock = Arc::clone(&clock);
+        let reader_aux = Arc::clone(&aux_data);
+        let reader_done = Arc::clone(&done);
+
+        let reader = std::thread::spawn(move || {
+            let mut last_time = 0u64;
+            let mut max_aux = 0u64;
+
+            // Poll until writer is done, with no iteration limit
+            while !reader_done.load(Ordering::Acquire) {
+                let current_time = reader_clock.get_time_ns().as_u64();
+
+                if current_time > last_time {
+                    let aux_value = reader_aux.load(Ordering::Relaxed);
+
+                    // Invariant: aux_value must never regress (proves AcqRel sync works)
+                    if aux_value > 0 {
+                        assert!(
+                            aux_value >= max_aux,
+                            "AcqRel contract violated: aux regressed from {} to {}",
+                            max_aux,
+                            aux_value
+                        );
+                        max_aux = aux_value;
+                    }
+
+                    last_time = current_time;
+                }
+
+                std::thread::yield_now();
+            }
+
+            // Check final state after writer completes to ensure we observe updates
+            let final_time = reader_clock.get_time_ns().as_u64();
+            if final_time > last_time {
+                let final_aux = reader_aux.load(Ordering::Relaxed);
+                if final_aux > 0 {
+                    assert!(
+                        final_aux >= max_aux,
+                        "AcqRel contract violated: final aux {} < max {}",
+                        final_aux,
+                        max_aux
+                    );
+                    max_aux = final_aux;
+                }
+            }
+
+            max_aux
+        });
+
+        writer.join().unwrap();
+        let max_observed = reader.join().unwrap();
+
+        // Ensure the reader actually observed updates (not vacuously satisfied)
+        assert!(max_observed > 0, "Reader must observe writer updates");
+    }
 }

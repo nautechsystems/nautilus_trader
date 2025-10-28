@@ -17,6 +17,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
+use nautilus_core::MUTEX_POISONED;
 use pyo3::prelude::*;
 
 use crate::factories::{ClientConfig, DataClientFactory};
@@ -63,7 +64,7 @@ impl FactoryRegistry {
         name: String,
         extractor: FactoryExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.factory_extractors.lock().unwrap();
+        let mut extractors = self.factory_extractors.lock().expect(MUTEX_POISONED);
 
         if extractors.contains_key(&name) {
             anyhow::bail!("Factory extractor '{name}' is already registered");
@@ -86,7 +87,7 @@ impl FactoryRegistry {
         type_name: String,
         extractor: ConfigExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.config_extractors.lock().unwrap();
+        let mut extractors = self.config_extractors.lock().expect(MUTEX_POISONED);
 
         if extractors.contains_key(&type_name) {
             anyhow::bail!("Config extractor '{type_name}' is already registered");
@@ -115,7 +116,7 @@ impl FactoryRegistry {
             .call0(py)?
             .extract::<String>(py)?;
 
-        let extractors = self.factory_extractors.lock().unwrap();
+        let extractors = self.factory_extractors.lock().expect(MUTEX_POISONED);
         if let Some(extractor) = extractors.get(&factory_name) {
             extractor(py, factory)
         } else {
@@ -145,7 +146,7 @@ impl FactoryRegistry {
             .getattr(py, "__name__")?
             .extract::<String>(py)?;
 
-        let extractors = self.config_extractors.lock().unwrap();
+        let extractors = self.config_extractors.lock().expect(MUTEX_POISONED);
         if let Some(extractor) = extractors.get(&config_type_name) {
             extractor(py, config)
         } else {

@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, List  # noqa: UP035
+from typing import Any
+from typing import List
 
 import msgspec
 
@@ -109,6 +110,13 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         )
         order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
 
+        # Special case: if Bybit reports "Rejected" but the order has fills, treat it as Canceled.
+        # This handles the case where the exchange partially fills an order then rejects the
+        # remaining quantity (e.g., due to margin, risk limits, or liquidity constraints).
+        # The state machine does not allow PARTIALLY_FILLED -> REJECTED transitions.
+        if self.orderStatus == BybitOrderStatus.REJECTED and Decimal(self.cumExecQty) > 0:
+            order_status = OrderStatus.CANCELED
+
         if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             trigger_price = Decimal(self.triggerPrice)
             last_price = Decimal(self.lastPriceOnCreated)
@@ -120,10 +128,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
 
         # TODO: Temporary and shouldn't be necessary
         avg_px = Decimal(self.avgPrice) if self.avgPrice else None
-        if (
-            order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED)
-            and self.avgPrice is None
-        ):
+        if order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED) and self.avgPrice is None:
             avg_px = Decimal()
 
         return OrderStatusReport(
@@ -157,7 +162,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
 class BybitOpenOrdersResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitOrder]
+    result: BybitListResultWithCursor[BybitOrder]
     time: int
 
 
@@ -253,7 +258,7 @@ class BybitPlaceResult(msgspec.Struct):
 
 
 class BybitBatchPlaceOrderExtInfo(msgspec.Struct):
-    list: List[BybitPlaceResult] | None = []  # noqa: UP006
+    list: List[BybitPlaceResult] | None = []
 
 
 class BybitBatchPlaceOrder(msgspec.Struct):
@@ -265,7 +270,7 @@ class BybitBatchPlaceOrder(msgspec.Struct):
 
 
 class BybitBatchPlaceOrderResult(msgspec.Struct):
-    list: List[BybitBatchPlaceOrder] | None = []  # noqa: UP006
+    list: List[BybitBatchPlaceOrder] | None = []
 
 
 class BybitBatchPlaceOrderResponse(msgspec.Struct):
@@ -287,7 +292,7 @@ class BybitCancelResult(msgspec.Struct):
 
 
 class BybitBatchCancelOrderExtInfo(msgspec.Struct):
-    list: List[BybitCancelResult] | None = []  # noqa: UP006
+    list: List[BybitCancelResult] | None = []
 
 
 class BybitBatchCancelOrder(msgspec.Struct):
@@ -298,7 +303,7 @@ class BybitBatchCancelOrder(msgspec.Struct):
 
 
 class BybitBatchCancelOrderResult(msgspec.Struct):
-    list: List[BybitBatchCancelOrder] | None = []  # noqa: UP006
+    list: List[BybitBatchCancelOrder] | None = []
 
 
 class BybitBatchCancelOrderResponse(msgspec.Struct):
@@ -320,7 +325,7 @@ class BybitAmendResult(msgspec.Struct):
 
 
 class BybitBatchAmendOrderExtInfo(msgspec.Struct):
-    list: List[BybitAmendResult] | None = []  # noqa: UP006
+    list: List[BybitAmendResult] | None = []
 
 
 class BybitBatchAmendOrder(msgspec.Struct):
@@ -331,7 +336,7 @@ class BybitBatchAmendOrder(msgspec.Struct):
 
 
 class BybitBatchAmendOrderResult(msgspec.Struct):
-    list: List[BybitBatchAmendOrder] | None = []  # noqa: UP006
+    list: List[BybitBatchAmendOrder] | None = []
 
 
 class BybitBatchAmendOrderResponse(msgspec.Struct):

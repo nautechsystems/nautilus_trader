@@ -55,12 +55,12 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct PortfolioAnalyzer {
-    statistics: HashMap<String, Statistic>,
-    account_balances_starting: HashMap<Currency, Money>,
-    account_balances: HashMap<Currency, Money>,
-    positions: Vec<Position>,
-    realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
-    returns: Returns,
+    pub statistics: HashMap<String, Statistic>,
+    pub account_balances_starting: HashMap<Currency, Money>,
+    pub account_balances: HashMap<Currency, Money>,
+    pub positions: Vec<Position>,
+    pub realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
+    pub returns: Returns,
 }
 
 impl Default for PortfolioAnalyzer {
@@ -416,6 +416,10 @@ impl PortfolioAnalyzer {
         output
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

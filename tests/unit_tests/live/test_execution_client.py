@@ -92,10 +92,10 @@ class TestLiveExecutionClient:
     Test suite for LiveExecutionClient task tracking.
     """
 
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()

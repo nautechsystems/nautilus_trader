@@ -109,11 +109,11 @@ impl FakeRelativeClock {
 
         let mut prev = self.now.load(Ordering::Acquire);
         let mut next = prev + by;
-        while let Err(next_prev) =
+        while let Err(e) =
             self.now
                 .compare_exchange_weak(prev, next, Ordering::Release, Ordering::Relaxed)
         {
-            prev = next_prev;
+            prev = e;
             next = prev + by;
         }
     }

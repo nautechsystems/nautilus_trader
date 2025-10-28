@@ -90,8 +90,8 @@ impl PositionClosed {
         fill: &OrderFilled,
         event_id: UUID4,
         ts_init: UnixNanos,
-    ) -> PositionClosed {
-        PositionClosed {
+    ) -> Self {
+        Self {
             trader_id: position.trader_id,
             strategy_id: position.strategy_id,
             instrument_id: position.instrument_id,

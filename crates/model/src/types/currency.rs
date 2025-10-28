@@ -23,11 +23,11 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string};
+use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string_utf8};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-#[allow(unused_imports)] // FIXED_PRECISION used in docs
+#[allow(unused_imports, reason = "FIXED_PRECISION used in docs")]
 use super::fixed::{FIXED_PRECISION, check_fixed_precision};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
@@ -38,7 +38,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen, eq, hash)
 )]
 pub struct Currency {
     /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
@@ -75,7 +75,7 @@ impl Currency {
     ) -> anyhow::Result<Self> {
         let code = code.as_ref();
         let name = name.as_ref();
-        check_valid_string(code, "code")?;
+        check_valid_string_utf8(code, "code")?;
         check_nonempty_string(name, "name")?;
         check_fixed_precision(precision)?;
         Ok(Self {
