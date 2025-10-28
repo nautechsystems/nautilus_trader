@@ -3782,7 +3782,7 @@ class OrderStatusReport:
         limit_offset: Decimal | None = None,
         trailing_offset: Decimal | None = None,
         trailing_offset_type: TrailingOffsetType | None = None,
-        avg_px: float | None = None,
+        avg_px: Decimal | None = None,
         display_qty: Quantity | None = None,
         post_only: bool = False,
         reduce_only: bool = False,
@@ -7405,6 +7405,23 @@ class YieldCurveData(Data):
         tenors: np.ndarray,
         interest_rates: np.ndarray,
     ): ...
+
+###################################################################################################
+# Live
+###################################################################################################
+
+def calculate_reconciliation_price(
+    current_position_qty: Decimal,
+    current_position_avg_px: Decimal | None,
+    target_position_qty: Decimal,
+    target_position_avg_px: Decimal | None,
+) -> Decimal | None: ...
+
+def adjust_fills_for_partial_window(
+    mass_status: ExecutionMassStatus,
+    instrument: Any,  # PyO3 InstrumentAny
+    tolerance: str | None = None,
+) -> tuple[dict[str, OrderStatusReport], dict[str, list[FillReport]]]: ...
 
 ###################################################################################################
 # Test Kit

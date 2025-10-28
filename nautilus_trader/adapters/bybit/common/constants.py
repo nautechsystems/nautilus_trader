@@ -88,6 +88,8 @@ BYBIT_RETRY_ERRORS_UTA: Final[set[int]] = {
     3_400_139,  # The total value of your positions and orders has exceeded the risk limit for a Perpetual or Futures contract
 }
 
+BYBIT_MULTIPLIERS: Final[list[int]] = [1000000, 100000, 10000, 1000, 100, 10]
+
 BYBIT_MINUTE_INTERVALS: Final[tuple[int, ...]] = (1, 3, 5, 15, 30, 60, 120, 240, 360, 720)
 BYBIT_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)
 

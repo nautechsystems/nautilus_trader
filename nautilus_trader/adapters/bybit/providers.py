@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_MULTIPLIERS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
@@ -90,6 +91,43 @@ class BybitInstrumentProvider(InstrumentProvider):
         self._log_warnings = config.log_warnings if config else True
         self._decoder = msgspec.json.Decoder()
         self._encoder = msgspec.json.Encoder()
+
+    def _strip_multiplier_prefix(self, code: str, symbol: str) -> str:
+        """
+        Strip known multiplier prefixes from Bybit currency codes.
+
+        Bybit uses numerical prefixes in LINEAR contract symbols for low-value tokens.
+        The multiplier appears in both the symbol and the coin code.
+        Examples: symbol="1000000MOGUSDT", baseCoin="1000000MOG" -> "MOG"
+
+        This prevents incorrectly stripping currencies like "1INCH" or "100X".
+
+        Parameters
+        ----------
+        code : str
+            The currency code to check.
+        symbol : str
+            The instrument symbol to validate against.
+
+        Returns
+        -------
+        str
+            The stripped currency code or original if no multiplier found.
+
+        """
+        for multiplier in BYBIT_MULTIPLIERS:
+            prefix = str(multiplier)
+            # Only strip if BOTH symbol and code start with the multiplier
+            if code.startswith(prefix) and symbol.startswith(prefix):
+                stripped = code[len(prefix) :]
+                # Validate: remaining part should be alphabetic (3-10 chars for valid crypto tickers)
+                if stripped and stripped.isalpha() and 3 <= len(stripped) <= 10:
+                    self._log.debug(
+                        f"Stripped multiplier prefix {multiplier} from {code}, using {stripped}",
+                    )
+                    return stripped
+
+        return code
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
@@ -253,8 +291,11 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rate: BybitFeeRate,
     ) -> None:
         try:
-            base_currency = self.currency(instrument.baseCoin)
-            quote_currency = self.currency(instrument.quoteCoin)
+            base_coin = self._strip_multiplier_prefix(instrument.baseCoin, instrument.symbol)
+            quote_coin = self._strip_multiplier_prefix(instrument.quoteCoin, instrument.symbol)
+
+            base_currency = self.currency(base_coin)
+            quote_currency = self.currency(quote_coin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
 

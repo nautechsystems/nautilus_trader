@@ -142,6 +142,17 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         Prevents rate limit exhaustion when many orders fail bulk query checks.
     single_order_query_delay_ms : NonNegativeInt, default 100
         The delay (milliseconds) between single-order queries to prevent rate limit exhaustion.
+    position_check_interval_secs : PositiveFloat, optional
+        The interval (seconds) between checks for position discrepancies between cache and venue.
+        When a discrepancy is detected, the system queries for missing fills that may have been lost.
+        A recommended setting is between 30-60 seconds. If no value is specified then position
+        checking is not started.
+    position_check_lookback_mins : PositiveInt, default 60
+        The lookback window (minutes) for querying fill reports when a position discrepancy is detected.
+        Only fills within this window will be requested from the venue.
+    position_check_threshold_ms : NonNegativeInt, default 5_000
+        The minimum elapsed time (milliseconds) since the position's last local activity before
+        the position check acts on discrepancies. This prevents race conditions with in-flight fills.
     reconciliation_startup_delay_secs : PositiveFloat, default 10.0
         The additional delay (seconds) applied AFTER startup reconciliation
         completes before starting the continuous reconciliation loop. This provides time
@@ -199,6 +210,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     open_check_missing_retries: NonNegativeInt = 5
     max_single_order_queries_per_cycle: PositiveInt = 10
     single_order_query_delay_ms: NonNegativeInt = 100
+    position_check_interval_secs: PositiveFloat | None = None
+    position_check_lookback_mins: PositiveInt = 60
+    position_check_threshold_ms: NonNegativeInt = 5_000
     reconciliation_startup_delay_secs: PositiveFloat = 10.0
     purge_closed_orders_interval_mins: PositiveInt | None = None
     purge_closed_orders_buffer_mins: NonNegativeInt | None = None

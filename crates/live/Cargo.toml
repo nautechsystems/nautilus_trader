@@ -65,6 +65,7 @@ nautilus-system = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -76,6 +77,7 @@ pyo3 = { workspace = true, optional = true }
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 ustr = { workspace = true }
 
 # Run with `cargo bench -p nautilus-live --bench runner`

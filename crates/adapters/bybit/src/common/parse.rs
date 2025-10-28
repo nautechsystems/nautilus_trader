@@ -994,7 +994,7 @@ pub fn parse_order_status_report(
         let avg_px = avg_price
             .parse::<f64>()
             .with_context(|| format!("Failed to parse avg_price='{avg_price}' as f64"))?;
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if !order.trigger_price.is_empty() && order.trigger_price != "0" {

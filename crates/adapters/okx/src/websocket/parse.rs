@@ -1056,7 +1056,7 @@ pub fn parse_order_status_report(
     if !msg.avg_px.is_empty()
         && let Ok(avg_px) = msg.avg_px.parse::<f64>()
     {
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if matches!(

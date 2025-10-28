@@ -388,6 +388,21 @@ cpdef trigger_type_to_pyo3(TriggerType value):
     raise ValueError(f"Unsupported `TriggerType`, was '{trigger_type_to_str(value)}'")
 
 
+cpdef trailing_offset_type_to_pyo3(TrailingOffsetType value):
+    if value == TrailingOffsetType.NO_TRAILING_OFFSET:
+        return nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+    if value == TrailingOffsetType.PRICE:
+        return nautilus_pyo3.TrailingOffsetType.PRICE
+    if value == TrailingOffsetType.BASIS_POINTS:
+        return nautilus_pyo3.TrailingOffsetType.BASIS_POINTS
+    if value == TrailingOffsetType.TICKS:
+        return nautilus_pyo3.TrailingOffsetType.TICKS
+    if value == TrailingOffsetType.PRICE_TIER:
+        return nautilus_pyo3.TrailingOffsetType.PRICE_TIER
+
+    raise ValueError(f"Unsupported `TrailingOffsetType`, was '{trailing_offset_type_to_str(value)}'")
+
+
 cpdef contingency_type_to_pyo3(ContingencyType value):
     if value == ContingencyType.NO_CONTINGENCY:
         return nautilus_pyo3.ContingencyType.NO_CONTINGENCY

@@ -118,6 +118,20 @@ struct InflightCheck {
 /// - Continuous reconciliation of inflight orders
 /// - External order discovery and claiming
 /// - Fill report processing and validation
+///
+/// # Thread Safety
+///
+/// This struct is **not thread-safe** and is designed for single-threaded use within
+/// an async runtime. Internal state is managed using `HashMap` without synchronization,
+/// and the `clock` and `cache` use `Rc<RefCell<>>` which provide runtime borrow checking
+/// but no thread-safety guarantees.
+///
+/// If concurrent access is required, this struct must be wrapped in `Arc<Mutex<>>` or
+/// similar synchronization primitives. Alternatively, ensure that all methods are called
+/// from the same thread/task in the async runtime.
+///
+/// **Warning:** Concurrent mutable access to internal HashMaps or concurrent borrows
+/// of `RefCell` contents will cause runtime panics.
 #[derive(Clone)]
 pub struct ReconciliationManager {
     clock: Rc<RefCell<dyn Clock>>,
@@ -208,7 +222,14 @@ impl ReconciliationManager {
     }
 
     /// Reconciles a single execution report during runtime.
-    pub fn reconcile_report(&mut self, report: ExecutionReport) -> Vec<OrderEventAny> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the average price cannot be converted to a valid `Decimal`.
+    pub fn reconcile_report(
+        &mut self,
+        report: ExecutionReport,
+    ) -> anyhow::Result<Vec<OrderEventAny>> {
         let mut events = Vec::new();
 
         // Remove from inflight checks if present
@@ -217,7 +238,7 @@ impl ReconciliationManager {
         if let Some(order) = self.get_order(&report.client_order_id) {
             let mut order = order;
             // Create an OrderStatusReport from the ExecutionReport
-            let order_report = OrderStatusReport::new(
+            let mut order_report = OrderStatusReport::new(
                 order.account_id().unwrap_or_default(),
                 order.instrument_id(),
                 Some(report.client_order_id),
@@ -232,15 +253,18 @@ impl ReconciliationManager {
                 report.ts_event, // Use ts_event as ts_last
                 self.clock.borrow().timestamp_ns(),
                 Some(UUID4::new()),
-            )
-            .with_avg_px(report.avg_px.unwrap_or(0.0));
+            );
+
+            if let Some(avg_px) = report.avg_px {
+                order_report = order_report.with_avg_px(avg_px)?;
+            }
 
             if let Some(event) = self.reconcile_order_report(&mut order, &order_report) {
                 events.push(event);
             }
         }
 
-        events
+        Ok(events)
     }
 
     /// Checks inflight orders and returns events for any that need reconciliation.
@@ -600,7 +624,7 @@ mod tests {
         };
 
         // Reconcile should remove from inflight checks
-        manager.reconcile_report(report);
+        manager.reconcile_report(report).unwrap();
         assert_eq!(manager.inflight_checks.len(), 0);
     }
 
