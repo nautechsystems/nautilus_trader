@@ -22,11 +22,6 @@
 # %%
 import pandas as pd
 
-# %% [markdown]
-# ## parameters
-# %%
-# Set the data path for Databento data
-import nautilus_trader.adapters.databento.data_utils as db_data_utils
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.node import BacktestNode
@@ -51,6 +46,12 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
+# %% [markdown]
+# ## parameters
+
+# %%
+# Set the data path for Databento data
+# import nautilus_trader.adapters.databento.data_utils as db_data_utils
 # DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
@@ -65,8 +66,8 @@ start_time = "2024-07-01T23:40"
 end_time = "2024-07-02T00:10"
 
 # A valid databento key can be entered here (or as an env variable of the same name)
-DATABENTO_API_KEY = None
-db_data_utils.init_databento_client(DATABENTO_API_KEY)
+# DATABENTO_API_KEY = None
+# db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
 # https://databento.com/docs/schemas-and-data-formats/whats-a-schema
 futures_data_bars = databento_data(

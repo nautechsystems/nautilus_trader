@@ -658,7 +658,6 @@ cdef class Actor(Component):
             return False
 
         cdef Indicator indicator
-
         for indicator in self._indicators:
             if not indicator.initialized:
                 return False
@@ -843,7 +842,6 @@ cdef class Actor(Component):
             self._indicators.append(indicator)
 
         cdef BarType standard_bar_type = bar_type.standard()
-
         if standard_bar_type not in self._indicators_for_bars:
             self._indicators_for_bars[standard_bar_type] = []  # type: list[Indicator]
 
@@ -878,8 +876,8 @@ cdef class Actor(Component):
             return
         try:
             self.log.debug("Saving state")
-            user_state = self.on_save()
 
+            user_state = self.on_save()
             if len(user_state) > 0:
                 self.log.info(f"Saved state: {list(user_state.keys())}", color=LogColor.BLUE)
             else:
@@ -911,6 +909,7 @@ cdef class Actor(Component):
         if not state:
             self.log.info("No user state to load", color=LogColor.BLUE)
             return
+
         try:
             self.log.debug(f"Loading state")
             self.on_load(state)
@@ -1193,8 +1192,8 @@ cdef class Actor(Component):
         # Clean up clock
         cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
-        cdef str name
 
+        cdef str name
         for name in timer_names:
             if self._log is not None:
                 self._log.info(f"Canceled Timer(name={name})")
@@ -4148,7 +4147,6 @@ cdef class Actor(Component):
 
     cpdef void _handle_data_response(self, DataResponse response):
         cdef RequestData request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             self._msgbus.unsubscribe(
                 topic=self._topic_cache.get_custom_data_topic(request.data_type, request.instrument_id, historical=True),
@@ -4162,7 +4160,6 @@ cdef class Actor(Component):
 
     cpdef void _handle_instruments_response(self, DataResponse response):
         cdef RequestData request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             if isinstance(request, RequestInstruments):
                 self._msgbus.unsubscribe(
@@ -4178,9 +4175,7 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
-        self._log.warning(f"DEBUG: _handle_quote_ticks_response called with correlation_id={response.correlation_id}")
         cdef RequestQuoteTicks request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             self._msgbus.unsubscribe(
                 topic=self._topic_cache.get_quotes_topic(request.instrument_id, historical=True),
@@ -4190,9 +4185,7 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
-        self._log.warning(f"DEBUG: _handle_trade_ticks_response called with correlation_id={response.correlation_id}")
         cdef RequestTradeTicks request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             self._msgbus.unsubscribe(
                 topic=self._topic_cache.get_trades_topic(request.instrument_id, historical=True),
@@ -4203,7 +4196,6 @@ cdef class Actor(Component):
 
     cpdef void _handle_order_book_depth_response(self, DataResponse response):
         cdef RequestOrderBookDepth request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             self._msgbus.unsubscribe(
                 topic=self._topic_cache.get_depth_topic(request.instrument_id, historical=True),
@@ -4214,7 +4206,6 @@ cdef class Actor(Component):
 
     cpdef void _handle_bars_response(self, DataResponse response):
         cdef RequestBars request = self._requests.pop(response.correlation_id, None)
-
         if request is not None:
             self._msgbus.unsubscribe(
                 topic=self._topic_cache.get_bars_topic(request.bar_type.standard(), historical=True),
@@ -4275,25 +4266,21 @@ cdef class Actor(Component):
 
     cpdef void _finish_response(self, UUID4 request_id):
         callback: Callable | None = self._pending_requests.pop(request_id, None)
-
         if callback is not None:
             callback(request_id)
 
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
         cdef Indicator indicator
-
         for indicator in indicators:
             indicator.handle_quote_tick(tick)
 
     cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
         cdef Indicator indicator
-
         for indicator in indicators:
             indicator.handle_trade_tick(tick)
 
     cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
         cdef Indicator indicator
-
         for indicator in indicators:
             indicator.handle_bar(bar)
 

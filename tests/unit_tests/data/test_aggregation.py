@@ -3783,3 +3783,47 @@ class TestSpreadQuoteAggregator:
 
         # Assert
         assert len(self.handler) >= 0  # Just check it doesn't crash
+
+
+class TestTimeBarAggregatorHistoricalMode:
+    def setup(self):
+        # Fixture Setup
+        self.bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-BID-INTERNAL")
+        self.clock = TestClock()
+        self.msgbus = MessageBus(
+            trader_id=TestIdStubs.trader_id(),
+            clock=self.clock,
+        )
+        self.cache = Cache(database=None)
+        self.handler = []
+
+    def test_set_historical_mode_enables_mode(self):
+        # Arrange
+        aggregator = TimeBarAggregator(
+            instrument=AUDUSD_SIM,
+            bar_type=self.bar_type,
+            handler=self.handler.append,
+            clock=self.clock,
+        )
+
+        # Act
+        aggregator.set_historical_mode(True, self.handler.append)
+
+        # Assert
+        assert aggregator.historical_mode is True
+
+    def test_set_historical_mode_disables_mode(self):
+        # Arrange
+        aggregator = TimeBarAggregator(
+            instrument=AUDUSD_SIM,
+            bar_type=self.bar_type,
+            handler=self.handler.append,
+            clock=self.clock,
+        )
+        aggregator.set_historical_mode(True, self.handler.append)
+
+        # Act
+        aggregator.set_historical_mode(False, self.handler.append)
+
+        # Assert
+        assert aggregator.historical_mode is False

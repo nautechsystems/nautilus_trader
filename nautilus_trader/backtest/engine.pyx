@@ -26,7 +26,6 @@ import pandas as pd
 
 from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.common import Environment
 from nautilus_trader.common.component import is_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestEngineConfig
