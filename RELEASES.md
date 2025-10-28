@@ -16,7 +16,7 @@ Released on TBD (UTC).
 TBD
 
 ### Fixes
-None
+- Fixed OKX spot margin position reports for borrowing
 
 ### Internal Improvements
 - Refactored reading of feather files in catalog (#3114), thanks @faysou

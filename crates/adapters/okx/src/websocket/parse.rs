@@ -15,6 +15,8 @@
 
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
+use std::str::FromStr;
+
 use ahash::AHashMap;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
@@ -935,29 +937,35 @@ pub fn parse_order_status_report(
 
     let (quantity, filled_qty) = if is_quote_qty_explicit || is_quote_qty_heuristic {
         // Quote-quantity order: sz is in quote currency, need to convert to base
-        let sz_quote = msg.sz.parse::<f64>().map_err(|e| {
+        let sz_quote_dec = Decimal::from_str(&msg.sz).map_err(|e| {
             anyhow::anyhow!("Failed to parse sz='{}' as quote quantity: {}", msg.sz, e)
         })?;
 
         // Determine the price to use for conversion
         // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
-        let conversion_price = if !is_market_price(&msg.px) {
-            // Limit order: use the limit price (msg.px)
-            msg.px
-                .parse::<f64>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse px='{}': {}", msg.px, e))?
-        } else if !msg.avg_px.is_empty() && msg.avg_px != "0" {
-            // Market order with fills: use average fill price
-            msg.avg_px
-                .parse::<f64>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse avg_px='{}': {}", msg.avg_px, e))?
-        } else {
-            0.0
-        };
+        let conversion_price_dec =
+            if !is_market_price(&msg.px) {
+                // Limit order: use the limit price (msg.px)
+                Some(
+                    Decimal::from_str(&msg.px)
+                        .map_err(|e| anyhow::anyhow!("Failed to parse px='{}': {}", msg.px, e))?,
+                )
+            } else if !msg.avg_px.is_empty() && msg.avg_px != "0" {
+                // Market order with fills: use average fill price
+                Some(Decimal::from_str(&msg.avg_px).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse avg_px='{}': {}", msg.avg_px, e)
+                })?)
+            } else {
+                None
+            };
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
-        let quantity_base = if conversion_price > 0.0 {
-            Quantity::new(sz_quote / conversion_price, size_precision)
+        let quantity_base = if let Some(price) = conversion_price_dec {
+            if !price.is_zero() {
+                Quantity::from_decimal(sz_quote_dec / price, size_precision)?
+            } else {
+                parse_quantity(&msg.sz, size_precision)?
+            }
         } else {
             // No price available, can't convert - use sz as-is temporarily
             // This will be corrected once the order gets filled and price is available
@@ -1184,11 +1192,10 @@ pub fn parse_fill_report(
     };
 
     let fee_str = msg.fee.as_deref().unwrap_or("0");
-    let fee_value = fee_str
-        .parse::<f64>()
+    let fee_dec = Decimal::from_str(fee_str)
         .map_err(|e| anyhow::anyhow!("Failed to parse fee '{}': {}", fee_str, e))?;
 
-    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_value, || {
+    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_dec, || {
         format!("fill report for inst_id={}", msg.inst_id)
     });
 

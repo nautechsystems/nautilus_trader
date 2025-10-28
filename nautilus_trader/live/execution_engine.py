@@ -1309,7 +1309,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             self._log.warning(
                 f"Position discrepancy detected for {instrument_id}: "
-                f"cached_qty={cached_qty}, venue_qty={venue_qty}. Querying for missing fills...",
+                f"cached_qty={cached_qty}, venue_qty={venue_qty}; querying for missing fills...",
                 LogColor.YELLOW,
             )
 
@@ -1388,7 +1388,7 @@ class LiveExecutionEngine(ExecutionEngine):
                             self._log.warning(
                                 f"Failed to reconcile fill {fill_report.trade_id} for {instrument_id}: "
                                 f"order not yet cached or other prerequisite missing. "
-                                f"Fill will be retried in next position check cycle.",
+                                f"Fill will be retried in next position check cycle",
                                 LogColor.YELLOW,
                             )
                     except Exception as e:
@@ -1400,7 +1400,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._log.warning(
                     f"Position discrepancy for {instrument_id} persists but no missing fills found. "
                     f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
-                    f"venue position error, or internal calculation error.",
+                    f"venue position error, or internal calculation error",
                     LogColor.YELLOW,
                 )
                 # TODO: Consider fallback to synthetic position adjustment if discrepancy persists
@@ -1934,15 +1934,14 @@ class LiveExecutionEngine(ExecutionEngine):
             ):
                 total_ethusdt_fills += len(trades)
                 for trade in trades:
-                    self._log.info(
+                    self._log.debug(
                         f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
-                        LogColor.CYAN,
                     )
 
         if total_ethusdt_fills > 0:
             self._log.info(
                 f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
-                LogColor.CYAN,
+                LogColor.BLUE,
             )
 
         for venue_order_id, order_report in mass_status.order_reports.items():
@@ -2410,7 +2409,6 @@ class LiveExecutionEngine(ExecutionEngine):
         if cached_qty == venue_qty:
             return False
 
-        # Quantities don't match
         return True
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
