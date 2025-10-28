@@ -22,7 +22,6 @@ It could also be possible to write clients for specialized data providers.
 
 import asyncio
 import functools
-import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
@@ -42,6 +41,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -203,10 +203,7 @@ class LiveDataClient(DataClient):
             return
 
         if e:
-            tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            self._log.error(
-                f"Error on '{task.get_name()}': {task.exception()!r}\n{tb_str}",
-            )
+            self._log.exception(f"Error on '{task.get_name()}'", e)
         else:
             if actions:
                 try:
@@ -511,12 +508,7 @@ class LiveMarketDataClient(MarketDataClient):
         exception: BaseException | None = None,
     ) -> None:
         if exception:
-            tb_str = "".join(
-                traceback.format_exception(type(exception), exception, exception.__traceback__),
-            )
-            self._log.error(
-                f"Error running '{coro_name}': {exception!r}\n{tb_str}",
-            )
+            self._log.exception(f"Error running '{coro_name}'", exception)
         else:
             self._log.debug(f"Coroutine '{coro_name}' completed")
 
@@ -875,6 +867,19 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: order_book_snapshot {request.instrument_id}",
         )
 
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        depth_str = f" depth={request.depth}"
+        self._log.info(
+            f"Request {request.instrument_id} order_book_depth{time_range_str}{limit_str}{depth_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_depth(request),
+            log_msg=f"request: order_book_depth {request.instrument_id}",
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
@@ -1051,6 +1056,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         raise NotImplementedError(
             "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
+        )
+
+    async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_order_book_depth` coroutine",  # pragma: no cover
         )
 
     async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:

@@ -57,10 +57,11 @@ class TestDYDXDataClientBarPartitioning:
     Comprehensive test cases for dYdX data client bar partitioning functionality.
     """
 
-    def setup_method(self):
+    def setup_method(self, session_event_loop):
         """
         Set up test fixtures.
         """
+        self.loop = session_event_loop
         self.clock = LiveClock()
         self.msgbus = MessageBus(
             trader_id=TraderId("TESTER-000"),
@@ -97,9 +98,8 @@ class TestDYDXDataClientBarPartitioning:
         # Add instrument to cache
         self.cache.add_instrument(self.instrument)
 
-        # Create data client
         self.data_client = DYDXDataClient(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -109,6 +109,13 @@ class TestDYDXDataClientBarPartitioning:
             config=DYDXDataClientConfig(wallet_address="test_wallet"),
             name="DYDX",
         )
+
+    def teardown_method(self):
+        """
+        Tear down test fixtures.
+        """
+        self.loop = None
+        self.data_client = None
 
     def create_request_bars(
         self,
@@ -301,13 +308,13 @@ class TestDYDXDataClientBarPartitioning:
                 mock_handle.assert_called_once()
 
     # =====================================================================================
-    # PARTIAL BAR HANDLING TESTS
+    # BAR AGGREGATION TESTS
     # =====================================================================================
 
     @pytest.mark.asyncio
     async def test_partial_bar_exclusion_from_final_result(self):
         """
-        Test that partial bars are excluded from the final result.
+        Test that partial bars (where close_time >= current time) are excluded.
         """
         # Arrange
         start_time = datetime(2024, 1, 1, tzinfo=UTC)
@@ -320,14 +327,16 @@ class TestDYDXDataClientBarPartitioning:
             limit=0,
         )
 
-        # Create mock candles with a partial bar at the end
+        # Create mock candles: 59 complete bars + 1 partial bar with future timestamp
         mock_candles = [
             self.create_mock_candle(start_time + timedelta(minutes=i), 100.0 + i)
-            for i in range(59)  # 59 complete bars
+            for i in range(59)  # 59 complete bars in the past
         ]
-        # Add one partial bar
+
+        # Add one partial bar with a timestamp far in the future (still forming)
+        future_time = datetime.now(UTC) + timedelta(hours=1)
         mock_candles.append(
-            self.create_mock_candle(start_time + timedelta(minutes=59), 159.0, is_partial=True),
+            self.create_mock_candle(future_time, 159.0, is_partial=True),
         )
 
         mock_response = DYDXCandlesResponse(candles=mock_candles)
@@ -344,11 +353,9 @@ class TestDYDXDataClientBarPartitioning:
                 mock_handle.assert_called_once()
                 call_args = mock_handle.call_args
                 bars = call_args[0][1]  # The bars argument
-                partial = call_args[0][2]  # The partial bar argument
 
-                # Should have 59 complete bars, with the partial excluded
+                # Should have only 59 complete bars, partial bar excluded
                 assert len(bars) == 59
-                assert partial is not None  # The partial bar should be identified
 
     # =====================================================================================
     # ERROR HANDLING AND RESILIENCE TESTS
@@ -431,9 +438,12 @@ class TestDYDXDataClientBarPartitioning:
 
             with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
-                start_time_test = asyncio.get_event_loop().time()
+                # Get the running loop from pytest-asyncio (session-scoped)
+                loop = asyncio.get_running_loop()
+
+                start_time_test = loop.time()
                 await self.data_client._request_bars(request)
-                end_time_test = asyncio.get_event_loop().time()
+                end_time_test = loop.time()
 
                 # Assert
                 mock_handle.assert_called_once()

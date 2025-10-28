@@ -80,7 +80,6 @@ cdef class BarBuilder:
         self.ts_last = 0
         self.count = 0
 
-        self._partial_set = False
         self._last_close = None
         self._open = None
         self._high = None
@@ -99,40 +98,6 @@ cdef class BarBuilder:
             f"{self.volume})"
         )
 
-    cpdef void set_partial(self, Bar partial_bar):
-        """
-        Set the initial values for a partially completed bar.
-
-        This method can only be called once per instance.
-
-        Parameters
-        ----------
-        partial_bar : Bar
-            The partial bar with values to set.
-
-        """
-        if self._partial_set:
-            return  # Already updated
-
-        self._open = partial_bar.open
-
-        if self._high is None or partial_bar.high > self._high:
-            self._high = partial_bar.high
-
-        if self._low is None or partial_bar.low < self._low:
-            self._low = partial_bar.low
-
-        if self._close is None:
-            self._close = partial_bar.close
-
-        self.volume = partial_bar.volume
-
-        if self.ts_last == 0:
-            self.ts_last = partial_bar.ts_init
-
-        self._partial_set = True
-        self.initialized = True
-
     cpdef void update(self, Price price, Quantity size, uint64_t ts_init):
         """
         Update the bar builder.
@@ -150,7 +115,6 @@ cdef class BarBuilder:
         Condition.not_none(price, "price")
         Condition.not_none(size, "size")
 
-        # TODO: What happens if the first tick updates before a partial bar is applied?
         if ts_init < self.ts_last:
             return  # Not applicable
 
@@ -182,7 +146,6 @@ cdef class BarBuilder:
         """
         Condition.not_none(bar, "bar")
 
-        # TODO: What happens if the first bar updates before a partial bar is applied?
         if ts_init < self.ts_last:
             return  # Not applicable
 
@@ -281,8 +244,6 @@ cdef class BarAggregator:
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    await_partial : bool, default False
-        If the aggregator should await an initial partial bar prior to aggregating.
 
     Raises
     ------
@@ -295,14 +256,12 @@ cdef class BarAggregator:
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        bint await_partial = False,
     ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
         self._handler = handler
         self._handler_backup = None
-        self._await_partial = await_partial
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
@@ -324,9 +283,6 @@ cdef class BarAggregator:
         self._batch_mode = False
         self._handler = self._handler_backup
 
-    def set_await_partial(self, bint value):
-        self._await_partial = value
-
     cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the aggregator with the given tick.
@@ -339,12 +295,11 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        if not self._await_partial:
-            self._apply_update(
-                price=tick.extract_price(self.bar_type.spec.price_type),
-                size=tick.extract_size(self.bar_type.spec.price_type),
-                ts_init=tick.ts_init,
-            )
+        self._apply_update(
+            price=tick.extract_price(self.bar_type.spec.price_type),
+            size=tick.extract_size(self.bar_type.spec.price_type),
+            ts_init=tick.ts_init,
+        )
 
     cpdef void handle_trade_tick(self, TradeTick tick):
         """
@@ -358,12 +313,11 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        if not self._await_partial:
-            self._apply_update(
-                price=tick.price,
-                size=tick.size,
-                ts_init=tick.ts_init,
-            )
+        self._apply_update(
+            price=tick.price,
+            size=tick.size,
+            ts_init=tick.ts_init,
+        )
 
     cpdef void handle_bar(self, Bar bar):
         """
@@ -377,26 +331,11 @@ cdef class BarAggregator:
         """
         Condition.not_none(bar, "bar")
 
-        if not self._await_partial:
-            self._apply_update_bar(
-                bar=bar,
-                volume=bar.volume,
-                ts_init=bar.ts_init,
-            )
-
-    cpdef void set_partial(self, Bar partial_bar):
-        """
-        Set the initial values for a partially completed bar.
-
-        This method can only be called once per instance.
-
-        Parameters
-        ----------
-        partial_bar : Bar
-            The partial bar with values to set.
-
-        """
-        self._builder.set_partial(partial_bar)
+        self._apply_update_bar(
+            bar=bar,
+            volume=bar.volume,
+            ts_init=bar.ts_init,
+        )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass")
@@ -709,16 +648,16 @@ cdef class RenkoBarAggregator(BarAggregator):
         self.brick_size = instrument.price_increment.as_decimal() * Decimal(bar_type.spec.step)
         self._last_close = None
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         # Initialize last_close if this is the first update
         if self._last_close is None:
             self._last_close = price
             # For the first update, just store the price and add to builder
-            self._builder.update(price, size, ts_event)
+            self._builder.update(price, size, ts_init)
             return
 
         # Always update the builder with the current tick
-        self._builder.update(price, size, ts_event)
+        self._builder.update(price, size, ts_init)
 
         last_close = self._last_close
         price_diff_decimal = price.as_decimal() - last_close.as_decimal()
@@ -755,15 +694,14 @@ cdef class RenkoBarAggregator(BarAggregator):
                 self._builder.volume = total_volume
 
                 # Build and send the bar
-                self._build_and_send(ts_event, ts_event)
+                self._build_and_send(ts_init, ts_init)
 
                 # Update current_close for the next brick
                 current_close = brick_close
 
             # Update last_close to the final brick close
             self._last_close = current_close
-        # For Renko bars, we don't build partial bars
-        # If price movement is less than brick size, we just accumulate in the builder
+        # If price movement is less than brick size, we accumulate in the builder
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         # Initialize last_close if this is the first update
@@ -818,8 +756,7 @@ cdef class RenkoBarAggregator(BarAggregator):
 
             # Update last_close to the final brick close
             self._last_close = current_close
-        # For Renko bars, we don't build partial bars
-        # If price movement is less than brick size, we just accumulate in the builder
+        # If price movement is less than brick size, we accumulate in the builder
 
 
 cdef class TimeBarAggregator(BarAggregator):

@@ -20,12 +20,8 @@ from typing import TYPE_CHECKING
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParams
-
-# fmt: on
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
@@ -126,7 +122,7 @@ class BybitMarketHttpAPI:
         Fetch all instruments with pagination from Bybit.
         """
         all_instruments: list[BybitInstrument] = []
-        current_cursor = None
+        cursor = None
 
         while True:
             response = await self._endpoint_instruments.get(
@@ -136,13 +132,13 @@ class BybitMarketHttpAPI:
                     status=status,
                     baseCoin=base_coin,
                     limit=1000,
-                    cursor=current_cursor,
+                    cursor=cursor,
                 ),
             )
             all_instruments.extend(response.result.list)
-            current_cursor = response.result.nextPageCursor
+            cursor = response.result.nextPageCursor
 
-            if not current_cursor or current_cursor == "":
+            if not cursor or cursor == "":
                 break
 
         if product_type == BybitProductType.SPOT:

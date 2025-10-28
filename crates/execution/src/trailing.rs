@@ -597,7 +597,7 @@ mod tests {
         match (maybe_trigger, expected_trigger) {
             (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
             (None, None) => (),
-            _ => panic!("expected {expected_trigger:?}, got {maybe_trigger:?}"),
+            _ => panic!("expected {expected_trigger:?}, was {maybe_trigger:?}"),
         }
     }
 

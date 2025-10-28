@@ -16,6 +16,7 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod node;
+pub mod reconciliation;
 
 use pyo3::prelude::*;
 
@@ -28,5 +29,13 @@ use pyo3::prelude::*;
 pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::node::LiveNode>()?;
     m.add_class::<node::LiveNodeBuilderPy>()?;
+    m.add_function(wrap_pyfunction!(
+        reconciliation::py_adjust_fills_for_partial_window,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        reconciliation::py_calculate_reconciliation_price,
+        m
+    )?)?;
     Ok(())
 }

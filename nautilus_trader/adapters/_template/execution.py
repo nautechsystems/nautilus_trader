@@ -50,8 +50,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     +--------------------------------------------+-------------+
     | _connect                                   | required    |
     | _disconnect                                | required    |
-    | reset                                      | optional    |
-    | dispose                                    | optional    |
     +--------------------------------------------+-------------+
     | _submit_order                              | required    |
     | _submit_order_list                         | optional    |
@@ -76,16 +74,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     async def _disconnect(self) -> None:
         raise NotImplementedError(
             "method `_disconnect` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def reset(self) -> None:
-        raise NotImplementedError(
-            "method `reset` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def dispose(self) -> None:
-        raise NotImplementedError(
-            "method `dispose` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------

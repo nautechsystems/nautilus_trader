@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Portfolio components and functionality for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_portfolio"
@@ -24,6 +27,7 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = [
@@ -45,13 +49,14 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

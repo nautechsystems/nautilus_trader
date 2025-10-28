@@ -17,7 +17,7 @@ jobs:
       SCCACHE_CACHE_SIZE: 1G
     services:
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -26,7 +26,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -44,6 +44,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Aggressive disk cleanup (pre-setup)
@@ -83,6 +84,8 @@ jobs:
           docker image prune -a -f || true
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -124,7 +127,8 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@0010eb0ca6e89b80c88e8edaaa07cfe5f3e6664d # v3.5.0
+        uses: CodSpeedHQ/action@6b43a0cd438f6ca5ad26f9ed03ed159ed2df7da9 # v4.1.1
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
+          mode: instrumentation
           run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed

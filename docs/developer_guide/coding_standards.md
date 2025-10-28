@@ -25,11 +25,19 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 
 ### Doc comment / docstring mood
 
-- **Python** docstrings should be written in the **imperative mood** – e.g. *“Return a cached client.”*
-- **Rust** doc comments should be written in the **indicative mood** – e.g. *“Returns a cached client.”*
+- **Python** docstrings should be written in the **imperative mood** – e.g. *"Return a cached client."*
+- **Rust** doc comments should be written in the **indicative mood** – e.g. *"Returns a cached client."*
 
 These conventions align with the prevailing styles of each language ecosystem and make generated
 documentation feel natural to end-users.
+
+### Terminology and phrasing
+
+1. **Error messages**: Avoid using ", got" in error messages. Use more descriptive alternatives like ", was", ", received", or ", found" depending on context.
+   - ❌ `"Expected string, got {type(value)}"`
+   - ✅ `"Expected string, was {type(value)}"`
+
+2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
 
 ### Formatting
 
@@ -118,3 +126,36 @@ Here are some guidelines for the style of your commit messages:
 4. Optional: Provide # references to relevant issues or tickets.
 
 5. Optional: Provide any hyperlinks which are informative.
+
+#### Gitlint (optional)
+
+Gitlint is available to help enforce commit message standards automatically. It checks that commit messages follow the guidelines above (character limits, formatting, etc.). This is **opt-in** and not enforced in CI.
+
+**Benefits**: Encourages concise yet expressive commit messages, helps develop clear explanations of changes.
+
+**Installation**: First install gitlint to run it locally:
+
+```bash
+uv pip install gitlint
+```
+
+To enable gitlint as an automatic commit-msg hook:
+
+```bash
+pre-commit install --hook-type commit-msg
+```
+
+**Manual usage**: Check your last commit message:
+
+```bash
+gitlint
+```
+
+Configuration is in `.gitlint` at the repository root:
+
+- **60-character title limit**: Ensures clear rendering on GitHub and encourages brevity while remaining descriptive.
+- **79-character body width**: Aligns with Python's PEP 8 conventions and the traditional limit for git tooling.
+
+:::note
+Gitlint may be enforced in CI in the future, so adopting these practices early helps ensure a smooth transition.
+:::

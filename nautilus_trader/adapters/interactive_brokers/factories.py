@@ -16,7 +16,6 @@
 import asyncio
 import os
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
@@ -35,8 +34,6 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
 
-
-# fmt: on
 
 GATEWAYS: dict[tuple, DockerizedIBGateway] = {}
 IB_CLIENTS: dict[tuple, InteractiveBrokersClient] = {}
@@ -321,6 +318,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             config=config,
             name=name,
             connection_timeout=config.connection_timeout,
+            track_option_exercise_from_position_update=config.track_option_exercise_from_position_update,
         )
 
         return exec_client

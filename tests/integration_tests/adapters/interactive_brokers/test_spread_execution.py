@@ -19,24 +19,24 @@ Comprehensive tests for Interactive Brokers spread execution functionality.
 
 from unittest.mock import MagicMock
 
-# fmt: off
-# ruff: noqa: I001
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.enums import LiquiditySide, OrderSide, OrderType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import (
-    AccountId,
-    ClientOrderId,
-    InstrumentId,
-    PositionId,
-    StrategyId,
-    TradeId,
-    TraderId,
-    VenueOrderId,
-)
-from nautilus_trader.model.objects import Currency, Money, Price, Quantity
-# fmt: on
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class TestSpreadExecutionDetection:
@@ -64,7 +64,7 @@ class TestSpreadExecutionDetection:
             result = self._is_spread_instrument(instrument_id)
             assert (
                 result == expected
-            ), f"Failed for {instrument_id_str}: expected {expected}, got {result}"
+            ), f"Failed for {instrument_id_str}: expected {expected}, was {result}"
 
     def test_is_spread_instrument_edge_cases(self):
         """
@@ -83,7 +83,7 @@ class TestSpreadExecutionDetection:
             result = self._is_spread_instrument(instrument_id)
             assert (
                 result == expected
-            ), f"Failed for {instrument_id_str}: expected {expected}, got {result}"
+            ), f"Failed for {instrument_id_str}: expected {expected}, was {result}"
 
     def _is_spread_instrument(self, instrument_id):
         """

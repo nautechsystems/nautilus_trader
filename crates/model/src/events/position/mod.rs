@@ -32,17 +32,17 @@ pub enum PositionEvent {
 impl PositionEvent {
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            PositionEvent::PositionOpened(position) => position.instrument_id,
-            PositionEvent::PositionChanged(position) => position.instrument_id,
-            PositionEvent::PositionClosed(position) => position.instrument_id,
+            Self::PositionOpened(position) => position.instrument_id,
+            Self::PositionChanged(position) => position.instrument_id,
+            Self::PositionClosed(position) => position.instrument_id,
         }
     }
 
     pub fn account_id(&self) -> AccountId {
         match self {
-            PositionEvent::PositionOpened(position) => position.account_id,
-            PositionEvent::PositionChanged(position) => position.account_id,
-            PositionEvent::PositionClosed(position) => position.account_id,
+            Self::PositionOpened(position) => position.account_id,
+            Self::PositionChanged(position) => position.account_id,
+            Self::PositionClosed(position) => position.account_id,
         }
     }
 }

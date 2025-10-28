@@ -8,7 +8,7 @@ The Portfolio serves as the central hub for managing and tracking all positions 
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
 Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
 
-## Portfolio Statistics
+## Portfolio statistics
 
 There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics)
 which are used to analyse a trading portfolios performance for both backtests and live trading.
@@ -23,7 +23,7 @@ The statistics are generally categorized as follows.
 It's also possible to call a traders `PortfolioAnalyzer` and calculate statistics at any arbitrary
 time, including *during* a backtest, or live trading session.
 
-## Custom Statistics
+## Custom statistics
 
 Custom portfolio statistics can be defined by inheriting from the `PortfolioStatistic`
 base class, and implementing any of the `calculate_` methods.
@@ -72,7 +72,7 @@ Ensure your statistic is robust to degenerate inputs such as ``None``, empty ser
 The expectation is that you would then return ``None``, NaN or a reasonable default.
 :::
 
-## Backtest Analysis
+## Backtest analysis
 
 Following a backtest run, a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
 statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet

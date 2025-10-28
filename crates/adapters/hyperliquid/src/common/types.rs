@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt;
+use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,8 +71,8 @@ impl HyperliquidAssetId {
     }
 }
 
-impl fmt::Display for HyperliquidAssetId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for HyperliquidAssetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }

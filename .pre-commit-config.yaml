@@ -28,13 +28,75 @@ repos:
     hooks:
       - id: gitlint
 
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+        args: ["-i", "2", "-ci", "-sr", "-w"]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args: [--strict]
+
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint-docker
+        name: dockerfile-lint
+        description: Lint Dockerfiles for best practices and errors
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.38.1
+    hooks:
+      - id: typos
+        description: Checks for common typos.
+        args: ["--force-exclude"]
+        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
       - id: codespell
         description: Checks for common misspellings.
-        types_or: [python, cython, rst, markdown]
-        args: ["-L", "ACN,crate,ot,socio-economic,zar"]
+        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets scan)
+        description: Detects hard-coded secrets prior to commit.
+        args: ["--staged", "--redact"]
+
+  ##############################################################################
+  #  GitHub Actions linting (complementary tools covering different aspects)
+  ##############################################################################
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.8
+    hooks:
+      - id: actionlint-docker
+        name: actionlint (syntax/structure)
+        description: Checks GitHub Actions workflow syntax and structural correctness
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.16.0
+    hooks:
+      - id: zizmor
+        name: zizmor (security)
+        description: Scans GitHub Actions workflows for security misconfigurations
+        args: ["--no-online-audits", "--min-severity", "medium"]
 
   ##############################################################################
   #  Custom hooks
@@ -48,6 +110,14 @@ repos:
         language: script
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
         files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
+
+      - id: check-non-latin-text
+        name: check non-Latin text
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        entry: .pre-commit-hooks/check_non_latin_text.sh
+        language: script
+        types: [text]
+        files: '\.(rs|py|pyx|md|toml|yaml|yml)$'
 
       - id: check-toml-codegen
         name: check toml-codegen
@@ -67,8 +137,43 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
+  - repo: https://github.com/EmbarkStudios/cargo-deny
+    rev: 0.18.5
+    hooks:
+      - id: cargo-deny
+        args: ["--all-features", "check"]
+
   - repo: local
     hooks:
+      - id: check-anyhow-usage
+        name: check anyhow usage
+        description:
+          Enforces anyhow conventions (only import Context, use anyhow::bail! not return
+          Err(anyhow::anyhow!))
+        entry: .pre-commit-hooks/check_anyhow_usage.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
+      - id: check-logging-macro-usage
+        name: check logging macro usage
+        description:
+          Enforces logging macro conventions (use fully qualified log::debug!, tracing::info!,
+          etc. instead of importing the macros)
+        entry: .pre-commit-hooks/check_logging_macro_usage.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
+      - id: check-error-conventions
+        name: check error conventions
+        description:
+          Enforces error variable naming conventions (Rust use Err(e), Python use as e:)
+        entry: .pre-commit-hooks/check_error_conventions.sh
+        language: script
+        types_or: [rust, python, cython]
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.
@@ -84,7 +189,16 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--benches", "--no-default-features", "--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
+        args:
+          [
+            "--benches",
+            "--no-default-features",
+            "--features",
+            "high-precision,ffi,python,extension-module",
+            "--",
+            "-D",
+            "warnings",
+          ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
@@ -92,7 +206,9 @@ repos:
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors or warnings.
-        entry: bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
+        entry:
+          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features
+          "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
         language: system
         files: '\.(rs|toml)$'
         types: [file]
@@ -101,21 +217,6 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
-  - repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.2.0
-    hooks:
-      - id: add-trailing-comma
-        name: add-trailing-comma
-        types: [python]
-
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        types_or: [python, pyi]
-        entry: "black"
-        args: ["--config", "pyproject.toml"]
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
     hooks:
@@ -123,11 +224,11 @@ repos:
         args: ["--fix"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+    rev: 7.0.0
     hooks:
       - id: isort
-        name: isort (cython)
-        types_or: [cython]
+        name: isort
+        types_or: [python, pyi, cython]
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
@@ -137,7 +238,8 @@ repos:
       - id: docformatter
         additional_dependencies: [tomli]
         args: [
-          "--black",
+          "--wrap-summaries", "88",
+          "--wrap-descriptions", "88",
           "--make-summary-multi-line",
           "--pre-summary-newline",
           "--blank",
@@ -146,10 +248,10 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.1
+    rev: v1.18.2
     hooks:
       - id: mypy
-        exclude: ^python/nautilus_trader/.*__init__\.py$
+        exclude: (^python/|^nautilus_trader/.*\.pyi$)
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
@@ -164,7 +266,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.17  # uv version
+    rev: 0.9.5  # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

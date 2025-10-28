@@ -50,7 +50,10 @@ pub enum LiveCommand {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
+#[allow(
+    clippy::large_enum_variant,
+    reason = "TODO: Optimize this (largest variant 1096 vs 80 bytes)"
+)]
 pub enum LiveMessage {
     Data(Data),
     Instrument(InstrumentAny),
@@ -63,7 +66,7 @@ pub enum LiveMessage {
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
 ///
-/// [`LiveCommand`] messages are recieved synchronously across a channel,
+/// [`LiveCommand`] messages are received synchronously across a channel,
 /// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
 /// back to a message processing task.
 ///
@@ -132,7 +135,7 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut initialized_books = HashSet::new();
-        let timeout = Duration::from_secs(5); // Hard-coded timeout for now
+        let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let result = tokio::time::timeout(
             timeout,
@@ -427,6 +430,7 @@ impl DatabentoFeedHandler {
                     if std::time::Instant::now() >= deadline {
                         break;
                     }
+
                     // Yield to other threads first
                     std::thread::yield_now();
 
@@ -440,14 +444,14 @@ impl DatabentoFeedHandler {
                     }
                 }
                 Err(std::sync::TryLockError::Poisoned(e)) => {
-                    return Err(anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"));
+                    anyhow::bail!("symbol_venue_map lock poisoned: {e}");
                 }
             }
         }
 
-        Err(anyhow::anyhow!(
+        anyhow::bail!(
             "Failed to acquire read lock on symbol_venue_map after {MAX_WAIT_MS}ms deadline"
-        ))
+        )
     }
 }
 
@@ -601,7 +605,7 @@ fn handle_imbalance_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -623,7 +627,7 @@ fn handle_statistics_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -647,7 +651,7 @@ fn handle_record(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     // For MBP-1 and quote-based schemas, always include trades since they're integral to the data
     // For MBO, only include trades after the book is initialized to maintain consistency

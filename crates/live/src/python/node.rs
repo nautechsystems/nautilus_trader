@@ -154,7 +154,10 @@ impl LiveNode {
         Ok(())
     }
 
-    #[allow(unsafe_code)] // Required for Python actor component registration
+    #[allow(
+        unsafe_code,
+        reason = "Required for Python actor component registration"
+    )]
     #[pyo3(name = "add_actor_from_config")]
     fn py_add_actor_from_config(
         &mut self,

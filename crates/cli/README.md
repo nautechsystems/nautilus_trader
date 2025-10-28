@@ -32,7 +32,7 @@ highest level, with the aim of supporting mission-critical, trading system backt
 This crate provides feature flags to control source code inclusion during compilation,
 depending on the intended use case:
 
-- `hypersync`: Enables Hypersync blockchain functionality for high-performance blockchain data access.
+- `defi`: Enables blockchain/DeFi commands including block sync, DEX pool sync, and pool analysis.
 
 ## Documentation
 
@@ -49,6 +49,6 @@ NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
-<img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-<span style="font-size: 0.8em; color: #999;">© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.</span>
+© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.

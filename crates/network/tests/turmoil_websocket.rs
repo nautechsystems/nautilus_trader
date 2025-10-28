@@ -13,80 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Turmoil-compatible WebSocket tests with dependency injection.
+//! Turmoil integration tests for the WebSocketClient.
 //!
-//! This demonstrates how to make WebSocket components work with turmoil
-//! through dependency injection of network types.
+//! These tests use turmoil's network simulation to test the actual production
+//! WebSocketClient code under various network conditions.
+
+#![cfg(feature = "turmoil")]
 
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use nautilus_network::net::TcpConnector;
-use rstest::rstest;
-use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
+use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
+use rstest::{fixture, rstest};
+use tokio_tungstenite::{accept_async, tungstenite::Message};
 use turmoil::{Builder, net};
 
-/// Turmoil TCP connector for testing.
-#[derive(Default, Clone, Debug)]
-pub struct TurmoilTcpConnector;
-
-impl TcpConnector for TurmoilTcpConnector {
-    type Stream = turmoil::net::TcpStream;
-
-    fn connect(
-        &self,
-        addr: &str,
-    ) -> impl std::future::Future<Output = std::io::Result<Self::Stream>> + Send {
-        turmoil::net::TcpStream::connect(addr.to_string())
+/// Default test WebSocket configuration.
+#[fixture]
+fn websocket_config() -> WebSocketConfig {
+    WebSocketConfig {
+        url: "ws://server:8080".to_string(),
+        headers: vec![],
+        message_handler: None,
+        heartbeat: None,
+        heartbeat_msg: None,
+        ping_handler: None,
+        reconnect_timeout_ms: Some(2_000),
+        reconnect_delay_initial_ms: Some(50),
+        reconnect_delay_max_ms: Some(500),
+        reconnect_backoff_factor: Some(1.5),
+        reconnect_jitter_ms: Some(10),
     }
 }
 
-/// A test-specific WebSocket client that uses dependency injection for networking.
-struct TestWebSocketClient<C: TcpConnector> {
-    connector: C,
-}
-
-impl<C: TcpConnector> TestWebSocketClient<C> {
-    const fn new(connector: C) -> Self {
-        Self { connector }
-    }
-
-    async fn connect(
-        &self,
-        addr: &str,
-    ) -> Result<WebSocketStream<C::Stream>, Box<dyn std::error::Error>> {
-        // Connect using the injected connector
-        let stream = self.connector.connect(addr).await?;
-
-        // Create a simple HTTP request for WebSocket upgrade
-        let _request = format!(
-            "GET / HTTP/1.1\\r\\n\
-             Host: {}\\r\\n\
-             Upgrade: websocket\\r\\n\
-             Connection: Upgrade\\r\\n\
-             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\\r\\n\
-             Sec-WebSocket-Version: 13\\r\\n\
-             \\r\\n",
-            addr.split(':').next().unwrap_or("server")
-        );
-
-        // For this simplified test, we'll manually upgrade the connection
-        // In practice, you'd use tokio-tungstenite's client_async_with_config
-        // but that requires more complex mocking of the HTTP upgrade process
-
-        // For now, let's create a mock WebSocket stream
-        let ws_stream = WebSocketStream::from_raw_socket(
-            stream,
-            tokio_tungstenite::tungstenite::protocol::Role::Client,
-            None,
-        )
-        .await;
-
-        Ok(ws_stream)
-    }
-}
-
-/// WebSocket echo server that responds to messages.
+/// WebSocket echo server for testing.
 async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
 
@@ -94,73 +54,72 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
         let (stream, _) = listener.accept().await?;
 
         tokio::spawn(async move {
-            if let Ok(ws_stream) = accept_async(stream).await {
-                let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-
-                while let Some(msg) = ws_receiver.next().await {
+            if let Ok(mut ws_stream) = accept_async(stream).await {
+                while let Some(msg) = ws_stream.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
                             if text == "close_me" {
-                                let _ = ws_sender.close().await;
+                                let _ = ws_stream.close(None).await;
                                 break;
                             }
-                            let _ = ws_sender.send(Message::Text(text)).await;
+                            let _ = ws_stream.send(Message::Text(text)).await;
                         }
                         Ok(Message::Binary(data)) => {
-                            let _ = ws_sender.send(Message::Binary(data)).await;
+                            let _ = ws_stream.send(Message::Binary(data)).await;
                         }
                         Ok(Message::Ping(ping_data)) => {
-                            let _ = ws_sender.send(Message::Pong(ping_data)).await;
+                            let _ = ws_stream.send(Message::Pong(ping_data)).await;
                         }
                         Ok(Message::Close(_)) => {
-                            let _ = ws_sender.close().await;
+                            let _ = ws_stream.close(None).await;
                             break;
                         }
-                        Ok(_) => {} // Ignore other message types
+                        Ok(_) => {}
                         Err(_) => break,
                     }
                 }
-            } else {
-                // WebSocket handshake failed
             }
         });
     }
 }
 
 #[rstest]
-fn test_turmoil_websocket_with_dependency_injection() {
+fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) {
     let mut sim = Builder::new().build();
 
     sim.host("server", ws_echo_server);
 
-    sim.client("client", async {
-        let client = TestWebSocketClient::new(TurmoilTcpConnector);
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            message_handler: Some(handler),
+            ..websocket_config
+        };
 
-        // Try to connect to the server
-        let connect_result = client.connect("server:8080").await;
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .expect("Should connect");
 
-        // For this test, we mainly want to verify that:
-        // 1. The dependency injection pattern works
-        // 2. The turmoil connector is being used
-        // 3. Basic networking flows through turmoil
+        // Verify client is active
+        assert!(client.is_active(), "Client should be active after connect");
 
-        match connect_result {
-            Ok(mut ws_stream) => {
-                // Send a test message
-                let send_result = ws_stream.send(Message::Text("hello turmoil".into())).await;
+        // Send a test message
+        client
+            .send_text("hello".to_string(), None)
+            .await
+            .expect("Should send text");
 
-                // Even if the WebSocket protocol doesn't work perfectly,
-                // we've proven that the dependency injection approach works
-                // and that turmoil networking is being used
-                println!("WebSocket connection established and message sent: {send_result:?}");
-            }
-            Err(e) => {
-                // Connection failed, but that's expected since we're doing a
-                // simplified WebSocket implementation. The important thing is
-                // that we're using turmoil networking.
-                println!("Connection failed as expected with simplified WebSocket: {e}");
-            }
+        // Wait for echo
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check we received the echo
+        if let Ok(msg) = rx.try_recv() {
+            assert!(matches!(msg, Message::Text(ref text) if text.as_str() == "hello"));
         }
+
+        // Close the client
+        client.disconnect().await;
+        assert!(client.is_disconnected(), "Client should be disconnected");
 
         Ok(())
     });
@@ -169,41 +128,150 @@ fn test_turmoil_websocket_with_dependency_injection() {
 }
 
 #[rstest]
-fn test_turmoil_websocket_network_partition() {
+fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfig) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(100);
+
+    let mut sim = Builder::new().build();
+
+    // Server that accepts one connection, closes it, then accepts another
+    sim.host("server", || async {
+        let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+        // Accept first connection
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            // Send one message then close
+            let _ = ws.send(Message::Text("first".to_string().into())).await;
+            drop(ws);
+        }
+
+        // Wait a bit before accepting second connection
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Accept second connection and run echo server
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            while let Some(msg) = ws.next().await {
+                match msg {
+                    Ok(Message::Text(text)) if text == "close_me" => break,
+                    Ok(msg) => {
+                        if ws.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            message_handler: Some(handler),
+            ..websocket_config
+        };
+
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .expect("Should connect");
+
+        // Wait to receive first message
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Wait for server to close connection and reconnection
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Send another message after reconnection
+        client
+            .send_text("second_msg".to_string(), None)
+            .await
+            .expect("Should send after reconnect");
+
+        // Wait for echo
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check we received messages
+        let mut received_second = false;
+        while let Ok(msg) = rx.try_recv() {
+            if matches!(msg, Message::Text(ref text) if text.as_str() == "second_msg") {
+                received_second = true;
+            }
+        }
+        assert!(received_second, "Should receive echoed second message");
+
+        // Close
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocketConfig) {
+    websocket_config.reconnect_timeout_ms = Some(3_000);
+
     let mut sim = Builder::new().build();
 
     sim.host("server", ws_echo_server);
 
-    sim.client("client", async {
-        let client = TestWebSocketClient::new(TurmoilTcpConnector);
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            message_handler: Some(handler),
+            ..websocket_config
+        };
 
-        // Initial connection attempt
-        let initial_result = client.connect("server:8080").await;
-        println!("Initial connection: {:?}", initial_result.is_ok());
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .expect("Should connect");
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Send message before partition
+        client
+            .send_text("before_partition".to_string(), None)
+            .await
+            .expect("Should send before partition");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Create network partition
         turmoil::partition("client", "server");
 
-        // Connection should fail during partition
-        let partition_result = client.connect("server:8080").await;
-        assert!(
-            partition_result.is_err(),
-            "Connection should fail during partition"
-        );
-
+        // Wait a bit
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Repair partition
         turmoil::repair("client", "server");
 
-        // Wait for network to stabilize
+        // Wait for reconnection
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        // Should be able to attempt connection again after repair
-        let repair_result = client.connect("server:8080").await;
-        println!("Connection after repair: {:?}", repair_result.is_ok());
+        // Should be able to send after repair
+        client
+            .send_text("after_partition".to_string(), None)
+            .await
+            .expect("Should send after partition repair");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check we received messages
+        let mut received_after = false;
+        while let Ok(msg) = rx.try_recv() {
+            if matches!(msg, Message::Text(ref text) if text.as_str() == "after_partition") {
+                received_after = true;
+            }
+        }
+        assert!(received_after, "Should receive message after partition");
+
+        // Close
+        client.disconnect().await;
 
         Ok(())
     });

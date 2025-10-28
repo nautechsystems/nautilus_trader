@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -22,7 +22,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -39,13 +39,17 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema

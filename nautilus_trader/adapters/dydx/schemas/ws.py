@@ -35,11 +35,7 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXPositionSide
 from nautilus_trader.adapters.dydx.common.enums import DYDXTimeInForce
 from nautilus_trader.adapters.dydx.common.enums import DYDXTransferType
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-
-# fmt: off
 from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsResponse
-
-# fmt: on
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccount
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
 from nautilus_trader.core.datetime import dt_to_unix_nanos

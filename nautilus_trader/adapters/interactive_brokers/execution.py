@@ -22,10 +22,17 @@ from ibapi.commission_report import CommissionReport
 from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
+from ibapi.execution import ExecutionFilter
 from ibapi.order import Order as IBOrder
+from ibapi.order_condition import ExecutionCondition
+from ibapi.order_condition import MarginCondition
+from ibapi.order_condition import OrderCondition
+from ibapi.order_condition import PercentChangeCondition
+from ibapi.order_condition import PriceCondition
+from ibapi.order_condition import TimeCondition
+from ibapi.order_condition import VolumeCondition
 from ibapi.order_state import OrderState as IBOrderState
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -64,7 +71,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -96,7 +102,22 @@ from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOr
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
 
 
-# fmt: on
+# Monkey patch to fix IB API bug where PriceCondition.__str__ is a property instead of a method
+# This prevents TypeError: 'str' object is not callable when IB API tries to log orders
+def _price_condition_str(self):
+    """
+    Fix __str__ method for PriceCondition.
+    """
+    try:
+        return f"price {'>=' if self.isMore else '<='} {self.price}"
+    except Exception:
+        return "PriceCondition"
+
+
+# Apply the monkey patch
+if hasattr(PriceCondition, "__str__") and not callable(getattr(PriceCondition, "__str__")):
+    PriceCondition.__str__ = _price_condition_str
+
 
 ib_to_nautilus_trigger_method = dict(
     zip(MAP_TRIGGER_METHOD.values(), MAP_TRIGGER_METHOD.keys(), strict=False),
@@ -135,6 +156,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The configuration for the instance.
     name : str, optional
         The custom client ID.
+    connection_timeout: int, default 300
+        The connection timeout.
+    track_option_exercise_from_position_update: bool, default False
+        If True, subscribes to real-time position updates to track option exercises.
 
     """
 
@@ -150,6 +175,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         config: InteractiveBrokersExecClientConfig,
         name: str | None = None,
         connection_timeout: int = 300,
+        track_option_exercise_from_position_update: bool = False,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -165,9 +191,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             config=config,
         )
 
+        self._filter_sec_types = instrument_provider.filter_sec_types
+
         # Track known positions to detect external changes (like option exercises)
         self._known_positions: dict[int, Decimal] = {}  # conId -> quantity
         self._connection_timeout = connection_timeout
+        self._track_option_exercise_from_position_update = (
+            track_option_exercise_from_position_update
+        )
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)
         self._account_summary_tags = {
@@ -219,7 +250,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.subscribe_event(f"openOrder-{account}", self._on_open_order)
         self._client.subscribe_event(f"orderStatus-{account}", self._on_order_status)
         self._client.subscribe_event(f"execDetails-{account}", self._on_exec_details)
-        self._client.subscribe_event(f"positionUpdate-{account}", self._on_position_update)
+
+        if self._track_option_exercise_from_position_update:
+            self._client.subscribe_event(f"positionUpdate-{account}", self._on_position_update)
 
         # Load account balance
         self._client.subscribe_account_summary()
@@ -229,15 +262,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         await self._initialize_position_tracking()
 
         # Subscribe to real-time position updates for external changes (option exercises)
-        self._client.subscribe_positions()
+        if self._track_option_exercise_from_position_update:
+            self._client.subscribe_positions()
 
         self._set_connected(True)
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.discard(self.id)
 
-        # Unsubscribe from position updates when disconnecting
-        if self._client.is_running:
+        if self._client.is_running and self._track_option_exercise_from_position_update:
             self._client.unsubscribe_positions()
 
         if self._client.is_running and self._client.registered_nautilus_clients == set():
@@ -402,9 +435,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.get_instrument(position.contract)
 
             if instrument is None:
-                self._log.error(
-                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
-                )
+                if position.contract.secType in self._filter_sec_types:
+                    self._log.warning(
+                        f"Skipping reconciliation for filtered contract: {position.contract}",
+                    )
+                else:
+                    self._log.error(
+                        f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                    )
                 continue
 
             contract_details = self.instrument_provider.contract_details[instrument.id]
@@ -444,12 +482,176 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return report
 
-    async def generate_fill_reports(
+    async def generate_fill_reports(  # noqa: C901
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
-        return []  # TODO: Implement
+        """
+        Generate a list of `FillReport`s with optional query filters.
+
+        The returned list may be empty if no executions match the given parameters.
+
+        """
+        self._log.debug("Requesting FillReports...")
+        reports: list[FillReport] = []
+
+        try:
+            # Create execution filter based on command parameters
+            execution_filter = ExecutionFilter()
+            execution_filter.acctCode = self.account_id.get_id()
+
+            # Apply instrument filter if specified
+            if command.instrument_id is not None:
+                # Convert Nautilus instrument ID to IB contract to get the proper root symbol
+                # IB execution filters expect the root contract symbol (e.g., "ES" for "ESM4", "EUR" for "EUR/USD")
+                ib_contract = await self.instrument_provider.instrument_id_to_ib_contract(
+                    command.instrument_id,
+                )
+
+                if ib_contract is not None:
+                    # Use the IB contract's symbol for the filter
+                    execution_filter.symbol = ib_contract.symbol
+
+                    # Also set secType if available to make the filter more specific
+                    if hasattr(ib_contract, "secType") and ib_contract.secType:
+                        execution_filter.secType = ib_contract.secType
+                else:
+                    # Fallback to the original symbol if conversion fails
+                    self._log.warning(
+                        f"Could not convert instrument ID {command.instrument_id} to IB contract, "
+                        f"using original symbol {command.instrument_id.symbol.value}",
+                    )
+                    execution_filter.symbol = command.instrument_id.symbol.value
+
+            # Apply time filter if specified
+            if command.start is not None:
+                # IB expects time format 'yyyymmdd-hh:mm:ss'
+                start_time = command.start.strftime("%Y%m%d-%H:%M:%S")
+                execution_filter.time = start_time
+
+            # Get execution details from IB
+            execution_details = await self._client.get_executions(
+                account_id=self.account_id.get_id(),
+                execution_filter=execution_filter,
+            )
+
+            ts_init = self._clock.timestamp_ns()
+
+            for exec_detail in execution_details:
+                execution = exec_detail.get("execution")
+                contract = exec_detail.get("contract")
+                commission_report = exec_detail.get("commission_report")
+
+                if not all([execution, contract, commission_report]):
+                    self._log.warning(f"Incomplete execution detail: {exec_detail}")
+                    continue
+
+                # Filter by end time if specified
+                if command.end is not None:
+                    exec_time = timestring_to_timestamp(execution.time)
+                    if exec_time.value > command.end.value:
+                        continue
+
+                # Get instrument for this execution
+                instrument = await self.instrument_provider.get_instrument(contract)
+                if instrument is None:
+                    self._log.warning(
+                        f"Cannot generate fill report: instrument not found for contract {contract.conId}",
+                    )
+                    continue
+
+                # Convert IB execution to Nautilus FillReport
+                try:
+                    fill_report = self._create_fill_report(
+                        execution=execution,
+                        contract=contract,
+                        commission_report=commission_report,
+                        instrument=instrument,
+                        ts_init=ts_init,
+                    )
+                    reports.append(fill_report)
+                    self._log.debug(f"Generated {fill_report}")
+                except Exception as e:
+                    self._log.error(
+                        f"Failed to create fill report for execution {execution.execId}: {e}",
+                    )
+                    continue
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Generated {len_reports} FillReport{plural}")
+
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+
+        return reports
+
+    def _create_fill_report(
+        self,
+        execution: Execution,
+        contract: IBContract,
+        commission_report: CommissionReport,
+        instrument,
+        ts_init: int,
+    ) -> FillReport:
+        """
+        Create a FillReport from IB execution data.
+        """
+        # Convert price using price magnifier
+        price_magnifier = self.instrument_provider.get_price_magnifier(instrument.id)
+        converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+
+        # Determine order side
+        order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+
+        # Create client order ID from order reference if available
+        client_order_id = None
+        if execution.orderRef:
+            # Remove the order ID suffix that IB adds
+            order_ref = execution.orderRef.rsplit(":", 1)[0]
+            client_order_id = ClientOrderId(order_ref)
+
+        # Create venue order ID
+        venue_order_id = VenueOrderId(str(execution.orderId))
+
+        # Create trade ID
+        trade_id = TradeId(execution.execId)
+
+        # Create quantities and prices
+        last_qty = Quantity(execution.shares, precision=instrument.size_precision)
+        last_px = Price(converted_execution_price, precision=instrument.price_precision)
+
+        # Create commission
+        commission = Money(
+            commission_report.commission,
+            Currency.from_str(commission_report.currency),
+        )
+
+        # Determine liquidity side (IB doesn't provide this directly, so we use NO_LIQUIDITY_SIDE)
+        liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
+
+        # Convert execution time to timestamp
+        ts_event = timestring_to_timestamp(execution.time).value
+
+        # Generate report ID
+        report_id = UUID4()
+
+        return FillReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            venue_order_id=venue_order_id,
+            trade_id=trade_id,
+            order_side=order_side,
+            last_qty=last_qty,
+            last_px=last_px,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            report_id=report_id,
+            ts_event=ts_event,
+            ts_init=ts_init,
+            client_order_id=client_order_id,
+            venue_position_id=None,  # IB doesn't provide position ID in executions
+        )
 
     async def generate_position_status_reports(
         self,
@@ -460,29 +662,51 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self.account_id.get_id(),
         )
 
+        # Handle case when specific instrument requested but no positions found
+        if command.instrument_id and not positions:
+            now = self._clock.timestamp_ns()
+            flat_report = PositionStatusReport(
+                account_id=self.account_id,
+                instrument_id=command.instrument_id,
+                position_side=PositionSide.FLAT,
+                quantity=Quantity.zero(),
+                report_id=UUID4(),
+                ts_last=now,
+                ts_init=now,
+            )
+            self._log.debug(f"Generated FLAT report for {command.instrument_id}")
+            return [flat_report]
+
         if not positions:
             return []
 
         for position in positions:
             self._log.debug(f"Trying PositionStatusReport for {position.contract.conId}")
 
+            instrument = await self.instrument_provider.get_instrument(position.contract)
+
+            if instrument is None:
+                if position.contract.secType in self._filter_sec_types:
+                    self._log.warning(
+                        f"Skipping reconciliation for filtered contract: {position.contract}",
+                    )
+                else:
+                    self._log.error(
+                        f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                    )
+                continue
+
+            if not self._cache.instrument(instrument.id):
+                self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
+
+            # Determine position side
             if position.quantity > 0:
                 side = PositionSide.LONG
             elif position.quantity < 0:
                 side = PositionSide.SHORT
             else:
-                continue  # Skip, IB may continue to display closed positions
-
-            instrument = await self.instrument_provider.get_instrument(position.contract)
-
-            if instrument is None:
-                self._log.error(
-                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
-                )
-                continue
-
-            if not self._cache.instrument(instrument.id):
-                self._handle_data(instrument)
+                # Generate FLAT report for zero quantity positions
+                side = PositionSide.FLAT
 
             # Convert avg_cost to Price if available
             avg_px_open = None
@@ -503,151 +727,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             report.append(position_status)
 
         return report
-
-    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901 11 > 10
-        if order.is_post_only:
-            raise ValueError("`post_only` not supported by Interactive Brokers")
-
-        ib_order = IBOrder()
-        time_in_force = order.time_in_force
-        price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)
-
-        for key, field, fn in MAP_ORDER_FIELDS:
-            if value := getattr(order, key, None):
-                if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
-                    setattr(ib_order, field, fn((value, time_in_force)))
-                elif key == "price" and value is not None:
-                    converted_price = nautilus_price_to_ib_price(value.as_double(), price_magnifier)
-                    setattr(ib_order, field, converted_price)
-                else:
-                    setattr(ib_order, field, fn(value))
-
-        if self.instrument_provider.find(order.instrument_id).is_inverse:
-            ib_order.cashQty = int(ib_order.totalQuantity)
-            ib_order.totalQuantity = 0
-
-        if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
-            if order.trailing_offset_type != TrailingOffsetType.PRICE:
-                raise ValueError(
-                    f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
-                )
-
-            ib_order.auxPrice = float(order.trailing_offset)
-
-            if order.trigger_price:
-                converted_trigger_price = nautilus_price_to_ib_price(
-                    order.trigger_price.as_double(),
-                    price_magnifier,
-                )
-                ib_order.trailStopPrice = converted_trigger_price
-                ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
-        elif (
-            isinstance(
-                order,
-                MarketIfTouchedOrder | LimitIfTouchedOrder | StopLimitOrder | StopMarketOrder,
-            )
-        ) and order.trigger_price:
-            converted_aux_price = nautilus_price_to_ib_price(
-                order.trigger_price.as_double(),
-                price_magnifier,
-            )
-            ib_order.auxPrice = converted_aux_price
-
-        if order.instrument_id.is_spread():
-            bag_contract = self.instrument_provider.contract.get(order.instrument_id)
-
-            if not bag_contract:
-                raise ValueError(
-                    f"No BAG contract found for spread instrument {order.instrument_id}",
-                )
-
-            ib_order.contract = bag_contract
-        else:
-            details = self.instrument_provider.contract_details[order.instrument_id]
-            ib_order.contract = details.contract
-
-        ib_order.account = self.account_id.get_id()
-        ib_order.clearingAccount = self.account_id.get_id()
-
-        # Handle OCA (One-Cancels-All) settings - check order tags first, then contingency types
-        oca_group_from_tags = None
-        oca_type_from_tags = None
-
-        # Check if OCA settings are specified in order tags
-        if order.tags:
-            for tag in order.tags:
-                if tag.startswith("IBOrderTags:"):
-                    try:
-                        tags_dict = IBOrderTags.parse(tag.replace("IBOrderTags:", "")).dict()
-
-                        if tags_dict.get("ocaGroup"):
-                            oca_group_from_tags = tags_dict["ocaGroup"]
-
-                        # Get ocaType from tags, including 0 as a valid value
-                        if "ocaType" in tags_dict:
-                            oca_type_from_tags = tags_dict["ocaType"]
-                    except Exception as e:
-                        self._log.warning(f"Failed to parse IBOrderTags: {e}")
-
-        # Apply OCA settings from tags if specified
-        if oca_group_from_tags:
-            ib_order.ocaGroup = oca_group_from_tags
-
-            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
-            if oca_type_from_tags is not None and oca_type_from_tags > 0:
-                ib_order.ocaType = oca_type_from_tags
-            else:
-                ib_order.ocaType = 1  # Default to type 1 for safety
-
-            self._log.info(
-                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
-            )
-        # Otherwise, handle OCO/OUO contingency types automatically for bracket orders
-        elif (
-            order.contingency_type in (ContingencyType.OCO, ContingencyType.OUO)
-            and order.linked_order_ids
-            and order.parent_order_id
-        ):  # Child orders in bracket
-
-            # Generate unique OCA group identifier using order list ID
-            if order.order_list_id:
-                oca_group = f"OCA_{order.order_list_id.value}"
-            else:
-                # Fallback to using parent order ID for consistency
-                oca_group = f"OCA_{order.parent_order_id.value}"
-
-            ib_order.ocaGroup = oca_group
-            # Use OCA type 1 (cancel all remaining orders with block) for safety
-            ib_order.ocaType = 1
-
-            self._log.info(
-                f"Setting {order.contingency_type.name} order {order.client_order_id} to OCA group: {oca_group}",
-            )
-
-        if order.tags:
-            return self._attach_order_tags(ib_order, order)
-        else:
-            return ib_order
-
-    def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:
-        tags: dict = {}
-
-        for ot in order.tags:
-            if ot.startswith("IBOrderTags:"):
-                tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
-                break
-
-        for tag in tags:
-            if tag == "conditions":
-                for condition in tags[tag]:
-                    pass  # TODO:
-            elif tag in ("ocaGroup", "ocaType"):
-                # Skip OCA tags as they're handled in the main transformation logic
-                continue
-            else:
-                setattr(ib_order, tag, tags[tag])
-
-        return ib_order
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
@@ -729,7 +808,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         except ValueError as e:
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
-                order=command.order,
+                order=nautilus_order,
                 reason=str(e),
             )
             return
@@ -766,6 +845,268 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
+
+    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901
+        if order.is_post_only:
+            raise ValueError("`post_only` not supported by Interactive Brokers")
+
+        is_inverse = self.instrument_provider.find(order.instrument_id).is_inverse
+        if order.is_quote_quantity and not is_inverse:
+            raise ValueError("UNSUPPORTED_QUOTE_QUANTITY")
+
+        ib_order = IBOrder()
+        time_in_force = order.time_in_force
+        price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)
+
+        for key, field, fn in MAP_ORDER_FIELDS:
+            if value := getattr(order, key, None):
+                if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
+                    setattr(ib_order, field, fn((value, time_in_force)))
+                elif key == "price" and value is not None:
+                    converted_price = nautilus_price_to_ib_price(value.as_double(), price_magnifier)
+                    setattr(ib_order, field, converted_price)
+                else:
+                    setattr(ib_order, field, fn(value))
+
+        if self.instrument_provider.find(order.instrument_id).is_inverse:
+            ib_order.cashQty = int(ib_order.totalQuantity)
+            ib_order.totalQuantity = 0
+
+        if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
+            if order.trailing_offset_type != TrailingOffsetType.PRICE:
+                raise ValueError(
+                    f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
+                )
+
+            ib_order.auxPrice = float(order.trailing_offset)
+
+            if order.trigger_price:
+                converted_trigger_price = nautilus_price_to_ib_price(
+                    order.trigger_price.as_double(),
+                    price_magnifier,
+                )
+                ib_order.trailStopPrice = converted_trigger_price
+                ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
+        elif (
+            isinstance(
+                order,
+                MarketIfTouchedOrder | LimitIfTouchedOrder | StopLimitOrder | StopMarketOrder,
+            )
+        ) and order.trigger_price:
+            converted_aux_price = nautilus_price_to_ib_price(
+                order.trigger_price.as_double(),
+                price_magnifier,
+            )
+            ib_order.auxPrice = converted_aux_price
+
+        if order.instrument_id.is_spread():
+            bag_contract = self.instrument_provider.contract.get(order.instrument_id)
+
+            if not bag_contract:
+                raise ValueError(
+                    f"No BAG contract found for spread instrument {order.instrument_id}",
+                )
+
+            ib_order.contract = bag_contract
+        else:
+            details = self.instrument_provider.contract_details[order.instrument_id]
+            ib_order.contract = details.contract
+
+        ib_order.account = self.account_id.get_id()
+        ib_order.clearingAccount = self.account_id.get_id()
+
+        if order.tags:
+            return self._attach_order_tags(ib_order, order)
+        else:
+            return ib_order
+
+    def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:  # noqa: C901
+        """
+        Attach all order tags including OCA settings to the IB order.
+        """
+        tags: dict = {}
+        oca_group_from_tags = None
+        oca_type_from_tags = None
+
+        # Parse IBOrderTags from order tags
+        for ot in order.tags:
+            if ot.startswith("IBOrderTags:"):
+                try:
+                    tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
+                    break
+                except Exception as e:
+                    self._log.warning(f"Failed to parse IBOrderTags: {e}")
+
+        # Process all tags
+        for tag in tags:
+            if tag == "conditions":
+                conditions = self._create_ib_conditions(tags[tag])
+                self._log.debug(
+                    f"Setting {len(conditions)} conditions on order: {[type(c).__name__ for c in conditions]}",
+                )
+                ib_order.conditions = conditions
+            elif tag == "conditionsCancelOrder":
+                ib_order.conditionsCancelOrder = tags[tag]
+            elif tag == "ocaGroup":
+                oca_group_from_tags = tags[tag]
+            elif tag == "ocaType":
+                oca_type_from_tags = tags[tag]
+            else:
+                setattr(ib_order, tag, tags[tag])
+
+        # Handle OCA (One-Cancels-All) settings
+        if oca_group_from_tags:
+            ib_order.ocaGroup = oca_group_from_tags
+
+            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
+            if oca_type_from_tags is not None and oca_type_from_tags > 0:
+                ib_order.ocaType = oca_type_from_tags
+            else:
+                ib_order.ocaType = 1  # Default to type 1 for safety
+
+            self._log.info(
+                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
+            )
+
+        return ib_order
+
+    def _create_ib_conditions(
+        self,
+        conditions_data: list[dict],
+    ) -> list[OrderCondition]:
+        """
+        Create IB order conditions from condition dictionaries.
+
+        Parameters
+        ----------
+        conditions_data : list[dict]
+            List of condition dictionaries containing condition parameters.
+
+        Returns
+        -------
+        list[OrderCondition]
+            List of IB order condition objects.
+
+        """
+        conditions = []
+
+        for condition_dict in conditions_data:
+            condition_type = condition_dict.get("type")
+
+            if condition_type == "price":
+                condition = self._create_price_condition(condition_dict)
+            elif condition_type == "time":
+                condition = self._create_time_condition(condition_dict)
+            elif condition_type == "margin":
+                condition = self._create_margin_condition(condition_dict)
+            elif condition_type == "execution":
+                condition = self._create_execution_condition(condition_dict)
+            elif condition_type == "volume":
+                condition = self._create_volume_condition(condition_dict)
+            elif condition_type == "percent_change":
+                condition = self._create_percent_change_condition(condition_dict)
+            else:
+                self._log.warning(f"Unknown condition type: {condition_type}")
+                continue
+
+            if condition:
+                # Set conjunction connection (AND/OR)
+                # True = AND, False = OR
+                condition.isConjunctionConnection = (
+                    condition_dict.get("conjunction", "and").lower() == "and"
+                )
+                conditions.append(condition)
+
+        return conditions
+
+    def _create_price_condition(self, condition_dict: dict) -> PriceCondition | None:
+        """
+        Create a price condition from condition dictionary.
+        """
+        try:
+            condition = PriceCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.price = condition_dict.get("price", 0.0)
+            condition.triggerMethod = condition_dict.get("triggerMethod", 0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create price condition: {e}")
+            return None
+
+    def _create_time_condition(self, condition_dict: dict) -> TimeCondition | None:
+        """
+        Create a time condition from condition dictionary.
+        """
+        try:
+            condition = TimeCondition()
+            condition.time = condition_dict.get("time", "")
+            condition.isMore = condition_dict.get("isMore", True)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create time condition: {e}")
+            return None
+
+    def _create_margin_condition(self, condition_dict: dict) -> MarginCondition | None:
+        """
+        Create a margin condition from condition dictionary.
+        """
+        try:
+            condition = MarginCondition()
+            condition.percent = condition_dict.get("percent", 0)
+            condition.isMore = condition_dict.get("isMore", True)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create margin condition: {e}")
+            return None
+
+    def _create_execution_condition(self, condition_dict: dict) -> ExecutionCondition | None:
+        """
+        Create an execution condition from condition dictionary.
+        """
+        try:
+            condition = ExecutionCondition()
+            condition.symbol = condition_dict.get("symbol", "")
+            condition.secType = condition_dict.get("secType", "STK")
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create execution condition: {e}")
+            return None
+
+    def _create_volume_condition(self, condition_dict: dict) -> VolumeCondition | None:
+        """
+        Create a volume condition from condition dictionary.
+        """
+        try:
+            condition = VolumeCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.volume = condition_dict.get("volume", 0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create volume condition: {e}")
+            return None
+
+    def _create_percent_change_condition(
+        self,
+        condition_dict: dict,
+    ) -> PercentChangeCondition | None:
+        """
+        Create a percent change condition from condition dictionary.
+        """
+        try:
+            condition = PercentChangeCondition()
+            condition.conId = condition_dict.get("conId", 0)
+            condition.exchange = condition_dict.get("exchange", "SMART")
+            condition.isMore = condition_dict.get("isMore", True)
+            condition.changePercent = condition_dict.get("changePercent", 0.0)
+            return condition
+        except Exception as e:
+            self._log.error(f"Failed to create percent change condition: {e}")
+            return None
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
@@ -806,15 +1147,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 continue
 
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
-                self._log.info(f"{self._account_summary}", LogColor.GREEN)
-                # free = self._account_summary[currency]["FullAvailableFunds"]
-                locked = self._account_summary[currency]["FullMaintMarginReq"]
+                self._log.debug(f"{self._account_summary}", LogColor.GREEN)
                 total = self._account_summary[currency]["NetLiquidation"]
+                free = self._account_summary[currency]["FullAvailableFunds"]
+                locked = total - free
 
-                if total - locked < locked:
-                    total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
-
-                free = total - locked
                 account_balance = AccountBalance(
                     total=Money(total, Currency.from_str(currency)),
                     free=Money(free, Currency.from_str(currency)),
@@ -920,7 +1257,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # TODO: Is there more better approach for this use case?
             # This tells the details about Pre and Post margin changes, user can request by setting whatIf flag
             # order will not be placed by IB and instead returns simulation.
-            # example={'status': 'PreSubmitted', 'initMarginBefore': '52.88', 'maintMarginBefore': '52.88', 'equityWithLoanBefore': '23337.31', 'initMarginChange': '2517.5099999999998', 'maintMarginChange': '2517.5099999999998', 'equityWithLoanChange': '-0.6200000000026193', 'initMarginAfter': '2570.39', 'maintMarginAfter': '2570.39', 'equityWithLoanAfter': '23336.69', 'commission': 2.12362, 'minCommission': 1.7976931348623157e+308, 'maxCommission': 1.7976931348623157e+308, 'commissionCurrency': 'USD', 'warningText': '', 'completedTime': '', 'completedStatus': ''}  # noqa
+            # example={'status': 'PreSubmitted', 'initMarginBefore': '52.88', 'maintMarginBefore': '52.88', 'equityWithLoanBefore': '23337.31', 'initMarginChange': '2517.5099999999998', 'maintMarginChange': '2517.5099999999998', 'equityWithLoanChange': '-0.6200000000026193', 'initMarginAfter': '2570.39', 'maintMarginAfter': '2570.39', 'equityWithLoanAfter': '23336.69', 'commission': 2.12362, 'minCommission': 1.7976931348623157e+308, 'maxCommission': 1.7976931348623157e+308, 'commissionCurrency': 'USD', 'warningText': '', 'completedTime': '', 'completedStatus': ''}
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
                 order=nautilus_order,
@@ -1421,7 +1758,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Ensure instrument is in cache
             if not self._cache.instrument(instrument.id):
-                self._handle_data(instrument)
+                self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
 
             # Determine position side
             side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT

@@ -9,6 +9,10 @@ inputs:
     description: Free disk space
     required: false
     default: "false"
+  build-type:
+    description: Type of build (pre-commit, test, release)
+    required: false
+    default: "release"
 
 runs:
   using: "composite"
@@ -20,29 +24,33 @@ runs:
       # https://github.com/jlumbroso/free-disk-space
       uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
-        tool-cache: true
+        tool-cache: ${{ inputs.build-type != 'pre-commit' }}
         android: true
         dotnet: true
-        haskell: true
-        large-packages: true
+        haskell: ${{ inputs.build-type != 'pre-commit' }}
+        large-packages: ${{ inputs.build-type != 'pre-commit' }}
         docker-images: true
-        swap-storage: true
+        swap-storage: ${{ inputs.build-type != 'pre-commit' }}
 
     - name: Free disk space (Windows)
       if: inputs.free-disk-space == 'true' && runner.os == 'Windows'
       shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build-type }}
       run: |
         rm -rf "/c/Program Files/dotnet"
-        rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+        if [ "$BUILD_TYPE" != "pre-commit" ]; then
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+        fi
 
     - name: Install runner dependencies
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y curl clang git make pkg-config
-        sudo apt-get install -y python3-dev libpython3-dev
-        sudo apt-get install -y capnproto libcapnp-dev
+        sudo apt-get update -o Acquire::Retries=5
+        sudo apt-get install -y curl clang git make pkg-config ripgrep -o Acquire::Retries=5
+        sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
+        sudo apt-get install -y capnproto libcapnp-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
 
@@ -50,15 +58,19 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew update
-        brew install capnp
+        brew update || { sleep 5; brew update; }
+        brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
     - name: Install capnproto (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        choco install capnproto -y || echo "capnproto install via choco failed or unavailable"
+        choco install capnproto ripgrep -y || {
+          echo "capnproto/ripgrep install via choco failed or unavailable"
+          sleep 5
+          choco install capnproto ripgrep -y || true
+        }
 
     # > --------------------------------------------------
     # > Rust
@@ -67,10 +79,7 @@ runs:
     # setup-rust-toolchain should handle this with override: true, but doesn't seem to work.
     - name: Reset and update Rust toolchain
       shell: bash
-      run: |
-        if command -v rustup &> /dev/null; then
-          rustup update --force
-        fi
+      run: bash scripts/ci/install-rust.sh
 
     - name: Get Rust toolchain version
       id: rust-toolchain
@@ -80,13 +89,14 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@ac90e63697ac2784f4ecfe2964e1a285c304003a # v1.14.1
+      uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
         override: true
 
     - name: Install cargo-nextest
+      if: inputs.build-type != 'pre-commit'
       # https://github.com/taiki-e/install-action # v2.53.2
       uses: taiki-e/install-action@d12e869b89167df346dd0ff65da342d1fb1202fb
       with:
@@ -95,6 +105,7 @@ runs:
     # > --------------------------------------------------
     # > sccache
     - name: Set sccache env vars (common)
+      if: inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
@@ -108,7 +119,7 @@ runs:
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     - name: Set sccache env vars (non-Windows)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
@@ -116,7 +127,7 @@ runs:
         echo "CXX=sccache clang++" >> $GITHUB_ENV
 
     - name: Set sccache env vars (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
@@ -124,18 +135,22 @@ runs:
         echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
     - name: Cached sccache
+      if: inputs.build-type != 'pre-commit'
       id: cached-sccache
       # https://github.com/actions/cache
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
+        key:
+          sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{
+          hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
         restore-keys: |
           sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
           sccache-${{ runner.os }}-${{ github.workflow }}-
           sccache-${{ runner.os }}-
 
     - name: Run sccache
+      if: inputs.build-type != 'pre-commit'
       # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
@@ -160,7 +175,7 @@ runs:
     - name: Cache Python site-packages
       id: cached-site-packages
       # https://github.com/actions/cache
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
         key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
@@ -180,7 +195,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
+      uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
       with:
         version: ${{ env.UV_VERSION }}
 
@@ -192,7 +207,7 @@ runs:
     - name: Cached uv
       id: cached-uv
       # https://github.com/actions/cache
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.UV_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
@@ -202,7 +217,7 @@ runs:
     - name: Cached pre-commit
       id: cached-pre-commit
       # https://github.com/actions/cache
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}

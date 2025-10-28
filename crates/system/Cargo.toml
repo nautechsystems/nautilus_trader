@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "System orchestration for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_system"
@@ -19,7 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = ["pyo3/extension-module"]
+extension-module = ["python", "pyo3/extension-module"]
 python = ["pyo3"]
 
 [package.metadata.docs.rs]
@@ -41,8 +44,9 @@ anyhow = { workspace = true }
 futures = { workspace = true }
 hostname = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

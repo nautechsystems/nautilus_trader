@@ -198,8 +198,8 @@ impl TickSchemeRule for TickScheme {
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
-            TickScheme::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
-            TickScheme::Crypto => {
+            Self::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
+            Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).floor() * increment;
                 Some(Price::new(base - (n as f64) * increment, precision))
@@ -210,8 +210,8 @@ impl TickSchemeRule for TickScheme {
     #[inline(always)]
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
-            TickScheme::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
-            TickScheme::Crypto => {
+            Self::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
+            Self::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).ceil() * increment;
                 Some(Price::new(base + (n as f64) * increment, precision))
@@ -223,8 +223,8 @@ impl TickSchemeRule for TickScheme {
 impl Display for TickScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TickScheme::Fixed(_) => write!(f, "FIXED"),
-            TickScheme::Crypto => write!(f, "CRYPTO_0_01"),
+            Self::Fixed(_) => write!(f, "FIXED"),
+            Self::Crypto => write!(f, "CRYPTO_0_01"),
         }
     }
 }
@@ -234,9 +234,9 @@ impl FromStr for TickScheme {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
-            "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
-            "CRYPTO_0_01" => Ok(TickScheme::Crypto),
-            _ => Err(anyhow::anyhow!("unknown tick scheme {s}")),
+            "FIXED" => Ok(Self::Fixed(FixedTickScheme::new(1.0)?)),
+            "CRYPTO_0_01" => Ok(Self::Crypto),
+            _ => anyhow::bail!("unknown tick scheme {s}"),
         }
     }
 }
@@ -295,8 +295,7 @@ pub trait Instrument: 'static + Send {
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
         self.base_currency()
-            .map(|currency| currency != self.settlement_currency())
-            .unwrap_or(false)
+            .is_some_and(|currency| currency != self.settlement_currency())
     }
 
     fn price_precision(&self) -> u8;
@@ -400,12 +399,12 @@ pub trait Instrument: 'static + Send {
             last_price.as_f64().is_finite(),
             "non-finite price passed to calculate_base_quantity",
         )?;
-        let quantity_decimal = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
+        let quantity_dec = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
             anyhow::anyhow!("non-finite quantity passed to calculate_base_quantity")
         })?;
-        let price_decimal = Decimal::from_f64_retain(last_price.as_f64())
+        let price_dec = Decimal::from_f64_retain(last_price.as_f64())
             .ok_or_else(|| anyhow::anyhow!("non-finite price passed to calculate_base_quantity"))?;
-        let value_decimal = (quantity_decimal / price_decimal).round_dp_with_strategy(
+        let value_decimal = (quantity_dec / price_dec).round_dp_with_strategy(
             self.size_precision().into(),
             RoundingStrategy::MidpointNearestEven,
         );
@@ -527,8 +526,7 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
             stringify!(CurrencyPair),
             self.id,
             self.tick_scheme()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "None".into()),
+                .map_or_else(|| "None".into(), |s| s.to_string()),
             self.price_precision(),
             self.size_precision(),
             self.price_increment(),

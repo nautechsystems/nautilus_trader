@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! URL helpers and endpoint metadata for OKX services.
+
 use nautilus_core::env::get_env_var;
 
 /// OKX endpoint types for determining URL and authentication requirements.

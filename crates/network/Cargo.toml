@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Network communication machinery for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_network"
@@ -21,9 +24,11 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 default = []
 extension-module = [
   "nautilus-core/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
+turmoil = ["dep:turmoil"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -41,8 +46,6 @@ futures-util = { workspace = true }
 http = { workspace = true }
 memchr = { workspace = true }
 nonzero_ext = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
@@ -54,7 +57,12 @@ tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
 webpki-roots = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-common = { workspace = true }

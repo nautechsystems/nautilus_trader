@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop]
+    branches: [master, nightly, develop, test-ci]
   pull_request:
     branches: ['*']
 
@@ -22,6 +22,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -30,9 +32,31 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
+          build-type: "pre-commit"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
+
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      # https://github.com/EmbarkStudios/cargo-deny-action
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+        with:
+          command: check advisories licenses sources bans
+          arguments: --all-features
 
   build-linux-x86:
     strategy:
@@ -41,22 +65,23 @@ jobs:
         os:
           - ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
+          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
+      - cargo-deny
       - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -65,7 +90,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -82,6 +107,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -90,6 +117,8 @@ jobs:
           free-disk-space: "true"
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -127,7 +156,6 @@ jobs:
         os:
           - ubuntu-22.04-arm
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -141,12 +169,13 @@ jobs:
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -155,7 +184,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -172,6 +201,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -180,6 +211,8 @@ jobs:
           free-disk-space: "true"
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -217,7 +250,6 @@ jobs:
         os:
           - macos-latest
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -225,11 +257,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for pull requests for now
-    if: >
-      !(github.event_name == 'pull_request' && github.base_ref == 'develop')
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -242,6 +272,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -274,7 +306,6 @@ jobs:
         os:
           - windows-latest
         python-version:
-          - "3.11"
           - "3.12"
           - "3.13"
     defaults:
@@ -282,12 +313,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1 hr)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
+      - cargo-deny
     env:
       BUILD_MODE: release
       HIGH_PRECISION: false
@@ -302,6 +330,8 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -331,14 +361,17 @@ jobs:
   publish-wheels-develop:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
+    environment: r2-develop
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-macos
-      # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
-      # - build-windows # Reinstate this when/if windows runs on every build
+      - build-windows
+      # - build-linux-arm # Keep for nightly only (slow build)
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/develop'
     env:
@@ -347,37 +380,57 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      EXPECTED_WHEEL_COUNT: 6  # 2 Python versions (3.12, 3.13) × 3 platforms (ARM skipped on develop)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-nightly:
+    name: publish-wheels-nightly
     runs-on: ubuntu-latest
+    environment: r2-nightly
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -389,39 +442,58 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      EXPECTED_WHEEL_COUNT: 8  # 2 Python versions (3.12, 3.13) × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-master:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
       actions: write  # Required for deleting artifacts
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -434,43 +506,77 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      EXPECTED_WHEEL_COUNT: 8  # 2 Python versions (3.12, 3.13) × 4 platforms
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Get uv version
         shell: bash
         run: |
-          echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+          echo "UV_VERSION=$(cat uv-version)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
+        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Download built wheels for PyPI and GitHub release
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
-          pattern: "*.whl"
+          pattern: "nautilus_trader-*.whl"
           merge-multiple: true
+
+      - name: Validate wheel count
+        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/nautilus_trader-*.whl'
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
       - name: Upload wheels to GitHub release
         # https://cli.github.com/manual/gh_release_upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: |
-          gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "$TAG_NAME" dist/nautilus_trader-*.whl --clobber --repo "$GITHUB_REPOSITORY"
+            status=$?
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload wheels to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -479,10 +585,29 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           # Use --check-url to skip files that already exist on PyPI
-          uv publish --check-url https://pypi.org/simple/
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "uv publish failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
+          done
+          set -e
+          if [ "$success" = false ]; then
+            echo "Failed to publish wheels to PyPI after retries"
+            exit 1
+          fi
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
@@ -505,21 +630,21 @@ jobs:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          persist-credentials: true  # Required for salsify action to push git tags
           fetch-depth: 2
 
-      - name: Common setup
-        uses: ./.github/actions/common-setup
+      - name: Set up Python environment
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.13"
-          free-disk-space: "true"
-
-      - name: Ensure script is executable
-        run: chmod +x scripts/package-version.sh
 
       - name: Create git tag
         # https://github.com/salsify/action-detect-and-tag-new-version
@@ -530,9 +655,9 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> $GITHUB_ENV
-          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> $GITHUB_ENV
-          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
+          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> "$GITHUB_ENV"
+          sed -n '/^#/,$ {p;/^---/q}; w RELEASE.md' RELEASES.md
 
       - name: Create GitHub release
         id: create-release
@@ -551,8 +676,11 @@ jobs:
     needs: [tag-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
@@ -560,10 +688,17 @@ jobs:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -575,6 +710,12 @@ jobs:
         run: |
           uv build --sdist
 
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest sdist provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.tar.gz'
+
       - name: Set release output
         id: vars
         run: |
@@ -583,20 +724,38 @@ jobs:
             exit 1
           fi
 
-          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f | xargs ls -t 2>/dev/null | head -n 1)
+          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f -print0 | xargs -0 ls -t 2>/dev/null | head -n 1)
 
           if [ -z "$ASSET_PATH" ]; then
             echo "Error: No .tar.gz files found in dist directory"
             exit 1
           fi
 
-          echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
-          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
+          echo "ASSET_PATH=$ASSET_PATH" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> "$GITHUB_ENV"
 
       - name: Upload release asset
         # https://cli.github.com/manual/gh_release_upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ASSET_PATH: ${{ env.ASSET_PATH }}
         run: |
-          gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
+          set +e
+          success=false
+          for i in {1..5}; do
+            gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber --repo "$GITHUB_REPOSITORY"
+            status=$?
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
+          done
+          set -e
+          if [ "$success" = false ]; then echo "Failed to upload sdist to release after retries"; exit 1; fi
 
       - name: Publish to PyPI
         if: success()
@@ -605,4 +764,21 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           # Use --check-url to skip files that already exist on PyPI
-          uv publish --check-url https://pypi.org/simple/
+          set +e
+          success=false
+          for i in {1..5}; do
+            uv publish --check-url https://pypi.org/simple/
+            status=$?
+            if [ $status -eq 0 ]; then
+              success=true
+              break
+            else
+              echo "uv publish failed (exit=$status), retry ($i/5)"
+              sleep $((2**i))
+            fi
+          done
+          set -e
+          if [ "$success" = false ]; then
+            echo "Failed to publish sdist to PyPI after retries"
+            exit 1
+          fi

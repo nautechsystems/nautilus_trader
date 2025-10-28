@@ -253,6 +253,20 @@ def test_instrument_id_from_str() -> None:
     assert result == instrument_id
 
 
+def test_instrument_id_from_str_with_utf8_symbol() -> None:
+    # Arrange
+    non_ascii_symbol = "TËST-PÉRP"
+    non_ascii_instrument = "TËST-PÉRP.BINANCE"
+
+    # Act
+    result = InstrumentId.from_str(non_ascii_instrument)
+
+    # Assert
+    assert str(result.symbol) == non_ascii_symbol
+    assert str(result.venue) == "BINANCE"
+    assert str(result) == non_ascii_instrument
+
+
 @pytest.mark.parametrize(
     ("input", "expected_err"),
     [

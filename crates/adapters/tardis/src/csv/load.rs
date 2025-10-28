@@ -741,13 +741,13 @@ pub fn load_funding_rates<P: AsRef<Path>>(
 mod tests {
     use nautilus_model::{
         enums::{AggressorSide, BookAction},
-        identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        identifiers::TradeId,
+        types::Price,
     };
     use nautilus_testkit::common::{
-        ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,
-        ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
-        ensure_data_exists_tardis_huobi_quotes,
+        get_tardis_binance_snapshot5_path, get_tardis_binance_snapshot25_path,
+        get_tardis_bitmex_trades_path, get_tardis_deribit_book_l2_path,
+        get_tardis_huobi_quotes_path,
     };
     use rstest::*;
 
@@ -821,8 +821,6 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         std::fs::remove_file(&temp_file).ok();
     }
 
-    // TODO: Flaky in CI, potentially from syncing large test data files from cache
-    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -830,17 +828,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
-        let filepath = ensure_data_exists_tardis_deribit_book_l2();
-        let deltas = load_deltas(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
+        let filepath = get_tardis_deribit_book_l2_path();
+        let deltas =
+            load_deltas(filepath, price_precision, size_precision, None, Some(100)).unwrap();
 
-        assert_eq!(deltas.len(), 10_000);
+        assert_eq!(deltas.len(), 15);
         assert_eq!(
             deltas[0].instrument_id,
             InstrumentId::from("BTC-PERPETUAL.DERIBIT")
@@ -855,8 +847,6 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(deltas[0].ts_init, 1585699200355684000);
     }
 
-    // TODO: Flaky in CI, potentially from syncing large test data files from cache
-    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -864,17 +854,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
-        let filepath = ensure_data_exists_tardis_binance_snapshot5();
-        let depths = load_depth10_from_snapshot5(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
+        let filepath = get_tardis_binance_snapshot5_path();
+        let depths =
+            load_depth10_from_snapshot5(filepath, price_precision, size_precision, None, Some(100))
+                .unwrap();
 
-        assert_eq!(depths.len(), 10_000);
+        assert_eq!(depths.len(), 10);
         assert_eq!(
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
@@ -897,8 +882,6 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].sequence, 0);
     }
 
-    // TODO: Flaky in CI, potentially from syncing large test data files from cache
-    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -906,17 +889,17 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
-        let filepath = ensure_data_exists_tardis_binance_snapshot25();
+        let filepath = get_tardis_binance_snapshot25_path();
         let depths = load_depth10_from_snapshot25(
             filepath,
             price_precision,
             size_precision,
             None,
-            Some(10_000),
+            Some(100),
         )
         .unwrap();
 
-        assert_eq!(depths.len(), 10_000);
+        assert_eq!(depths.len(), 10);
         assert_eq!(
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
@@ -939,8 +922,6 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].sequence, 0);
     }
 
-    // TODO: Flaky in CI, potentially from syncing large test data files from cache
-    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -948,17 +929,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
-        let filepath = ensure_data_exists_tardis_huobi_quotes();
-        let quotes = load_quotes(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
+        let filepath = get_tardis_huobi_quotes_path();
+        let quotes =
+            load_quotes(filepath, price_precision, size_precision, None, Some(100)).unwrap();
 
-        assert_eq!(quotes.len(), 10_000);
+        assert_eq!(quotes.len(), 10);
         assert_eq!(
             quotes[0].instrument_id,
             InstrumentId::from("BTC-USD.HUOBI_DELIVERY")
@@ -971,8 +946,6 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(quotes[0].ts_init, 1588291201234268000);
     }
 
-    // TODO: Flaky in CI, potentially from syncing large test data files from cache
-    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -980,17 +953,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
-        let filepath = ensure_data_exists_tardis_bitmex_trades();
-        let trades = load_trades(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
+        let filepath = get_tardis_bitmex_trades_path();
+        let trades =
+            load_trades(filepath, price_precision, size_precision, None, Some(100)).unwrap();
 
-        assert_eq!(trades.len(), 10_000);
+        assert_eq!(trades.len(), 10);
         assert_eq!(trades[0].instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
         assert_eq!(trades[0].price, Price::from("8531.5"));
         assert_eq!(trades[0].size, Quantity::from("2152"));
@@ -1060,10 +1027,10 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
 
     #[rstest]
     fn test_load_depth10_from_snapshot5_comprehensive() {
-        let filepath = ensure_data_exists_tardis_binance_snapshot5();
+        let filepath = get_tardis_binance_snapshot5_path();
         let depths = load_depth10_from_snapshot5(&filepath, None, None, None, Some(100)).unwrap();
 
-        assert_eq!(depths.len(), 100);
+        assert_eq!(depths.len(), 10);
 
         let first = &depths[0];
         assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
@@ -1171,10 +1138,10 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
 
     #[rstest]
     fn test_load_depth10_from_snapshot25_comprehensive() {
-        let filepath = ensure_data_exists_tardis_binance_snapshot25();
+        let filepath = get_tardis_binance_snapshot25_path();
         let depths = load_depth10_from_snapshot25(&filepath, None, None, None, Some(100)).unwrap();
 
-        assert_eq!(depths.len(), 100);
+        assert_eq!(depths.len(), 10);
 
         let first = &depths[0];
         assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");

@@ -3,20 +3,20 @@
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
 currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
 
-- `Equity` (generic Equity)
-- `FuturesContract` (generic Futures Contract)
-- `FuturesSpread` (generic Futures Spread)
-- `OptionContract` (generic Option Contract)
-- `OptionSpread` (generic Option Spread)
-- `BinaryOption` (generic Binary Option instrument)
-- `Cfd` (Contract for Difference instrument)
-- `Commodity` (commodity instrument in a spot/cash market)
-- `CurrencyPair` (represents a Fiat FX or Cryptocurrency pair in a spot/cash market)
-- `CryptoOption` (Crypto Option instrument)
-- `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
-- `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
-- `IndexInstrument` (generic Index instrument)
-- `BettingInstrument` (Sports, gaming, or other betting)
+- `Equity` (listed shares or ETFs traded on cash markets)
+- `FuturesContract` (deliverable futures contract with defined underlying, expiry, and multiplier)
+- `FuturesSpread` (exchange-defined multi-leg futures strategy—e.g., calendar or inter-commodity—quoted as one instrument)
+- `OptionContract` (exchange-traded option—put or call—on an underlying with strike and expiry)
+- `OptionSpread` (exchange-defined multi-leg options strategy—e.g., vertical, calendar, straddle—quoted as one instrument)
+- `BinaryOption` (fixed-payout option that settles to 0 or 1 based on a binary outcome)
+- `Cfd` (over-the-counter Contract for Difference that tracks an underlying and is cash-settled)
+- `Commodity` (spot commodity instrument—e.g., gold or oil—traded in cash markets)
+- `CurrencyPair` (spot FX or crypto pair in BASE/QUOTE format traded in cash markets)
+- `CryptoOption` (option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles)
+- `CryptoPerpetual` (perpetual futures contract—aka perpetual swap—on crypto with no expiry; can be inverse or quanto-settled)
+- `CryptoFuture` (dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency)
+- `IndexInstrument` (spot index calculated from constituents; used as a reference price and not directly tradable)
+- `BettingInstrument` (a sports/gaming market selection—e.g., team or runner—tradable on betting venues)
 
 ## Symbology
 
@@ -125,12 +125,12 @@ values for prices and quantities *can* result in the exchange rejecting orders.
 Certain value limits are optional for instruments and can be `None`, these are exchange
 dependent and can include:
 
-- `max_quantity` (maximum quantity for a single order)
-- `min_quantity` (minimum quantity for a single order)
-- `max_notional` (maximum value of a single order)
-- `min_notional` (minimum value of a single order)
-- `max_price` (maximum valid quote or order price)
-- `min_price` (minimum valid quote or order price)
+- `max_quantity` (maximum quantity for a single order).
+- `min_quantity` (minimum quantity for a single order).
+- `max_notional` (maximum value of a single order).
+- `min_notional` (minimum value of a single order).
+- `max_price` (maximum valid quote or order price).
+- `min_price` (minimum valid quote or order price).
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
@@ -228,7 +228,7 @@ While maker/taker fees are common in cryptocurrency markets, traditional exchang
 employ other fee structures, such as per-contract commissions.
 NautilusTrader supports multiple commission models to accommodate diverse fee structures across different markets.
 
-### Built-in Fee Models
+### Built-in fee models
 
 The framework provides two built-in fee model implementations:
 
@@ -236,7 +236,7 @@ The framework provides two built-in fee model implementations:
     calculated as a percentage of the trade value.
 2. `FixedFeeModel`: Applies a fixed commission per trade, regardless of the trade size.
 
-### Creating Custom Fee Models
+### Creating custom fee models
 
 While the built-in fee models cover common scenarios, you might encounter situations requiring specific commission structures.
 NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
@@ -276,7 +276,7 @@ These parameter names follow NautilusTrader's Cython naming conventions, where t
 While this might seem verbose compared to typical Python naming conventions, it ensures type safety and consistency
 with the framework's Cython codebase.
 
-### Using Fee Models in Practice
+### Using fee models in practice
 
 To use any fee model in your trading system, whether built-in or custom, you specify it when setting up the venue.
 Here's an example using the custom per-contract fee model:
@@ -300,14 +300,14 @@ When implementing custom fee models, ensure they accurately reflect the fee stru
 Even small discrepancies in commission calculations can significantly impact strategy performance metrics during backtesting.
 :::
 
-## Additional info
+### Additional info
 
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
 included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user
 at runtime by calling the `.info` property.
 
-## Synthetic Instruments
+## Synthetic instruments
 
 The platform supports creating customized synthetic instruments, which can generate synthetic quote
 and trades. These are useful for:
@@ -425,6 +425,6 @@ synthetic instruments. Despite this, caution is advised as invalid or erroneous 
 undefined behavior.
 
 :::info
-See the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrument-1)
+See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
 :::

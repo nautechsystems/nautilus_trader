@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Core data handling machinery for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_data"
@@ -24,6 +27,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-persistence/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = [
@@ -40,11 +44,7 @@ python = [
   "pyo3",
 ]
 high-precision = ["nautilus-model/high-precision"]
-defi = [
-  "nautilus-common/defi",
-  "nautilus-model/defi",
-  "alloy-primitives",
-]
+defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -57,14 +57,15 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
 
 ahash = { workspace = true }
-alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

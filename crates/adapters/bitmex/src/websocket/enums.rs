@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Enumerations used when parsing BitMEX WebSocket payloads.
+
 use nautilus_model::enums::{AggressorSide, BookAction, OrderSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -39,6 +41,7 @@ pub enum BitmexSide {
 }
 
 impl BitmexSide {
+    /// Converts the BitMEX side into a Nautilus order side.
     #[must_use]
     pub const fn as_order_side(&self) -> OrderSide {
         match self {
@@ -46,6 +49,7 @@ impl BitmexSide {
             Self::Sell => OrderSide::Sell,
         }
     }
+    /// Converts the BitMEX side into a Nautilus aggressor side.
     #[must_use]
     pub const fn as_aggressor_side(&self) -> AggressorSide {
         match self {
@@ -142,6 +146,7 @@ pub enum BitmexAction {
 }
 
 impl BitmexAction {
+    /// Maps a table action into the corresponding order book action.
     #[must_use]
     pub const fn as_book_action(&self) -> BookAction {
         match self {

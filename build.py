@@ -52,8 +52,7 @@ DRY_RUN = bool(os.getenv("DRY_RUN", ""))
 HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
 if IS_WINDOWS and HIGH_PRECISION:
     print(
-        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
-        "Forcing standard-precision (64-bit) mode",
+        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\nForcing standard-precision (64-bit) mode",
     )
     HIGH_PRECISION = False
 
@@ -166,8 +165,12 @@ def _build_rust_libs() -> None:
 
         if BUILD_MODE == "release":
             build_options = ["--release"]
-            existing_rustflags = os.environ.get("RUSTFLAGS", "")
-            os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
+            # Only pass '-s' at link time on Linux. On macOS this flag is obsolete
+            # and may cause failures with recent toolchains. Cargo already performs
+            # symbol stripping per profile, and we post-strip where applicable.
+            if IS_LINUX:
+                existing_rustflags = os.environ.get("RUSTFLAGS", "")
+                os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
         elif BUILD_MODE == "debug-pyo3":
             build_options = ["--profile", "debug-pyo3"]
         else:
@@ -372,19 +375,12 @@ def _get_clang_version() -> str:
             check=True,
             capture_output=True,
         )
-        output = (
-            result.stdout.decode()
-            .splitlines()[0]
-            .lstrip("Apple ")
-            .lstrip("Ubuntu ")
-            .lstrip("clang version ")
-        )
+        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("Ubuntu ").lstrip("clang version ")
         return output
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
-            "You are installing from source which requires the Clang compiler to be installed.\n"
-            f"Error running clang: {err_msg}",
+            f"You are installing from source which requires the Clang compiler to be installed.\nError running clang: {err_msg}",
         ) from e
 
 
@@ -446,12 +442,12 @@ def _ensure_windows_python_import_lib() -> None:
 
             if src.exists() and not dst.exists():
                 print(
-                    "Creating missing Windows import lib " f"{dst} (copying from {src})",
+                    f"Creating missing Windows import lib {dst} (copying from {src})",
                 )
                 shutil.copyfile(src, dst)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as e:  # pragma: no cover - defensive
         # Never fail the build because of this helper, just show the warning
-        print(f"Warning: failed to create *t* suffixed Python import library: {exc}")
+        print(f"Warning: failed to create *t* suffixed Python import library: {e}")
 
 
 def _strip_unneeded_symbols() -> None:
@@ -482,8 +478,7 @@ def _strip_unneeded_symbols() -> None:
         if total_before > 0:
             reduction = (1 - total_after / total_before) * 100
             print(
-                f"Stripped binaries: {total_before / 1024 / 1024:.1f}MB "
-                f"-> {total_after / 1024 / 1024:.1f}MB ({reduction:.1f}% reduction)",
+                f"Stripped binaries: {total_before / 1024 / 1024:.1f}MB -> {total_after / 1024 / 1024:.1f}MB ({reduction:.1f}% reduction)",
             )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error when stripping symbols.\n{e}") from e

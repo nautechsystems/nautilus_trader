@@ -19,7 +19,6 @@ from operator import attrgetter
 
 import pandas as pd
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -62,9 +61,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-
-
-# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
@@ -265,7 +261,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 contract=contract,
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
-                params=command.params,
+                params=command.params.copy(),
             )
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
@@ -534,7 +530,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._handle_bars(
                 request.bar_type,
                 bars,
-                bars[0],
                 request.id,
                 request.start,
                 request.end,

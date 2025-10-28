@@ -19,10 +19,12 @@ use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Durat
 
 use bytes::Bytes;
 use http::{HeaderValue, StatusCode, status::InvalidStatusCode};
+use nautilus_core::collections::into_ustr_vec;
 use reqwest::{
     Method, Response, Url,
     header::{HeaderMap, HeaderName},
 };
+use ustr::Ustr;
 
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
@@ -201,7 +203,7 @@ pub struct HttpClient {
     /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,
     /// The rate limiter to control the request rate.
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    pub(crate) rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
 }
 
 impl HttpClient {
@@ -240,6 +242,11 @@ impl HttpClient {
             header_keys: Arc::new(header_keys),
         };
 
+        let keyed_quotas = keyed_quotas
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
+
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Self {
@@ -273,6 +280,27 @@ impl HttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
         keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let keys = keys.map(into_ustr_vec);
+
+        self.request_with_ustr_keys(method, url, headers, body, timeout_secs, keys)
+            .await
+    }
+
+    /// Sends an HTTP request using pre-interned rate limiter keys.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send the request or the request times out.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_with_ustr_keys(
+        &self,
+        method: Method,
+        url: String,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<Ustr>>,
     ) -> Result<HttpResponse, HttpClientError> {
         let rate_limiter = self.rate_limiter.clone();
         rate_limiter.await_keys_ready(keys).await;
@@ -325,12 +353,14 @@ impl InnerHttpClient {
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
                 .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
-            let _ = header_map.insert(
-                key,
+            if let Some(old_value) = header_map.insert(
+                key.clone(),
                 header_value
                     .parse()
                     .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
-            );
+            ) {
+                tracing::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+            }
         }
 
         let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
@@ -595,8 +625,8 @@ mod tests {
             Err(HttpClientError::TimeoutError(msg)) => {
                 println!("Got expected timeout error: {msg}");
             }
-            Err(other) => panic!("Expected a timeout error, got: {other:?}"),
-            Ok(resp) => panic!("Expected a timeout error, but got a successful response: {resp:?}"),
+            Err(e) => panic!("Expected a timeout error, was: {e:?}"),
+            Ok(resp) => panic!("Expected a timeout error, but was a successful response: {resp:?}"),
         }
     }
 }

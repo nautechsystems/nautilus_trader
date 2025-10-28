@@ -1232,3 +1232,87 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[2], OrderInitialized)
         assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        ("order_side", "trigger_price"),
+        [
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_060)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_070)],
+        ],
+    )
+    def test_stop_limit_order_triggered_before_market_data_retains_command(
+        self,
+        order_side: OrderSide,
+        trigger_price: Price,
+    ) -> None:
+        # Arrange: Create matching core without market data
+        matching_core = self.emulator.create_matching_core(
+            ETHUSDT_PERP_BINANCE.id,
+            ETHUSDT_PERP_BINANCE.price_increment,
+        )
+
+        # Verify matching core has no market data yet
+        assert not matching_core.is_bid_initialized
+        assert not matching_core.is_ask_initialized
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            price=trigger_price,
+            trigger_price=trigger_price,
+            emulation_trigger=TriggerType.DEFAULT,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Verify order is emulated and command is queued
+        assert order.is_emulated
+        commands_before = self.emulator.get_submit_order_commands()
+        assert len(commands_before) == 1
+        assert order.client_order_id in commands_before
+
+        # Verify matching core still has no market data (order submission doesn't add it)
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        assert not matching_core.is_bid_initialized
+        assert not matching_core.is_ask_initialized
+
+        # Act: Directly call _fill_limit_order without market data available
+        # This simulates the order being triggered before market data is received
+        order_from_cache = self.cache.order(order.client_order_id)
+        self.emulator._fill_limit_order(order_from_cache)
+
+        # Assert: Command should still be queued (not popped) because no market data
+        commands_after_trigger = self.emulator.get_submit_order_commands()
+        assert len(commands_after_trigger) == 1
+        assert order.client_order_id in commands_after_trigger
+        assert order_from_cache.is_emulated
+        # Order should still be emulated (not released yet)
+        assert len(order_from_cache.events) == 2  # Only Initialized and Emulated events
+
+        # Now provide market data via quote tick
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
+        )
+        self.data_engine.process(tick)
+
+        # Verify matching core now has market data
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        assert matching_core.is_bid_initialized
+        assert matching_core.is_ask_initialized
+
+        # Assert: Now the order should be released and command popped
+        commands_final = self.emulator.get_submit_order_commands()
+        assert len(commands_final) == 0
+        order = self.cache.order(order.client_order_id)
+        assert order.order_type == OrderType.LIMIT
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
+        # Verify order was released
+        assert len(order.events) == 4
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
+        assert self.exec_client.calls == ["_start", "submit_order"]

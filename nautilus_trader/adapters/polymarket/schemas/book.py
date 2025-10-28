@@ -50,8 +50,15 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         self,
         instrument: BinaryOption,
         ts_init: int,
-    ) -> OrderBookDeltas:
+    ) -> OrderBookDeltas | None:
         ts_event = millis_to_nanos(float(self.timestamp))
+
+        bids_len = len(self.bids)
+        asks_len = len(self.asks)
+
+        # Skip if both bids and asks are empty (can occur near market resolution)
+        if bids_len == 0 and asks_len == 0:
+            return None
 
         deltas: list[OrderBookDelta] = []
 
@@ -63,9 +70,6 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             ts_init=ts_init,
         )
         deltas.append(clear)
-
-        bids_len = len(self.bids)
-        asks_len = len(self.asks)
 
         for idx, bid in enumerate(self.bids):
             flags = 0
@@ -121,22 +125,38 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         self,
         instrument: BinaryOption,
         ts_init: int,
-    ) -> QuoteTick:
-        if self.bids:
+        drop_quotes_missing_side: bool = True,
+    ) -> QuoteTick | None:
+        # Handle missing bid/ask prices (can occur near market resolution)
+        if not self.bids or not self.asks:
+            if drop_quotes_missing_side:
+                return None
+
+            # Use boundary prices with zero volume for missing sides
+            # POLYMARKET_MIN_PRICE = 0.001, POLYMARKET_MAX_PRICE = 0.999
+            if self.bids:
+                top_bid = self.bids[-1]
+                top_bid_price = float(top_bid.price)
+                top_bid_size = float(top_bid.size)
+            else:
+                top_bid_price = POLYMARKET_MIN_PRICE
+                top_bid_size = 0.0
+
+            if self.asks:
+                top_ask = self.asks[-1]
+                top_ask_price = float(top_ask.price)
+                top_ask_size = float(top_ask.size)
+            else:
+                top_ask_price = POLYMARKET_MAX_PRICE
+                top_ask_size = 0.0
+        else:
             top_bid = self.bids[-1]
             top_bid_price = float(top_bid.price)
             top_bid_size = float(top_bid.size)
-        else:
-            top_bid_price = POLYMARKET_MIN_PRICE
-            top_bid_size = 0.0
 
-        if self.asks:
             top_ask = self.asks[-1]
             top_ask_price = float(top_ask.price)
             top_ask_size = float(top_ask.size)
-        else:
-            top_ask_price = POLYMARKET_MAX_PRICE
-            top_ask_size = 0.0
 
         return QuoteTick(
             instrument_id=instrument.id,
@@ -144,21 +164,24 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             ask_price=instrument.make_price(top_ask_price),
             bid_size=instrument.make_qty(top_bid_size),
             ask_size=instrument.make_qty(top_ask_size),
-            ts_event=ts_init,  # Polymarket does not provide a timestamp
+            ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )
 
 
 class PolymarketQuote(msgspec.Struct, frozen=True):
+    asset_id: str
     price: str
     side: PolymarketOrderSide
     size: str
+    hash: str
+    best_bid: str
+    best_ask: str
 
 
 class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type", frozen=True):
     market: str
-    asset_id: str
-    changes: list[PolymarketQuote]
+    price_changes: list[PolymarketQuote]
     timestamp: str
 
     def parse_to_deltas(
@@ -167,7 +190,7 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         ts_init: int,
     ) -> OrderBookDeltas:
         deltas: list[OrderBookDelta] = []
-        for change in self.changes:
+        for change in self.price_changes:
             order = BookOrder(
                 side=OrderSide.BUY if change.side == PolymarketOrderSide.BUY else OrderSide.SELL,
                 price=instrument.make_price(float(change.price)),
@@ -194,7 +217,7 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         ts_init: int,
     ) -> list[QuoteTick]:
         quotes: list[QuoteTick] = []
-        for change in self.changes:
+        for change in self.price_changes:
             if change.side == PolymarketOrderSide.BUY:
                 ask_price = last_quote.ask_price
                 ask_size = last_quote.ask_size

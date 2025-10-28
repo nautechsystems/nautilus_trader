@@ -22,8 +22,3 @@ Python was originally created decades ago as a simple scripting language with a 
 forward syntax. It has since evolved into a fully fledged general purpose object-oriented
 programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world.
 Not only that, Python has become the *de facto lingua franca* of data science, machine learning, and artificial intelligence.
-
-The language out of the box is not without its drawbacks however, especially in the context of
-implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
-of a statically typed language, embedded into Python's rich ecosystem of software libraries and
-developer/user communities.

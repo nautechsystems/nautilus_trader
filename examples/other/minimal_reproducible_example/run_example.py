@@ -149,7 +149,7 @@ def run_backtest():
     # Step 4a: Prepare BarType
     EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD_FUTURE.id}-1-MINUTE-LAST-EXTERNAL")
 
-    # Step 4b: Prepare bar data as List[Bar]
+    # Step 4b: Prepare bar data as list[Bar]
     bars: list[Bar] = generate_artificial_bars(
         instrument=EURUSD_FUTURE,
         bar_type=EURUSD_1MIN_BARTYPE,

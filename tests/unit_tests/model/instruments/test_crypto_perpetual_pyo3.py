@@ -13,12 +13,44 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 _ETHUSDT_PERP = TestInstrumentProviderPyo3.ethusdt_perp_binance()
+
+_ETHUSD_PERP_QUANTO = nautilus_pyo3.CryptoPerpetual(
+    instrument_id=nautilus_pyo3.InstrumentId.from_str("ETHUSDQ-PERP.BITMEX"),
+    raw_symbol=nautilus_pyo3.Symbol("ETHUSDQ-PERP"),
+    base_currency=nautilus_pyo3.Currency.from_str("ETH"),
+    quote_currency=nautilus_pyo3.Currency.from_str("USD"),
+    settlement_currency=nautilus_pyo3.Currency.from_str("BTC"),
+    is_inverse=False,
+    price_precision=1,
+    size_precision=0,
+    price_increment=nautilus_pyo3.Price.from_str("0.5"),
+    size_increment=nautilus_pyo3.Quantity.from_int(1),
+    maker_fee=Decimal("0"),
+    taker_fee=Decimal("0"),
+    margin_init=Decimal("0.01"),
+    margin_maint=Decimal("0.005"),
+    multiplier=None,
+    lot_size=None,
+    max_quantity=nautilus_pyo3.Quantity.from_int(1_000_000),
+    min_quantity=nautilus_pyo3.Quantity.from_int(1),
+    max_notional=None,
+    min_notional=None,
+    max_price=nautilus_pyo3.Price.from_str("1000000.0"),
+    min_price=nautilus_pyo3.Price.from_str("0.5"),
+    ts_event=0,
+    ts_init=0,
+)
 
 
 def test_equality():
@@ -75,3 +107,63 @@ def test_pyo3_cython_conversion():
     )
     assert crypto_perpetual_pyo3 == crypto_perpetual_pyo3_back
     assert crypto_perpetual_pyo3_dict == crypto_perpetual_cython_dict
+
+
+def test_get_cost_currency_linear():
+    linear = CryptoPerpetual.from_pyo3(_ETHUSDT_PERP)
+    assert linear.get_cost_currency() == Currency.from_str("USDT")
+
+
+def test_get_cost_currency_inverse():
+    inverse = CryptoPerpetual.from_pyo3(TestInstrumentProviderPyo3.xbtusd_bitmex())
+    assert inverse.get_cost_currency() == Currency.from_str("BTC")
+
+
+def test_get_cost_currency_quanto():
+    quanto = CryptoPerpetual.from_pyo3(_ETHUSD_PERP_QUANTO)
+    assert quanto.get_cost_currency() == Currency.from_str("BTC")
+
+
+def test_notional_value_linear():
+    linear = CryptoPerpetual.from_pyo3(_ETHUSDT_PERP)
+    quantity = Quantity.from_str("5")
+    price = Price.from_str("2000.0")
+
+    notional = linear.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("USDT")
+    assert notional.as_decimal() == Decimal("10000.0")
+
+
+def test_notional_value_inverse():
+    inverse = CryptoPerpetual.from_pyo3(TestInstrumentProviderPyo3.xbtusd_bitmex())
+    quantity = Quantity.from_int(100_000)
+    price = Price.from_str("370.00")
+
+    notional = inverse.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("BTC")
+    assert notional.as_decimal() == Decimal("270.27027027")
+
+
+def test_notional_value_inverse_with_quote_override():
+    inverse = CryptoPerpetual.from_pyo3(TestInstrumentProviderPyo3.xbtusd_bitmex())
+    quantity = Quantity.from_int(100_000)
+    price = Price.from_str("370.00")
+
+    notional = inverse.notional_value(quantity, price, use_quote_for_inverse=True)
+
+    assert notional.currency == Currency.from_str("USD")
+    assert notional.as_decimal() == Decimal("100000")
+
+
+def test_notional_value_quanto():
+    quanto = CryptoPerpetual.from_pyo3(_ETHUSD_PERP_QUANTO)
+    quantity = Quantity.from_int(1000)
+    price = Price.from_str("2500.0")
+
+    notional = quanto.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("BTC")
+    expected = quantity.as_decimal() * quanto.multiplier.as_decimal() * price.as_decimal()
+    assert notional.as_decimal() == expected

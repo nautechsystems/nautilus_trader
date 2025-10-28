@@ -43,7 +43,7 @@ class TestVenue:
         assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(status)) == status
         assert (
             repr(status)
-            == "InstrumentStatus(instrument_id=MSFT.XNAS, action=TRADING, reason=None, trading_event=None, is_trading=True, is_quoting=True, is_short_sell_restricted=False, ts_event=0)"  # noqa: E501
+            == "InstrumentStatus(instrument_id=MSFT.XNAS, action=TRADING, reason=None, trading_event=None, is_trading=True, is_quoting=True, is_short_sell_restricted=False, ts_event=0)"
         )
 
     def test_instrument_status_to_pyo3(self):

@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-from typing import Any, ClassVar
+from typing import Any
+from typing import ClassVar
 
 import pandas as pd
 import pyarrow as pa

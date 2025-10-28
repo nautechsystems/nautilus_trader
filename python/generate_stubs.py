@@ -10,9 +10,11 @@ This script can be used as:
 """
 
 import argparse
-import shutil
+import re
 import subprocess
 import sys
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -33,56 +35,272 @@ def run_command(cmd, cwd=None, check=True):
     return result
 
 
+def load_pyproject():
+    """
+    Load the pyproject.toml located next to this script.
+    """
+    pyproject_path = Path(__file__).parent / "pyproject.toml"
+    with pyproject_path.open("rb") as fp:
+        return tomllib.load(fp)
+
+
+def resolve_python_stub_root(pyproject: dict) -> Path:
+    """
+    Return the directory where pyo3-stub-gen writes .pyi files.
+    """
+    python_source = pyproject.get("tool", {}).get("maturin", {}).get("python-source", ".")
+
+    dest_dir = (Path(__file__).parent / python_source).resolve()
+    python_dir = Path(__file__).parent.resolve()
+    try:
+        dest_dir.relative_to(python_dir)
+    except ValueError as e:  # pragma: no cover - defensive
+        raise RuntimeError(
+            "python-source must stay within the python/ package directory",
+        ) from e
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    return dest_dir
+
+
 def generate_stubs():
     """
     Generate type stubs using pyo3-stub-gen.
     """
     print("Generating type stubs with pyo3-stub-gen...")
 
-    # Path to the crates/pyo3 directory
     crates_dir = Path(__file__).parent.parent / "crates" / "pyo3"
+    pyproject = load_pyproject()
+    dest_dir = resolve_python_stub_root(pyproject)
+    module_name = pyproject.get("tool", {}).get("maturin", {}).get("module-name") or pyproject.get(
+        "project",
+        {},
+    ).get("name", "nautilus_trader")
+    module_root = module_name.split(".")[0]
 
-    # Generate stubs using cargo
-    result = run_command(["cargo", "run", "--bin", "python-stub-gen"], cwd=crates_dir)
+    maturin_features = pyproject.get("tool", {}).get("maturin", {}).get("features", [])
+    cargo_features = [f for f in maturin_features if f != "extension-module"]
+
+    cmd = ["cargo", "run", "--bin", "python-stub-gen"]
+    if cargo_features:
+        cmd.extend(["--features", ",".join(cargo_features)])
+
+    result = run_command(cmd, cwd=crates_dir)
 
     print("Stubs generated successfully")
     if result.stdout:
         print(f"Output: {result.stdout}")
 
-    # Find the generated stub directory
-    target_dir = crates_dir / "target" / "pyo3-stub-gen"
-    stub_dirs = list(target_dir.glob("_libnautilus*"))
+    stub_files = sorted(dest_dir.rglob("*.pyi"))
 
-    if not stub_dirs:
-        print("No stub directory found")
+    if not stub_files:
+        print("Stub generation completed but no .pyi files were produced")
         return False
 
-    stub_dir = stub_dirs[0]
-    print(f"Found stubs in: {stub_dir}")
+    relocate_package_stubs(dest_dir)
 
-    # Copy stubs to the Python package
-    dest_dir = Path(__file__).parent / "nautilus_trader"
+    relative_root = dest_dir.relative_to(Path(__file__).parent)
+    print(f"Type stubs written to {relative_root or Path('.')} ")
 
-    # Clean existing stubs first
-    for existing_stub in dest_dir.rglob("*.pyi"):
-        existing_stub.unlink()
-        print(f"Removed existing stub: {existing_stub.relative_to(dest_dir)}")
+    preview_limit = 20
+    filtered = [
+        stub_file
+        for stub_file in stub_files
+        if stub_file.relative_to(dest_dir).parts
+        and stub_file.relative_to(dest_dir).parts[0] == module_root
+    ]
 
-    # Copy new stubs
-    for stub_file in stub_dir.rglob("*.pyi"):
-        # Determine relative path from stub_dir
-        rel_path = stub_file.relative_to(stub_dir)
-        dest_file = dest_dir / rel_path
+    targets = filtered if filtered else stub_files
 
-        # Create destination directory if needed
-        dest_file.parent.mkdir(parents=True, exist_ok=True)
+    for stub_file in targets[:preview_limit]:
+        print(f"Generated: {stub_file.relative_to(dest_dir)}")
 
-        # Copy the stub file
-        shutil.copy2(stub_file, dest_file)
-        print(f"Copied: {rel_path}")
+    remaining = len(targets) - preview_limit
+    if remaining > 0:
+        print(f"...and {remaining} more stub files")
 
-    print("Type stubs copied to nautilus_trader/")
     return True
+
+
+def relocate_package_stubs(dest_dir: Path) -> None:
+    """
+    Move top-level module stubs into package __init__.pyi files when needed.
+    """
+    root = dest_dir / "nautilus_trader"
+    if not root.exists():  # pragma: no cover - defensive
+        return
+
+    for stub_path in sorted(root.rglob("*.pyi")):
+        if stub_path.name == "__init__.pyi" or stub_path.stem == "_libnautilus":
+            continue
+
+        package_dir = stub_path.with_suffix("")
+        package_init = package_dir / "__init__.pyi"
+
+        package_init.parent.mkdir(parents=True, exist_ok=True)
+        package_init.write_text(stub_path.read_text())
+        stub_path.unlink()
+
+    relocate_class_stubs(root)
+    apply_runtime_module_fixups()
+
+
+@dataclass(frozen=True)
+class StubFixup:
+    """
+    Configuration describing how to relocate and patch stub content for a module.
+    """
+
+    classes: tuple[str, ...] = ()
+    imports: tuple[str, ...] = ()
+    placeholders: tuple[str, ...] = ()
+
+
+METHOD_RENAMES = {
+    "py_new": "__init__",
+}
+
+MODULE_FIXUPS: dict[str, StubFixup] = {
+    "adapters.blockchain": StubFixup(
+        classes=(
+            "BlockchainDataClientConfig",
+            "BlockchainDataClientFactory",
+            "DexPoolFilters",
+        ),
+        imports=(
+            "import builtins",
+            "import typing",
+            "import nautilus_trader.infrastructure",
+            "import nautilus_trader.model",
+        ),
+    ),
+    "model": StubFixup(
+        classes=(
+            "DataType",
+            "AmmType",
+            "DexType",
+            "Dex",
+            "Blockchain",
+            "Chain",
+        ),
+        imports=(
+            "import builtins",
+            "import typing",
+            "from enum import Enum",
+        ),
+        placeholders=(
+            "",
+            '__all__ = ["AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"]',
+        ),
+    ),
+    "infrastructure": StubFixup(
+        classes=("PostgresConnectOptions",),
+        imports=("import typing",),
+        placeholders=(
+            "class PostgresConnectOptions: ...",
+            "",
+            '__all__ = ["PostgresConnectOptions"]',
+        ),
+    ),
+}
+
+MODULE_RUNTIME_FIXUPS: dict[Path, str] = {
+    Path(
+        "nautilus_trader/adapters/blockchain/__init__.py",
+    ): "nautilus_trader.core.nautilus_pyo3.blockchain",
+    Path("nautilus_trader/model/__init__.py"): "nautilus_trader.core.nautilus_pyo3.model",
+}
+
+RUNTIME_FIXUP_TEMPLATE = """
+def _reassign_module_names() -> None:
+    for _name, _obj in list(globals().items()):
+        module = getattr(_obj, "__module__", "")
+        if module.startswith("{prefix}"):
+            try:
+                _obj.__module__ = __name__
+            except (AttributeError, TypeError):
+                continue
+
+
+_reassign_module_names()
+del _reassign_module_names
+"""
+
+
+def relocate_class_stubs(root: Path) -> None:
+    lib_stub = root / "_libnautilus.pyi"
+    if not lib_stub.exists():
+        return
+
+    source = lib_stub.read_text()
+
+    remaining = source
+
+    for module_suffix, fixup in MODULE_FIXUPS.items():
+        remaining, blocks = extract_class_blocks(remaining, fixup.classes)
+
+        if not blocks and not fixup.placeholders:
+            continue
+
+        module_parts = module_suffix.split(".")
+        module_path = root.joinpath(*module_parts)
+        module_path.mkdir(parents=True, exist_ok=True)
+        target_file = module_path / "__init__.pyi"
+
+        header = [
+            "# This file is automatically generated by pyo3_stub_gen",
+            "# ruff: noqa: D401, E501, F401",
+            "",
+        ]
+
+        body_parts: list[str] = []
+        if blocks:
+            body_parts.append("\n\n".join(blocks))
+        if fixup.placeholders:
+            body_parts.append("\n".join(fixup.placeholders))
+
+        imports_section = list(fixup.imports)
+        content = (
+            "\n".join(header + imports_section + ["", "\n".join(body_parts), ""]).strip("\n") + "\n"
+        )
+        target_file.write_text(content)
+
+    lib_stub.write_text(remaining.strip() + "\n")
+
+
+def extract_class_blocks(source: str, class_names: tuple[str, ...]) -> tuple[str, list[str]]:
+    remaining = source
+    blocks: list[str] = []
+
+    for class_name in class_names:
+        pattern = re.compile(
+            rf"^class {class_name}(?:\([^)]*\))?:[\s\S]*?(?=^(?:class |def |@|$))",
+            re.MULTILINE,
+        )
+        match = pattern.search(remaining)
+        if not match:
+            continue
+
+        block = match.group().rstrip()
+        block = rename_methods(block)
+        blocks.append(block)
+        remaining = remaining[: match.start()] + remaining[match.end() :]
+
+    return remaining, blocks
+
+
+def rename_methods(block: str) -> str:
+    for source_name, target_name in METHOD_RENAMES.items():
+        block = re.sub(rf"def\s+{source_name}(\s*\()", rf"def {target_name}\1", block)
+    block = re.sub(r"(def __init__\(.*?\)) -> [^:]+:", r"\1 -> None:", block)
+    return block
+
+
+def apply_runtime_module_fixups() -> None:
+    """
+    Runtime alias fixups temporarily disabled during cleanup.
+    """
+    return
 
 
 def build_extension():
@@ -98,7 +316,7 @@ def build_extension():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Nautilus Trader v2 build script")
+    parser = argparse.ArgumentParser(description="NautilusTrader v2 build script")
     parser.add_argument(
         "action",
         nargs="?",

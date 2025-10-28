@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Final, Literal
+from typing import Final
+from typing import Literal
 
 from ibapi.const import UNSET_DECIMAL
 from ibapi.contract import FundAssetType
@@ -192,6 +193,12 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
     # If set to true, the order will not be visible when viewing the market depth.
     # This option only applies to orders routed to the NASDAQ exchange.
     hidden: bool = False
+
+    # Order conditions
+    conditions: list[dict] = []  # List of condition dictionaries
+    conditionsCancelOrder: bool = (
+        False  # True = cancel order when condition met, False = transmit order
+    )
 
     @property
     def value(self):

@@ -36,7 +36,7 @@ pub async fn run_sync_dex(
     let chain = Chain::from_chain_name(&chain)
         .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
 
-    let dex_type = find_dex_type_case_insensitive(&dex, &chain).ok_or_else(|| {
+    let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
         let supported_dexes = get_supported_dexes_for_chain(chain.name);
         if supported_dexes.is_empty() {
             anyhow::anyhow!("Invalid DEX name '{}' (case-insensitive). Chain '{}' is not supported for pool syncing.",dex, chain.name)
@@ -77,7 +77,8 @@ pub async fn run_sync_dex(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
 
     data_client.cache.initialize_chain().await;
@@ -124,7 +125,8 @@ pub async fn run_sync_blocks(
         None,
         Some(postgres_connect_options),
     );
-    let mut data_client = BlockchainDataClientCore::new(config, None, None);
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
 
     data_client.cache.initialize_chain().await;

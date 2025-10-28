@@ -124,6 +124,8 @@ impl BookLevel {
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
+    ///
+    /// Saturates at `QuantityRaw::MAX` if the total exposure would overflow.
     #[must_use]
     pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
@@ -137,9 +139,17 @@ impl BookLevel {
                     o.price,
                     o.size
                 );
-                (exposure_f64 * FIXED_SCALAR) as QuantityRaw
+
+                let scaled = exposure_f64 * FIXED_SCALAR;
+                if scaled >= QuantityRaw::MAX as f64 {
+                    QuantityRaw::MAX
+                } else if scaled < 0.0 {
+                    0
+                } else {
+                    scaled as QuantityRaw
+                }
             })
-            .sum()
+            .fold(0, |acc, val| acc.saturating_add(val))
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.
@@ -152,11 +162,15 @@ impl BookLevel {
     /// Adds an order to this price level. Order must match the level's price.
     pub fn add(&mut self, order: BookOrder) {
         debug_assert_eq!(order.price, self.price.value);
-        debug_assert!(
-            order.size.is_positive(),
-            "Order size must be positive: {}",
-            order.size
-        );
+
+        if !order.size.is_positive() {
+            log::warn!(
+                "Attempted to add order with non-positive size: order_id={order_id}, size={size}, ignoring",
+                order_id = order.order_id,
+                size = order.size
+            );
+            return;
+        }
 
         self.orders.insert(order.order_id, order);
     }
@@ -304,7 +318,7 @@ mod tests {
 
     #[rstest]
     fn test_book_level_sorting() {
-        let mut levels = vec![
+        let mut levels = [
             BookLevel::new(BookPrice::new(
                 Price::from("1.00"),
                 OrderSideSpecified::Sell,
@@ -673,5 +687,63 @@ mod tests {
             level.exposure_raw(),
             (60.0 * FIXED_SCALAR).round() as QuantityRaw
         );
+    }
+
+    #[rstest]
+    fn test_exposure_raw_saturates_on_overflow() {
+        // Test that exposure_raw saturates at QuantityRaw::MAX instead of wrapping
+        // Use values whose product * FIXED_SCALAR overflows QuantityRaw
+        #[cfg(feature = "high-precision")]
+        let (price_str, qty_str) = ("1000000000000.00", "1000000000000.00");
+        #[cfg(not(feature = "high-precision"))]
+        let (price_str, qty_str) = ("100000000.00", "1000000000.00");
+
+        let mut level = BookLevel::new(BookPrice::new(
+            Price::from(price_str),
+            OrderSideSpecified::Buy,
+        ));
+
+        // Create an order with large price and quantity that would overflow QuantityRaw
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from(price_str),
+            Quantity::from(qty_str),
+            0,
+        );
+
+        level.add(order);
+
+        // Should saturate at max value instead of wrapping around
+        let result = level.exposure_raw();
+        assert_eq!(result, QuantityRaw::MAX);
+    }
+
+    #[rstest]
+    fn test_exposure_raw_sum_saturates_on_overflow() {
+        // Test that summing exposures saturates instead of wrapping
+        #[cfg(feature = "high-precision")]
+        let (price_str, qty_str, count) = ("10000000000000.00", "10000000000000.00", 100);
+        #[cfg(not(feature = "high-precision"))]
+        let (price_str, qty_str, count) = ("1000000000.00", "1000000000.00", 100);
+
+        let mut level = BookLevel::new(BookPrice::new(
+            Price::from(price_str),
+            OrderSideSpecified::Buy,
+        ));
+
+        // Add multiple large orders that together would overflow when summed
+        for i in 0..count {
+            let order = BookOrder::new(
+                OrderSide::Buy,
+                Price::from(price_str),
+                Quantity::from(qty_str),
+                i,
+            );
+            level.add(order);
+        }
+
+        // Should saturate at max value instead of wrapping around
+        let result = level.exposure_raw();
+        assert_eq!(result, QuantityRaw::MAX);
     }
 }

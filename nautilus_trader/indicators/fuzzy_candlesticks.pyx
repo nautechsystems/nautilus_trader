@@ -176,12 +176,6 @@ cdef class FuzzyCandlesticks(Indicator):
             The close price.
 
         """
-        # Check if this is the first input
-        if not self.has_inputs:
-            self._last_open = open
-            self._last_high = high
-            self._last_low = low
-            self._last_close = close
 
         # Update last prices
         self._last_open = open
@@ -190,16 +184,17 @@ cdef class FuzzyCandlesticks(Indicator):
         self._last_close = close
 
         # Update measurements
-        self._lengths.append(fabs(high - low))
+        cdef double length = fabs(high - low)
+        self._lengths.append(length)
 
-        if self._lengths[0] == 0.0:
+        if length == 0.0:
             self._body_percents.append(0.0)
             self._upper_wick_percents.append(0.0)
             self._lower_wick_percents.append(0.0)
         else:
-            self._body_percents.append(fabs(open - low / self._lengths[0]))
-            self._upper_wick_percents.append((high - max(open, close)) / self._lengths[0])
-            self._lower_wick_percents.append((min(open, close) - low) / self._lengths[0])
+            self._body_percents.append(fabs(open - close) / length)
+            self._upper_wick_percents.append((high - max(open, close)) / length)
+            self._lower_wick_percents.append((min(open, close) - low) / length)
 
         cdef np.ndarray lengths = np.asarray(self._lengths, dtype=np.float64)
         cdef np.ndarray body_percents = np.asarray(self._body_percents, dtype=np.float64)
@@ -221,19 +216,19 @@ cdef class FuzzyCandlesticks(Indicator):
         self.value = FuzzyCandle(
             direction=self._fuzzify_direction(open, close),
             size=self._fuzzify_size(
-                self._lengths[0],
+                length,
                 mean_length,
                 sd_lengths),
             body_size=self._fuzzify_body_size(
-                self._body_percents[0],
+                self._body_percents[-1],
                 mean_body_percent,
                 sd_body_percents),
             upper_wick_size=self._fuzzify_wick_size(
-                self._upper_wick_percents[0],
+                self._upper_wick_percents[-1],
                 mean_upper_wick,
                 sd_upper_wick_percents),
             lower_wick_size=self._fuzzify_wick_size(
-                self._lower_wick_percents[0],
+                self._lower_wick_percents[-1],
                 mean_lower_wick,
                 sd_lower_wick_percents),
         )
@@ -286,7 +281,7 @@ cdef class FuzzyCandlesticks(Indicator):
             return CandleSize.SIZE_SMALL
 
         # CandleSize.MEDIUM
-        x = sd_lengths * self._threshold2
+        x = mean_length + sd_lengths * self._threshold2
         if length <= x:
             return CandleSize.SIZE_MEDIUM
 

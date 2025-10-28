@@ -138,7 +138,7 @@ impl EncodeToRecordBatch for QuoteTick {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        QuoteTick::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.bid_price.precision,
             self.bid_size.precision,
@@ -181,16 +181,24 @@ impl DecodeFromRecordBatch for QuoteTick {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        assert_eq!(
-            bid_price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
-        assert_eq!(
-            ask_price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if bid_price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "bid_price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    bid_price_values.value_length()
+                ),
+            ));
+        }
+        if ask_price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "ask_price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    ask_price_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {

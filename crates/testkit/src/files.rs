@@ -14,17 +14,76 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    cmp,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
     thread::sleep,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use aws_lc_rs::digest::{self, Context};
+use nautilus_network::retry::RetryConfig;
 use rand::{Rng, rng};
 use reqwest::blocking::Client;
 use serde_json::Value;
+
+#[derive(Debug)]
+enum DownloadError {
+    Retryable(String),
+    NonRetryable(String),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Retryable(msg) => write!(f, "Retryable error: {msg}"),
+            Self::NonRetryable(msg) => write!(f, "Non-retryable error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for DownloadError {}
+
+fn execute_with_retry_blocking<T, E, F>(
+    config: &RetryConfig,
+    mut op: F,
+    should_retry: impl Fn(&E) -> bool,
+) -> Result<T, E>
+where
+    E: std::error::Error,
+    F: FnMut() -> Result<T, E>,
+{
+    let start = Instant::now();
+    let mut delay = Duration::from_millis(config.initial_delay_ms);
+
+    for attempt in 0..=config.max_retries {
+        if attempt > 0 && !config.immediate_first {
+            let jitter = rng().random_range(0..=config.jitter_ms);
+            let sleep_for = delay + Duration::from_millis(jitter);
+            sleep(sleep_for);
+            let next = (delay.as_millis() as f64 * config.backoff_factor) as u64;
+            delay = cmp::min(
+                Duration::from_millis(next),
+                Duration::from_millis(config.max_delay_ms),
+            );
+        }
+
+        if let Some(max_total) = config.max_elapsed_ms
+            && start.elapsed() >= Duration::from_millis(max_total)
+        {
+            break;
+        }
+
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) if attempt < config.max_retries && should_retry(&e) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+
+    op()
+}
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
 ///
@@ -36,6 +95,9 @@ use serde_json::Value;
 /// If the file does not exist, it downloads the file from the specified `url` and updates the
 /// checksums file (if provided) with the calculated SHA-256 checksum of the downloaded file.
 ///
+/// The `timeout_secs` parameter specifies the timeout in seconds for the HTTP request.
+/// If `None` is provided, a default timeout of 30 seconds will be used.
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -46,6 +108,67 @@ pub fn ensure_file_exists_or_download_http(
     filepath: &Path,
     url: &str,
     checksums: Option<&Path>,
+    timeout_secs: Option<u64>,
+) -> anyhow::Result<()> {
+    ensure_file_exists_or_download_http_with_config(
+        filepath,
+        url,
+        checksums,
+        timeout_secs.unwrap_or(30),
+        None,
+        None,
+    )
+}
+
+/// Ensures that a file exists at the specified path by downloading it if necessary, with a custom timeout.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request cannot be sent or returns a non-success status code after retries.
+/// - Any I/O operation fails during file creation, reading, or writing.
+/// - Checksum verification or JSON parsing fails.
+pub fn ensure_file_exists_or_download_http_with_timeout(
+    filepath: &Path,
+    url: &str,
+    checksums: Option<&Path>,
+    timeout_secs: u64,
+) -> anyhow::Result<()> {
+    ensure_file_exists_or_download_http_with_config(
+        filepath,
+        url,
+        checksums,
+        timeout_secs,
+        None,
+        None,
+    )
+}
+
+/// Ensures that a file exists at the specified path by downloading it if necessary,
+/// with custom timeout, retry config, and initial jitter delay.
+///
+/// # Parameters
+///
+/// - `filepath`: The path where the file should exist.
+/// - `url`: The URL to download from if the file doesn't exist.
+/// - `checksums`: Optional path to checksums file for verification.
+/// - `timeout_secs`: Timeout in seconds for HTTP requests.
+/// - `retry_config`: Optional custom retry configuration (uses sensible defaults if None).
+/// - `initial_jitter_ms`: Optional initial jitter delay in milliseconds before download (defaults to 100-600ms if None).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request cannot be sent or returns a non-success status code after retries.
+/// - Any I/O operation fails during file creation, reading, or writing.
+/// - Checksum verification or JSON parsing fails.
+pub fn ensure_file_exists_or_download_http_with_config(
+    filepath: &Path,
+    url: &str,
+    checksums: Option<&Path>,
+    timeout_secs: u64,
+    retry_config: Option<RetryConfig>,
+    initial_jitter_ms: Option<u64>,
 ) -> anyhow::Result<()> {
     if filepath.exists() {
         println!("File already exists: {filepath:?}");
@@ -64,16 +187,21 @@ pub fn ensure_file_exists_or_download_http(
         return Ok(());
     }
 
-    // Add a small random delay (100–600 ms) to avoid bursting the remote server when
-    // many tests start concurrently. A true random jitter is preferred over a
-    // deterministic hash to prevent synchronized traffic spikes.
-    let jitter_delay = {
-        let mut r = rng();
-        Duration::from_millis(r.random_range(100..=600))
-    };
-    sleep(jitter_delay);
+    // Add a small random delay to avoid bursting the remote server when
+    // many downloads start concurrently. Can be disabled by passing Some(0).
+    if let Some(jitter_ms) = initial_jitter_ms {
+        if jitter_ms > 0 {
+            sleep(Duration::from_millis(jitter_ms));
+        }
+    } else {
+        let jitter_delay = {
+            let mut r = rng();
+            Duration::from_millis(r.random_range(100..=600))
+        };
+        sleep(jitter_delay);
+    }
 
-    download_file(filepath, url)?;
+    download_file(filepath, url, timeout_secs, retry_config)?;
 
     if let Some(checksums_file) = checksums {
         let new_checksum = calculate_sha256(filepath)?;
@@ -83,11 +211,12 @@ pub fn ensure_file_exists_or_download_http(
     Ok(())
 }
 
-fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
-    const MAX_RETRIES: usize = 3;
-    const BASE_DELAY_MS: u64 = 1000;
-    const TIMEOUT_SECONDS: u64 = 30;
-
+fn download_file(
+    filepath: &Path,
+    url: &str,
+    timeout_secs: u64,
+    retry_config: Option<RetryConfig>,
+) -> anyhow::Result<()> {
     println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
@@ -95,52 +224,65 @@ fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
     }
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(TIMEOUT_SECONDS))
+        .timeout(Duration::from_secs(timeout_secs))
         .build()?;
 
-    let mut last_error = None;
-
-    for attempt in 0..MAX_RETRIES {
-        if attempt > 0 {
-            // Exponential backoff with additional random jitter up to BASE_DELAY_MS
-            let exponential_delay_ms = BASE_DELAY_MS * 2_u64.pow(attempt as u32 - 1);
-            let jitter_ms = rng().random_range(0..BASE_DELAY_MS);
-            let delay = Duration::from_millis(exponential_delay_ms + jitter_ms);
-            println!(
-                "Retrying download in {delay:?} (attempt {}/{MAX_RETRIES})",
-                attempt + 1
-            );
-            sleep(delay);
+    let cfg = if let Some(config) = retry_config {
+        config
+    } else {
+        // Default production config
+        let max_retries = 5u32;
+        let op_timeout_ms = timeout_secs.saturating_mul(1000);
+        // Make the provided timeout a hard ceiling for total elapsed time.
+        // Split it across attempts (at least 1000 ms per attempt) and cap total at op_timeout_ms.
+        let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (max_retries as u64 + 1));
+        RetryConfig {
+            max_retries,
+            initial_delay_ms: 1_000,
+            max_delay_ms: 10_000,
+            backoff_factor: 2.0,
+            jitter_ms: 1_000,
+            operation_timeout_ms: Some(per_attempt_ms),
+            immediate_first: false,
+            max_elapsed_ms: Some(op_timeout_ms),
         }
+    };
 
+    let op = || -> Result<(), DownloadError> {
         match client.get(url).send() {
             Ok(mut response) => {
                 let status = response.status();
                 if status.is_success() {
-                    let mut out = File::create(filepath)?;
+                    let mut out = File::create(filepath)
+                        .map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
                     // Stream the response body directly to disk to avoid large allocations
-                    copy(&mut response, &mut out)?;
+                    copy(&mut response, &mut out)
+                        .map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
                     println!("File downloaded to {filepath:?}");
-                    return Ok(());
-                } else if status.is_server_error() {
-                    // Retry on 5xx server errors
-                    println!("Server error (HTTP {status}), retrying...");
-                    last_error = Some(anyhow::anyhow!("Server error: HTTP {status}"));
-                    continue;
+                    Ok(())
+                } else if status.is_server_error()
+                    || status.as_u16() == 429
+                    || status.as_u16() == 408
+                {
+                    println!("HTTP error {status}, retrying...");
+                    Err(DownloadError::Retryable(format!("HTTP {status}")))
+                } else {
+                    // Preserve existing error text used by tests
+                    Err(DownloadError::NonRetryable(format!(
+                        "Client error: HTTP {status}"
+                    )))
                 }
-                // 4xx errors are considered client side and not retried
-                anyhow::bail!("Client error: HTTP {status}");
             }
             Err(e) => {
                 println!("Request failed: {e}");
-                last_error = Some(anyhow::anyhow!("Request failed: {e}"));
-                continue;
+                Err(DownloadError::Retryable(e.to_string()))
             }
         }
-    }
+    };
 
-    Err(last_error
-        .unwrap_or_else(|| anyhow::anyhow!("Download failed after {MAX_RETRIES} attempts")))
+    let should_retry = |e: &DownloadError| matches!(e, DownloadError::Retryable(_));
+
+    execute_with_retry_blocking(&cfg, op, should_retry).map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
@@ -220,7 +362,10 @@ mod tests {
         fs,
         io::{BufWriter, Write},
         net::SocketAddr,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use axum::{Router, http::StatusCode, routing::get, serve};
@@ -234,6 +379,21 @@ mod tests {
     };
 
     use super::*;
+
+    /// Creates a fast, deterministic retry config for tests.
+    /// Uses very short delays to make tests run quickly without introducing flakiness.
+    fn test_retry_config() -> RetryConfig {
+        RetryConfig {
+            max_retries: 5,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 5,
+            operation_timeout_ms: Some(500),
+            immediate_first: false,
+            max_elapsed_ms: Some(2000),
+        }
+    }
 
     async fn setup_test_server(
         server_content: Option<String>,
@@ -277,7 +437,7 @@ mod tests {
         fs::write(&file_path, "Existing file content").unwrap();
 
         let url = "http://example.com/testfile.txt".to_string();
-        let result = ensure_file_exists_or_download_http(&file_path, &url, None);
+        let result = ensure_file_exists_or_download_http(&file_path, &url, None, Some(5));
 
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
@@ -296,7 +456,14 @@ mod tests {
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&filepath_clone, &url, None)
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -317,7 +484,14 @@ mod tests {
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&file_path, &url, None)
+            ensure_file_exists_or_download_http_with_config(
+                &file_path,
+                &url,
+                None,
+                1,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -339,7 +513,14 @@ mod tests {
         let url = "http://127.0.0.1:0/testfile.txt".to_string();
 
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&file_path, &url, None)
+            ensure_file_exists_or_download_http_with_config(
+                &file_path,
+                &url,
+                None,
+                2,
+                Some(test_retry_config()),
+                Some(0),
+            )
         })
         .await
         .unwrap();
@@ -350,6 +531,156 @@ mod tests {
             err_msg.contains("error"),
             "Unexpected error message: {err_msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_retry_then_success_on_500() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let app = Router::new().route(
+            "/testfile.txt",
+            get(move || {
+                let c = counter_clone.clone();
+                async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst);
+                    if n < 2 {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "temporary error")
+                    } else {
+                        (StatusCode::OK, "eventual success")
+                    }
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = serve(listener, app);
+        task::spawn(async move {
+            let _ = server.await;
+        });
+        sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/testfile.txt");
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(&filepath).unwrap();
+        assert_eq!(content, "eventual success");
+        assert!(counter.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_then_success_on_429() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let app = Router::new().route(
+            "/testfile.txt",
+            get(move || {
+                let c = counter_clone.clone();
+                async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst);
+                    if n < 1 {
+                        (StatusCode::TOO_MANY_REQUESTS, "rate limited")
+                    } else {
+                        (StatusCode::OK, "ok after retry")
+                    }
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = serve(listener, app);
+        task::spawn(async move {
+            let _ = server.await;
+        });
+        sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/testfile.txt");
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(&filepath).unwrap();
+        assert_eq!(content, "ok after retry");
+        assert!(counter.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    async fn test_no_retry_on_404() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let app = Router::new().route(
+            "/testfile.txt",
+            get(move || {
+                let c = counter_clone.clone();
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    (StatusCode::NOT_FOUND, "missing")
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = serve(listener, app);
+        task::spawn(async move {
+            let _ = server.await;
+        });
+        sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/testfile.txt");
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(counter.load(Ordering::SeqCst), 1, "should not retry on 404");
     }
 
     #[rstest]

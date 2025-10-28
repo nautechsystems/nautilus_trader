@@ -1208,6 +1208,8 @@ def test_own_order_book_pprint_empty():
     assert output_grouped == (
         "bid_levels: 0\n"
         "ask_levels: 0\n"
+        "update_count: 0\n"
+        "ts_last: 0\n"
         "╭──────┬───────┬──────╮\n"
         "│ bids │ price │ asks │\n"
         "├──────┼───────┼──────┤"
@@ -1257,6 +1259,8 @@ def test_own_order_book_pprint_with_group_size():
     assert output_001 == (
         "bid_levels: 2\n"
         "ask_levels: 2\n"
+        "update_count: 4\n"
+        "ts_last: 2\n"
         "╭────────┬───────┬────────╮\n"
         "│ bids   │ price │ asks   │\n"
         "├────────┼───────┼────────┤\n"
@@ -1269,6 +1273,8 @@ def test_own_order_book_pprint_with_group_size():
     assert output_01 == (
         "bid_levels: 2\n"
         "ask_levels: 2\n"
+        "update_count: 4\n"
+        "ts_last: 2\n"
         "╭────────┬───────┬────────╮\n"
         "│ bids   │ price │ asks   │\n"
         "├────────┼───────┼────────┤\n"

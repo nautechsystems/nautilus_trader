@@ -69,8 +69,8 @@ impl PositionOpened {
         fill: &OrderFilled,
         event_id: UUID4,
         ts_init: UnixNanos,
-    ) -> PositionOpened {
-        PositionOpened {
+    ) -> Self {
+        Self {
             trader_id: position.trader_id,
             strategy_id: position.strategy_id,
             instrument_id: position.instrument_id,

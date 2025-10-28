@@ -399,8 +399,9 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -487,8 +488,9 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("RANDOM_VENUE"), // No client registered with this ID
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -679,7 +681,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         client_order_id: ClientOrderId::from("OL-19700101-000000-001-001-1"),
         venue_order_id: VenueOrderId::from("VOID"),
         order_list,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -798,6 +800,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         trader_id,
         strategy_id,
         position_id: None,
+        params: None,
         order: order.clone(),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -805,7 +808,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         instrument_id: instrument.id,
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
     };
 
     // Act - Submit order directly to execution engine
@@ -902,8 +905,9 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -1004,8 +1008,9 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -1170,8 +1175,9 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         client_order_id: order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -4545,8 +4551,9 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -4674,7 +4681,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         client_order_id: ClientOrderId::from("O-20240101-000000-001-001-1"),
         venue_order_id: VenueOrderId::from("VOID"),
         order_list: bracket,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -4865,8 +4872,9 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5014,8 +5022,9 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5239,7 +5248,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         client_order_id: ClientOrderId::from("O-20240101-000000-001-001-1"), // Use entry order's client order ID
         venue_order_id: VenueOrderId::from("VOID"),
         order_list,
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         position_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -5248,57 +5257,47 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     // Act - Submit the order list
     execution_engine.execute(&TradingCommand::SubmitOrderList(submit_order_list));
 
-    // Check the orders immediately after submission to see if conversion happened
+    // Check the orders immediately after submission to confirm quote quantities were converted
     let cache = execution_engine.cache.borrow();
+
+    let last_price = cache
+        .trade(&instrument.id)
+        .map(|trade| trade.price)
+        .or_else(|| {
+            cache.quote(&instrument.id).map(|quote| match order_side {
+                nautilus_model::enums::OrderSide::Buy => quote.ask_price,
+                nautilus_model::enums::OrderSide::Sell => quote.bid_price,
+                nautilus_model::enums::OrderSide::NoOrderSide => quote.ask_price,
+            })
+        })
+        .expect("Expected trade or quote price for conversion");
+
+    let instrument_any = cache
+        .instrument(&instrument.id)
+        .expect("Instrument should exist in cache");
+    let expected_base_quantity =
+        instrument_any.calculate_base_quantity(Quantity::from(100_000), last_price);
 
     // Check entry order
     let cached_entry_order = cache
         .order(&entry_order.client_order_id())
         .expect("Entry order should exist in cache");
+    assert!(!cached_entry_order.is_quote_quantity());
+    assert_eq!(cached_entry_order.quantity(), expected_base_quantity);
 
     // Check stop loss order
     let cached_stop_loss_order = cache
         .order(&stop_loss_order.client_order_id())
         .expect("Stop loss order should exist in cache");
+    assert!(!cached_stop_loss_order.is_quote_quantity());
+    assert_eq!(cached_stop_loss_order.quantity(), expected_base_quantity);
 
     // Check take profit order
     let cached_take_profit_order = cache
         .order(&take_profit_order.client_order_id())
         .expect("Take profit order should exist in cache");
-
-    // Note: The execution engine should convert quote quantity to base quantity during submission
-    // However, the current implementation may not be updating the cached orders properly.
-    // This test documents the current behavior and may need to be updated when the conversion logic is fixed.
-
-    // For now, we'll check that the orders exist and have the expected properties
-    assert!(
-        cached_entry_order.is_quote_quantity(),
-        "Entry order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-    assert!(
-        cached_stop_loss_order.is_quote_quantity(),
-        "Stop loss order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-    assert!(
-        cached_take_profit_order.is_quote_quantity(),
-        "Take profit order should still have quote quantity flag after submission (conversion may not be working)"
-    );
-
-    assert_eq!(
-        cached_entry_order.quantity(),
-        Quantity::from(100_000),
-        "Entry order quantity should remain as quote quantity (conversion may not be working)"
-    );
-    assert_eq!(
-        cached_stop_loss_order.quantity(),
-        Quantity::from(100_000),
-        "Stop loss order quantity should remain as quote quantity (conversion may not be working)"
-    );
-    assert_eq!(
-        cached_take_profit_order.quantity(),
-        Quantity::from(100_000),
-        "Take profit order quantity should remain as quote quantity (conversion may not be working)"
-    );
+    assert!(!cached_take_profit_order.is_quote_quantity());
+    assert_eq!(cached_take_profit_order.quantity(), expected_base_quantity);
 
     // Process order events to simulate the full lifecycle for all orders
     drop(cache); // Release the borrow before processing events
@@ -5340,36 +5339,13 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         .order(&take_profit_order.client_order_id())
         .expect("Take profit order should exist in cache");
 
-    // The final assertions reflect the current behavior where conversion may not be working
-    // These should be updated when the quote quantity conversion is properly implemented
-    assert_eq!(
-        final_entry_order.quantity(),
-        Quantity::from(100_000),
-        "Entry order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
-    assert_eq!(
-        final_stop_loss_order.quantity(),
-        Quantity::from(100_000),
-        "Stop loss order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
-    assert_eq!(
-        final_take_profit_order.quantity(),
-        Quantity::from(100_000),
-        "Take profit order quantity should remain as quote quantity (conversion not yet implemented)"
-    );
+    assert!(!final_entry_order.is_quote_quantity());
+    assert!(!final_stop_loss_order.is_quote_quantity());
+    assert!(!final_take_profit_order.is_quote_quantity());
 
-    assert!(
-        final_entry_order.is_quote_quantity(),
-        "Entry order should still have quote quantity flag (conversion not yet implemented)"
-    );
-    assert!(
-        final_stop_loss_order.is_quote_quantity(),
-        "Stop loss order should still have quote quantity flag (conversion not yet implemented)"
-    );
-    assert!(
-        final_take_profit_order.is_quote_quantity(),
-        "Take profit order should still have quote quantity flag (conversion not yet implemented)"
-    );
+    assert_eq!(final_entry_order.quantity(), expected_base_quantity);
+    assert_eq!(final_stop_loss_order.quantity(), expected_base_quantity);
+    assert_eq!(final_take_profit_order.quantity(), expected_base_quantity);
 }
 
 #[rstest]
@@ -5437,8 +5413,9 @@ fn test_submit_market_should_not_add_to_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5525,8 +5502,9 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5610,8 +5588,9 @@ fn test_submit_order_adds_to_own_book_bid() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5773,8 +5752,9 @@ fn test_submit_order_adds_to_own_book_ask() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5952,8 +5932,9 @@ fn test_cancel_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_bid.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5966,8 +5947,9 @@ fn test_cancel_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_ask.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6129,8 +6111,9 @@ fn test_own_book_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_bid.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6143,8 +6126,9 @@ fn test_own_book_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_ask.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6343,8 +6327,9 @@ fn test_filled_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_bid.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6357,8 +6342,9 @@ fn test_filled_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_ask.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6560,8 +6546,9 @@ fn test_order_updates_in_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_bid.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6574,8 +6561,9 @@ fn test_order_updates_in_own_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: order_ask.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6800,8 +6788,9 @@ fn test_position_flip_with_own_order_book() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: buy_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -6897,9 +6886,10 @@ fn test_position_flip_with_own_order_book() {
         client_order_id: sell_order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
         order: sell_order.clone(),
-        position_id: Some(position_id), // Link to existing position
+        position_id: Some(position_id),
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7078,8 +7068,9 @@ fn test_own_book_with_crossed_orders() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: buy_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7092,8 +7083,9 @@ fn test_own_book_with_crossed_orders() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: sell_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7248,8 +7240,9 @@ fn test_own_book_with_contingent_orders() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: entry_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7262,8 +7255,9 @@ fn test_own_book_with_contingent_orders() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: tp_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7276,8 +7270,9 @@ fn test_own_book_with_contingent_orders() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: sl_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7517,8 +7512,9 @@ fn test_own_book_order_status_filtering_parameterized(
         venue_order_id: VenueOrderId::from("VOID"),
         order: order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7768,8 +7764,9 @@ fn test_own_book_combined_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: initialized_order,
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7784,8 +7781,9 @@ fn test_own_book_combined_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: submitted_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7802,8 +7800,9 @@ fn test_own_book_combined_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: accepted_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -7823,8 +7822,9 @@ fn test_own_book_combined_status_filtering() {
         venue_order_id: VenueOrderId::from("VOID"),
         order: partially_filled_order.clone(),
         position_id: None,
+        params: None,
         client_id: ClientId::from("STUB"),
-        exec_algorith_id: None,
+        exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -8005,8 +8005,9 @@ fn test_own_book_status_integrity_during_transitions() {
             venue_order_id: VenueOrderId::from("VOID"),
             order: order.clone(),
             position_id: None,
+            params: None,
             client_id: ClientId::from("STUB"),
-            exec_algorith_id: None,
+            exec_algorithm_id: None,
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
         };

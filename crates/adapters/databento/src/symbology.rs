@@ -128,6 +128,12 @@ pub fn get_nautilus_instrument_id_for_record(
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::Cmbp1Msg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::CbboMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::TbboMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
     } else {
         anyhow::bail!("DBN message type is not currently supported")
     };
@@ -227,7 +233,6 @@ mod tests {
 
     #[rstest]
     fn test_instrument_id_to_symbol_string_updates_map() {
-        use nautilus_model::identifiers::Venue;
         let symbol = Symbol::from("TEST");
         let venue = Venue::from("XNAS");
         let instrument_id = InstrumentId::new(symbol, venue);

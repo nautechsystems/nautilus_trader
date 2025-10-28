@@ -74,12 +74,18 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
 pub struct LiveExecEngineConfig {
     /// If reconciliation is active at start-up.
     pub reconciliation: bool,
+    /// The delay (seconds) before starting reconciliation at startup.
+    pub reconciliation_startup_delay_secs: f64,
     /// The maximum lookback minutes to reconcile state for.
     pub reconciliation_lookback_mins: Option<u32>,
+    /// Specific instrument IDs to reconcile (if None, reconciles all).
+    pub reconciliation_instrument_ids: Option<Vec<String>>,
     /// If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     pub filter_unclaimed_external_orders: bool,
     /// If position status reports are filtered from reconciliation.
     pub filter_position_reports: bool,
+    /// Client order IDs to filter from reconciliation.
+    pub filtered_client_order_ids: Option<Vec<String>>,
     /// If MARKET order events will be generated during reconciliation to align discrepancies.
     pub generate_missing_orders: bool,
     /// The interval (milliseconds) between checking whether in-flight orders have exceeded their threshold.
@@ -92,6 +98,12 @@ pub struct LiveExecEngineConfig {
     pub own_books_audit_interval_secs: Option<f64>,
     /// The interval (seconds) between checks for open orders at the venue.
     pub open_check_interval_secs: Option<f64>,
+    /// The lookback minutes for open order checks.
+    pub open_check_lookback_mins: Option<u32>,
+    /// The minimum elapsed time (milliseconds) since an order update before acting on discrepancies.
+    pub open_check_threshold_ms: u32,
+    /// The number of retries for missing open orders.
+    pub open_check_missing_retries: u32,
     /// If the `check_open_orders` requests only currently open orders from the venue.
     pub open_check_open_only: bool,
     /// The interval (minutes) between purging closed orders from the in-memory cache.
@@ -106,23 +118,33 @@ pub struct LiveExecEngineConfig {
     pub purge_account_events_interval_mins: Option<u32>,
     /// The time buffer (minutes) before account events can be purged.
     pub purge_account_events_lookback_mins: Option<u32>,
+    /// If purge operations should also delete from the backing database.
+    pub purge_from_database: bool,
     /// The queue size for the engine's internal queue buffers.
     pub qsize: u32,
+    /// If the engine should gracefully shutdown when queue processing raises unexpected exceptions.
+    pub graceful_shutdown_on_exception: bool,
 }
 
 impl Default for LiveExecEngineConfig {
     fn default() -> Self {
         Self {
             reconciliation: true,
+            reconciliation_startup_delay_secs: 10.0,
             reconciliation_lookback_mins: None,
+            reconciliation_instrument_ids: None,
             filter_unclaimed_external_orders: false,
             filter_position_reports: false,
+            filtered_client_order_ids: None,
             generate_missing_orders: true,
             inflight_check_interval_ms: 2_000,
             inflight_check_threshold_ms: 5_000,
             inflight_check_retries: 5,
             own_books_audit_interval_secs: None,
             open_check_interval_secs: None,
+            open_check_lookback_mins: Some(60),
+            open_check_threshold_ms: 5_000,
+            open_check_missing_retries: 5,
             open_check_open_only: true,
             purge_closed_orders_interval_mins: None,
             purge_closed_orders_buffer_mins: None,
@@ -130,7 +152,9 @@ impl Default for LiveExecEngineConfig {
             purge_closed_positions_buffer_mins: None,
             purge_account_events_interval_mins: None,
             purge_account_events_lookback_mins: None,
+            purge_from_database: false,
             qsize: 100_000,
+            graceful_shutdown_on_exception: false,
         }
     }
 }
@@ -387,15 +411,24 @@ mod tests {
         let config = LiveExecEngineConfig::default();
 
         assert!(config.reconciliation);
+        assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
         assert_eq!(config.reconciliation_lookback_mins, None);
+        assert_eq!(config.reconciliation_instrument_ids, None);
+        assert_eq!(config.filtered_client_order_ids, None);
         assert!(!config.filter_unclaimed_external_orders);
         assert!(!config.filter_position_reports);
         assert!(config.generate_missing_orders);
         assert_eq!(config.inflight_check_interval_ms, 2_000);
         assert_eq!(config.inflight_check_threshold_ms, 5_000);
         assert_eq!(config.inflight_check_retries, 5);
+        assert_eq!(config.open_check_threshold_ms, 5_000);
+        assert_eq!(config.open_check_lookback_mins, Some(60));
+        assert_eq!(config.open_check_missing_retries, 5);
         assert!(config.open_check_open_only);
+        assert!(!config.purge_from_database);
+        assert!(!config.graceful_shutdown_on_exception);
         assert_eq!(config.qsize, 100_000);
+        assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
     }
 
     #[rstest]

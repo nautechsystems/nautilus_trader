@@ -12,6 +12,7 @@ permissions:
 on:
   push:
     branches:
+      - test-ci
       - develop
       - nightly
 
@@ -28,18 +29,44 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.13"
           free-disk-space: "true"
+          build-type: "pre-commit"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      # https://github.com/EmbarkStudios/cargo-deny-action
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+        with:
+          command: check advisories licenses sources bans
+          arguments: --all-features
+
   build:
-    needs: pre-commit
+    needs:
+      - pre-commit
+      - cargo-deny
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +83,7 @@ jobs:
       RUST_BACKTRACE: 1
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -65,7 +92,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -85,6 +112,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -93,6 +122,8 @@ jobs:
           free-disk-space: "true"
 
       - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -128,11 +159,20 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   publish:
-    needs: build
+    needs:
+      - build
     runs-on: ubuntu-latest
+    # Only publish from mainline branches, never from test branches
+    if: >
+      github.ref_name == 'develop' ||
+      github.ref_name == 'nightly' ||
+      github.ref_name == 'master'
+    environment: r2-${{ github.ref_name }}
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
+      id-token: write # Required for attestations
+      attestations: write # Required for attestations
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -140,26 +180,38 @@ jobs:
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_PREFIX: "v2/simple/nautilus-trader"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
           pattern: "*.whl"
           merge-multiple: true
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/*.whl'
 
       - name: Publish wheels to Cloudflare R2 (v2 bucket)
         uses: ./.github/actions/publish-wheels
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh

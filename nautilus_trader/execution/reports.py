@@ -44,12 +44,19 @@ from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.functions import contingency_type_from_pyo3
+from nautilus_trader.model.functions import contingency_type_to_pyo3
 from nautilus_trader.model.functions import liquidity_side_from_pyo3
 from nautilus_trader.model.functions import order_side_from_pyo3
+from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_status_from_pyo3
+from nautilus_trader.model.functions import order_status_to_pyo3
 from nautilus_trader.model.functions import order_type_from_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import position_side_from_pyo3
 from nautilus_trader.model.functions import time_in_force_from_pyo3
+from nautilus_trader.model.functions import time_in_force_to_pyo3
+from nautilus_trader.model.functions import trailing_offset_type_to_pyo3
+from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -188,6 +195,8 @@ class OrderStatusReport(ExecutionReport):
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         order_list_id: OrderListId | None = None,
         venue_position_id: PositionId | None = None,  # (None if not assigned by venue)
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
         contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
         expire_time: datetime | None = None,
         price: Price | None = None,
@@ -195,7 +204,7 @@ class OrderStatusReport(ExecutionReport):
         trigger_type: TriggerType = TriggerType.NO_TRIGGER,
         limit_offset: Decimal | None = None,
         trailing_offset: Decimal | None = None,
-        trailing_offset_type: TrailingOffsetType = TrailingOffsetType.NO_TRAILING_OFFSET,
+        trailing_offset_type: TrailingOffsetType | None = None,
         avg_px: Decimal | None = None,
         display_qty: Quantity | None = None,
         post_only: bool = False,
@@ -208,6 +217,7 @@ class OrderStatusReport(ExecutionReport):
         if trigger_price is not None and trigger_price > 0:
             PyCondition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
+            PyCondition.not_none(trailing_offset_type, "trailing_offset_type")
             PyCondition.not_equal(
                 trailing_offset_type,
                 TrailingOffsetType.NO_TRAILING_OFFSET,
@@ -225,6 +235,8 @@ class OrderStatusReport(ExecutionReport):
         self.order_list_id = order_list_id
         self.venue_order_id = venue_order_id
         self.venue_position_id = venue_position_id
+        self.linked_order_ids = linked_order_ids
+        self.parent_order_id = parent_order_id
         self.order_side = order_side
         self.order_type = order_type
         self.contingency_type = contingency_type
@@ -282,6 +294,7 @@ class OrderStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
+        linked_ids = [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -290,6 +303,8 @@ class OrderStatusReport(ExecutionReport):
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"linked_order_ids={linked_ids}, "
+            f"parent_order_id={self.parent_order_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
@@ -301,7 +316,7 @@ class OrderStatusReport(ExecutionReport):
             f"trigger_type={trigger_type_to_str(self.trigger_type)}, "
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
-            f"trailing_offset_type={trailing_offset_type_to_str(self.trailing_offset_type)}, "
+            f"trailing_offset_type={trailing_offset_type_to_str(self.trailing_offset_type) if self.trailing_offset_type else None}, "
             f"quantity={self.quantity.to_formatted_str()}, "
             f"filled_qty={self.filled_qty.to_formatted_str()}, "
             f"leaves_qty={self.leaves_qty.to_formatted_str()}, "
@@ -344,6 +359,10 @@ class OrderStatusReport(ExecutionReport):
             "client_order_id": self.client_order_id.value if self.client_order_id else None,
             "order_list_id": self.order_list_id.value if self.order_list_id else None,
             "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+            "linked_order_ids": (
+                [o.value for o in self.linked_order_ids] if self.linked_order_ids else None
+            ),
+            "parent_order_id": self.parent_order_id.value if self.parent_order_id else None,
             "contingency_type": self.contingency_type.value,
             "expire_time": self.expire_time.isoformat() if self.expire_time else None,
             "price": str(self.price) if self.price else None,
@@ -351,7 +370,9 @@ class OrderStatusReport(ExecutionReport):
             "trigger_type": self.trigger_type.value,
             "limit_offset": str(self.limit_offset) if self.limit_offset else None,
             "trailing_offset": str(self.trailing_offset) if self.trailing_offset else None,
-            "trailing_offset_type": self.trailing_offset_type.value,
+            "trailing_offset_type": self.trailing_offset_type.value
+            if self.trailing_offset_type
+            else None,
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "display_qty": str(self.display_qty) if self.display_qty else None,
             "post_only": self.post_only,
@@ -396,6 +417,12 @@ class OrderStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
+            linked_order_ids=(
+                [ClientOrderId(value) for value in values.get("linked_order_ids") or []] or None
+            ),
+            parent_order_id=(
+                ClientOrderId(values["parent_order_id"]) if values.get("parent_order_id") else None
+            ),
             contingency_type=ContingencyType(values["contingency_type"]),
             expire_time=(
                 datetime.fromisoformat(values["expire_time"]) if values["expire_time"] else None
@@ -409,13 +436,83 @@ class OrderStatusReport(ExecutionReport):
             trailing_offset=(
                 Decimal(values["trailing_offset"]) if values["trailing_offset"] else None
             ),
-            trailing_offset_type=TrailingOffsetType(values["trailing_offset_type"]),
+            trailing_offset_type=(
+                TrailingOffsetType(values["trailing_offset_type"])
+                if values["trailing_offset_type"] is not None
+                else None
+            ),
             avg_px=Decimal(values["avg_px"]) if values["avg_px"] else None,
             display_qty=Quantity.from_str(values["display_qty"]) if values["display_qty"] else None,
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             cancel_reason=values["cancel_reason"],
             ts_triggered=values["ts_triggered"],
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.OrderStatusReport:
+        return nautilus_pyo3.OrderStatusReport(
+            account_id=nautilus_pyo3.AccountId(self.account_id.value),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(self.venue_order_id.value),
+            order_side=order_side_to_pyo3(self.order_side),
+            order_type=order_type_to_pyo3(self.order_type),
+            time_in_force=time_in_force_to_pyo3(self.time_in_force),
+            order_status=order_status_to_pyo3(self.order_status),
+            quantity=nautilus_pyo3.Quantity.from_str(str(self.quantity)),
+            filled_qty=nautilus_pyo3.Quantity.from_str(str(self.filled_qty)),
+            ts_accepted=self.ts_accepted,
+            ts_last=self.ts_last,
+            ts_init=self.ts_init,
+            client_order_id=(
+                nautilus_pyo3.ClientOrderId(self.client_order_id.value)
+                if self.client_order_id
+                else None
+            ),
+            order_list_id=(
+                nautilus_pyo3.OrderListId(self.order_list_id.value) if self.order_list_id else None
+            ),
+            venue_position_id=(
+                nautilus_pyo3.PositionId(self.venue_position_id.value)
+                if self.venue_position_id
+                else None
+            ),
+            linked_order_ids=(
+                [nautilus_pyo3.ClientOrderId(oid.value) for oid in self.linked_order_ids]
+                if self.linked_order_ids
+                else None
+            ),
+            parent_order_id=(
+                nautilus_pyo3.ClientOrderId(self.parent_order_id.value)
+                if self.parent_order_id
+                else None
+            ),
+            contingency_type=contingency_type_to_pyo3(self.contingency_type),
+            expire_time=(
+                int(self.expire_time.timestamp() * 1_000_000_000) if self.expire_time else None
+            ),
+            price=nautilus_pyo3.Price.from_str(str(self.price)) if self.price else None,
+            trigger_price=(
+                nautilus_pyo3.Price.from_str(str(self.trigger_price))
+                if self.trigger_price
+                else None
+            ),
+            trigger_type=trigger_type_to_pyo3(self.trigger_type),
+            limit_offset=self.limit_offset,
+            trailing_offset=self.trailing_offset,
+            trailing_offset_type=(
+                None
+                if self.trailing_offset_type is None
+                else trailing_offset_type_to_pyo3(self.trailing_offset_type)
+            ),
+            avg_px=self.avg_px,
+            display_qty=(
+                nautilus_pyo3.Quantity.from_str(str(self.display_qty)) if self.display_qty else None
+            ),
+            post_only=self.post_only,
+            reduce_only=self.reduce_only,
+            cancel_reason=self.cancel_reason,
+            ts_triggered=self.ts_triggered,
+            report_id=nautilus_pyo3.UUID4.from_str(self.id.value),
         )
 
     @staticmethod
@@ -447,6 +544,16 @@ class OrderStatusReport(ExecutionReport):
                 if pyo3_report.venue_position_id
                 else None
             ),
+            linked_order_ids=(
+                [ClientOrderId(str(oid.value)) for oid in pyo3_report.linked_order_ids]
+                if pyo3_report.linked_order_ids
+                else None
+            ),
+            parent_order_id=(
+                ClientOrderId(str(pyo3_report.parent_order_id.value))
+                if pyo3_report.parent_order_id
+                else None
+            ),
             contingency_type=contingency_type_from_pyo3(pyo3_report.contingency_type),
             expire_time=pd.Timestamp(pyo3_report.expire_time) if pyo3_report.expire_time else None,
             price=Price.from_str(str(pyo3_report.price)) if pyo3_report.price else None,
@@ -462,7 +569,11 @@ class OrderStatusReport(ExecutionReport):
             ),
             limit_offset=pyo3_report.limit_offset,
             trailing_offset=pyo3_report.trailing_offset,
-            trailing_offset_type=TrailingOffsetType(pyo3_report.trailing_offset_type.value),
+            trailing_offset_type=(
+                TrailingOffsetType(pyo3_report.trailing_offset_type.value)
+                if pyo3_report.trailing_offset_type is not None
+                else None
+            ),
             avg_px=pyo3_report.avg_px,
             display_qty=(
                 Quantity.from_str(str(pyo3_report.display_qty)) if pyo3_report.display_qty else None
@@ -649,6 +760,32 @@ class FillReport(ExecutionReport):
             ),
         )
 
+    def to_pyo3(self) -> nautilus_pyo3.FillReport:
+        return nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId(self.account_id.value),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(self.venue_order_id.value),
+            trade_id=nautilus_pyo3.TradeId(self.trade_id.value),
+            order_side=order_side_to_pyo3(self.order_side),
+            last_qty=nautilus_pyo3.Quantity.from_str(str(self.last_qty)),
+            last_px=nautilus_pyo3.Price.from_str(str(self.last_px)),
+            commission=nautilus_pyo3.Money.from_str(str(self.commission)),
+            liquidity_side=getattr(nautilus_pyo3.LiquiditySide, self.liquidity_side.name),
+            ts_event=self.ts_event,
+            ts_init=self.ts_init,
+            client_order_id=(
+                nautilus_pyo3.ClientOrderId(self.client_order_id.value)
+                if self.client_order_id
+                else None
+            ),
+            venue_position_id=(
+                nautilus_pyo3.PositionId(self.venue_position_id.value)
+                if self.venue_position_id
+                else None
+            ),
+            report_id=nautilus_pyo3.UUID4.from_str(self.id.value),
+        )
+
     @staticmethod
     def from_pyo3(pyo3_report: nautilus_pyo3.FillReport) -> FillReport:
         return FillReport(
@@ -818,6 +955,23 @@ class PositionStatusReport(ExecutionReport):
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
             avg_px_open=(Decimal(values["avg_px_open"]) if values.get("avg_px_open") else None),
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.PositionStatusReport:
+        return nautilus_pyo3.PositionStatusReport(
+            account_id=nautilus_pyo3.AccountId(self.account_id.value),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            position_side=getattr(nautilus_pyo3.PositionSide, self.position_side.name),
+            quantity=nautilus_pyo3.Quantity.from_str(str(self.quantity)),
+            ts_last=self.ts_last,
+            ts_init=self.ts_init,
+            report_id=nautilus_pyo3.UUID4.from_str(self.id.value),
+            venue_position_id=(
+                nautilus_pyo3.PositionId(self.venue_position_id.value)
+                if self.venue_position_id
+                else None
+            ),
+            avg_px_open=self.avg_px_open,
         )
 
     @staticmethod
@@ -1018,6 +1172,36 @@ class ExecutionMassStatus(Document):
                 for instrument_id, reports in self._position_reports.items()
             },
         }
+
+    def to_pyo3(self) -> nautilus_pyo3.ExecutionMassStatus:
+        pyo3_mass_status = nautilus_pyo3.ExecutionMassStatus(
+            client_id=nautilus_pyo3.ClientId(self.client_id.value),
+            account_id=nautilus_pyo3.AccountId(self.account_id.value),
+            venue=nautilus_pyo3.Venue(self.venue.value),
+            ts_init=self.ts_init,
+            report_id=nautilus_pyo3.UUID4.from_str(self.id.value),
+        )
+
+        # Add order reports
+        if self._order_reports:
+            pyo3_order_reports = [report.to_pyo3() for report in self._order_reports.values()]
+            pyo3_mass_status.add_order_reports(pyo3_order_reports)
+
+        # Add fill reports
+        if self._fill_reports:
+            all_fill_reports = []
+            for fills in self._fill_reports.values():
+                all_fill_reports.extend([fill.to_pyo3() for fill in fills])
+            pyo3_mass_status.add_fill_reports(all_fill_reports)
+
+        # Add position reports
+        if self._position_reports:
+            all_position_reports = []
+            for positions in self._position_reports.values():
+                all_position_reports.extend([pos.to_pyo3() for pos in positions])
+            pyo3_mass_status.add_position_reports(all_position_reports)
+
+        return pyo3_mass_status
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> ExecutionMassStatus:

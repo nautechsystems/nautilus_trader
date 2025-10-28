@@ -503,7 +503,7 @@ impl Blockchain {
 
     #[classattr]
     #[pyo3(name = "SUPERSEED")]
-    fn py_superseed() -> Self {
+    fn py_supersede() -> Self {
         Self::Superseed
     }
 

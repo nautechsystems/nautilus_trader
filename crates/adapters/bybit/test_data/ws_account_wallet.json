@@ -1,0 +1,47 @@
+{
+  "id": "592324d2bce751-ad38-48eb-8f42-4671d1fb4d4e",
+  "topic": "wallet",
+  "creationTime": 1700034722104,
+  "data": [
+    {
+      "accountIMRate": "0",
+      "accountMMRate": "0",
+      "accountLTV": "0",
+      "totalEquity": "10262.91335023",
+      "totalWalletBalance": "9684.46297164",
+      "totalMarginBalance": "9684.46297164",
+      "totalAvailableBalance": "9556.6056555",
+      "totalPerpUpl": "0",
+      "totalInitialMargin": "127.8573161",
+      "totalMaintenanceMargin": "12.78573161",
+      "coin": [
+        {
+          "coin": "BTC",
+          "equity": "0.00102964",
+          "walletBalance": "0.00102964",
+          "availableToWithdraw": "0.00092964",
+          "availableToBorrow": "",
+          "borrowAmount": "0",
+          "accruedInterest": "0",
+          "totalOrderIM": "0.00010000",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "spotBorrow": "0"
+        },
+        {
+          "coin": "USDT",
+          "equity": "10226.20575506",
+          "walletBalance": "9647.75537647",
+          "availableToWithdraw": "9519.89806037",
+          "availableToBorrow": "",
+          "borrowAmount": "0",
+          "accruedInterest": "0",
+          "totalOrderIM": "0",
+          "totalPositionIM": "127.8573161",
+          "totalPositionMM": "12.78573161",
+          "spotBorrow": "0"
+        }
+      ]
+    }
+  ]
+}

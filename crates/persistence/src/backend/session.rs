@@ -108,7 +108,7 @@ impl DataBackendSession {
         // Register the object store with the session
         if matches!(
             parsed_uri.scheme(),
-            "s3" | "gs" | "gcs" | "azure" | "abfs" | "http" | "https"
+            "s3" | "gs" | "gcs" | "az" | "abfs" | "http" | "https"
         ) {
             // For cloud storage, register with the base URL (scheme + netloc)
             let base_url = format!(

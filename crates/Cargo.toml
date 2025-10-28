@@ -1,9 +1,10 @@
 [package]
 name = "nautilus-trader"
-publish = false  # Do not publish to crates.io
+publish = false # Do not publish to crates.io
 rust-version.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description.workspace = true
+license.workspace = true
+description = "Core crates for the Nautilus trading engine"
 documentation.workspace = true

@@ -151,13 +151,17 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: &OrderBookDelta) {
-    book.apply_delta(delta);
+    if let Err(e) = book.apply_delta(delta) {
+        log::error!("Failed to apply order book delta: {e}");
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
     // Clone will actually copy the contents of the `deltas` vec
-    book.apply_deltas(deltas.deref());
+    if let Err(e) = book.apply_deltas(deltas.deref()) {
+        log::error!("Failed to apply order book deltas: {e}");
+    }
 }
 
 #[unsafe(no_mangle)]

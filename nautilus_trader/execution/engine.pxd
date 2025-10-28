@@ -32,6 +32,7 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -56,8 +57,15 @@ cdef class ExecutionEngine(Component):
     cdef readonly str snapshot_positions_timer_name
     cdef list[PositionEvent] _pending_position_events
 
+    cdef readonly dict[StrategyId, str] _topic_cache_order_events
+    cdef readonly dict[StrategyId, str] _topic_cache_position_events
+    cdef readonly dict[InstrumentId, str] _topic_cache_fill_events
+    cdef readonly dict[ClientId, str] _topic_cache_commands
+
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint convert_quote_qty_to_base
+    """If quote-denominated order quantities should be converted to base units before submission.\n\n:returns: `bool`"""
     cdef readonly bint manage_own_order_books
     """If the execution engine should maintain own order books based on commands and events.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_orders
@@ -83,6 +91,7 @@ cdef class ExecutionEngine(Component):
     cpdef set[InstrumentId] get_external_order_claims_instruments(self)
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders)
     cpdef void set_manage_own_order_books(self, bint value)
+    cpdef void set_convert_quote_qty_to_base(self, bint value)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -99,6 +108,11 @@ cdef class ExecutionEngine(Component):
     cpdef void _on_stop(self)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
+
+    cdef str _get_order_events_topic(self, StrategyId strategy_id)
+    cdef str _get_position_events_topic(self, StrategyId strategy_id)
+    cdef str _get_fill_events_topic(self, InstrumentId instrument_id)
+    cdef str _get_commands_topic(self, ClientId client_id)
 
     cpdef void _set_position_id_counts(self)
     cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side)
@@ -131,8 +145,8 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _handle_event(self, OrderEvent event)
     cpdef OmsType _determine_oms_type(self, OrderFilled fill)
-    cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type)
-    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill)
+    cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=*)
+    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=*)
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)

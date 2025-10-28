@@ -2,15 +2,11 @@ name: "Copilot Setup Steps"
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
 
 jobs:
   copilot-setup-steps:
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
@@ -19,10 +15,11 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      COPILOT_AGENT_FIREWALL_ALLOW_LIST: "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
+      COPILOT_AGENT_FIREWALL_ALLOW_LIST:
+        "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
     services:
       redis:
-        image: redis
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
         ports:
           - 6379:6379
         options: >-
@@ -31,7 +28,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -48,10 +45,10 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: 3.13
-
-
+          python-version: "3.13"

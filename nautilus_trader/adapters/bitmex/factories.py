@@ -40,12 +40,16 @@ def get_bitmex_http_client(
     max_retries: int | None = None,
     retry_delay_ms: int | None = None,
     retry_delay_max_ms: int | None = None,
+    recv_window_ms: int | None = None,
+    max_requests_per_second: int | None = None,
+    max_requests_per_minute: int | None = None,
 ) -> nautilus_pyo3.BitmexHttpClient:
     """
     Cache and return a BitMEX HTTP client with the given key and secret.
 
     If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
-    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET``.
+    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET`` for production,
+    or ``BITMEX_TESTNET_API_KEY`` and ``BITMEX_TESTNET_API_SECRET`` when ``testnet=True``.
 
     Parameters
     ----------
@@ -65,6 +69,12 @@ def get_bitmex_http_client(
         The initial delay in milliseconds between retry attempts.
     retry_delay_max_ms : int, optional
         The maximum delay in milliseconds between retry attempts.
+    recv_window_ms : int, optional
+        The expiration window in milliseconds for signed requests.
+    max_requests_per_second : int, optional
+        Maximum REST burst rate (requests per second).
+    max_requests_per_minute : int, optional
+        Maximum REST rolling rate (requests per minute).
 
     Returns
     -------
@@ -80,6 +90,9 @@ def get_bitmex_http_client(
         max_retries=max_retries,
         retry_delay_ms=retry_delay_ms,
         retry_delay_max_ms=retry_delay_max_ms,
+        recv_window_ms=recv_window_ms,
+        max_requests_per_second=max_requests_per_second,
+        max_requests_per_minute=max_requests_per_minute,
     )
 
 
@@ -150,13 +163,18 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
         BitmexDataClient
 
         """
-        # BitmexDataClientConfig doesn't have retry settings, use defaults
         client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
             timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
+            recv_window_ms=config.recv_window_ms,
+            max_requests_per_second=config.max_requests_per_second,
+            max_requests_per_minute=config.max_requests_per_minute,
         )
 
         provider = get_bitmex_instrument_provider(
@@ -223,6 +241,9 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
+            recv_window_ms=config.recv_window_ms,
+            max_requests_per_second=config.max_requests_per_second,
+            max_requests_per_minute=config.max_requests_per_minute,
         )
 
         provider = get_bitmex_instrument_provider(

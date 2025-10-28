@@ -50,6 +50,7 @@ class BinanceHttpEndpoint:
         self.client = client
         self.methods_desc = methods_desc
         self.url_path = url_path
+        self._ratelimiter_key = f"binance:{url_path}"
 
         self.decoder = msgspec.json.Decoder()
         self.encoder = msgspec.json.Encoder(enc_hook=enc_hook)
@@ -74,10 +75,28 @@ class BinanceHttpEndpoint:
             raise RuntimeError(
                 f"{method_type.name} not available for {self.url_path}",
             )
+
+        default_keys: list[str] = []
+
+        if ratelimiter_keys:
+            default_keys.extend(ratelimiter_keys)
+
+        default_keys.append(self._ratelimiter_key)
+        default_keys.append("binance:global")
+
+        # Maintain order but remove duplicates so overlapping quotas only queue once
+        unique_keys: list[str] = []
+        seen: set[str] = set()
+
+        for key in default_keys:
+            if key not in seen:
+                seen.add(key)
+                unique_keys.append(key)
+
         raw: bytes = await self._method_request[self.methods_desc[method_type]](
             http_method=method_type,
             url_path=self.url_path,
             payload=payload,
-            ratelimiter_keys=ratelimiter_keys,
+            ratelimiter_keys=unique_keys,
         )
         return raw

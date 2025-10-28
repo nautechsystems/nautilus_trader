@@ -170,7 +170,7 @@ impl TestOrderStubs {
         instrument: &InstrumentAny,
         liquidity_side: LiquiditySide,
     ) -> OrderAny {
-        let mut accepted_order = TestOrderStubs::make_accepted_order(order);
+        let mut accepted_order = Self::make_accepted_order(order);
         let fill = TestOrderEventStubs::filled(
             &accepted_order,
             instrument,

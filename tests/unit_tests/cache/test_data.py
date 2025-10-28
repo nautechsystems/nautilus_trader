@@ -96,6 +96,172 @@ class TestCache:
         # Arrange, Act, Assert
         self.cache.audit_own_order_books()  # Should not raise
 
+    def test_update_own_order_book_with_market_order_does_not_raise(self):
+        # Arrange
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # First, create a LIMIT order to establish an own book for the instrument
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Verify own book now exists
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+        # Create a MARKET order (no price) and apply events to close it
+        market_order = order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50),
+        )
+        self.cache.add_order(market_order)
+
+        # Transition market order through valid states: INITIALIZED -> SUBMITTED -> ACCEPTED -> FILLED
+        submitted = TestEventStubs.order_submitted(market_order)
+        market_order.apply(submitted)
+
+        accepted = TestEventStubs.order_accepted(market_order)
+        market_order.apply(accepted)
+
+        fill = TestEventStubs.order_filled(market_order, instrument=AUDUSD_SIM)
+        market_order.apply(fill)
+
+        # Act: update_own_order_book with closed MARKET order should gracefully skip
+        # Previously this raised: TypeError: Cannot initialize MARKET order as `nautilus_pyo3.OwnBookOrder`, no price
+        # The bug occurred because the bypass (own_book is not None and order.is_closed_c()) allowed
+        # MARKET orders through, then to_own_book_order() raised TypeError
+        self.cache.update_own_order_book(market_order)  # Should not raise
+
+        # Assert: own order book still exists (from limit order) but market order not added
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+    def test_force_remove_from_own_order_book_cleans_up_indexes(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition to SUBMITTED (inflight)
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        # Verify order is in inflight index
+        assert limit_order in self.cache.orders_inflight()
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+        # Force remove the order
+        self.cache.force_remove_from_own_order_book(limit_order.client_order_id)
+
+        # Assert all indexes are cleaned up
+        assert limit_order not in self.cache.orders_open()
+        assert limit_order not in self.cache.orders_inflight()
+        assert limit_order not in self.cache.orders_emulated()
+        assert not self.cache.is_order_pending_cancel_local(limit_order.client_order_id)
+        assert limit_order in self.cache.orders_closed()
+
+    def test_audit_own_order_books_preserves_inflight_orders(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition to SUBMITTED (inflight)
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        # Verify own book has the order
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+        # Run audit - should NOT remove inflight orders
+        self.cache.audit_own_order_books()
+
+        # Assert order still in own book
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+    def test_audit_own_order_books_removes_closed_orders(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition through states to ACCEPTED
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        accepted = TestEventStubs.order_accepted(limit_order)
+        limit_order.apply(accepted)
+        self.cache.update_order(limit_order)
+
+        # Verify own book has the order
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+        # Cancel the order (transition to closed)
+        canceled = TestEventStubs.order_canceled(limit_order)
+        limit_order.apply(canceled)
+        self.cache.update_order(limit_order)
+
+        # Manually add to own book to simulate stale state
+        self.cache.update_own_order_book(limit_order)
+
+        # Run audit - should remove closed orders
+        self.cache.audit_own_order_books()
+
+        # Assert order removed from own book
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) == 0
+
     @pytest.mark.parametrize(
         ("price_type"),
         [

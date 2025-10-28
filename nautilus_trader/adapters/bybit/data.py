@@ -19,7 +19,8 @@ import asyncio
 from collections import defaultdict
 from decimal import Decimal
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 import msgspec
 
@@ -241,7 +242,7 @@ class BybitDataClient(LiveMarketDataClient):
         symbol = request.metadata["symbol"]
         if not isinstance(symbol, Symbol):
             raise ValueError(
-                f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
+                f"Parameter symbol in request metadata object is not of type Symbol, was {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
         self.create_task(
@@ -648,7 +649,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
-            None,
             request.id,
             request.start,
             request.end,

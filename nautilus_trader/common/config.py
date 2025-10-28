@@ -20,7 +20,8 @@ import importlib
 from collections.abc import Callable
 from decimal import Decimal
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -34,6 +35,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
@@ -104,8 +106,11 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
+    # Check for fully_qualified_name first, before generic type check
+    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
+        return obj.fully_qualified_name()
     if isinstance(obj, type):
-        return str(type)
+        return str(obj)
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
@@ -122,8 +127,6 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return obj.isoformat()
     if isinstance(obj, Environment):
         return obj.value
-    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
-        return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
@@ -158,6 +161,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return AccountType[obj]
     if obj_type == BookType:
         return BookType[obj]
+    if obj_type == TriggerType:
+        return TriggerType[obj]
     if obj_type == Environment:
         return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
@@ -358,10 +363,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
+        If `False` then will persist as UNIX nanoseconds.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
-        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        The recommended range if using buffered pipelining is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
     autotrim_mins : int, optional
         The lookback window in minutes for automatic stream trimming.
@@ -561,9 +566,9 @@ class LoggingConfig(NautilusConfig, frozen=True):
         The maximum number of backup log files to keep when rotating.
     log_colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
-    log_component_levels : dict[str, LogLevel]
+    log_component_levels : dict[str, str]
         The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
+        IDs (e.g. actor/strategy IDs) and values are log level strings (case-insensitive).
     log_components_only : bool, default False
         If only components with explicit component-level filters should be logged.
         When enabled, only log messages from components that have been explicitly

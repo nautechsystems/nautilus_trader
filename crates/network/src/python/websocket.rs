@@ -268,11 +268,11 @@ impl WebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
-                let err = std::io::Error::new(
+                let e = std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     "Cannot send text: connection not active",
                 );
-                return Err(to_pyruntime_err(err));
+                return Err(to_pyruntime_err(e));
             }
             rate_limiter.await_keys_ready(keys).await;
             tracing::trace!("Sending text: {data}");
@@ -301,11 +301,11 @@ impl WebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
-                let err = std::io::Error::new(
+                let e = std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     "Cannot send pong: connection not active",
                 );
-                return Err(to_pyruntime_err(err));
+                return Err(to_pyruntime_err(e));
             }
             tracing::trace!("Sending pong: {data_str}");
 

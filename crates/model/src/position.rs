@@ -144,21 +144,94 @@ impl Position {
         item
     }
 
-    /// Purges all order fill events for the given client order ID.
+    /// Purges all order fill events for the given client order ID and recalculates derived state.
+    ///
+    /// # Warning
+    ///
+    /// This operation recalculates the entire position from scratch after removing the specified
+    /// order's fills. This is an expensive operation and should be used sparingly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if after purging, no fills remain and the position cannot be reconstructed.
     pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
-        // Create new vectors without the events from the specified order
-        let mut filtered_events = Vec::new();
-        let mut filtered_trade_ids = Vec::new();
+        // Filter out events from the specified order
+        let filtered_events: Vec<OrderFilled> = self
+            .events
+            .iter()
+            .filter(|e| e.client_order_id != client_order_id)
+            .copied()
+            .collect();
 
-        for event in &self.events {
-            if event.client_order_id != client_order_id {
-                filtered_events.push(*event);
-                filtered_trade_ids.push(event.trade_id);
-            }
+        // If no events remain, log warning - position should be closed/removed instead
+        if filtered_events.is_empty() {
+            log::warn!(
+                "Position {} has no fills remaining after purging order {}; consider closing the position instead",
+                self.id,
+                client_order_id
+            );
+            // Reset to flat state, clearing all history
+            self.events.clear();
+            self.trade_ids.clear();
+            self.buy_qty = Quantity::zero(self.size_precision);
+            self.sell_qty = Quantity::zero(self.size_precision);
+            self.commissions.clear();
+            self.signed_qty = 0.0;
+            self.quantity = Quantity::zero(self.size_precision);
+            self.side = PositionSide::Flat;
+            self.avg_px_close = None;
+            self.realized_pnl = None;
+            self.realized_return = 0.0;
+            self.ts_opened = UnixNanos::default();
+            self.ts_last = UnixNanos::default();
+            self.ts_closed = Some(UnixNanos::default());
+            self.duration_ns = 0;
+            return;
         }
 
-        self.events = filtered_events;
-        self.trade_ids = filtered_trade_ids;
+        // Recalculate position from scratch
+        // Save immutable fields needed for reconstruction
+        let position_id = self.id;
+        let size_precision = self.size_precision;
+
+        // Reset mutable state
+        self.events = Vec::new();
+        self.trade_ids = Vec::new();
+        self.buy_qty = Quantity::zero(size_precision);
+        self.sell_qty = Quantity::zero(size_precision);
+        self.commissions.clear();
+        self.signed_qty = 0.0;
+        self.quantity = Quantity::zero(size_precision);
+        self.peak_qty = Quantity::zero(size_precision);
+        self.side = PositionSide::Flat;
+        self.avg_px_open = 0.0;
+        self.avg_px_close = None;
+        self.realized_pnl = None;
+        self.realized_return = 0.0;
+
+        // Use the first remaining event to set opening state
+        let first_event = &filtered_events[0];
+        self.entry = first_event.order_side;
+        self.opening_order_id = first_event.client_order_id;
+        self.ts_opened = first_event.ts_event;
+        self.ts_init = first_event.ts_init;
+        self.closing_order_id = None;
+        self.ts_closed = None;
+        self.duration_ns = 0;
+
+        // Reapply all remaining fills to reconstruct state
+        for event in filtered_events {
+            self.apply(&event);
+        }
+
+        log::info!(
+            "Purged fills for order {} from position {}; recalculated state: qty={}, signed_qty={}, side={:?}",
+            client_order_id,
+            position_id,
+            self.quantity,
+            self.signed_qty,
+            self.side
+        );
     }
 
     /// Applies an `OrderFilled` event to this position.
@@ -222,7 +295,7 @@ impl Position {
         // SAFETY: size_precision is valid from instrument
         self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
         if self.quantity > self.peak_qty {
-            self.peak_qty.raw = self.quantity.raw;
+            self.peak_qty = self.quantity;
         }
 
         // Set state
@@ -268,18 +341,25 @@ impl Position {
             // SHORT POSITION
             let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
             self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
-            realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
+            self.realized_return = self
+                .calculate_return(self.avg_px_open, avg_px_close)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating return: {e}");
+                    0.0
+                });
+            realized_pnl += self
+                .calculate_pnl_raw(self.avg_px_open, last_px, last_qty)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating PnL: {e}");
+                    0.0
+                });
         }
 
-        if self.realized_pnl.is_none() {
-            self.realized_pnl = Some(Money::new(realized_pnl, self.settlement_currency));
-        } else {
-            self.realized_pnl = Some(Money::new(
-                self.realized_pnl.unwrap().as_f64() + realized_pnl,
-                self.settlement_currency,
-            ));
-        }
+        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
+        self.realized_pnl = Some(Money::new(
+            current_pnl + realized_pnl,
+            self.settlement_currency,
+        ));
 
         self.signed_qty += last_qty;
         self.buy_qty += last_qty_object;
@@ -306,18 +386,25 @@ impl Position {
         } else if self.signed_qty > 0.0 {
             let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
             self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
-            realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
+            self.realized_return = self
+                .calculate_return(self.avg_px_open, avg_px_close)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating return: {e}");
+                    0.0
+                });
+            realized_pnl += self
+                .calculate_pnl_raw(self.avg_px_open, last_px, last_qty)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating PnL: {e}");
+                    0.0
+                });
         }
 
-        if self.realized_pnl.is_none() {
-            self.realized_pnl = Some(Money::new(realized_pnl, self.settlement_currency));
-        } else {
-            self.realized_pnl = Some(Money::new(
-                self.realized_pnl.unwrap().as_f64() + realized_pnl,
-                self.settlement_currency,
-            ));
-        }
+        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
+        self.realized_pnl = Some(Money::new(
+            current_pnl + realized_pnl,
+            self.settlement_currency,
+        ));
 
         self.signed_qty -= last_qty;
         self.sell_qty += last_qty_object;
@@ -346,57 +433,82 @@ impl Position {
     ///
     /// For scenarios requiring higher precision (regulatory compliance, high-frequency
     /// micro-calculations), consider using Decimal arithmetic libraries.
-    #[must_use]
-    fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
-        // Invalid state: attempting to calculate average price with no quantities
+    ///
+    /// # Empirical Precision Validation
+    ///
+    /// Testing confirms f64 arithmetic maintains accuracy for typical trading scenarios:
+    /// - **Typical amounts**: No precision loss for amounts ≥ 0.01 in standard currencies.
+    /// - **High-precision instruments**: 9-decimal crypto prices preserved within 1e-6 tolerance.
+    /// - **Many fills**: 100 sequential fills show no drift (commission accuracy to 1e-10).
+    /// - **Extreme prices**: Handles range from 0.00001 to 99999.99999 without overflow/underflow.
+    /// - **Round-trip**: Open/close at same price produces exact PnL (commissions only).
+    ///
+    /// See precision validation tests: `test_position_pnl_precision_*`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Both `qty` and `last_qty` are zero.
+    /// - `last_qty` is zero (prevents division by zero).
+    /// - `total_qty` is zero or negative (arithmetic error).
+    fn calculate_avg_px(
+        &self,
+        qty: f64,
+        avg_pg: f64,
+        last_px: f64,
+        last_qty: f64,
+    ) -> anyhow::Result<f64> {
         if qty == 0.0 && last_qty == 0.0 {
-            panic!("Cannot calculate average price: both quantities are zero");
+            anyhow::bail!("Cannot calculate average price: both quantities are zero");
         }
 
-        // Invalid state: fill quantity cannot be zero
         if last_qty == 0.0 {
-            panic!("Cannot calculate average price: fill quantity is zero");
+            anyhow::bail!("Cannot calculate average price: fill quantity is zero");
         }
 
-        // Valid case: new position (current quantity is zero)
         if qty == 0.0 {
-            return last_px;
+            return Ok(last_px);
         }
 
         let start_cost = avg_pg * qty;
         let event_cost = last_px * last_qty;
         let total_qty = qty + last_qty;
 
-        // This should be mathematically impossible given the checks above
-        debug_assert!(
-            total_qty > 0.0,
-            "Total quantity unexpectedly zero in average price calculation"
-        );
+        // Runtime check to prevent division by zero even in release builds
+        if total_qty <= 0.0 {
+            anyhow::bail!(
+                "Total quantity unexpectedly zero or negative in average price calculation: qty={}, last_qty={}, total_qty={}",
+                qty,
+                last_qty,
+                total_qty
+            );
+        }
 
-        (start_cost + event_cost) / total_qty
+        Ok((start_cost + event_cost) / total_qty)
     }
 
-    #[must_use]
     fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating average open price: {}", e);
+                last_px
+            })
     }
 
-    #[must_use]
     fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
-        if self.avg_px_close.is_none() {
+        let Some(avg_px_close) = self.avg_px_close else {
             return last_px;
-        }
+        };
         let closing_qty = if self.side == PositionSide::Long {
             self.sell_qty
         } else {
             self.buy_qty
         };
-        self.calculate_avg_px(
-            closing_qty.as_f64(),
-            self.avg_px_close.unwrap(),
-            last_px,
-            last_qty,
-        )
+        self.calculate_avg_px(closing_qty.as_f64(), avg_px_close, last_px, last_qty)
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating average close price: {}", e);
+                last_px
+            })
     }
 
     fn calculate_points(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
@@ -407,43 +519,69 @@ impl Position {
         }
     }
 
-    fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        // Invalid state: zero prices should never occur in valid market data
-        if avg_px_open == 0.0 {
-            panic!("Cannot calculate inverse points: open price is zero");
+    fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
+        // Epsilon at the limit of IEEE f64 precision before rounding errors (f64::EPSILON ≈ 2.22e-16)
+        const EPSILON: f64 = 1e-15;
+
+        // Invalid state: zero or near-zero prices should never occur in valid market data
+        if avg_px_open.abs() < EPSILON {
+            anyhow::bail!(
+                "Cannot calculate inverse points: open price is zero or too small ({})",
+                avg_px_open
+            );
         }
-        if avg_px_close == 0.0 {
-            panic!("Cannot calculate inverse points: close price is zero");
+        if avg_px_close.abs() < EPSILON {
+            anyhow::bail!(
+                "Cannot calculate inverse points: close price is zero or too small ({})",
+                avg_px_close
+            );
         }
 
         let inverse_open = 1.0 / avg_px_open;
         let inverse_close = 1.0 / avg_px_close;
-        match self.side {
+        let result = match self.side {
             PositionSide::Long => inverse_open - inverse_close,
             PositionSide::Short => inverse_close - inverse_open,
             _ => 0.0, // FLAT - this is a valid case
+        };
+        Ok(result)
+    }
+
+    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
+        // Prevent division by zero in return calculation
+        if avg_px_open == 0.0 {
+            anyhow::bail!(
+                "Cannot calculate return: open price is zero (close price: {})",
+                avg_px_close
+            );
         }
+        Ok(self.calculate_points(avg_px_open, avg_px_close) / avg_px_open)
     }
 
-    #[must_use]
-    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
-    }
-
-    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
+    fn calculate_pnl_raw(
+        &self,
+        avg_px_open: f64,
+        avg_px_close: f64,
+        quantity: f64,
+    ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
-        if self.is_inverse {
-            quantity
-                * self.multiplier.as_f64()
-                * self.calculate_points_inverse(avg_px_open, avg_px_close)
+        let result = if self.is_inverse {
+            let points = self.calculate_points_inverse(avg_px_open, avg_px_close)?;
+            quantity * self.multiplier.as_f64() * points
         } else {
             quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
-        }
+        };
+        Ok(result)
     }
 
     #[must_use]
     pub fn calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
-        let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64());
+        let pnl_raw = self
+            .calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64())
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating PnL: {e}");
+                0.0
+            });
         Money::new(pnl_raw, self.settlement_currency)
     }
 
@@ -464,7 +602,12 @@ impl Position {
             let avg_px_open = self.avg_px_open;
             let avg_px_close = last.as_f64();
             let quantity = self.quantity.as_f64();
-            let pnl = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity);
+            let pnl = self
+                .calculate_pnl_raw(avg_px_open, avg_px_close, quantity)
+                .unwrap_or_else(|e| {
+                    log::error!("Error calculating unrealized PnL: {e}");
+                    0.0
+                });
             Money::new(pnl, self.settlement_currency)
         }
     }
@@ -644,7 +787,7 @@ mod tests {
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,
-        types::{Money, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -2130,7 +2273,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Some(UnixNanos::from(1_000_000_000)), // Explicit non-zero timestamp
             None,
         );
 
@@ -2140,11 +2283,484 @@ mod tests {
         assert!(position.last_event().is_some());
         assert!(position.last_trade_id().is_some());
 
+        // Store original timestamps (should be non-zero)
+        let original_ts_opened = position.ts_opened;
+        let original_ts_last = position.ts_last;
+        assert_ne!(original_ts_opened, UnixNanos::default());
+        assert_ne!(original_ts_last, UnixNanos::default());
+
         position.purge_events_for_order(order.client_order_id());
 
         assert_eq!(position.events.len(), 0);
         assert_eq!(position.trade_ids.len(), 0);
         assert!(position.last_event().is_none());
         assert!(position.last_trade_id().is_none());
+
+        // Verify timestamps are zeroed - empty shell has no meaningful history
+        // ts_closed is set to Some(0) so position reports as closed and is eligible for purge
+        assert_eq!(position.ts_opened, UnixNanos::default());
+        assert_eq!(position.ts_last, UnixNanos::default());
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
+        assert_eq!(position.duration_ns, 0);
+
+        // Verify empty shell reports as closed (this was the bug we fixed!)
+        // is_closed() must return true so cache purge logic recognizes empty shells
+        assert!(position.is_closed());
+        assert!(!position.is_open());
+        assert_eq!(position.side, PositionSide::Flat);
+    }
+
+    #[rstest]
+    fn test_revive_from_empty_shell(audusd_sim: CurrencyPair) {
+        // Test adding a fill to an empty shell position
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        // Create and then purge position to get empty shell
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00000")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000_000_000)),
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill1.into());
+        position.purge_events_for_order(order1.client_order_id());
+
+        // Verify it's an empty shell
+        assert!(position.is_closed());
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
+        assert_eq!(position.event_count(), 0);
+
+        // Act: Add new fill to revive the position
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00020")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(3_000_000_000)),
+            None,
+        );
+
+        let fill2_typed: OrderFilled = fill2.clone().into();
+        position.apply(&fill2_typed);
+
+        // Assert: Position should be alive with new timestamps
+        assert!(position.is_long());
+        assert!(!position.is_closed());
+        assert!(position.ts_closed.is_none());
+        assert_eq!(position.ts_opened, fill2.ts_event());
+        assert_eq!(position.ts_last, fill2.ts_event());
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.quantity, Quantity::from(50_000));
+    }
+
+    #[rstest]
+    fn test_empty_shell_position_invariants(audusd_sim: CurrencyPair) {
+        // Property-based test: Any position with event_count == 0 must satisfy invariants
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-1")),
+            Some(Price::from("1.00000")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000_000_000)),
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill.into());
+        position.purge_events_for_order(order.client_order_id());
+
+        // INVARIANTS: When event_count == 0, the following MUST be true
+        assert_eq!(
+            position.event_count(),
+            0,
+            "Precondition: event_count must be 0"
+        );
+
+        // Invariant 1: Position must report as closed
+        assert!(
+            position.is_closed(),
+            "INV1: Empty shell must report is_closed() == true"
+        );
+        assert!(
+            !position.is_open(),
+            "INV1: Empty shell must report is_open() == false"
+        );
+
+        // Invariant 2: Position must be FLAT
+        assert_eq!(
+            position.side,
+            PositionSide::Flat,
+            "INV2: Empty shell must be FLAT"
+        );
+
+        // Invariant 3: ts_closed must be Some (not None)
+        assert!(
+            position.ts_closed.is_some(),
+            "INV3: Empty shell must have ts_closed.is_some()"
+        );
+        assert_eq!(
+            position.ts_closed,
+            Some(UnixNanos::default()),
+            "INV3: Empty shell ts_closed must be 0"
+        );
+
+        // Invariant 4: All lifecycle timestamps must be zeroed
+        assert_eq!(
+            position.ts_opened,
+            UnixNanos::default(),
+            "INV4: Empty shell ts_opened must be 0"
+        );
+        assert_eq!(
+            position.ts_last,
+            UnixNanos::default(),
+            "INV4: Empty shell ts_last must be 0"
+        );
+        assert_eq!(
+            position.duration_ns, 0,
+            "INV4: Empty shell duration_ns must be 0"
+        );
+
+        // Invariant 5: Quantity must be zero
+        assert_eq!(
+            position.quantity,
+            Quantity::zero(audusd_sim.size_precision()),
+            "INV5: Empty shell quantity must be 0"
+        );
+
+        // Invariant 6: No events or trade IDs
+        assert!(
+            position.events.is_empty(),
+            "INV6: Empty shell must have no events"
+        );
+        assert!(
+            position.trade_ids.is_empty(),
+            "INV6: Empty shell must have no trade IDs"
+        );
+        assert!(
+            position.last_event().is_none(),
+            "INV6: Empty shell must have no last event"
+        );
+        assert!(
+            position.last_trade_id().is_none(),
+            "INV6: Empty shell must have no last trade ID"
+        );
+    }
+
+    #[rstest]
+    fn test_position_pnl_precision_with_very_small_amounts(audusd_sim: CurrencyPair) {
+        // Tests behavior with very small commission amounts
+        // NOTE: Amounts below f64 epsilon (~1e-15) may be lost to precision
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .build();
+
+        // Test with a commission that won't be lost to Money precision (0.01 USD)
+        let small_commission = Money::new(0.01, Currency::USD());
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            None,
+            None,
+            Some(Price::from("1.00001")),
+            Some(Quantity::from(100)),
+            None,
+            Some(small_commission),
+            None,
+            None,
+        );
+
+        let position = Position::new(&audusd_sim, fill.into());
+
+        // Commission is recorded and preserved in f64 arithmetic
+        assert_eq!(position.commissions().len(), 1);
+        let recorded_commission = position.commissions()[0];
+        assert!(
+            recorded_commission.as_f64() > 0.0,
+            "Commission of 0.01 should be preserved"
+        );
+
+        // Realized PnL should include commission (negative)
+        let realized = position.realized_pnl.unwrap().as_f64();
+        assert!(
+            realized < 0.0,
+            "Realized PnL should be negative due to commission"
+        );
+    }
+
+    #[rstest]
+    fn test_position_pnl_precision_with_high_precision_instrument() {
+        // Tests precision with high-precision crypto instrument
+        use crate::instruments::stubs::crypto_perpetual_ethusdt;
+        let ethusdt = crypto_perpetual_ethusdt();
+        let ethusdt = InstrumentAny::CryptoPerpetual(ethusdt);
+
+        // Check instrument precision
+        let size_precision = ethusdt.size_precision();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(ethusdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.123456789"))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &ethusdt,
+            None,
+            None,
+            Some(Price::from("2345.123456789")),
+            Some(Quantity::from("1.123456789")),
+            None,
+            Some(Money::from("0.1 USDT")),
+            None,
+            None,
+        );
+
+        let position = Position::new(&ethusdt, fill.into());
+
+        // Verify high-precision price is preserved in f64 (within tolerance)
+        let avg_px = position.avg_px_open;
+        assert!(
+            (avg_px - 2345.123456789).abs() < 1e-6,
+            "High precision price should be preserved within f64 tolerance"
+        );
+
+        // Quantity will be rounded to instrument's size_precision
+        // Verify it matches the instrument's precision
+        assert_eq!(
+            position.quantity.precision, size_precision,
+            "Quantity precision should match instrument"
+        );
+
+        // f64 representation will be close but may have rounding based on precision
+        let qty_f64 = position.quantity.as_f64();
+        assert!(
+            qty_f64 > 1.0 && qty_f64 < 2.0,
+            "Quantity should be in expected range"
+        );
+    }
+
+    #[rstest]
+    fn test_position_pnl_accumulation_across_many_fills(audusd_sim: CurrencyPair) {
+        // Tests precision drift across 100 fills
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1000))
+            .build();
+
+        let initial_fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("1.00000")),
+            Some(Quantity::from(10)),
+            None,
+            Some(Money::from("0.01 USD")),
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, initial_fill.into());
+
+        // Apply 99 more fills with varying prices
+        for i in 2..=100 {
+            let price_offset = (i as f64) * 0.00001;
+            let fill = TestOrderEventStubs::filled(
+                &order,
+                &audusd_sim,
+                Some(TradeId::new(i.to_string())),
+                None,
+                Some(Price::from(&format!("{:.5}", 1.0 + price_offset))),
+                Some(Quantity::from(10)),
+                None,
+                Some(Money::from("0.01 USD")),
+                None,
+                None,
+            );
+            position.apply(&fill.into());
+        }
+
+        // Verify we accumulated 100 fills
+        assert_eq!(position.events.len(), 100);
+        assert_eq!(position.quantity, Quantity::from(1000));
+
+        // Verify commissions accumulated (should be 100 * 0.01 = 1.0 USD)
+        let total_commission: f64 = position.commissions().iter().map(|c| c.as_f64()).sum();
+        assert!(
+            (total_commission - 1.0).abs() < 1e-10,
+            "Commission accumulation should be accurate: expected 1.0, got {}",
+            total_commission
+        );
+
+        // Verify average price is reasonable (should be around 1.0005)
+        let avg_px = position.avg_px_open;
+        assert!(
+            avg_px > 1.0 && avg_px < 1.001,
+            "Average price should be reasonable: got {}",
+            avg_px
+        );
+    }
+
+    #[rstest]
+    fn test_position_pnl_with_extreme_price_values(audusd_sim: CurrencyPair) {
+        // Tests position handling with very large and very small prices
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        // Test with very small price
+        let order_small = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill_small = TestOrderEventStubs::filled(
+            &order_small,
+            &audusd_sim,
+            None,
+            None,
+            Some(Price::from("0.00001")),
+            Some(Quantity::from(100_000)),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let position_small = Position::new(&audusd_sim, fill_small.into());
+        assert_eq!(position_small.avg_px_open, 0.00001);
+
+        // Verify notional calculation doesn't underflow
+        let last_price_small = Price::from("0.00002");
+        let unrealized = position_small.unrealized_pnl(last_price_small);
+        assert!(
+            unrealized.as_f64() > 0.0,
+            "Unrealized PnL should be positive when price doubles"
+        );
+
+        // Test with very large price
+        let order_large = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .build();
+
+        let fill_large = TestOrderEventStubs::filled(
+            &order_large,
+            &audusd_sim,
+            None,
+            None,
+            Some(Price::from("99999.99999")),
+            Some(Quantity::from(100)),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let position_large = Position::new(&audusd_sim, fill_large.into());
+        assert!(
+            (position_large.avg_px_open - 99999.99999).abs() < 1e-6,
+            "Large price should be preserved within f64 tolerance"
+        );
+    }
+
+    #[rstest]
+    fn test_position_pnl_roundtrip_precision(audusd_sim: CurrencyPair) {
+        // Tests that opening and closing a position preserves precision
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let buy_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let sell_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        // Open at precise price
+        let open_fill = TestOrderEventStubs::filled(
+            &buy_order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("1.123456")),
+            None,
+            None,
+            Some(Money::from("0.50 USD")),
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, open_fill.into());
+
+        // Close at same price (no profit/loss except commission)
+        let close_fill = TestOrderEventStubs::filled(
+            &sell_order,
+            &audusd_sim,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from("1.123456")),
+            None,
+            None,
+            Some(Money::from("0.50 USD")),
+            None,
+            None,
+        );
+
+        position.apply(&close_fill.into());
+
+        // Position should be flat
+        assert!(position.is_closed());
+
+        // Realized PnL should be exactly -1.0 USD (two commissions of 0.50)
+        let realized = position.realized_pnl.unwrap().as_f64();
+        assert!(
+            (realized - (-1.0)).abs() < 1e-10,
+            "Realized PnL should be exactly -1.0 USD (commissions), got {}",
+            realized
+        );
     }
 }

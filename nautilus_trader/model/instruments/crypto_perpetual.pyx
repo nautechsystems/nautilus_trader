@@ -61,6 +61,8 @@ cdef class CryptoPerpetual(Instrument):
         UNIX timestamp (nanoseconds) when the data object was initialized.
     multiplier : Quantity, default 1
         The contract multiplier.
+    lot_size : Quantity, default 1
+        The rounded lot unit size (standard/board).
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -136,6 +138,7 @@ cdef class CryptoPerpetual(Instrument):
         uint64_t ts_event,
         uint64_t ts_init,
         multiplier=Quantity.from_int_c(1),
+        lot_size=Quantity.from_int_c(1),
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
         Money max_notional: Money | None = None,
@@ -161,7 +164,7 @@ cdef class CryptoPerpetual(Instrument):
             price_increment=price_increment,
             size_increment=size_increment,
             multiplier=multiplier,
-            lot_size=Quantity.from_int_c(1),
+            lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
             max_notional=max_notional,
@@ -206,6 +209,79 @@ cdef class CryptoPerpetual(Instrument):
 
         """
         return self.settlement_currency
+
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instruments = settlement_currency
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.base_currency
+        elif self.is_quanto:
+            return self.settlement_currency
+        else:
+            return self.quote_currency
+
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+    ):
+        """
+        Calculate the notional value.
+
+        Result will be in quote currency for standard instruments, base
+        currency for inverse instruments, or settlement currency for quanto
+        instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        price : Price
+            The price for the calculation.
+        use_quote_for_inverse : bool
+            For inverse instruments only: if True, treats the quantity as already representing
+            notional value in quote currency and returns it directly without calculation.
+            This is useful when quantity already represents a USD value that doesn't need
+            conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        if self.is_inverse:
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
+                return Money(quantity, self.quote_currency)
+
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
+                self.base_currency,
+            )
+        elif self.is_quanto:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.settlement_currency,
+            )
+        else:
+            return Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.quote_currency,
+            )
 
     @staticmethod
     cdef CryptoPerpetual from_dict_c(dict values):
@@ -320,6 +396,7 @@ cdef class CryptoPerpetual(Instrument):
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
             multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw,pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
             min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw,pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
             max_notional=Money.from_str_c(str(pyo3_instrument.max_notional)) if pyo3_instrument.max_notional is not None else None,

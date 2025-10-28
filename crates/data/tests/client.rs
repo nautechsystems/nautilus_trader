@@ -26,6 +26,7 @@ use nautilus_common::{
             DataCommand,
             // Request commands
             RequestBars,
+            RequestBookDepth,
             RequestBookSnapshot,
             RequestCommand,
             RequestCustomData,
@@ -580,7 +581,6 @@ fn test_bars_subscription(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     ));
     adapter.execute_subscribe(&sub);
@@ -1179,7 +1179,6 @@ fn test_bars_unsubscribe_idempotent(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
-        false,
         None,
     ));
     adapter.execute_subscribe(&sub);
@@ -1726,6 +1725,42 @@ fn test_request_bars(
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
     assert_eq!(rec[0], DataCommand::Request(RequestCommand::Bars(req)));
+}
+
+#[rstest]
+fn test_request_order_book_depth(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let inst_id = audusd_sim().id;
+    let req = RequestBookDepth::new(
+        inst_id,
+        None,
+        None,
+        None,
+        Some(NonZeroUsize::new(10).unwrap()),
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    adapter.request_book_depth(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::BookDepth(req)));
 }
 
 // ------------------------------------------------------------------------------------------------

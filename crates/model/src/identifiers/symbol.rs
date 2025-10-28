@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_valid_string};
+use nautilus_core::correctness::{FAILED, check_valid_string_utf8};
 use ustr::Ustr;
 
 /// Represents a valid ticker symbol ID for a tradable instrument.
@@ -44,7 +44,7 @@ impl Symbol {
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
-        check_valid_string(value, stringify!(value))?;
+        check_valid_string_utf8(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
     }
 
@@ -58,7 +58,7 @@ impl Symbol {
     }
 
     /// Sets the inner identifier value.
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
     pub(crate) fn set_inner(&mut self, value: &str) {
         self.0 = Ustr::from(value);
     }
@@ -186,5 +186,12 @@ mod tests {
     fn test_symbol_topic(#[case] input: &str, #[case] expected_topic: &str) {
         let symbol = Symbol::new(input);
         assert_eq!(symbol.topic(), expected_topic);
+    }
+
+    #[rstest]
+    #[case("")] // Empty string
+    #[case("   ")] // Whitespace only
+    fn test_symbol_with_invalid_values(#[case] input: &str) {
+        assert!(Symbol::new_checked(input).is_err());
     }
 }

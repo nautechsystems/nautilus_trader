@@ -13,14 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Shared parsing helpers that transform BitMEX payloads into Nautilus types.
+
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{AccountType, AggressorSide, LiquiditySide, PositionSide},
+    data::bar::BarType,
+    enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
-    types::{AccountBalance, Currency, MarginBalance, Money, QUANTITY_MAX, Quantity},
+    instruments::{Instrument, InstrumentAny},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
+    },
 };
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use crate::{
@@ -31,55 +39,231 @@ use crate::{
     websocket::messages::BitmexMarginMsg,
 };
 
+/// Strip NautilusTrader identifier from BitMEX rejection/cancellation reasons.
+///
+/// BitMEX appends our `text` field as `\nNautilusTrader` to their messages.
+#[must_use]
+pub fn clean_reason(reason: &str) -> String {
+    reason.replace("\nNautilusTrader", "").trim().to_string()
+}
+
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *BITMEX_VENUE)
 }
 
-/// Safely converts a Quantity to u32 for BitMEX API.
+/// Safely converts a `Quantity` into the integer units expected by the BitMEX REST API.
 ///
-/// Logs a warning if truncation occurs.
+/// The API expects whole-number "contract" counts which vary per instrument. We always use the
+/// instrument size increment (sourced from BitMEX `underlyingToPositionMultiplier`) to translate
+/// Nautilus quantities back to venue units, so each instrument can have its own contract multiplier.
+/// Values are rounded to the nearest whole contract (midpoint rounds away from zero) and clamped
+/// to `u32::MAX` when necessary.
 #[must_use]
-pub fn quantity_to_u32(quantity: &Quantity) -> u32 {
-    let value = quantity.as_f64();
-    if value > u32::MAX as f64 {
-        tracing::warn!(
-            "Quantity {value} exceeds u32::MAX, clamping to {}",
+pub fn quantity_to_u32(quantity: &Quantity, instrument: &InstrumentAny) -> u32 {
+    let size_increment = instrument.size_increment();
+    let step_decimal = size_increment.as_decimal();
+
+    if step_decimal.is_zero() {
+        let value = quantity.as_f64();
+        if value > u32::MAX as f64 {
+            tracing::warn!(
+                "Quantity {value} exceeds u32::MAX without instrument increment, clamping",
+            );
+            return u32::MAX;
+        }
+        return value.max(0.0) as u32;
+    }
+
+    let units_decimal = quantity.as_decimal() / step_decimal;
+    let rounded_units =
+        units_decimal.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+
+    match rounded_units.to_u128() {
+        Some(units) if units <= u32::MAX as u128 => units as u32,
+        Some(units) => {
+            tracing::warn!(
+                "Quantity {} converts to {units} contracts which exceeds u32::MAX, clamping",
+                quantity.as_f64(),
+            );
             u32::MAX
+        }
+        None => {
+            tracing::warn!(
+                "Failed to convert quantity {} to venue units, defaulting to 0",
+                quantity.as_f64(),
+            );
+            0
+        }
+    }
+}
+
+/// Converts a BitMEX contracts value into a Nautilus quantity using instrument precision.
+#[must_use]
+pub fn parse_contracts_quantity(value: u64, instrument: &InstrumentAny) -> Quantity {
+    let size_increment = instrument.size_increment();
+    let precision = instrument.size_precision();
+
+    let increment_raw: QuantityRaw = (&size_increment).into();
+    let value_raw = QuantityRaw::from(value);
+
+    let mut raw = increment_raw.saturating_mul(value_raw);
+    if raw > QUANTITY_RAW_MAX {
+        tracing::warn!(
+            "Quantity value {value} exceeds QUANTITY_RAW_MAX {}, clamping",
+            QUANTITY_RAW_MAX,
         );
-        u32::MAX
-    } else if value < 0.0 {
-        tracing::warn!("Quantity {value} is negative, using 0");
-        0
+        raw = QUANTITY_RAW_MAX;
+    }
+
+    Quantity::from_raw(raw, precision)
+}
+
+/// Converts the BitMEX `underlyingToPositionMultiplier` into a normalized contract size and
+/// size increment for Nautilus instruments.
+///
+/// The returned decimal retains BitMEX precision (clamped to `max_scale`) so downstream
+/// quantity conversions stay lossless.
+///
+/// # Errors
+///
+/// Returns an error when the multiplier cannot be represented with the configured precision.
+pub fn derive_contract_decimal_and_increment(
+    multiplier: Option<f64>,
+    max_scale: u32,
+) -> anyhow::Result<(Decimal, Quantity)> {
+    let raw_multiplier = multiplier.unwrap_or(1.0);
+    let contract_size = if raw_multiplier > 0.0 {
+        1.0 / raw_multiplier
     } else {
-        value as u32
+        1.0
+    };
+
+    let mut contract_decimal = Decimal::from_f64_retain(contract_size)
+        .ok_or_else(|| anyhow::anyhow!("Invalid contract size {contract_size}"))?;
+    if contract_decimal.scale() > max_scale {
+        contract_decimal = contract_decimal
+            .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);
     }
+    contract_decimal = contract_decimal.normalize();
+    let contract_precision = contract_decimal.scale() as u8;
+    let size_increment = Quantity::from_decimal(contract_decimal, contract_precision)?;
+
+    Ok((contract_decimal, size_increment))
 }
 
-#[must_use]
-pub fn parse_contracts_quantity(value: u64) -> Quantity {
-    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
-    // TODO: Log with more visibility for now
-    if value > QUANTITY_MAX as u64 {
-        tracing::warn!(
-            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
-        );
-    }
-    Quantity::new(size_workaround as f64, 0)
+/// Converts an optional contract-count field (e.g. `lotSize`, `maxOrderQty`) into a Nautilus
+/// quantity using the previously derived contract size.
+///
+/// # Errors
+///
+/// Returns an error when the raw value cannot be represented with the available precision.
+pub fn convert_contract_quantity(
+    value: Option<f64>,
+    contract_decimal: Decimal,
+    max_scale: u32,
+    field_name: &str,
+) -> anyhow::Result<Option<Quantity>> {
+    value
+        .map(|raw| {
+            let mut decimal = Decimal::from_f64_retain(raw)
+                .ok_or_else(|| anyhow::anyhow!("Invalid {field_name} value"))?
+                * contract_decimal;
+            let scale = decimal.scale();
+            if scale > max_scale {
+                decimal = decimal
+                    .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);
+            }
+            let decimal = decimal.normalize();
+            let precision = decimal.scale() as u8;
+            Quantity::from_decimal(decimal, precision)
+        })
+        .transpose()
 }
 
+/// Converts a signed BitMEX contracts value into a Nautilus quantity using instrument precision.
 #[must_use]
-pub fn parse_frac_quantity(value: f64, size_precision: u8) -> Quantity {
-    let value_u64 = value as u64;
-    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value as u64);
-    // TODO: Log with more visibility for now
-    if value_u64 > QUANTITY_MAX as u64 {
-        tracing::warn!(
-            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
-        );
+pub fn parse_signed_contracts_quantity(value: i64, instrument: &InstrumentAny) -> Quantity {
+    let abs_value = value.checked_abs().unwrap_or_else(|| {
+        tracing::warn!("Quantity value {value} overflowed when taking absolute value");
+        i64::MAX
+    }) as u64;
+    parse_contracts_quantity(abs_value, instrument)
+}
+
+/// Converts a fractional size into a quantity honoring the instrument precision.
+#[must_use]
+pub fn parse_fractional_quantity(value: f64, instrument: &InstrumentAny) -> Quantity {
+    if value < 0.0 {
+        tracing::warn!("Received negative fractional quantity {value}, defaulting to 0.0");
+        return instrument.make_qty(0.0, None);
     }
-    Quantity::new(size_workaround as f64, size_precision)
+
+    instrument.try_make_qty(value, None).unwrap_or_else(|err| {
+        tracing::warn!(
+            "Failed to convert fractional quantity {value} with precision {}: {err}",
+            instrument.size_precision(),
+        );
+        instrument.make_qty(0.0, None)
+    })
+}
+
+/// Normalizes the OHLC values reported by BitMEX trade bins to ensure `high >= max(open, close)`
+/// and `low <= min(open, close)`.
+///
+/// # Panics
+///
+/// Panics if the price array is empty. This should never occur because the caller always supplies
+/// four price values (open/high/low/close).
+#[must_use]
+pub fn normalize_trade_bin_prices(
+    open: Price,
+    mut high: Price,
+    mut low: Price,
+    close: Price,
+    symbol: &Ustr,
+    bar_type: Option<&BarType>,
+) -> (Price, Price, Price, Price) {
+    let price_extremes = [open, high, low, close];
+    let max_price = *price_extremes
+        .iter()
+        .max()
+        .expect("Price array contains values");
+    let min_price = *price_extremes
+        .iter()
+        .min()
+        .expect("Price array contains values");
+
+    if high < max_price || low > min_price {
+        match bar_type {
+            Some(bt) => {
+                tracing::warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes");
+            }
+            None => tracing::warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
+        }
+        high = max_price;
+        low = min_price;
+    }
+
+    (open, high, low, close)
+}
+
+/// Normalizes the volume reported by BitMEX trade bins, defaulting to zero when the exchange
+/// returns negative or missing values.
+#[must_use]
+pub fn normalize_trade_bin_volume(volume: Option<i64>, symbol: &Ustr) -> u64 {
+    match volume {
+        Some(v) if v >= 0 => v as u64,
+        Some(v) => {
+            tracing::warn!(symbol = %symbol, volume = v, "Received negative volume in BitMEX trade bin");
+            0
+        }
+        None => {
+            tracing::warn!(symbol = %symbol, "Trade bin missing volume, defaulting to 0");
+            0
+        }
+    }
 }
 
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.
@@ -101,6 +285,7 @@ pub fn parse_optional_datetime_to_unix_nanos(
         .unwrap_or_default()
 }
 
+/// Maps an optional BitMEX side to the corresponding Nautilus aggressor side.
 #[must_use]
 pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     match side {
@@ -110,6 +295,7 @@ pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     }
 }
 
+/// Maps BitMEX liquidity indicators onto Nautilus liquidity sides.
 #[must_use]
 pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> LiquiditySide {
     liquidity
@@ -117,6 +303,7 @@ pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> Liq
         .unwrap_or(LiquiditySide::NoLiquiditySide)
 }
 
+/// Derives a Nautilus position side from the BitMEX `currentQty` value.
 #[must_use]
 pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     match current_qty {
@@ -169,18 +356,16 @@ pub fn parse_account_state(
         margin.foreign_requirement
     );
 
-    // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(&margin.currency);
 
-    // Skip unknown currencies (like RLUSD) that aren't registered in Nautilus
     let currency = match Currency::try_from_str(&currency_str) {
         Some(c) => c,
         None => {
-            tracing::debug!(
-                "Skipping margin message for unknown currency: {}",
-                currency_str
+            // Create a default crypto currency for unknown codes to avoid disrupting flows
+            tracing::warn!(
+                "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
             );
-            return Err(anyhow::anyhow!("Unknown currency: {}", currency_str));
+            Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto)
         }
     };
 
@@ -240,25 +425,9 @@ pub fn parse_account_state(
     let balance = AccountBalance::new(total, locked, free);
     let balances = vec![balance];
 
-    let mut margins = Vec::new();
-
-    // Add standard margin requirements if present
-    if let (Some(init_margin), Some(maint_margin)) = (margin.init_margin, margin.maint_margin) {
-        let initial = Money::new(init_margin as f64 / divisor, currency);
-        let maintenance = Money::new(maint_margin as f64 / divisor, currency);
-
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::from_ustr_unchecked(Ustr::from("XBTUSD")),
-            *BITMEX_VENUE,
-        );
-
-        let margin_balance = MarginBalance::new(initial, maintenance, margin_instrument_id);
-        margins.push(margin_balance);
-    }
-
-    // Note: foreign_requirement represents margin for positions in other currencies
-    // For now we skip adding it as a separate margin entry since BitMEX uses
-    // cross-margin at the account level
+    // Skip margin details - BitMEX uses account-level cross-margin which doesn't map
+    // well to Nautilus's per-instrument margin model, we track balances only.
+    let margins = Vec::new();
 
     let account_type = AccountType::Margin;
     let is_reported = true;
@@ -286,11 +455,103 @@ pub fn parse_account_state(
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
-    use nautilus_model::enums::AccountType;
+    use nautilus_model::{instruments::CurrencyPair, types::fixed::FIXED_PRECISION};
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn test_clean_reason_strips_nautilus_trader() {
+        assert_eq!(
+            clean_reason(
+                "Canceled: Order had execInst of ParticipateDoNotInitiate\nNautilusTrader"
+            ),
+            "Canceled: Order had execInst of ParticipateDoNotInitiate"
+        );
+
+        assert_eq!(clean_reason("Some error\nNautilusTrader"), "Some error");
+        assert_eq!(
+            clean_reason("Multiple lines\nSome content\nNautilusTrader"),
+            "Multiple lines\nSome content"
+        );
+        assert_eq!(clean_reason("No identifier here"), "No identifier here");
+        assert_eq!(clean_reason("  \nNautilusTrader  "), "");
+    }
+
+    fn make_test_spot_instrument(size_increment: f64, size_precision: u8) -> InstrumentAny {
+        let instrument_id = InstrumentId::from("SOLUSDT.BITMEX");
+        let raw_symbol = Symbol::from("SOLUSDT");
+        let base_currency = Currency::from("SOL");
+        let quote_currency = Currency::from("USDT");
+        let price_precision = 2;
+        let price_increment = Price::new(0.01, price_precision);
+        let size_increment = Quantity::new(size_increment, size_precision);
+        let instrument = CurrencyPair::new(
+            instrument_id,
+            raw_symbol,
+            base_currency,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+        InstrumentAny::CurrencyPair(instrument)
+    }
+
+    #[rstest]
+    fn test_quantity_to_u32_scaled() {
+        let instrument = make_test_spot_instrument(0.0001, 4);
+        let qty = Quantity::new(0.1, 4);
+        assert_eq!(quantity_to_u32(&qty, &instrument), 1_000);
+    }
+
+    #[rstest]
+    fn test_parse_contracts_quantity_scaled() {
+        let instrument = make_test_spot_instrument(0.0001, 4);
+        let qty = parse_contracts_quantity(1_000, &instrument);
+        assert!((qty.as_f64() - 0.1).abs() < 1e-9);
+        assert_eq!(qty.precision, 4);
+    }
+
+    #[rstest]
+    fn test_convert_contract_quantity_scaling() {
+        let max_scale = FIXED_PRECISION as u32;
+        let (contract_decimal, size_increment) =
+            derive_contract_decimal_and_increment(Some(10_000.0), max_scale).unwrap();
+        assert!((size_increment.as_f64() - 0.0001).abs() < 1e-12);
+
+        let lot_qty =
+            convert_contract_quantity(Some(1_000.0), contract_decimal, max_scale, "lot size")
+                .unwrap()
+                .unwrap();
+        assert!((lot_qty.as_f64() - 0.1).abs() < 1e-9);
+        assert_eq!(lot_qty.precision, 1);
+    }
+
+    #[rstest]
+    fn test_derive_contract_decimal_defaults_to_one() {
+        let max_scale = FIXED_PRECISION as u32;
+        let (contract_decimal, size_increment) =
+            derive_contract_decimal_and_increment(Some(0.0), max_scale).unwrap();
+        assert_eq!(contract_decimal, Decimal::ONE);
+        assert_eq!(size_increment.as_f64(), 1.0);
+    }
 
     #[rstest]
     fn test_parse_account_state() {
@@ -333,7 +594,7 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 1);
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
         assert!(account_state.is_reported);
 
         let xbt_balance = &account_state.balances[0];
@@ -341,11 +602,6 @@ mod tests {
         assert_eq!(xbt_balance.total.as_f64(), 0.05); // 5000000 satoshis = 0.05 XBT wallet balance
         assert_eq!(xbt_balance.free.as_f64(), 0.049); // 4900000 satoshis = 0.049 XBT withdrawable
         assert_eq!(xbt_balance.locked.as_f64(), 0.001); // 100000 satoshis locked
-
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.initial.as_f64(), 0.0002); // 20000 satoshis = 0.0002 XBT
-        assert_eq!(margin.maintenance.as_f64(), 0.0001); // 10000 satoshis = 0.0001 XBT
-        assert_eq!(margin.currency, Currency::from("XBT"));
     }
 
     #[rstest]
@@ -392,11 +648,7 @@ mod tests {
         assert_eq!(usdt_balance.free.as_f64(), 9500.0);
         assert_eq!(usdt_balance.locked.as_f64(), 500.0);
 
-        assert_eq!(account_state.margins.len(), 1);
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.initial.as_f64(), 0.5); // 500000 microunits = 0.5 USDT
-        assert_eq!(margin.maintenance.as_f64(), 0.25); // 250000 microunits = 0.25 USDT
-        assert_eq!(margin.currency, Currency::USDT());
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
     }
 
     #[rstest]
@@ -441,7 +693,7 @@ mod tests {
 
         // Should have balance but no margins
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 0); // No margins when init/maint are missing
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
     }
 
     #[rstest]
@@ -593,7 +845,7 @@ mod tests {
         assert_eq!(balance.free.as_f64(), 0.95);
         assert_eq!(balance.locked.as_f64(), 0.05);
 
-        // With only foreign requirements and no standard margins, we have no margins tracked
+        // No margins tracked
         assert_eq!(account_state.margins.len(), 0);
     }
 
@@ -644,12 +896,7 @@ mod tests {
         assert_eq!(balance.free.as_f64(), 0.93);
         assert_eq!(balance.locked.as_f64(), 0.07); // 0.02 + 0.05 = 0.07 total margin
 
-        // Should only have standard margin (foreign is not tracked separately)
-        assert_eq!(account_state.margins.len(), 1);
-
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "XBTUSD");
-        assert_eq!(margin.initial.as_f64(), 0.02);
-        assert_eq!(margin.maintenance.as_f64(), 0.01);
+        // No margins tracked
+        assert_eq!(account_state.margins.len(), 0);
     }
 }

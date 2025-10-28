@@ -28,7 +28,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+    MUTEX_POISONED, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -86,7 +87,7 @@ pub struct CoinbaseIntxResponse<T> {
 
 // https://docs.cdp.coinbase.com/intx/docs/rate-limits#rest-api-rate-limits
 pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(40).unwrap()));
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(100).unwrap()));
 
 /// Provides a lower-level HTTP client for connecting to the [Coinbase International](https://coinbase.com) REST API.
 ///
@@ -630,9 +631,9 @@ impl CoinbaseIntxHttpClient {
         base_url: Option<String>,
         timeout_secs: Option<u64>,
     ) -> anyhow::Result<Self> {
-        let api_key = api_key.unwrap_or(get_env_var("COINBASE_INTX_API_KEY")?);
-        let api_secret = api_secret.unwrap_or(get_env_var("COINBASE_INTX_API_SECRET")?);
-        let api_passphrase = api_passphrase.unwrap_or(get_env_var("COINBASE_INTX_API_PASSPHRASE")?);
+        let api_key = get_or_env_var(api_key, "COINBASE_INTX_API_KEY")?;
+        let api_secret = get_or_env_var(api_secret, "COINBASE_INTX_API_SECRET")?;
+        let api_passphrase = get_or_env_var(api_passphrase, "COINBASE_INTX_API_PASSPHRASE")?;
         let base_url = base_url.unwrap_or(COINBASE_INTX_REST_URL.to_string());
         Ok(Self {
             inner: Arc::new(CoinbaseIntxHttpInnerClient::with_credentials(
@@ -648,7 +649,12 @@ impl CoinbaseIntxHttpClient {
     }
 
     fn get_instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        match self.instruments_cache.lock().unwrap().get(&symbol) {
+        match self
+            .instruments_cache
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(&symbol)
+        {
             Some(inst) => Ok(inst.clone()), // TODO: Remove this clone
             None => anyhow::bail!("Unable to process request, instrument {symbol} not in cache"),
         }

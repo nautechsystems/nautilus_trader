@@ -28,8 +28,8 @@ The order types available for the platform are (using the enum values):
 
 :::info
 NautilusTrader provides a unified API for many order types and execution instructions, but not all venues support every option.
-If an order contains an instruction or option that the target venue does not support, the system **should not** submit the order;
-instead, it logs an error with a clear explanatory message.
+If an order includes an instruction or option the target venue does not support, the system does not submit it.
+Instead, it logs a clear, explanatory error.
 :::
 
 ### Terminology
@@ -150,7 +150,7 @@ examples will leverage an `OrderFactory` from within a `Strategy` context.
 See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for further details.
 :::
 
-## Order Types
+## Order types
 
 The following describes the order types which are available for the platform with a code example.
 Any optional parameters will be clearly marked with a comment which includes the default value.
@@ -294,9 +294,8 @@ See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-
 
 ### Market-To-Limit
 
-A *Market-To-Limit* order is submitted as a market order to execute at the current best market price.
-If the order is only partially filled, the remainder of the order is canceled and re-submitted as a *Limit* order with
-the limit price equal to the price at which the filled portion of the order executed.
+A *Market-To-Limit* order submits as a market order at the current best price.
+If the order partially fills, the system cancels the remainder and resubmits it as a *Limit* order at the executed price.
 
 In the following example we create a *Market-To-Limit* order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
 to BUY 200,000 USD using JPY:
@@ -480,19 +479,19 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for further details.
 :::
 
-## Advanced Orders
+## Advanced orders
 
 The following guide should be read in conjunction with the specific documentation from the broker or venue
 involving these order types, lists/groups and execution instructions (such as for Interactive Brokers).
 
-### Order Lists
+### Order lists
 
 Combinations of contingent orders, or larger order bulks can be grouped together into a list with a common
 `order_list_id`. The orders contained in this list may or may not have a contingent relationship with
 each other, as this is specific to how the orders themselves are constructed, and the
 specific venue they are being routed to.
 
-### Contingency Types
+### Contingency types
 
 - **OTO (One-Triggers-Other)** – a parent order that, once executed, automatically places one or more child orders.
   - *Full-trigger model*: child order(s) are released **only after the parent is completely filled**. Common at most retail equity/option brokers (e.g. Schwab, Fidelity, TD Ameritrade) and many spot-crypto venues (Binance, Coinbase).
@@ -554,13 +553,12 @@ Both orders are live simultaneously; once one starts filling, the venue attempts
 An OUO order is a set of linked orders where execution of one order causes an immediate *reduction* of open quantity in the other order(s).
 Both orders are live concurrently, and each partial execution proportionally updates the remaining quantity of its peer order on a best-effort basis.
 
-### Bracket Orders
+### Bracket orders
 
 Bracket orders are an advanced order type that allows traders to set both take-profit and stop-loss
 levels for a position simultaneously. This involves placing a parent order (entry order) and two child
-orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order is executed,
-the child orders are placed in the market. The take-profit order closes the position with profits if
-the market moves favorably, while the stop-loss order limits losses if the market moves unfavorably.
+orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order executes,
+the system places the child orders. The take-profit closes the position if the market moves favorably, and the stop-loss limits losses if it moves unfavorably.
 
 Bracket orders can be easily created using the [OrderFactory](../api_reference/common.md#class-orderfactory),
 which supports various order types, parameters, and instructions.
@@ -570,12 +568,12 @@ You should be aware of the margin requirements of positions, as bracketing a pos
 more order margin.
 :::
 
-## Emulated Orders
+## Emulated orders
 
 ### Introduction
 
 Before diving into the technical details, it's important to understand the fundamental purpose of emulated orders
-in Nautilus Trader. At its core, emulation allows you to use certain order types even when your trading venue
+in NautilusTrader. At its core, emulation allows you to use certain order types even when your trading venue
 doesn't natively support them.
 
 This works by having Nautilus locally mimic the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)
@@ -668,7 +666,7 @@ The following will occur for an emulated order now *held* by the `OrderEmulator`
 
 #### Released emulated orders
 
-Once an emulated order is triggered / matched locally based on the arrival of data, the following
+Once data arrival triggers / matches an emulated order locally, the following
 *release* actions will occur:
 
 - The order will be transformed to either a `MARKET` or `LIMIT` order (see below table) through an additional `OrderInitialized` event.
@@ -711,7 +709,7 @@ The following `Cache` methods are available:
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
-See the full [API reference](../../api_reference/cache) for additional details.
+See the full [API reference](../api_reference/cache) for additional details.
 
 #### Direct order queries
 

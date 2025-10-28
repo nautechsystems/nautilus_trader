@@ -33,7 +33,7 @@ use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
-    ffi::string::cstr_as_str,
+    ffi::{abort_on_panic, string::cstr_as_str},
     parsing::{min_increment_precision_from_str, precision_from_str},
 };
 
@@ -165,9 +165,11 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 /// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    let s = unsafe { cstr_as_str(ptr) };
-    precision_from_str(s)
+    abort_on_panic(|| {
+        assert!(!ptr.is_null(), "`ptr` was NULL");
+        let s = unsafe { cstr_as_str(ptr) };
+        precision_from_str(s)
+    })
 }
 
 /// Return the minimum price increment decimal precision inferred from the given C string.
@@ -181,9 +183,11 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 /// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    let s = unsafe { cstr_as_str(ptr) };
-    min_increment_precision_from_str(s)
+    abort_on_panic(|| {
+        assert!(!ptr.is_null(), "`ptr` was NULL");
+        let s = unsafe { cstr_as_str(ptr) };
+        min_increment_precision_from_str(s)
+    })
 }
 
 /// Return a `bool` value from the given `u8`.

@@ -25,13 +25,18 @@ from aiohttp.test_utils import TestServer
 
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    tasks = set()
+
     async def write():
         writer.write(b"connected\r\n")
         while True:
             writer.write(b"hello\r\n")
             await asyncio.sleep(0.1)
 
-    asyncio.get_event_loop().create_task(write())
+    loop = asyncio.get_running_loop()
+
+    task = loop.create_task(write())
+    tasks.add(task)
 
     while True:
         req = await reader.readline()

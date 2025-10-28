@@ -826,7 +826,7 @@ cdef class Cache(CacheFacade):
         for client_order_id in self._index_orders_closed.copy():
             order = self._orders.get(client_order_id)
 
-            if order is not None and order.ts_closed + buffer_ns <= ts_now:
+            if order is not None and order.is_closed_c() and order.ts_closed + buffer_ns <= ts_now:
                 # Check any linked orders (contingency orders)
                 if order.linked_order_ids is not None:
                     for linked_order_id in order.linked_order_ids:
@@ -869,14 +869,14 @@ cdef class Cache(CacheFacade):
         for position_id in self._index_positions_closed.copy():
             position = self._positions.get(position_id)
 
-            if position is not None and position.ts_closed + buffer_ns <= ts_now:
+            if position is not None and position.is_closed_c() and position.ts_closed + buffer_ns <= ts_now:
                 self.purge_position(position_id, purge_from_database)
 
     cpdef void purge_order(self, ClientOrderId client_order_id, bint purge_from_database = False):
         """
         Purge the order for the given client order ID from the cache (if found).
 
-        All `OrderFilled` events for the order will also be purged from any associated position.
+        For safety, an order is prevented from being purged if it's open.
 
         Parameters
         ----------
@@ -888,16 +888,18 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Position position = self.position_for_order(client_order_id)
+        # Check if order exists and is safe to purge before popping
+        cdef Order order = self._orders.get(client_order_id)
 
-        if position is not None:
-            position.purge_events_for_order(client_order_id)
-
-        cdef Order order = self._orders.pop(client_order_id, None)
+        if order is not None and order.is_open_c():
+            self._log.warning(f"Order {client_order_id} found open when purging, skipping purge")
+            return
 
         if order is None:
             self._log.warning(f"Order {client_order_id} not found when purging")
         else:
+            # Safe to purge
+            self._orders.pop(client_order_id, None)
             self._index_venue_orders[order.instrument_id.venue].discard(client_order_id)
             self._index_venue_order_ids.pop(order.venue_order_id, None)
             self._index_instrument_orders[order.instrument_id].discard(client_order_id)
@@ -908,14 +910,40 @@ cdef class Cache(CacheFacade):
             if order.exec_algorithm_id is not None:
                 self._index_exec_algorithm_orders[order.exec_algorithm_id].discard(client_order_id)
 
+            # Clean up strategy orders reverse index
+            strategy_orders = self._index_strategy_orders.get(order.strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(order.strategy_id, None)
+
+            # Clean up exec spawn reverse index (if this order is a spawned child)
+            if order.exec_spawn_id is not None:
+                spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+                if spawn_orders is not None:
+                    spawn_orders.discard(client_order_id)
+                    if not spawn_orders:
+                        self._index_exec_spawn_orders.pop(order.exec_spawn_id, None)
+
             self._log.info(f"Purged order {client_order_id}", LogColor.BLUE)
 
+        # Always clean up order indices (even if order was not in cache)
         self._index_order_position.pop(client_order_id, None)
-        self._index_order_strategy.pop(client_order_id, None)
         self._index_order_client.pop(client_order_id, None)
         self._index_client_order_ids.pop(client_order_id, None)
-        self._index_strategy_orders.pop(client_order_id, None)
+        strategy_id = self._index_order_strategy.pop(client_order_id, None)
+
+        # Clean up reverse index when order not in cache (using forward index)
+        if strategy_id is not None:
+            strategy_orders = self._index_strategy_orders.get(strategy_id)
+            if strategy_orders is not None:
+                strategy_orders.discard(client_order_id)
+                if not strategy_orders:
+                    self._index_strategy_orders.pop(strategy_id, None)
+
+        # Remove spawn parent entry if this order was a spawn root
         self._index_exec_spawn_orders.pop(client_order_id, None)
+
         self._index_orders.discard(client_order_id)
         self._index_orders_closed.discard(client_order_id)
         self._index_orders_emulated.discard(client_order_id)
@@ -930,6 +958,8 @@ cdef class Cache(CacheFacade):
         """
         Purge the position for the given position ID from the cache (if found).
 
+        For safety, a position is prevented from being purged if it's open.
+
         Parameters
         ----------
         position_id : PositionId
@@ -940,11 +970,18 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef Position position = self._positions.pop(position_id, None)
+        # Check if position exists and is safe to purge before popping
+        cdef Position position = self._positions.get(position_id)
+
+        if position is not None and position.is_open_c():
+            self._log.warning(f"Position {position_id} found open when purging, skipping purge")
+            return
 
         if position is None:
             self._log.warning(f"Position {position_id} not found when purging")
         else:
+            # Safe to purge
+            self._positions.pop(position_id, None)
             self._index_venue_positions[position.instrument_id.venue].discard(position_id)
             self._index_instrument_positions[position.instrument_id].discard(position_id)
             self._index_strategy_positions[position.strategy_id].discard(position_id)
@@ -954,6 +991,7 @@ cdef class Cache(CacheFacade):
 
             self._log.info(f"Purged position {position_id}", LogColor.BLUE)
 
+        # Always clean up position indices (even if position not in cache)
         self._index_position_strategy.pop(position_id, None)
         self._index_position_orders.pop(position_id, None)
         self._index_positions.discard(position_id)
@@ -2380,8 +2418,11 @@ cdef class Cache(CacheFacade):
             self._index_orders_emulated.add(order.client_order_id)
 
         # Update own book
-        if self._own_order_books and should_handle_own_book_order(order):
-            self.update_own_order_book(order)
+        if self._own_order_books:
+            own_book = self._own_order_books.get(order.instrument_id)
+            # Only bypass should_handle check for closed orders (to ensure cleanup)
+            if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
+                self.update_own_order_book(order)
 
         if self._database is None:
             return
@@ -2407,6 +2448,9 @@ cdef class Cache(CacheFacade):
         """
         Update the own order book for the given order.
 
+        Orders without prices (MARKET, etc.) are skipped as they cannot be
+        represented in own books.
+
         Parameters
         ----------
         order : Order
@@ -2415,9 +2459,15 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
+        if not order.has_price_c():
+            return
+
         own_book = self._own_order_books.get(order.instrument_id)
 
         if own_book is None:
+            if order.is_closed_c():
+                # Don't create own book for closed orders
+                return
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._own_order_books[order.instrument_id] = own_book
@@ -2426,11 +2476,18 @@ cdef class Cache(CacheFacade):
         own_book_order = order.to_own_book_order()
 
         if order.is_closed_c():
-            own_book.delete(own_book_order)
-            self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.delete(own_book_order)
+                self._log.debug(f"Deleted order {order.client_order_id} from own book")
+            except RuntimeError as e:
+                self._log.debug(f"Failed to delete order {order.client_order_id} from own book: {e}")
         else:
-            own_book.update(own_book_order)
-            self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
+            try:
+                own_book.update(own_book_order)
+            except RuntimeError as e:
+                self._log.debug(f"Failed to update order {order.client_order_id} in own book: {e}; inserting instead")
+                own_book.add(own_book_order)
+            self._log.debug(f"Updated order {order.client_order_id} in own book")
 
     cpdef void update_position(self, Position position):
         """
@@ -2776,7 +2833,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own order book to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
 
         Returns
         -------
@@ -2802,7 +2859,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
         accepted_buffer_ns : uint64_t, optional
@@ -2828,7 +2885,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
@@ -2855,7 +2911,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
-            Note this is the standard Cython `InstumentId`.
+            Note this is the standard Cython `InstrumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
         accepted_buffer_ns : uint64_t, optional
@@ -2881,7 +2937,6 @@ cdef class Cache(CacheFacade):
             raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
-
         if own_order_book is None:
             return None
 
@@ -4180,7 +4235,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        self._index_order_client.get(client_order_id)
+        return self._index_order_client.get(client_order_id)
 
     cpdef list orders(
         self,
@@ -5274,12 +5329,60 @@ cdef class Cache(CacheFacade):
 
         self._database.heartbeat(timestamp)
 
+    cpdef void force_remove_from_own_order_book(self, ClientOrderId client_order_id):
+        """
+        Force removal of an order from own order books and clean up all indexes.
+
+        This method is used when order.apply() fails and we need to ensure terminal
+        orders are properly cleaned up from own books and all relevant indexes.
+        Replicates the index cleanup that update_order performs for closed orders.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to remove.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef Order order = self._orders.get(client_order_id)
+        if order is None:
+            return
+
+        # Remove from all open/active indexes (mirrors update_order for closed orders)
+        self._index_orders_open.discard(client_order_id)
+        self._index_orders_pending_cancel.discard(client_order_id)
+        self._index_orders_inflight.discard(client_order_id)
+        self._index_orders_emulated.discard(client_order_id)
+
+        if self._own_order_books:
+            self._index_orders_open_pyo3.discard(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
+            own_book = self._own_order_books.get(order.instrument_id)
+            if own_book is not None:
+                try:
+                    own_book_order = order.to_own_book_order()
+                    own_book.delete(own_book_order)
+                    self._log.debug(
+                        f"Force deleted {client_order_id!r} from own book",
+                        LogColor.MAGENTA,
+                    )
+                except Exception as e:
+                    self._log.debug(
+                        f"Could not force delete {client_order_id!r} from own book: {e}",
+                        LogColor.MAGENTA,
+                    )
+
+        self._index_orders_closed.add(client_order_id)
+
     cpdef void audit_own_order_books(self):
         """
-        Audit all own order books against public order books.
+        Audit all own order books against open and inflight order indexes.
 
-        Ensures:
-         - Closed orders are removed from own order books.
+        Ensures closed orders are removed from own order books. This includes both
+        orders tracked in _index_orders_open (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
+        and _index_orders_inflight (INITIALIZED, SUBMITTED) to prevent false positives
+        during venue latency windows.
 
         Logs all failures as errors.
 
@@ -5287,8 +5390,19 @@ cdef class Cache(CacheFacade):
         self._log.debug("Starting own books audit", LogColor.MAGENTA)
         cdef double start_us = time.time() * 1_000_000
 
+        # Build union of open and inflight orders for audit,
+        # this prevents false positives for SUBMITTED orders during venue latency.
+        cdef set valid_order_ids = set()
+        for client_order_id in self._index_orders_open:
+            if self._own_order_books:
+                valid_order_ids.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
+        for client_order_id in self._index_orders_inflight:
+            if self._own_order_books:
+                valid_order_ids.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
+
         for own_book in self._own_order_books.values():
-            own_book.audit_open_orders(self._index_orders_open_pyo3)
+            own_book.audit_open_orders(valid_order_ids)
 
         cdef double audit_us = (time.time() * 1_000_000) - start_us
         self._log.debug(f"Completed own books audit in {int(audit_us)}us", LogColor.MAGENTA)

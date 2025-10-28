@@ -137,14 +137,14 @@ mod tests {
         assert_eq!(channel.as_str(), expected);
     }
 
-    #[test]
+    #[rstest]
     fn test_display_trait() {
         assert_eq!(format!("{}", HyperliquidWsChannel::Trades), "Trades");
         assert_eq!(format!("{}", HyperliquidWsChannel::L2Book), "L2Book");
         assert_eq!(format!("{}", HyperliquidWsChannel::UserFills), "UserFills");
     }
 
-    #[test]
+    #[rstest]
     fn test_is_public_channel() {
         assert!(HyperliquidWsChannel::Trades.is_public());
         assert!(HyperliquidWsChannel::L2Book.is_public());
@@ -160,7 +160,7 @@ mod tests {
         assert!(!HyperliquidWsChannel::Post.is_public());
     }
 
-    #[test]
+    #[rstest]
     fn test_is_private_channel() {
         assert!(!HyperliquidWsChannel::Trades.is_private());
         assert!(!HyperliquidWsChannel::L2Book.is_private());
@@ -174,7 +174,7 @@ mod tests {
         assert!(HyperliquidWsChannel::Post.is_private());
     }
 
-    #[test]
+    #[rstest]
     fn test_enum_iter() {
         use strum::IntoEnumIterator;
 
@@ -185,7 +185,7 @@ mod tests {
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str() {
         use std::str::FromStr;
 

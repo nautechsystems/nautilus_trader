@@ -88,7 +88,7 @@ cdef class RiskEngine(Component):
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
     cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
     cpdef str _check_price(self, Instrument instrument, Price price)
-    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity)
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=*)
 
 # -- DENIALS --------------------------------------------------------------------------------------
 

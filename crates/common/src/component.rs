@@ -480,7 +480,7 @@ where
         get_component_registry().insert(component_id, component_trait_ref);
 
         // Register in actor registry
-        let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = component_ref.clone();
+        let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = component_ref;
         get_actor_registry().insert(actor_id, actor_trait_ref);
     }
 }

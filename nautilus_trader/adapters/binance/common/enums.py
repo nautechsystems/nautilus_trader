@@ -376,7 +376,7 @@ class BinanceErrorCode(Enum):
     PRICE_LESS_THAN_MIN_PRICE = -4013
     PRICE_NOT_INCREASED_BY_TICK_SIZE = -4014
     INVALID_CL_ORD_ID_LEN = -4015
-    PRICE_HIGHTER_THAN_MULTIPLIER_UP = -4016
+    PRICE_HIGHTER_THAN_MULTIPLIER_UP = -4016  # Binance's official typo (should be HIGHER)
     MULTIPLIER_UP_LESS_THAN_ZERO = -4017
     MULTIPLIER_DOWN_LESS_THAN_ZERO = -4018
     COMPOSITE_SCALE_OVERFLOW = -4019
@@ -477,6 +477,8 @@ class BinanceErrorCode(Enum):
     COMPLIANCE_BLACK_SYMBOL_RESTRICTION = -4402
     ADJUST_LEVERAGE_COMPLIANCE_FAILED = -4403
 
+    INVALID_PEG_OFFSET_TYPE = 1211
+
     FOK_ORDER_REJECT = -5021
     GTX_ORDER_REJECT = -5022
     MOVE_ORDER_NOT_ALLOWED_SYMBOL_REASON = -5024
@@ -502,6 +504,8 @@ class BinanceEnumParser:
         self.ext_to_int_status = {
             BinanceOrderStatus.NEW: OrderStatus.ACCEPTED,
             BinanceOrderStatus.CANCELED: OrderStatus.CANCELED,
+            BinanceOrderStatus.PENDING_CANCEL: OrderStatus.PENDING_CANCEL,
+            BinanceOrderStatus.REJECTED: OrderStatus.REJECTED,
             BinanceOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
             BinanceOrderStatus.FILLED: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_ADL: OrderStatus.FILLED,

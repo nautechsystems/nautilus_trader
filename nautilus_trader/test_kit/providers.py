@@ -27,6 +27,7 @@ import pytz
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -54,13 +55,18 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
+from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import FuturesSpread
+from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Currency
@@ -621,9 +627,11 @@ class TestInstrumentProvider:
     def es_future(
         expiry_year: int,
         expiry_month: int,
+        venue: Venue | None = None,
     ) -> FuturesContract:
         activation_date = first_friday_two_years_six_months_ago(expiry_year, expiry_month)
         expiration_date = third_friday_of_month(expiry_year, expiry_month)
+        venue = venue or Venue("GLBX")
 
         activation_time = pd.Timedelta(hours=21, minutes=30)
         expiration_time = pd.Timedelta(hours=14, minutes=30)
@@ -633,7 +641,7 @@ class TestInstrumentProvider:
         raw_symbol = f"ES{get_contract_month_code(expiry_month)}{expiry_year % 10}"
 
         return FuturesContract(
-            instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=Venue("GLBX")),
+            instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=venue),
             raw_symbol=Symbol(raw_symbol),
             asset_class=AssetClass.INDEX,
             exchange="XCME",
@@ -794,6 +802,115 @@ class TestInstrumentProvider:
             min_quantity=Quantity.from_int(5),
             maker_fee=Decimal(0),  # TBD
             taker_fee=Decimal(0),  # TBD
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def crypto_option() -> CryptoOption:
+        return CryptoOption(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTC-13JAN23-16000-P"),
+                venue=Venue("DERIBIT"),
+            ),
+            raw_symbol=Symbol("BTC-13JAN23-16000-P"),
+            underlying=BTC,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            is_inverse=False,
+            option_kind=OptionKind.PUT,
+            strike_price=Price.from_str("16000.00"),
+            activation_ns=1671696002000000000,
+            expiration_ns=1673596800000000000,
+            price_precision=2,
+            size_precision=1,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.1"),
+            maker_fee=Decimal("0.0003"),
+            taker_fee=Decimal("0.0003"),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            max_quantity=Quantity.from_str("9000"),
+            min_quantity=Quantity.from_str("0.1"),
+            min_notional=Money(10.00, USD),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def futures_spread() -> FuturesSpread:
+        return FuturesSpread(
+            instrument_id=InstrumentId(symbol=Symbol("ESM4-ESU4"), venue=Venue("GLBX")),
+            raw_symbol=Symbol("ESM4-ESU4"),
+            asset_class=AssetClass.INDEX,
+            exchange="XCME",
+            underlying="ES",
+            strategy_type="EQ",
+            activation_ns=pd.Timestamp("2022-6-21T13:30:00", tz=pytz.utc).value,
+            expiration_ns=pd.Timestamp("2024-6-21T13:30:00", tz=pytz.utc).value,
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0"),
+            taker_fee=Decimal("0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def option_spread() -> OptionSpread:
+        return OptionSpread(
+            instrument_id=InstrumentId(symbol=Symbol("UD:U$: GN 2534559"), venue=Venue("GLBX")),
+            raw_symbol=Symbol("UD:U$: GN 2534559"),
+            asset_class=AssetClass.FX,
+            exchange="XCME",
+            underlying="SR3",
+            strategy_type="GN",
+            activation_ns=pd.Timestamp("2023-11-06T20:54:07", tz=pytz.utc).value,
+            expiration_ns=pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc).value,
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0"),
+            taker_fee=Decimal("0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def commodity() -> Commodity:
+        return Commodity(
+            instrument_id=InstrumentId(symbol=Symbol("CL"), venue=Venue("NYMEX")),
+            raw_symbol=Symbol("CL"),
+            asset_class=AssetClass.COMMODITY,
+            quote_currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            size_precision=0,
+            size_increment=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def index_instrument() -> IndexInstrument:
+        return IndexInstrument(
+            instrument_id=InstrumentId(symbol=Symbol("SPX"), venue=Venue("INDEX")),
+            raw_symbol=Symbol("SPX"),
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            size_precision=0,
+            size_increment=Quantity.from_int(1),
             ts_event=0,
             ts_init=0,
         )
@@ -1126,35 +1243,35 @@ def ensure_test_data_exists(filename: str, url: str) -> Path:
 
 
 def ensure_data_exists_tardis_deribit_book_l2() -> Path:
-    filename = "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Deribit incremental book L2 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "deribit_incremental_book_L2_BTC-PERPETUAL.csv"
 
 
 def ensure_data_exists_tardis_binance_snapshot5() -> Path:
-    filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Binance snapshot5 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "binance-futures_book_snapshot_5_BTCUSDT.csv"
 
 
 def ensure_data_exists_tardis_binance_snapshot25() -> Path:
-    filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Binance snapshot25 test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "binance-futures_book_snapshot_25_BTCUSDT.csv"
 
 
 def ensure_data_exists_tardis_huobi_quotes() -> Path:
-    filename = "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/huobi-dm-swap/quotes/2020/05/01/BTC-USD.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Huobi quotes test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "huobi-dm-swap_quotes_BTC-USD.csv"
 
 
 def ensure_data_exists_tardis_bitmex_trades() -> Path:
-    filename = "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz"
-    base_url = "https://datasets.tardis.dev"
-    url = f"{base_url}/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz"
-    return ensure_test_data_exists(filename, url)
+    """
+    Return path to minimal Tardis Bitmex trades test data.
+    """
+    return TEST_DATA_DIR / "tardis" / "bitmex_trades_XBTUSD.csv"

@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Domain model for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_model"
@@ -21,17 +24,15 @@ crate-type = ["rlib", "staticlib"]
 default = []
 extension-module = [
   "nautilus-core/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
-python = ["nautilus-core/python", "pyo3"]
+python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
 stubs = ["rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
-defi = [
-    "alloy-primitives",
-    "high-precision",
-]
+defi = ["alloy-primitives", "high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -40,17 +41,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 
-alloy-primitives = { workspace = true, optional = true }
+ahash = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
 evalexpr = { workspace = true }
+hex = { workspace = true }
 implied-vol = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -60,7 +60,12 @@ tabled = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
-hex = { workspace = true }
+tracing = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

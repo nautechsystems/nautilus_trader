@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -37,8 +37,9 @@ pub struct SubmitOrder {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
     pub order: OrderAny,
-    pub exec_algorith_id: Option<ExecAlgorithmId>,
+    pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
+    pub params: Option<HashMap<String, String>>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -58,8 +59,9 @@ impl SubmitOrder {
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
         order: OrderAny,
-        exec_algorith_id: Option<ExecAlgorithmId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
+        params: Option<HashMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -71,8 +73,9 @@ impl SubmitOrder {
             client_order_id,
             venue_order_id,
             order,
-            exec_algorith_id,
+            exec_algorithm_id,
             position_id,
+            params,
             command_id,
             ts_init,
         })
@@ -101,7 +104,7 @@ pub struct SubmitOrderList {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
     pub order_list: OrderList,
-    pub exec_algorith_id: Option<ExecAlgorithmId>,
+    pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -122,7 +125,7 @@ impl SubmitOrderList {
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
         order_list: OrderList,
-        exec_algorith_id: Option<ExecAlgorithmId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         command_id: UUID4,
         ts_init: UnixNanos,
@@ -135,7 +138,7 @@ impl SubmitOrderList {
             client_order_id,
             venue_order_id,
             order_list,
-            exec_algorith_id,
+            exec_algorithm_id,
             position_id,
             command_id,
             ts_init,

@@ -15,11 +15,14 @@
 
 //! Trading performance statistics and portfolio metrics.
 
+pub mod cagr;
+pub mod calmar_ratio;
 pub mod expectancy;
 pub mod long_ratio;
 pub mod loser_avg;
 pub mod loser_max;
 pub mod loser_min;
+pub mod max_drawdown;
 pub mod profit_factor;
 pub mod returns_avg;
 pub mod returns_avg_loss;

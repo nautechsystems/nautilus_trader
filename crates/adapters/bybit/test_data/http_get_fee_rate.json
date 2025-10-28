@@ -1,0 +1,28 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "list": [
+      {
+        "symbol": "BTCUSDT",
+        "takerFeeRate": "0.0006",
+        "makerFeeRate": "0.0001",
+        "baseCoin": ""
+      },
+      {
+        "symbol": "ETHUSDT",
+        "takerFeeRate": "0.0006",
+        "makerFeeRate": "0.0001",
+        "baseCoin": ""
+      },
+      {
+        "symbol": "SOLUSDT",
+        "takerFeeRate": "0.00075",
+        "makerFeeRate": "0.00025",
+        "baseCoin": ""
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1697673900000
+}

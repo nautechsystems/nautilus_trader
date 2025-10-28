@@ -32,44 +32,8 @@ use nautilus_persistence::backend::{
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
-#[cfg(target_os = "linux")]
-use procfs::{self, process::Process};
 use rstest::rstest;
 use tempfile::TempDir;
-
-/// Memory leak test
-///
-/// Uses arguments from setup to run function for given number of iterations.
-/// Checks that the difference between memory after 1 and iter + 1 runs is
-/// less than threshold.
-#[allow(dead_code)]
-#[cfg(target_os = "linux")]
-fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
-    let args = setup();
-    // measure mem after setup
-    let page_size = procfs::page_size();
-    let me = Process::myself().unwrap();
-    let setup_mem = me.stat().unwrap().rss * page_size / 1024;
-
-    {
-        run(&args);
-    }
-
-    let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-
-    for _ in 0..iter {
-        run(&args);
-    }
-
-    let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-
-    if (after.abs_diff(before) as f64 / (before as f64)) >= threshold {
-        println!("Memory leak detected after {iter} iterations");
-        println!("Memory before runs (in KB): {before}");
-        println!("Memory after runs (in KB): {after}");
-        panic!("Memory leak detected");
-    }
-}
 
 #[rstest]
 fn test_quote_tick_query() {
@@ -174,12 +138,6 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[ignore = "JSON functionality not implemented in Rust"]
-#[rstest]
-fn test_catalog_serialization_json_round_trip() {
-    // This test is skipped because write_to_json is not implemented in the Rust backend
-}
-
 #[rstest]
 fn test_datafusion_parquet_round_trip() {
     use std::collections::HashMap;
@@ -240,12 +198,6 @@ fn test_datafusion_parquet_round_trip() {
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
         assert_eq!(orig, loaded);
     }
-}
-
-#[ignore = "JSON functionality not implemented in Rust"]
-#[rstest]
-fn test_catalog_export_functionality() {
-    // This test is skipped because write_to_json is not implemented in the Rust backend
 }
 
 // ================================================================================================
@@ -1663,8 +1615,14 @@ fn test_is_remote_uri_extended_moved() {
     assert!(gcs2_catalog.is_remote_uri());
 
     // Test Azure URIs
+    let azure_test_options = Some(
+        [("account_name".to_string(), "test".to_string())]
+            .iter()
+            .cloned()
+            .collect(),
+    );
     let azure_catalog =
-        ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
+        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
             .unwrap();
     assert!(azure_catalog.is_remote_uri());
 
@@ -1713,11 +1671,17 @@ fn test_reconstruct_full_uri_moved() {
     assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
 
     // Test Azure URI reconstruction
+    let azure_test_options = Some(
+        [("account_name".to_string(), "test".to_string())]
+            .iter()
+            .cloned()
+            .collect(),
+    );
     let azure_catalog =
-        ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
+        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
             .unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
-    assert_eq!(reconstructed, "azure://account/data/bars/file.parquet");
+    assert_eq!(reconstructed, "az://container/data/bars/file.parquet");
 
     // Test HTTP URI reconstruction
     let http_catalog =

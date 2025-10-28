@@ -416,7 +416,7 @@ impl Order for MarketOrder {
         );
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn events(&self) -> Vec<&OrderEventAny> {
@@ -460,7 +460,7 @@ impl Order for MarketOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {

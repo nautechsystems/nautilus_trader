@@ -3,7 +3,6 @@ from collections.abc import Callable
 
 from ibapi.client import EClient
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -28,7 +27,8 @@ class MockEClient(EClient):
         self._next_valid_counter = 0
 
     def _handle_task(self, handler: Callable, **kwargs):
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         if loop.is_running():
             loop.create_task(handler(**kwargs))  # noqa: RUF006
         else:

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core constants shared across the OKX adapter components.
+
 use std::sync::LazyLock;
 
 use ahash::AHashSet;
@@ -28,7 +30,9 @@ pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(O
 /// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "a535cbe8d0c8BCDE";
 
-pub const OKX_HTTP_URL: &str = "https://okx.com";
+// Use the canonical host with www to avoid cross-domain redirects which may
+// strip authentication headers in some HTTP clients and middleboxes.
+pub const OKX_HTTP_URL: &str = "https://www.okx.com";
 pub const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
 pub const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com:8443/ws/v5/private";
 pub const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
@@ -53,10 +57,23 @@ pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
 /// # Notes
 ///
 /// - PostOnly is supported as a flag on limit orders.
+/// - Conditional orders (stop/trigger) are supported via algo orders.
 pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,
     OrderType::Limit,
-    OrderType::MarketToLimit, // Mapped to IOC when no price is specified
+    OrderType::MarketToLimit,   // Mapped to IOC when no price is specified
+    OrderType::StopMarket,      // Supported via algo order API
+    OrderType::StopLimit,       // Supported via algo order API
+    OrderType::MarketIfTouched, // Supported via algo order API
+    OrderType::LimitIfTouched,  // Supported via algo order API
+];
+
+/// Conditional order types that require the OKX algo order API.
+pub const OKX_CONDITIONAL_ORDER_TYPES: &[OrderType] = &[
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
 ];
 
 /// OKX error codes that should trigger retries.
@@ -91,3 +108,18 @@ pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::n
 pub fn should_retry_error_code(error_code: &str) -> bool {
     OKX_RETRY_ERROR_CODES.contains(error_code)
 }
+
+/// OKX error code returned when a post-only order would immediately take liquidity.
+pub const OKX_POST_ONLY_ERROR_CODE: &str = "51019";
+
+/// OKX cancel source code used when a post-only order is auto-cancelled for taking liquidity.
+pub const OKX_POST_ONLY_CANCEL_SOURCE: &str = "31";
+
+/// Human-readable reason used when a post-only order is auto-cancelled for taking liquidity.
+pub const OKX_POST_ONLY_CANCEL_REASON: &str = "POST_ONLY would take liquidity";
+
+/// Target currency literal for base currency.
+pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
+
+/// Target currency literal for quote currency.
+pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";

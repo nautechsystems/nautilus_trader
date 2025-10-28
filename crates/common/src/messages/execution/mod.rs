@@ -22,7 +22,10 @@ pub mod report;
 pub mod submit;
 
 use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::{ClientId, InstrumentId};
+use nautilus_model::{
+    identifiers::{ClientId, InstrumentId},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+};
 use strum::Display;
 
 // Re-exports
@@ -32,6 +35,15 @@ pub use self::{
     report::GenerateOrderStatusReport, report::GeneratePositionReports, submit::SubmitOrder,
     submit::SubmitOrderList,
 };
+
+/// Execution report variants for reconciliation.
+#[derive(Clone, Debug, Display)]
+pub enum ExecutionReport {
+    OrderStatus(Box<OrderStatusReport>),
+    Fill(Box<FillReport>),
+    Position(Box<PositionStatusReport>),
+    Mass(Box<ExecutionMassStatus>),
+}
 
 // TODO
 #[allow(clippy::large_enum_variant)]
@@ -62,6 +74,11 @@ impl TradingCommand {
         }
     }
 
+    /// Returns the instrument ID for the command.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the command is `QueryAccount` which does not have an instrument ID.
     #[must_use]
     pub const fn instrument_id(&self) -> InstrumentId {
         match self {

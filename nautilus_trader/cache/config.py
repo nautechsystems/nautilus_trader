@@ -32,13 +32,13 @@ class CacheConfig(NautilusConfig, frozen=True):
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601 : bool, default False
         If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
+        If `False` then will persist as UNIX nanoseconds.
     persist_account_events : bool, default True
         If account state events are written to the backing database.
         Set to `False` in place of purging account state events.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
-        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        The recommended range if using buffered pipelining is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for keys.

@@ -1,18 +1,3 @@
-------------------- ENUMS -------------------
-
-CREATE TYPE ACCOUNT_TYPE AS ENUM ('Cash', 'Margin', 'Betting');
-CREATE TYPE AGGREGATION_SOURCE AS ENUM ('EXTERNAL', 'INTERNAL');
-CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NO_AGGRESSOR','BUYER','SELLER');
-CREATE TYPE ASSET_CLASS AS ENUM ('FX', 'EQUITY', 'COMMODITY', 'DEBT', 'INDEX', 'CRYPTOCURRENCY', 'ALTERNATIVE');
-CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 'Forward', 'Cfg', 'Bond', 'Option', 'OptionSpread', 'Warrant', 'SportsBetting');
-CREATE TYPE BAR_AGGREGATION AS ENUM ('TICK', 'TICK_IMBALANCE', 'TICK_RUNS', 'VOLUME', 'VOLUME_IMBALANCE', 'VOLUME_RUNS', 'VALUE', 'VALUE_IMBALANCE', 'VALUE_RUNS', 'MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH');
-CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
-CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released', 'Submitted', 'Accepted', 'Rejected', 'Canceled', 'Expired', 'Triggered', 'PendingUpdate', 'PendingCancel', 'PartiallyFilled', 'Filled');
-CREATE TYPE CURRENCY_TYPE AS ENUM('CRYPTO', 'FIAT', 'COMMODITY_BACKED');
-CREATE TYPE TRAILING_OFFSET_TYPE AS ENUM('NO_TRAILING_OFFSET', 'PRICE', 'BASIS_POINTS', 'TICKS', 'PRICE_TIER');
-CREATE TYPE PRICE_TYPE AS ENUM('BID','ASK','MID','LAST');
-------------------- TABLES -------------------
-
 CREATE TABLE IF NOT EXISTS "general" (
     id TEXT PRIMARY KEY NOT NULL,
     value bytea not null
@@ -368,13 +353,21 @@ CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
     sender TEXT NOT NULL,
+    recipient TEXT NOT NULL,
     side TEXT NOT NULL,
     size TEXT NOT NULL,
     price TEXT NOT NULL,
+    sqrt_price_x96 U160 NOT NULL,
+    liquidity U128 NOT NULL,
+    tick INTEGER NOT NULL,
+    amount0 I256 NOT NULL,
+    amount1 I256 NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number), // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );
+CREATE INDEX IF NOT EXISTS idx_pool_swap_event_lookup
+    ON pool_swap_event(chain_id, pool_address, block, transaction_index, log_index);
 
 CREATE TABLE IF NOT EXISTS "pool_liquidity_event" (
     id BIGSERIAL PRIMARY KEY,
@@ -387,15 +380,17 @@ CREATE TABLE IF NOT EXISTS "pool_liquidity_event" (
     event_type TEXT NOT NULL,
     sender TEXT,
     owner TEXT NOT NULL,
-    position_liquidity TEXT NOT NULL,
-    amount0 TEXT NOT NULL,
-    amount1 TEXT NOT NULL,
+    position_liquidity U128 NOT NULL,
+    amount0 U160 NOT NULL,
+    amount1 U160 NOT NULL,
     tick_lower INTEGER NOT NULL,
     tick_upper INTEGER NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );
+CREATE INDEX IF NOT EXISTS idx_pool_liquidity_event_lookup
+    ON pool_liquidity_event(chain_id, pool_address, block, transaction_index, log_index);
 
 CREATE TABLE IF NOT EXISTS "pool_collect_event" (
     id BIGSERIAL PRIMARY KEY,
@@ -406,11 +401,107 @@ CREATE TABLE IF NOT EXISTS "pool_collect_event" (
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
     owner TEXT NOT NULL,
-    fee0 TEXT NOT NULL,
-    fee1 TEXT NOT NULL,
+    amount0 U256 NOT NULL,
+    amount1 U256 NOT NULL,
     tick_lower INTEGER NOT NULL,
     tick_upper INTEGER NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_pool_collect_event_lookup
+    ON pool_collect_event(chain_id, pool_address, block, transaction_index, log_index);
+
+CREATE TABLE IF NOT EXISTS "pool_flash_event" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    transaction_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    sender TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    amount0 U256 NOT NULL,
+    amount1 U256 NOT NULL,
+    paid0 U256 NOT NULL,
+    paid1 U256 NOT NULL,
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
+--     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
+    UNIQUE(chain_id, transaction_hash, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_pool_flash_event_lookup
+    ON pool_flash_event(chain_id, pool_address, block, transaction_index, log_index);
+
+CREATE TABLE IF NOT EXISTS "pool_snapshot" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    transaction_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    current_tick INTEGER NOT NULL,
+    price_sqrt_ratio_x96 U160 NOT NULL,
+    liquidity U128 NOT NULL,
+    protocol_fees_token0 U256 NOT NULL,
+    protocol_fees_token1 U256 NOT NULL,
+    fee_protocol SMALLINT NOT NULL,
+    fee_growth_global_0 U256 NOT NULL,
+    fee_growth_global_1 U256 NOT NULL,
+    total_amount0_deposited U256 NOT NULL,
+    total_amount1_deposited U256 NOT NULL,
+    total_amount0_collected U256 NOT NULL,
+    total_amount1_collected U256 NOT NULL,
+    total_swaps INTEGER NOT NULL DEFAULT 0,
+    total_mints INTEGER NOT NULL DEFAULT 0,
+    total_burns INTEGER NOT NULL DEFAULT 0,
+    total_flashes INTEGER NOT NULL DEFAULT 0,
+    total_fee_collects INTEGER NOT NULL,
+    liquidity_utilization_rate  DOUBLE PRECISION DEFAULT 0,
+    is_valid BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chain_id, pool_address, block, transaction_index, log_index),
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address)
+);
+
+CREATE TABLE IF NOT EXISTS "pool_position" (
+    chain_id INTEGER NOT NULL,
+    pool_address TEXT NOT NULL,
+    snapshot_block BIGINT NOT NULL,
+    snapshot_transaction_index INTEGER NOT NULL,
+    snapshot_log_index INTEGER NOT NULL,
+    owner TEXT NOT NULL,
+    tick_lower INTEGER NOT NULL,
+    tick_upper INTEGER NOT NULL,
+    liquidity U128 NOT NULL,
+    fee_growth_inside_0_last U256 NOT NULL,
+    fee_growth_inside_1_last U256 NOT NULL,
+    tokens_owed_0 U128 NOT NULL,
+    tokens_owed_1 U128 NOT NULL,
+    total_amount0_deposited U256,
+    total_amount1_deposited U256,
+    total_amount0_collected U128,
+    total_amount1_collected U128,
+    is_consistent BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper),
+    FOREIGN KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index)
+        REFERENCES pool_snapshot(chain_id, pool_address, block, transaction_index, log_index) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "pool_tick" (
+    chain_id INTEGER NOT NULL,
+    pool_address TEXT NOT NULL,
+    snapshot_block BIGINT NOT NULL,
+    snapshot_transaction_index INTEGER NOT NULL,
+    snapshot_log_index INTEGER NOT NULL,
+    tick_value INTEGER NOT NULL,
+    liquidity_gross U128 NOT NULL,
+    liquidity_net I128 NOT NULL,
+    fee_growth_outside_0 U256 NOT NULL,
+    fee_growth_outside_1 U256 NOT NULL,
+    initialized BOOLEAN NOT NULL,
+    last_updated_block BIGINT NOT NULL,
+    PRIMARY KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value),
+    FOREIGN KEY (chain_id, pool_address, snapshot_block, snapshot_transaction_index, snapshot_log_index)
+        REFERENCES pool_snapshot(chain_id, pool_address, block, transaction_index, log_index) ON DELETE CASCADE
 );
