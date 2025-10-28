@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
@@ -51,29 +51,6 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
-
-
-if TYPE_CHECKING:
-    from typing import Any
-
-
-# -------------------------------------------------------------------------------------------------
-# Helper Functions
-# -------------------------------------------------------------------------------------------------
-
-
-def _get_hyperliquid_ws_url(is_testnet: bool = False) -> str:
-    """
-    Get the appropriate Hyperliquid WebSocket URL.
-    """
-    if is_testnet:
-        return "wss://api.hyperliquid-testnet.xyz/ws"
-    return "wss://api.hyperliquid.xyz/ws"
-
-
-# -------------------------------------------------------------------------------------------------
-# Data Client
-# -------------------------------------------------------------------------------------------------
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -135,34 +112,22 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.info("HTTP client initialized", LogColor.BLUE)
 
         # WebSocket client
-        ws_url = self._determine_ws_url(config)
-        self._log.info(f"WebSocket URL: {ws_url}", LogColor.BLUE)
-
-        # Initialize HyperliquidWebSocketClient from nautilus_pyo3
-        self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(url=ws_url)  # type: ignore[attr-defined]
+        self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
+            url=config.base_url_ws,
+            testnet=config.testnet,
+        )
         self._ws_client_futures: set[asyncio.Future] = set()
-
-    def _determine_ws_url(self, config: HyperliquidDataClientConfig) -> str:
-        """
-        Determine the WebSocket URL based on configuration.
-        """
-        if config.base_url_ws:
-            return config.base_url_ws
-        return _get_hyperliquid_ws_url(config.testnet)
+        self._log.info(f"WebSocket URL: {self._ws_client.url}", LogColor.BLUE)
 
     @property
     def instrument_provider(self) -> HyperliquidInstrumentProvider:
         return self._instrument_provider
 
     async def _connect(self) -> None:
-        """
-        Connect the client following standard patterns.
-        """
         await self.instrument_provider.initialize()
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        # Connect WebSocket following BitMEX pattern with positional arguments
         instruments = self.instrument_provider.instruments_pyo3()
         await self._ws_client.connect(
             instruments,
@@ -176,16 +141,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
     async def _disconnect(self) -> None:
-        """
-        Disconnect the client following standard patterns.
-        """
         # Note: PyO3 HyperliquidHttpClient doesn't expose cancel_all_requests method
         # The client will be cleaned up automatically when the object is destroyed
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
-        # Shutdown WebSocket following OKX/BitMEX pattern
+        # Shutdown WebSocket
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting WebSocket")
             await self._ws_client.close()
@@ -207,9 +169,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.info("Disconnected from Hyperliquid", LogColor.GREEN)
 
     def _cache_instruments(self) -> None:
-        """
-        Cache instruments following OKX/BitMEX pattern.
-        """
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
@@ -219,138 +178,80 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
     def _send_all_instruments_to_data_engine(self) -> None:
-        """
-        Send all instruments to data engine.
-
-        Follows the same pattern as other PyO3-based venues (BitMEX, OKX). Uses
-        _handle_data() which properly routes instruments through the data engine.
-
-        """
         for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
 
         for currency in self.instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _handle_msg(self, message: bytes) -> None:
-        """
-        Handle WebSocket messages following nautilus_pyo3 callback pattern.
-
-        This method receives raw bytes from the WebSocket and processes them into
-        appropriate Nautilus data types using the capsule_to_data pattern.
-
-        """
+    def _handle_msg(self, msg: Any) -> None:
         try:
-            data_obj = capsule_to_data(message)
-            self._handle_data(data_obj)
+            if nautilus_pyo3.is_pycapsule(msg):
+                # The capsule will fall out of scope at the end of this method,
+                # and eventually be garbage collected. The contained pointer
+                # to `Data` is still owned and managed by Rust.
+                data = capsule_to_data(msg)
+                self._handle_data(data)
+            else:
+                self._log.warning(f"Cannot handle message {msg}: not implemented")
         except Exception as e:
-            self._log.error(f"Error handling message: {e}")
+            self._log.exception("Error handling websocket message", e)
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
-        """
-        Subscribe to trade ticks following standard pattern.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        """
-        Subscribe to quote ticks following standard pattern.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_quotes(pyo3_instrument_id)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        """
-        Subscribe to order book deltas following standard pattern.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_order_book_deltas(
-            pyo3_instrument_id,
-            command.book_type,
-            command.depth if command.depth else 0,
-        )
+        await self._ws_client.subscribe_book(pyo3_instrument_id)
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        """
-        Subscribe to order book snapshots following standard pattern.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_order_book_snapshots(
-            pyo3_instrument_id,
-            command.book_type,
-            command.depth if command.depth else 0,
-        )
+        await self._ws_client.subscribe_book(pyo3_instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        """
-        Subscribe to bars following standard pattern.
-        """
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        """
-        Subscribe to instrument updates.
-        """
         self._log.info(f"Subscribed to instrument updates for {command.instrument_id}")
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        """
-        Subscribe to instruments updates.
-        """
         self._log.info("Subscribed to instruments updates")
 
     # -- UNSUBSCRIPTIONS ---------------------------------------------------------------------------
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        """
-        Unsubscribe from trade ticks.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        """
-        Unsubscribe from quote ticks.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_quotes(pyo3_instrument_id)
 
     async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
-        """
-        Unsubscribe from order book updates.
-        """
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book_deltas(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_book(pyo3_instrument_id)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        """
-        Unsubscribe from bars.
-        """
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
-        """
-        Unsubscribe from instrument updates.
-        """
         self._log.info(f"Unsubscribed from instrument updates for {command.instrument_id}")
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
-        """
-        Unsubscribe from instruments updates.
-        """
         self._log.info("Unsubscribed from instruments updates")
 
     # -- REQUESTS -----------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        """
-        Request instrument definition following standard pattern.
-        """
         instrument = self.instrument_provider.find(request.instrument_id)
         if instrument:
             self._handle_data(instrument)
@@ -359,9 +260,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
             self._log.error(f"Instrument not found: {request.instrument_id}")
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        """
-        Request multiple instrument definitions following standard pattern.
-        """
         instruments = []
         for instrument_id in request.instrument_ids:
             instrument = self.instrument_provider.find(instrument_id)
@@ -378,9 +276,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
             self._log.info(f"Sent {len(instruments)} instruments")
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        """
-        Request historical trade ticks.
-        """
         try:
             pyo3_trades = await self._http_client.request_trade_ticks(
                 request.instrument_id,
@@ -395,9 +290,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
             self._log.error(f"Error requesting trade ticks for {request.instrument_id}: {e}")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        """
-        Request historical quote ticks.
-        """
         try:
             pyo3_quotes = await self._http_client.request_quote_ticks(
                 request.instrument_id,
@@ -412,9 +304,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
             self._log.error(f"Error requesting quote ticks for {request.instrument_id}: {e}")
 
     async def _request_bars(self, request: RequestBars) -> None:
-        """
-        Request historical bars.
-        """
         try:
             pyo3_bars = await self._http_client.request_bars(
                 request.bar_type,

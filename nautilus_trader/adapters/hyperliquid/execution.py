@@ -105,11 +105,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
 
-        # Set initial account ID (following OKX/BitMEX pattern)
         account_id = AccountId(f"{name or HYPERLIQUID_VENUE.value}-master")
         self._set_account_id(account_id)
 
-        # Placeholder for WebSocket connections
+        # TODO: Placeholder for WebSocket connections
         self._ws_connection = None
 
         self._log.info("Hyperliquid execution client initialized")
@@ -119,9 +118,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         return self._instrument_provider
 
     def _cache_instruments(self) -> None:
-        """
-        Cache instruments into HTTP client following OKX/BitMEX pattern.
-        """
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()
@@ -133,12 +129,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     # -- CONNECTION HANDLERS -----------------------------------------------------------------------
 
     async def _connect(self) -> None:
-        """
-        Connect the client.
-        """
-        self._log.info("Connecting to Hyperliquid execution...", LogColor.BLUE)
-
-        # Initialize instruments (required for the execution client to work)
         self._log.info("Loading instruments...", LogColor.BLUE)
         await self._instrument_provider.initialize()
         self._cache_instruments()
@@ -167,11 +157,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.info("Hyperliquid execution client connected", LogColor.GREEN)
 
     async def _disconnect(self) -> None:
-        """
-        Disconnect the client.
-        """
-        self._log.info("Disconnecting from Hyperliquid execution...", LogColor.BLUE)
-
         # TODO: Implement actual disconnection logic
         if self._ws_connection:
             # Close WebSocket connections
@@ -180,25 +165,15 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await asyncio.sleep(0.1)  # Placeholder
         self._log.info("Hyperliquid execution disconnection completed", LogColor.GREEN)
 
-    # -- COMMANDS -----------------------------------------------------------------------------------
+    # -- COMMANDS ---------------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        """
-        Submit an order.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to submit the order.
-
-        """
         order = command.order
 
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
 
-        # Generate order submitted event, to ensure correct ordering of events
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -209,8 +184,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting order to Hyperliquid: {order}")
 
-            # Submit via HTTP client with domain types (Rust handles all serialization and parsing)
-            # Following BitMEX/Bybit pattern - pass domain types, receive OrderStatusReport
             report = await self._client.submit_order(
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
@@ -226,7 +199,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             self._log.debug(f"Received order status report: {report}")
 
-            # Generate order accepted event based on the report
             self.generate_order_accepted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -250,15 +222,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        """
-        Submit an order list.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to submit the order list.
-
-        """
         order_list = command.order_list
         orders = order_list.orders
 
@@ -275,8 +238,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if not orders:
             return
 
-        # Generate submitted events for all orders
         now_ns = self._clock.timestamp_ns()
+
         for order in orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
@@ -288,15 +251,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
 
-            # Pass Order objects directly to Rust layer
-            # This pushes the complexity to the Rust layer for pure Rust execution
             reports = await self._client.submit_orders(orders)
 
             self._log.debug(f"Received {len(reports)} order status reports")
 
             # Generate acceptance events for all successfully submitted orders
             for report in reports:
-                # Find the corresponding order
                 order = next(
                     (o for o in orders if o.client_order_id == report.client_order_id),
                     None,
@@ -326,77 +286,28 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        """
-        Modify an order.
-
-        Parameters
-        ----------
-        command : ModifyOrder
-            The command to modify the order.
-
-        """
         self._log.warning(f"Order modification not yet implemented for {command.client_order_id}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        """
-        Cancel an order.
-
-        Parameters
-        ----------
-        command : CancelOrder
-            The command to cancel the order.
-
-        """
         self._log.warning(f"Order cancellation not yet implemented for {command.client_order_id}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        """
-        Cancel all orders for an instrument.
-
-        Parameters
-        ----------
-        command : CancelAllOrders
-            The command to cancel all orders.
-
-        """
         instrument_str = (
             f" for {command.instrument_id}" if command.instrument_id is not None else ""
         )
         self._log.warning(f"Cancel all orders not yet implemented{instrument_str}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        """
-        Batch cancel orders.
-
-        Parameters
-        ----------
-        command : BatchCancelOrders
-            The command to batch cancel orders.
-
-        """
         self._log.warning(
             f"Batch cancel orders not yet implemented for {len(command.cancels)} orders",
         )
 
-    # -- REPORTS ------------------------------------------------------------------------------------
+    # -- REPORTS ----------------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        """
-        Generate an order status report.
-
-        Parameters
-        ----------
-        command : GenerateOrderStatusReport
-            The command to generate the report.
-
-        Returns
-        -------
-        OrderStatusReport | None
-
-        """
         self._log.warning(
             f"Order status report generation not yet implemented for {command.client_order_id}",
         )
@@ -406,19 +317,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        """
-        Generate order status reports.
-
-        Parameters
-        ----------
-        command : GenerateOrderStatusReports
-            The command to generate the reports.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
@@ -433,19 +331,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Generate fill reports.
-
-        Parameters
-        ----------
-        command : GenerateFillReports
-            The command to generate the reports.
-
-        Returns
-        -------
-        list[FillReport]
-
-        """
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_fill_reports(instrument_id=instrument_id)
@@ -460,19 +345,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """
-        Generate position status reports.
-
-        Parameters
-        ----------
-        command : GeneratePositionStatusReports
-            The command to generate the reports.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_position_status_reports(
@@ -485,28 +357,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to generate position status reports: {e}")
             return []
 
-    # -- QUERIES ------------------------------------------------------------------------------------
+    # -- QUERIES ----------------------------------------------------------------------------------
 
     async def _query_order(self, command: QueryOrder) -> None:
-        """
-        Query order status.
-
-        Parameters
-        ----------
-        command : QueryOrder
-            The command to query the order.
-
-        """
         self._log.warning(f"Order query not yet implemented for {command.client_order_id}")
 
     async def _query_account(self, command: QueryAccount) -> None:
-        """
-        Query account information.
-
-        Parameters
-        ----------
-        command : QueryAccount
-            The command to query the account.
-
-        """
         self._log.warning("Account query not yet implemented")

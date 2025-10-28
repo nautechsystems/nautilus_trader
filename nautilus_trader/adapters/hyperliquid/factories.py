@@ -83,10 +83,10 @@ def get_cached_hyperliquid_http_client(
     # The from_env() method will read HYPERLIQUID_PK/HYPERLIQUID_TESTNET_PK from environment
     try:
         # Try to create an authenticated client from environment variables
-        return nautilus_pyo3.HyperliquidHttpClient.from_env()  # type: ignore[attr-defined]
+        return nautilus_pyo3.HyperliquidHttpClient.from_env()
     except Exception:
         # If no credentials in environment, create unauthenticated client (for data only)
-        return nautilus_pyo3.HyperliquidHttpClient(  # type: ignore[attr-defined]
+        return nautilus_pyo3.HyperliquidHttpClient(
             is_testnet=testnet,
             timeout_secs=timeout_secs,
         )

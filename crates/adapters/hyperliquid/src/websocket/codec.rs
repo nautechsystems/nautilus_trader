@@ -16,11 +16,14 @@
 use std::str::FromStr;
 
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
-use crate::websocket::messages::{
-    HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest, WsLevelData,
+use crate::{
+    common::enums::HyperliquidBarInterval::{self, OneMinute},
+    websocket::messages::{
+        HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest, WsLevelData,
+    },
 };
 
 /// Canonical outbound (mirrors OKX/BitMEX "op + args" pattern).
@@ -104,9 +107,15 @@ pub struct PostAck {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTrade {
     pub instrument: Ustr,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub px: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub qty: Decimal,
     pub side: Side,
     pub ts: i64, // ms
@@ -123,13 +132,25 @@ pub enum Side {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsBbo {
     pub instrument: Ustr,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub bid_px: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub bid_qty: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub ask_px: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub ask_qty: Decimal,
     pub ts: i64, // ms
 }
@@ -139,15 +160,30 @@ pub struct WsCandle {
     pub instrument: Ustr,
     pub interval: String, // "1m", "5m", ...
     pub open_ts: i64,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub o: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub h: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub l: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub c: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub v: Decimal,
 }
 
@@ -164,16 +200,25 @@ pub struct WsBook {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Level {
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub px: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub qty: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsMid {
     pub symbol: String,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub mid: Decimal,
     pub ts: Option<i64>,
 }
@@ -183,9 +228,15 @@ pub struct WsFill {
     pub symbol: String,
     pub order_id: String,
     pub trade_id: String,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub px: Decimal,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub qty: Decimal,
     pub side: Side,
     pub ts: i64,
@@ -194,7 +245,10 @@ pub struct WsFill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsFunding {
     pub symbol: String,
-    #[serde(with = "decimal_serde")]
+    #[serde(
+        serialize_with = "serialize_decimal",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub rate: Decimal,
     pub ts: i64,
 }
@@ -206,25 +260,20 @@ pub struct WsUserEvent {
     pub ts: i64,
 }
 
-// Decimal serde module
-mod decimal_serde {
-    use serde::{Deserializer, Serializer, de::Error};
+fn serialize_decimal<S: Serializer>(d: &Decimal, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&d.normalize().to_string())
+}
 
-    use super::*;
-
-    pub fn serialize<S: Serializer>(d: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&d.normalize().to_string())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        match v {
-            serde_json::Value::String(s) => Decimal::from_str(&s).map_err(Error::custom),
-            serde_json::Value::Number(n) => {
-                Decimal::from_str(&n.to_string()).map_err(Error::custom)
-            }
-            _ => Err(Error::custom("expected decimal string or number")),
+fn deserialize_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    match v {
+        serde_json::Value::String(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
+        serde_json::Value::Number(n) => {
+            Decimal::from_str(&n.to_string()).map_err(serde::de::Error::custom)
         }
+        _ => Err(serde::de::Error::custom(
+            "expected decimal string or number",
+        )),
     }
 }
 
@@ -263,8 +312,8 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .as_ref()
                             .and_then(|p| p.get("interval"))
                             .and_then(|v| v.as_str())
-                            .unwrap_or("1m")
-                            .to_string(),
+                            .and_then(|s| s.parse::<HyperliquidBarInterval>().ok())
+                            .unwrap_or(OneMinute),
                     },
                     "allMids" => SubscriptionRequest::AllMids {
                         dex: arg
@@ -312,8 +361,8 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .as_ref()
                             .and_then(|p| p.get("interval"))
                             .and_then(|v| v.as_str())
-                            .unwrap_or("1m")
-                            .to_string(),
+                            .and_then(|s| s.parse::<HyperliquidBarInterval>().ok())
+                            .unwrap_or(OneMinute),
                     },
                     _ => SubscriptionRequest::AllMids { dex: None },
                 };

@@ -20,6 +20,8 @@ use nautilus_model::reports::{FillReport, OrderStatusReport};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
+use crate::common::enums::HyperliquidBarInterval;
+
 /// Represents an outbound WebSocket message from client to Hyperliquid.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "method")]
@@ -61,7 +63,10 @@ pub enum SubscriptionRequest {
     /// Web data for frontend
     WebData2 { user: String },
     /// Candlestick data
-    Candle { coin: Ustr, interval: String },
+    Candle {
+        coin: Ustr,
+        interval: HyperliquidBarInterval,
+    },
     /// Level 2 order book
     L2Book {
         coin: Ustr,
