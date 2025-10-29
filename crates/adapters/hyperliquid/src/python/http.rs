@@ -61,7 +61,7 @@ impl HyperliquidHttpClient {
             Self::from_credentials(&key, vault.as_deref(), is_testnet, timeout_secs)
                 .map_err(to_pyvalue_err)
         } else {
-            Ok(Self::new(is_testnet, timeout_secs))
+            Self::new(is_testnet, timeout_secs).map_err(to_pyvalue_err)
         }
     }
 

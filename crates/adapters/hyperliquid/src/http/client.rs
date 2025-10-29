@@ -38,7 +38,10 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
+use nautilus_network::{
+    http::{HttpClient, HttpClientError},
+    ratelimiter::quota::Quota,
+};
 use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -108,7 +111,7 @@ pub struct HyperliquidHttpClient {
 
 impl Default for HyperliquidHttpClient {
     fn default() -> Self {
-        Self::new(true, None) // Default to testnet
+        Self::new(true, None).expect("Failed to create default Hyperliquid HTTP client")
     }
 }
 
@@ -118,16 +121,23 @@ impl HyperliquidHttpClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    #[must_use]
-    pub fn new(is_testnet: bool, timeout_secs: Option<u64>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+    ) -> std::result::Result<Self, HttpClientError> {
+        Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
                 vec![],
                 Some(*HYPERLIQUID_REST_QUOTA),
                 timeout_secs,
-            ),
+                None, // proxy_url
+            )?,
             is_testnet,
             base_info: info_url(is_testnet).to_string(),
             base_exchange: exchange_url(is_testnet).to_string(),
@@ -140,24 +150,31 @@ impl HyperliquidHttpClient {
             rate_limit_max_attempts_info: 3,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
-        }
+        })
     }
 
     /// Creates a new [`HyperliquidHttpClient`] configured with credentials
     /// for authenticated requests.
-    #[must_use]
-    pub fn with_credentials(secrets: &Secrets, timeout_secs: Option<u64>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn with_credentials(
+        secrets: &Secrets,
+        timeout_secs: Option<u64>,
+    ) -> std::result::Result<Self, HttpClientError> {
         let signer = HyperliquidEip712Signer::new(secrets.private_key.clone());
         let nonce_manager = Arc::new(NonceManager::new());
 
-        Self {
+        Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
                 vec![],
                 Some(*HYPERLIQUID_REST_QUOTA),
                 timeout_secs,
-            ),
+                None, // proxy_url
+            )?,
             is_testnet: secrets.is_testnet,
             base_info: info_url(secrets.is_testnet).to_string(),
             base_exchange: exchange_url(secrets.is_testnet).to_string(),
@@ -170,7 +187,7 @@ impl HyperliquidHttpClient {
             rate_limit_max_attempts_info: 3,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
-        }
+        })
     }
 
     /// Creates an authenticated client from environment variables.
@@ -182,7 +199,8 @@ impl HyperliquidHttpClient {
     pub fn from_env() -> Result<Self> {
         let secrets =
             Secrets::from_env().map_err(|_| Error::auth("missing credentials in environment"))?;
-        Ok(Self::with_credentials(&secrets, None))
+        Self::with_credentials(&secrets, None)
+            .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
     }
 
     /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
@@ -205,7 +223,8 @@ impl HyperliquidHttpClient {
     ) -> Result<Self> {
         let secrets = Secrets::from_private_key(private_key, vault_address, is_testnet)
             .map_err(|e| Error::auth(format!("invalid credentials: {e}")))?;
-        Ok(Self::with_credentials(&secrets, timeout_secs))
+        Self::with_credentials(&secrets, timeout_secs)
+            .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
     }
 
     /// Configure rate limiting parameters (chainable).
@@ -1609,7 +1628,7 @@ mod tests {
             types::{Currency, Price, Quantity},
         };
 
-        let client = HyperliquidHttpClient::new(true, None);
+        let client = HyperliquidHttpClient::new(true, None).unwrap();
 
         // Create a test instrument with base currency "vntls:vCURSOR"
         let base_code = "vntls:vCURSOR";

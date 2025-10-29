@@ -31,7 +31,7 @@ use pyo3::{PyTypeCheck, exceptions::PyException, prelude::*};
 
 use crate::{
     python::{
-        http::{HttpError, HttpTimeoutError},
+        http::{HttpClientBuildError, HttpError, HttpInvalidProxyError, HttpTimeoutError},
         websocket::WebSocketClientError,
     },
     ratelimiter::quota::Quota,
@@ -113,6 +113,14 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(
         <HttpTimeoutError as PyTypeCheck>::NAME,
         m.py().get_type::<HttpTimeoutError>(),
+    )?;
+    m.add(
+        <HttpInvalidProxyError as PyTypeCheck>::NAME,
+        m.py().get_type::<HttpInvalidProxyError>(),
+    )?;
+    m.add(
+        <HttpClientBuildError as PyTypeCheck>::NAME,
+        m.py().get_type::<HttpClientBuildError>(),
     )?;
 
     Ok(())

@@ -119,7 +119,7 @@ pub struct BybitHttpInnerClient {
 
 impl Default for BybitHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, None)
+        Self::new(None, Some(60), None, None, None, None, None)
             .expect("Failed to create default BybitHttpInnerClient")
     }
 }
@@ -158,6 +158,7 @@ impl BybitHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -183,7 +184,11 @@ impl BybitHttpInnerClient {
                 Self::rate_limiter_quotas(),
                 Some(*BYBIT_REST_QUOTA),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: None,
             recv_window_ms: recv_window_ms.unwrap_or(DEFAULT_RECV_WINDOW_MS),
             retry_manager,
@@ -208,6 +213,7 @@ impl BybitHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -233,7 +239,11 @@ impl BybitHttpInnerClient {
                 Self::rate_limiter_quotas(),
                 Some(*BYBIT_REST_QUOTA),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: Some(Credential::new(api_key, api_secret)),
             recv_window_ms: recv_window_ms.unwrap_or(DEFAULT_RECV_WINDOW_MS),
             retry_manager,
@@ -2432,7 +2442,7 @@ pub struct BybitHttpClient {
 
 impl Default for BybitHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, None)
+        Self::new(None, Some(60), None, None, None, None, None)
             .expect("Failed to create default BybitHttpClient")
     }
 }
@@ -2459,6 +2469,7 @@ impl BybitHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         Ok(Self {
             inner: Arc::new(BybitHttpInnerClient::new(
@@ -2468,6 +2479,7 @@ impl BybitHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                proxy_url,
             )?),
         })
     }
@@ -2487,6 +2499,7 @@ impl BybitHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         Ok(Self {
             inner: Arc::new(BybitHttpInnerClient::with_credentials(
@@ -2498,6 +2511,7 @@ impl BybitHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                proxy_url,
             )?),
         })
     }
@@ -3237,7 +3251,7 @@ mod tests {
 
     #[rstest]
     fn test_client_creation() {
-        let client = BybitHttpClient::new(None, Some(60), None, None, None, None);
+        let client = BybitHttpClient::new(None, Some(60), None, None, None, None, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -3252,6 +3266,7 @@ mod tests {
             "test_secret".to_string(),
             Some("https://api-testnet.bybit.com".to_string()),
             Some(60),
+            None,
             None,
             None,
             None,

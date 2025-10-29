@@ -34,6 +34,13 @@ pub struct HyperliquidDataClientConfig {
     pub ws_timeout_secs: Option<u64>,
     /// Optional interval for refreshing instruments.
     pub update_instruments_interval_mins: Option<u64>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
 }
 
 impl Default for HyperliquidDataClientConfig {
@@ -46,6 +53,8 @@ impl Default for HyperliquidDataClientConfig {
             http_timeout_secs: Some(60),
             ws_timeout_secs: Some(30),
             update_instruments_interval_mins: Some(60),
+            http_proxy_url: None,
+            ws_proxy_url: None,
         }
     }
 }
@@ -103,6 +112,13 @@ pub struct HyperliquidExecClientConfig {
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
     pub retry_delay_max_ms: u64,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
 }
 
 impl Default for HyperliquidExecClientConfig {
@@ -118,6 +134,8 @@ impl Default for HyperliquidExecClientConfig {
             max_retries: 3,
             retry_delay_initial_ms: 100,
             retry_delay_max_ms: 5000,
+            http_proxy_url: None,
+            ws_proxy_url: None,
         }
     }
 }

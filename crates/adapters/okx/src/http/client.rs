@@ -149,7 +149,7 @@ pub struct OKXHttpInnerClient {
 
 impl Default for OKXHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, false)
+        Self::new(None, Some(60), None, None, None, false, None)
             .expect("Failed to create default OKXHttpInnerClient")
     }
 }
@@ -248,6 +248,7 @@ impl OKXHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         is_demo: bool,
+        proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -272,7 +273,11 @@ impl OKXHttpInnerClient {
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
@@ -297,6 +302,7 @@ impl OKXHttpInnerClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         is_demo: bool,
+        proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -321,7 +327,11 @@ impl OKXHttpInnerClient {
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
             retry_manager,
             cancellation_token: CancellationToken::new(),
@@ -897,7 +907,7 @@ pub struct OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, false)
+        Self::new(None, Some(60), None, None, None, false, None)
             .expect("Failed to create default OKXHttpClient")
     }
 }
@@ -919,6 +929,7 @@ impl OKXHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         is_demo: bool,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Arc::new(OKXHttpInnerClient::new(
@@ -928,6 +939,7 @@ impl OKXHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 is_demo,
+                proxy_url,
             )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
@@ -941,7 +953,7 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None, None, false)
+        Self::with_credentials(None, None, None, None, None, None, None, None, false, None)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
@@ -961,6 +973,7 @@ impl OKXHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         is_demo: bool,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
         let api_secret = get_or_env_var(api_secret, "OKX_API_SECRET")?;
@@ -978,6 +991,7 @@ impl OKXHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 is_demo,
+                proxy_url,
             )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,

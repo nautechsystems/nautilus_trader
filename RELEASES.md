@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added initial backtest visualization tearsheets with plotly
+- Added `proxy_url` support for HTTP clients
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
@@ -21,6 +22,7 @@ TBD
 - Fixed OKX spot margin position reports for borrowing
 
 ### Internal Improvements
+- Added BitMEX submit broadcaster
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
 - Upgraded implied-vol crate (#3115), thanks @faysou
 

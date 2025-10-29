@@ -58,6 +58,12 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     bars_timestamp_on_close : bool, default True
         If the ts_event timestamp for bars should be on the open or close or the bar.
         If True, then ts_event will be on the close of the bar.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -73,6 +79,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
     bars_timestamp_on_close: bool = True
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -136,6 +144,12 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The position mode for `USDT perpetual` and `Inverse futures`.
     margin_mode : BybitMarginMode, optional
         Set Margin Mode.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     Warnings
     --------
@@ -159,6 +173,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
     ws_trade_timeout_secs: PositiveFloat | None = 5.0
     ws_auth_timeout_secs: PositiveFloat | None = 5.0
     futures_leverages: dict[str, PositiveInt] | None = None

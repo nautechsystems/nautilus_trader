@@ -108,6 +108,7 @@ impl BitmexDataClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
+            config.http_proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
 

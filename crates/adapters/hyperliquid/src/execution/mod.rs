@@ -169,7 +169,8 @@ impl HyperliquidExecutionClient {
         .context("failed to create secrets from private key")?;
 
         let http_client =
-            HyperliquidHttpClient::with_credentials(&secrets, Some(config.http_timeout_secs));
+            HyperliquidHttpClient::with_credentials(&secrets, Some(config.http_timeout_secs))
+                .context("Failed to create Hyperliquid HTTP client")?;
 
         // Create WebSocket client (will connect when needed)
         let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);

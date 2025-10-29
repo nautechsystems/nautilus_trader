@@ -61,6 +61,12 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         The account VIP level to determine book subscriptions.
         - Only VIP4 and above in trading fee tier are allowed to subscribe to "books50-l2-tbt" 50 depth channels (10 ms updates).
         - Only VIP5 and above in trading fee tier are allowed to subscribe to "books-l2-tbt" 400 depth channels (10 ms updates).
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -79,6 +85,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
     vip_level: OKXVipLevel | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
 
 
 class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -143,6 +151,12 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         (borrowing) as SHORT positions. This may lead to unintended liquidation of wallet assets
         if strategies are not designed to handle SPOT positions properly.
         If False, SPOT instruments return FLAT position reports (default behavior).
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -164,3 +178,5 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     use_fills_channel: bool = False
     use_mm_mass_cancel: bool = False
     use_spot_cash_position_reports: bool = False
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None

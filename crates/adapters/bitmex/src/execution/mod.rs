@@ -97,6 +97,7 @@ impl BitmexExecutionClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
+            config.http_proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
 
@@ -110,8 +111,14 @@ impl BitmexExecutionClient {
         )
         .context("failed to construct BitMEX execution websocket client")?;
 
+        let pool_size = config.submitter_pool_size.unwrap_or(1);
+        let submitter_proxy_urls = match &config.submitter_proxy_urls {
+            Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
+            None => vec![config.http_proxy_url.clone(); pool_size],
+        };
+
         let submitter_config = SubmitBroadcasterConfig {
-            pool_size: config.submitter_pool_size.unwrap_or(1),
+            pool_size,
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
             base_url: config.base_url_http.clone(),
@@ -123,14 +130,21 @@ impl BitmexExecutionClient {
             recv_window_ms: config.recv_window_ms,
             max_requests_per_second: config.max_requests_per_second,
             max_requests_per_minute: config.max_requests_per_minute,
+            proxy_urls: submitter_proxy_urls,
             ..Default::default()
         };
 
         let _submitter = SubmitBroadcaster::new(submitter_config)
             .context("failed to create SubmitBroadcaster")?;
 
+        let canceller_pool_size = config.canceller_pool_size.unwrap_or(1);
+        let canceller_proxy_urls = match &config.canceller_proxy_urls {
+            Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
+            None => vec![config.http_proxy_url.clone(); canceller_pool_size],
+        };
+
         let canceller_config = CancelBroadcasterConfig {
-            pool_size: config.canceller_pool_size.unwrap_or(1),
+            pool_size: canceller_pool_size,
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
             base_url: config.base_url_http.clone(),
@@ -142,6 +156,7 @@ impl BitmexExecutionClient {
             recv_window_ms: config.recv_window_ms,
             max_requests_per_second: config.max_requests_per_second,
             max_requests_per_minute: config.max_requests_per_minute,
+            proxy_urls: canceller_proxy_urls,
             ..Default::default()
         };
 

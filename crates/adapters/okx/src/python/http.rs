@@ -48,6 +48,7 @@ impl OKXHttpClient {
         retry_delay_ms=None,
         retry_delay_max_ms=None,
         is_demo=false,
+        proxy_url=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -60,6 +61,7 @@ impl OKXHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         is_demo: bool,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::with_credentials(
             api_key,
@@ -71,6 +73,7 @@ impl OKXHttpClient {
             retry_delay_ms,
             retry_delay_max_ms,
             is_demo,
+            proxy_url,
         )
         .map_err(to_pyvalue_err)
     }

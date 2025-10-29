@@ -81,6 +81,13 @@ pub struct BlockchainDataClientConfig {
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
+    /// Optional HTTP proxy URL for RPC requests.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL for RPC connections.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
 }
 
 impl BlockchainDataClientConfig {
@@ -110,6 +117,8 @@ impl BlockchainDataClientConfig {
             from_block,
             pool_filters: pools_filters.unwrap_or_default(),
             postgres_cache_database_config,
+            http_proxy_url: None,
+            ws_proxy_url: None,
         }
     }
 }

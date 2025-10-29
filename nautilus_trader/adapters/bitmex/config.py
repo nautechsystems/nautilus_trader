@@ -61,6 +61,12 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
         The maximum number of requests per minute (rolling window).
         Defaults to 120 so data clients can share the cached HTTP client with execution.
         Lower to 30 if you rely on BitMEX's unauthenticated venue limits instead of local throttling.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -77,6 +83,8 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     update_instruments_interval_mins: PositiveInt | None = 60
     max_requests_per_second: PositiveInt = 10
     max_requests_per_minute: PositiveInt = 120
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
 
 
 class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -133,6 +141,16 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         Cancel requests are fanned out to multiple clients in parallel for redundancy,
         with the first successful response short-circuiting remaining requests.
         Recommended maximum pool size of 3.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    submitter_proxy_urls : list[str], optional
+        Optional list of proxy URLs for submit broadcaster path diversity.
+    canceller_proxy_urls : list[str], optional
+        Optional list of proxy URLs for cancel broadcaster path diversity.
 
     """
 
@@ -150,3 +168,7 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     max_requests_per_minute: PositiveInt = 120
     submitter_pool_size: PositiveInt | None = None
     canceller_pool_size: PositiveInt | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
+    submitter_proxy_urls: list[str] | None = None
+    canceller_proxy_urls: list[str] | None = None

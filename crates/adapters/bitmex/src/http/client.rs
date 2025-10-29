@@ -139,7 +139,7 @@ pub struct BitmexHttpInnerClient {
 
 impl Default for BitmexHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, None, None, None)
+        Self::new(None, Some(60), None, None, None, None, None, None, None)
             .expect("Failed to create default BitmexHttpInnerClient")
     }
 }
@@ -173,6 +173,7 @@ impl BitmexHttpInnerClient {
         recv_window_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         max_requests_per_minute: Option<u32>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -202,7 +203,11 @@ impl BitmexHttpInnerClient {
                 Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
                 Some(Self::default_quota(max_req_per_sec)),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: None,
             recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
@@ -228,6 +233,7 @@ impl BitmexHttpInnerClient {
         recv_window_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         max_requests_per_minute: Option<u32>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -257,7 +263,11 @@ impl BitmexHttpInnerClient {
                 Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
                 Some(Self::default_quota(max_req_per_sec)),
                 timeout_secs,
-            ),
+                proxy_url,
+            )
+            .map_err(|e| {
+                BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+            })?,
             credential: Some(Credential::new(api_key, api_secret)),
             recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
@@ -755,6 +765,7 @@ impl Default for BitmexHttpClient {
             None,
             None,
             None,
+            None, // proxy_url
         )
         .expect("Failed to create default BitmexHttpClient")
     }
@@ -779,6 +790,7 @@ impl BitmexHttpClient {
         recv_window_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         max_requests_per_minute: Option<u32>,
+        proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
         let url = base_url.unwrap_or_else(|| {
@@ -801,6 +813,7 @@ impl BitmexHttpClient {
                 recv_window_ms,
                 max_requests_per_second,
                 max_requests_per_minute,
+                proxy_url,
             )?,
             _ => BitmexHttpInnerClient::new(
                 Some(url),
@@ -811,6 +824,7 @@ impl BitmexHttpClient {
                 recv_window_ms,
                 max_requests_per_second,
                 max_requests_per_minute,
+                proxy_url,
             )?,
         };
 
@@ -827,8 +841,10 @@ impl BitmexHttpClient {
     ///
     /// Returns an error if required environment variables are not set or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None, None, None, None)
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
+        Self::with_credentials(
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
 
     /// Creates a new [`BitmexHttpClient`] configured with credentials
@@ -852,6 +868,7 @@ impl BitmexHttpClient {
         recv_window_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         max_requests_per_minute: Option<u32>,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         // Determine testnet from URL first to select correct environment variables
         let testnet = base_url.as_ref().is_some_and(|url| url.contains("testnet"));
@@ -886,6 +903,7 @@ impl BitmexHttpClient {
             recv_window_ms,
             max_requests_per_second,
             max_requests_per_minute,
+            proxy_url,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
@@ -2234,6 +2252,7 @@ mod tests {
             None, // recv_window_ms
             None, // max_requests_per_second
             None, // max_requests_per_minute
+            None, // proxy_url
         )
         .expect("Failed to create test client");
 
@@ -2260,6 +2279,7 @@ mod tests {
             None, // recv_window_ms
             None, // max_requests_per_second
             None, // max_requests_per_minute
+            None, // proxy_url
         )
         .expect("Failed to create test client");
 
@@ -2293,6 +2313,7 @@ mod tests {
             None, // Use default recv_window_ms (10000ms = 10s)
             None, // max_requests_per_second
             None, // max_requests_per_minute
+            None, // proxy_url
         )
         .expect("Failed to create test client");
 
@@ -2307,6 +2328,7 @@ mod tests {
             Some(30_000), // 30 seconds
             None,         // max_requests_per_second
             None,         // max_requests_per_minute
+            None,         // proxy_url
         )
         .expect("Failed to create test client");
 

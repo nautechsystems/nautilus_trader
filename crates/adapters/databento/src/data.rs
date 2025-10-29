@@ -69,6 +69,10 @@ pub struct DatabentoDataClientConfig {
     pub use_exchange_as_venue: bool,
     /// Whether to timestamp bars on close.
     pub bars_timestamp_on_close: bool,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    pub ws_proxy_url: Option<String>,
 }
 
 impl DatabentoDataClientConfig {
@@ -85,6 +89,8 @@ impl DatabentoDataClientConfig {
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
+            http_proxy_url: None,
+            ws_proxy_url: None,
         }
     }
 }

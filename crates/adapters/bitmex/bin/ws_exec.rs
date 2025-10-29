@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,     // recv_window_ms
         None,     // max_requests_per_second
         None,     // max_requests_per_minute
+        None,     // proxy_url
     )
     .expect("Failed to create HTTP client");
 

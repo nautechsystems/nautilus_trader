@@ -76,6 +76,7 @@ impl BitmexHttpClient {
             recv_window_ms,
             max_requests_per_second,
             max_requests_per_minute,
+            None, // proxy_url - TODO: Add proxy_url parameter to Python API when needed
         )
         .map_err(to_pyvalue_err)
     }

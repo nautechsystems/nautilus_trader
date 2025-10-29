@@ -655,7 +655,7 @@ async fn start_test_server()
 #[rstest]
 #[tokio::test]
 async fn test_client_creation() {
-    let client = BybitHttpClient::new(None, Some(60), None, None, None, None).unwrap();
+    let client = BybitHttpClient::new(None, Some(60), None, None, None, None, None).unwrap();
 
     assert!(client.base_url().contains("bybit.com"));
     assert!(client.credential().is_none());
@@ -673,6 +673,7 @@ async fn test_client_with_credentials() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -685,6 +686,7 @@ async fn test_testnet_urls() {
     let client = BybitHttpClient::new(
         Some("https://api-testnet.bybit.com".to_string()),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -706,6 +708,7 @@ async fn test_custom_base_url() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -718,7 +721,8 @@ async fn test_get_server_time() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let response = client.http_get_server_time().await.unwrap();
     assert!(!response.result.time_second.is_empty());
@@ -731,7 +735,8 @@ async fn test_get_instruments_linear() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitInstrumentsInfoParamsBuilder::default()
         .category(BybitProductType::Linear)
@@ -748,7 +753,8 @@ async fn test_get_instruments_spot() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitInstrumentsInfoParamsBuilder::default()
         .category(BybitProductType::Spot)
@@ -765,7 +771,8 @@ async fn test_get_instruments_inverse() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitInstrumentsInfoParamsBuilder::default()
         .category(BybitProductType::Inverse)
@@ -782,7 +789,8 @@ async fn test_get_instruments_option() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitInstrumentsInfoParamsBuilder::default()
         .category(BybitProductType::Option)
@@ -804,6 +812,7 @@ async fn test_place_order() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -833,7 +842,8 @@ async fn test_authenticated_endpoint_requires_credentials() {
     let base_url = format!("http://{}", addr);
 
     // Create client without credentials
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client
@@ -853,6 +863,7 @@ async fn test_rate_limiting_returns_error() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -896,6 +907,7 @@ async fn test_get_open_orders_with_symbol() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -923,6 +935,7 @@ async fn test_get_open_orders_without_symbol() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -941,7 +954,8 @@ async fn test_get_wallet_balance_requires_credentials() {
     let base_url = format!("http://{}", addr);
 
     // Create client without credentials
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitWalletBalanceParams {
         account_type: BybitAccountType::Unified,
@@ -964,6 +978,7 @@ async fn test_get_wallet_balance_with_credentials() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -992,7 +1007,8 @@ async fn test_get_positions_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitPositionListParamsBuilder::default()
         .category(BybitProductType::Linear)
@@ -1018,6 +1034,7 @@ async fn test_get_positions_with_credentials() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -1037,7 +1054,8 @@ async fn test_get_fee_rate_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
     let params = BybitFeeRateParams {
         category: BybitProductType::Linear,
@@ -1060,6 +1078,7 @@ async fn test_get_fee_rate_with_credentials() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -1120,6 +1139,7 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -1187,6 +1207,7 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -1225,6 +1246,7 @@ async fn test_order_deduplication_by_order_id() {
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -1286,6 +1308,7 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -1337,6 +1360,7 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
@@ -1393,6 +1417,7 @@ async fn test_request_order_status_reports_stops_before_next_coin() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -1445,6 +1470,7 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         "test_api_secret".to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,

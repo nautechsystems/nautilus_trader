@@ -104,6 +104,7 @@ impl OKXDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.is_demo,
+                config.http_proxy_url.clone(),
             )?
         } else {
             OKXHttpClient::new(
@@ -113,6 +114,7 @@ impl OKXDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.is_demo,
+                config.http_proxy_url.clone(),
             )?
         };
 

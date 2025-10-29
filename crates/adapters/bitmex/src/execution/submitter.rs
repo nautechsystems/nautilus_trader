@@ -193,6 +193,12 @@ pub struct SubmitBroadcasterConfig {
     pub health_check_timeout_secs: u64,
     /// Substrings to identify expected submit rejections for debug-level logging.
     pub expected_reject_patterns: Vec<String>,
+    /// Optional list of proxy URLs for path diversity.
+    ///
+    /// Each transport instance uses the proxy at its index. If the list is shorter
+    /// than pool_size, remaining transports will use no proxy. If longer, extra proxies
+    /// are ignored.
+    pub proxy_urls: Vec<Option<String>>,
 }
 
 impl Default for SubmitBroadcasterConfig {
@@ -213,6 +219,7 @@ impl Default for SubmitBroadcasterConfig {
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![r"Duplicate clOrdID".to_string()],
+            proxy_urls: vec![],
         }
     }
 }
@@ -384,6 +391,9 @@ impl SubmitBroadcaster {
         };
 
         for i in 0..config.pool_size {
+            // Assign proxy from config list, or None if index exceeds list length
+            let proxy_url = config.proxy_urls.get(i).and_then(|p| p.clone());
+
             let client = BitmexHttpClient::with_credentials(
                 config.api_key.clone(),
                 config.api_secret.clone(),
@@ -395,6 +405,7 @@ impl SubmitBroadcaster {
                 config.recv_window_ms,
                 config.max_requests_per_second,
                 config.max_requests_per_minute,
+                proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client {i}: {e}"))?;
 
@@ -458,8 +469,7 @@ impl SubmitBroadcaster {
                 let healthy_count = results.iter().filter(|&&r| r).count();
 
                 tracing::debug!(
-                    "Health check complete: {}/{} clients healthy",
-                    healthy_count,
+                    "Health check complete: {healthy_count}/{} clients healthy",
                     results.len()
                 );
             }
@@ -504,8 +514,7 @@ impl SubmitBroadcaster {
         let healthy_count = results.iter().filter(|&&r| r).count();
 
         tracing::debug!(
-            "Health check complete: {}/{} clients healthy",
-            healthy_count,
+            "Health check complete: {healthy_count}/{} clients healthy",
             results.len()
         );
     }
@@ -543,12 +552,7 @@ impl SubmitBroadcaster {
                         handle.abort();
                     }
                     self.successful_submits.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!(
-                        "{} broadcast succeeded [{}] {}",
-                        operation,
-                        client_id,
-                        params
-                    );
+                    tracing::debug!("{} broadcast succeeded [{client_id}] {params}", operation,);
                     return Ok(result);
                 }
                 Ok((client_id, Err(e))) => {
@@ -557,20 +561,14 @@ impl SubmitBroadcaster {
                     if self.is_expected_reject(&error_msg) {
                         self.expected_rejects.fetch_add(1, Ordering::Relaxed);
                         tracing::debug!(
-                            "Expected {} rejection [{}]: {} {}",
+                            "Expected {} rejection [{client_id}]: {error_msg} {params}",
                             operation.to_lowercase(),
-                            client_id,
-                            error_msg,
-                            params
                         );
                         errors.push(error_msg);
                     } else {
                         tracing::warn!(
-                            "{} request failed [{}]: {} {}",
+                            "{} request failed [{client_id}]: {error_msg} {params}",
                             operation,
-                            client_id,
-                            error_msg,
-                            params
                         );
                         errors.push(error_msg);
                     }
@@ -585,10 +583,8 @@ impl SubmitBroadcaster {
         // All tasks failed
         self.failed_submits.fetch_add(1, Ordering::Relaxed);
         tracing::error!(
-            "All {} requests failed: {:?} {}",
+            "All {} requests failed: {errors:?} {params}",
             operation.to_lowercase(),
-            errors,
-            params
         );
         Err(anyhow::anyhow!(
             "All {} requests failed: {:?}",
@@ -631,6 +627,7 @@ impl SubmitBroadcaster {
         let pool_size = self.config.pool_size;
         let actual_tries = if let Some(t) = submit_tries {
             if t > pool_size {
+                // Use log macro for Python visibility for now
                 log::warn!(
                     "submit_tries={} exceeds pool_size={}, capping at pool_size",
                     t,
@@ -641,6 +638,10 @@ impl SubmitBroadcaster {
         } else {
             pool_size
         };
+
+        tracing::debug!(
+            "Submit broadcast requested for client_order_id={client_order_id} (tries={actual_tries}/{pool_size})",
+        );
 
         let transports_guard = self.transports.read().await;
         let healthy_transports: Vec<TransportClient> = transports_guard
@@ -656,14 +657,26 @@ impl SubmitBroadcaster {
             anyhow::bail!("No healthy transport clients available");
         }
 
+        tracing::debug!(
+            "Broadcasting submit to {} clients: client_order_id={client_order_id}, instrument_id={instrument_id}",
+            healthy_transports.len(),
+        );
+
         let mut handles = Vec::new();
-        for transport in healthy_transports {
+        for (idx, transport) in healthy_transports.into_iter().enumerate() {
+            // First client uses original ID, subsequent clients get suffix to avoid duplicates
+            let modified_client_order_id = if idx == 0 {
+                client_order_id
+            } else {
+                ClientOrderId::new(format!("{}-{}", client_order_id.as_str(), idx))
+            };
+
             let handle = tokio::spawn(async move {
                 let client_id = transport.client_id.clone();
                 let result = transport
                     .submit_order(
                         instrument_id,
-                        client_order_id,
+                        modified_client_order_id,
                         order_side,
                         order_type,
                         quantity,
@@ -1147,6 +1160,7 @@ mod tests {
             health_check_interval_secs: 60,
             health_check_timeout_secs: 1,
             expected_reject_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = SubmitBroadcaster::new(config).unwrap();
@@ -1472,5 +1486,240 @@ mod tests {
         assert_eq!(metrics.expected_rejects, 1);
         assert_eq!(metrics.failed_submits, 1);
         assert_eq!(metrics.successful_submits, 0);
+    }
+
+    #[tokio::test]
+    async fn test_client_order_id_suffix_for_multiple_clients() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct CaptureExecutor {
+            captured_ids: Arc<Mutex<Vec<String>>>,
+            report: OrderStatusReport,
+        }
+
+        impl SubmitExecutor for CaptureExecutor {
+            fn health_check(
+                &self,
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
+                Box::pin(async { Ok(()) })
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn submit_order(
+                &self,
+                _instrument_id: InstrumentId,
+                client_order_id: ClientOrderId,
+                _order_side: OrderSide,
+                _order_type: OrderType,
+                _quantity: Quantity,
+                _time_in_force: TimeInForce,
+                _price: Option<Price>,
+                _trigger_price: Option<Price>,
+                _trigger_type: Option<TriggerType>,
+                _display_qty: Option<Quantity>,
+                _post_only: bool,
+                _reduce_only: bool,
+                _order_list_id: Option<OrderListId>,
+                _contingency_type: Option<ContingencyType>,
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>
+            {
+                // Capture the client_order_id
+                self.captured_ids
+                    .lock()
+                    .unwrap()
+                    .push(client_order_id.as_str().to_string());
+                let report = self.report.clone();
+                Box::pin(async move { Ok(report) })
+            }
+
+            fn add_instrument(&self, _instrument: InstrumentAny) {}
+        }
+
+        let captured_ids = Arc::new(Mutex::new(Vec::new()));
+        let report = create_test_report("ORDER-1");
+
+        let transports = vec![
+            TransportClient::new(
+                CaptureExecutor {
+                    captured_ids: Arc::clone(&captured_ids),
+                    report: report.clone(),
+                },
+                "client-0".to_string(),
+            ),
+            TransportClient::new(
+                CaptureExecutor {
+                    captured_ids: Arc::clone(&captured_ids),
+                    report: report.clone(),
+                },
+                "client-1".to_string(),
+            ),
+            TransportClient::new(
+                CaptureExecutor {
+                    captured_ids: Arc::clone(&captured_ids),
+                    report: report.clone(),
+                },
+                "client-2".to_string(),
+            ),
+        ];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
+
+        let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+        let result = broadcaster
+            .broadcast_submit(
+                instrument_id,
+                ClientOrderId::from("O-123"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::new(100.0, 0),
+                TimeInForce::Gtc,
+                Some(Price::new(50000.0, 2)),
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+
+        // Check captured client_order_ids
+        let ids = captured_ids.lock().unwrap();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0], "O-123"); // First client gets original ID
+        assert_eq!(ids[1], "O-123-1"); // Second client gets suffix -1
+        assert_eq!(ids[2], "O-123-2"); // Third client gets suffix -2
+    }
+
+    #[tokio::test]
+    async fn test_client_order_id_suffix_with_partial_failure() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct CaptureAndFailExecutor {
+            captured_ids: Arc<Mutex<Vec<String>>>,
+            should_succeed: bool,
+        }
+
+        impl SubmitExecutor for CaptureAndFailExecutor {
+            fn health_check(
+                &self,
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
+                Box::pin(async { Ok(()) })
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn submit_order(
+                &self,
+                _instrument_id: InstrumentId,
+                client_order_id: ClientOrderId,
+                _order_side: OrderSide,
+                _order_type: OrderType,
+                _quantity: Quantity,
+                _time_in_force: TimeInForce,
+                _price: Option<Price>,
+                _trigger_price: Option<Price>,
+                _trigger_type: Option<TriggerType>,
+                _display_qty: Option<Quantity>,
+                _post_only: bool,
+                _reduce_only: bool,
+                _order_list_id: Option<OrderListId>,
+                _contingency_type: Option<ContingencyType>,
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>
+            {
+                // Capture the client_order_id
+                self.captured_ids
+                    .lock()
+                    .unwrap()
+                    .push(client_order_id.as_str().to_string());
+                let should_succeed = self.should_succeed;
+                Box::pin(async move {
+                    if should_succeed {
+                        Ok(create_test_report("ORDER-1"))
+                    } else {
+                        anyhow::bail!("Network error")
+                    }
+                })
+            }
+
+            fn add_instrument(&self, _instrument: InstrumentAny) {}
+        }
+
+        let captured_ids = Arc::new(Mutex::new(Vec::new()));
+
+        let transports = vec![
+            TransportClient::new(
+                CaptureAndFailExecutor {
+                    captured_ids: Arc::clone(&captured_ids),
+                    should_succeed: false,
+                },
+                "client-0".to_string(),
+            ),
+            TransportClient::new(
+                CaptureAndFailExecutor {
+                    captured_ids: Arc::clone(&captured_ids),
+                    should_succeed: true,
+                },
+                "client-1".to_string(),
+            ),
+        ];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
+
+        let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
+        let result = broadcaster
+            .broadcast_submit(
+                instrument_id,
+                ClientOrderId::from("O-456"),
+                OrderSide::Sell,
+                OrderType::Market,
+                Quantity::new(50.0, 0),
+                TimeInForce::Ioc,
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+
+        // Check that both clients received unique client_order_ids
+        let ids = captured_ids.lock().unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], "O-456"); // First client gets original ID
+        assert_eq!(ids[1], "O-456-1"); // Second client gets suffix -1
+    }
+
+    #[tokio::test]
+    async fn test_proxy_urls_populated_from_config() {
+        let config = SubmitBroadcasterConfig {
+            pool_size: 3,
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            proxy_urls: vec![
+                Some("http://proxy1:8080".to_string()),
+                Some("http://proxy2:8080".to_string()),
+                Some("http://proxy3:8080".to_string()),
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(config.proxy_urls.len(), 3);
+        assert_eq!(config.proxy_urls[0], Some("http://proxy1:8080".to_string()));
+        assert_eq!(config.proxy_urls[1], Some("http://proxy2:8080".to_string()));
+        assert_eq!(config.proxy_urls[2], Some("http://proxy3:8080".to_string()));
     }
 }

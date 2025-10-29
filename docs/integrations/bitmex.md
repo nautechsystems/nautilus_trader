@@ -368,6 +368,95 @@ BitMEX exposes the current allowance via response headers:
 - `x-ratelimit-reset`: UNIX timestamp when the allowance resets.
 - `retry-after`: seconds to wait after a 429 response.
 
+## Submit broadcaster
+
+The BitMEX execution client includes a submit broadcaster that provides higher assurance of market and limit orders being accepted at target prices through parallel request fanout, trading lower minimum latency for the risk of duplicate submissions.
+
+### Concepts
+
+Order submissions are time-critical operations - when a strategy decides to enter a position, any delay can result in missed opportunities or adverse pricing. The submit broadcaster addresses this by:
+
+- **Parallel fanout**: Submit requests are simultaneously broadcast to multiple independent HTTP client instances.
+- **First-success short-circuiting**: The first successful response wins, minimizing latency to acceptance.
+- **Unique client_order_id suffixes**: Each broadcast attempt uses a unique `client_order_id` (original ID, then incrementing suffix `-1`, `-2`, etc.) to avoid duplicate order ID rejections.
+- **Latency vs. duplicates tradeoff**: Accepts the risk of potential duplicate fills in exchange for lower minimum latency and higher assurance of acceptance.
+
+This architecture reduces the minimum latency to order acceptance by parallelizing across multiple network paths. Note that all submitted orders may fill, resulting in multiple executions that strategies must handle appropriately.
+
+### Usage
+
+The submit broadcaster is opt-in and controlled via the `submit_tries` parameter when submitting orders. By default, orders are submitted through a single HTTP client. To enable broadcasting:
+
+```python
+# Single submission (default behavior)
+self.submit_order(order)
+
+# Broadcast to 2 parallel HTTP clients for redundancy
+self.submit_order(order, params={"submit_tries": 2})
+
+# Broadcast to 3 parallel HTTP clients (maximum recommended)
+self.submit_order(order, params={"submit_tries": 3})
+```
+
+**Key points**:
+
+- `submit_tries` must be a positive integer.
+- Broadcasting only occurs when `submit_tries > 1`.
+- If `submit_tries` exceeds `submitter_pool_size`, it will be capped at the pool size with a warning.
+- Each parallel attempt uses a unique `client_order_id` suffix (`-1`, `-2`, etc.) to avoid duplicate order ID rejections.
+- All submitted orders may fill - strategies must handle potential duplicate executions.
+
+### Health monitoring
+
+Each HTTP client in the broadcaster pool maintains health metrics:
+
+- Successful submissions mark a client as healthy.
+- Failed requests increment error counters.
+- Background health checks periodically verify client connectivity.
+- Degraded clients are tracked but remain in the pool to maintain fault tolerance.
+
+The broadcaster exposes metrics including total submits, successful submits, failed submits, and expected rejects for operational monitoring and debugging.
+
+#### Tracked metrics
+
+| Metric                   | Type   | Description                                                                                                           |
+|--------------------------|--------|-----------------------------------------------------------------------------------------------------------------------|
+| `total_submits`          | `u64`  | Total number of submit operations initiated.                                                                          |
+| `successful_submits`     | `u64`  | Number of submit operations that successfully received acknowledgement from BitMEX.                                   |
+| `failed_submits`         | `u64`  | Number of submit operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
+| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., duplicate clOrdID from parallel submissions).                   |
+| `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
+| `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`submitter_pool_size`).                                          |
+
+These metrics can be accessed programmatically via the `get_metrics()` and `get_metrics_async()` methods on the `SubmitBroadcaster` instance.
+
+### Configuration
+
+The submit broadcaster is configured via the execution client configuration:
+
+| Option                 | Default | Description                                                                               |
+|------------------------|---------|-------------------------------------------------------------------------------------------|
+| `submitter_pool_size`  | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
+
+**Example configuration**:
+
+```python
+from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
+
+exec_config = BitmexExecClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    submitter_pool_size=3,  # Default pool size
+)
+```
+
+:::tip
+For HFT strategies without higher rate limits, consider the advantages of using the submit broadcaster against potentially hitting rate limits, as each client has an independent rate limit budget.
+The default `submitter_pool_size=None` disables the broadcaster. The recommended setting of `submitter_pool_size=3` broadcasts each submit request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per submit operation but provides higher assurance against network or exchange issues.
+:::
+
+The broadcaster is automatically started when the execution client connects and stopped when it disconnects. All submit operations are automatically routed through the broadcaster without requiring any changes to strategy code.
+
 ## Cancel broadcaster
 
 The BitMEX execution client includes a cancel broadcaster that provides fault-tolerant order cancellation through parallel request fanout.
@@ -429,9 +518,8 @@ exec_config = BitmexExecClientConfig(
 ```
 
 :::tip
-For HFT strategies without higher rate limits, consider reducing `canceller_pool_size=1` to minimize rate limit consumption.
-The default pool size of 3 broadcasts each cancel request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per cancel operation.
-Single-client mode still benefits from the broadcaster's idempotent success handling but uses standard rate limits.
+For HFT strategies without higher rate limits, consider the advantages of using the cancel broadcaster against potentially hitting rate limits, as each client has an independent rate limit budget.
+The default `canceller_pool_size=None` disables the broadcaster. The recommended setting of `canceller_pool_size=3` broadcasts each cancel request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per cancel operation but provides higher assurance against network or exchange issues.
 :::
 
 The broadcaster is automatically started when the execution client connects and stopped when it disconnects. All cancel operations (`cancel_order`, `cancel_all_orders`, `batch_cancel_orders`) are automatically routed through the broadcaster without requiring any changes to strategy code.
@@ -482,6 +570,8 @@ The BitMEX data client provides the following configuration options:
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
 | `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
+| `http_proxy_url`                  | `None`   | Optional HTTP proxy URL. |
+| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. |
 
 ### Execution client configuration options
 
@@ -502,6 +592,11 @@ The BitMEX execution client provides the following configuration options:
 | `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 | `canceller_pool_size`    | `3`      | Number of redundant HTTP clients in the cancel broadcaster pool. See [Cancel broadcaster](#cancel-broadcaster). |
+| `submitter_pool_size`    | `3`      | Number of redundant HTTP clients in the submit broadcaster pool. See [Submit broadcaster](#submit-broadcaster). |
+| `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |
+| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. |
+| `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. |
+| `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. |
 
 ### Configuration examples
 

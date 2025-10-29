@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Hyperliquid HTTP public example");
     tracing::info!("Testnet: {testnet}");
 
-    let client = HyperliquidHttpClient::new(testnet, Some(60));
+    let client = HyperliquidHttpClient::new(testnet, Some(60))?;
 
     // Fetch metadata
     let meta = client.info_meta().await?;

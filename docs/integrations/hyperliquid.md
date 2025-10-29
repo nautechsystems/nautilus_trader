@@ -14,6 +14,8 @@ The Hyperliquid integration is still under active development.
 | `base_url_ws`            | `None`  | Override for the WebSocket base URL. |
 | `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`. |
 | `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls. |
+| `http_proxy_url`         | `None`  | Optional HTTP proxy URL. |
+| `ws_proxy_url`           | `None`  | Optional WebSocket proxy URL. |
 
 ### Execution client configuration options
 
@@ -28,3 +30,5 @@ The Hyperliquid integration is still under active development.
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
 | `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls. |
+| `http_proxy_url`         | `None`  | Optional HTTP proxy URL. |
+| `ws_proxy_url`           | `None`  | Optional WebSocket proxy URL. |

@@ -33,7 +33,7 @@ use crate::{
 #[pymethods]
 impl BybitHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -46,6 +46,7 @@ impl BybitHttpClient {
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         let timeout = timeout_secs.or(Some(60));
 
@@ -72,6 +73,7 @@ impl BybitHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                proxy_url,
             )
             .map_err(to_pyvalue_err)
         } else {
@@ -82,6 +84,7 @@ impl BybitHttpClient {
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
+                proxy_url,
             )
             .map_err(to_pyvalue_err)
         }

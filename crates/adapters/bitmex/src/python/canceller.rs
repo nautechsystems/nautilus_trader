@@ -43,7 +43,8 @@ impl CancelBroadcaster {
         health_check_interval_secs=30,
         health_check_timeout_secs=5,
         expected_reject_patterns=None,
-        idempotent_success_patterns=None
+        idempotent_success_patterns=None,
+        proxy_urls=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -63,6 +64,7 @@ impl CancelBroadcaster {
         health_check_timeout_secs: u64,
         expected_reject_patterns: Option<Vec<String>>,
         idempotent_success_patterns: Option<Vec<String>>,
+        proxy_urls: Option<Vec<Option<String>>>,
     ) -> PyResult<Self> {
         let config = CancelBroadcasterConfig {
             pool_size,
@@ -83,6 +85,7 @@ impl CancelBroadcaster {
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().expected_reject_patterns),
             idempotent_success_patterns: idempotent_success_patterns
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().idempotent_success_patterns),
+            proxy_urls: proxy_urls.unwrap_or_default(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)

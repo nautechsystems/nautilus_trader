@@ -159,7 +159,7 @@ pub struct HttpResponse {
 
 /// Errors returned by the HTTP client.
 ///
-/// Includes generic transport errors and timeouts.
+/// Includes generic transport errors, timeouts, and proxy configuration errors.
 #[derive(thiserror::Error, Debug)]
 pub enum HttpClientError {
     #[error("HTTP error occurred: {0}")]
@@ -167,6 +167,12 @@ pub enum HttpClientError {
 
     #[error("HTTP request timed out: {0}")]
     TimeoutError(String),
+
+    #[error("Invalid proxy URL: {0}")]
+    InvalidProxy(String),
+
+    #[error("Failed to build HTTP client: {0}")]
+    ClientBuildError(String),
 }
 
 impl From<reqwest::Error> for HttpClientError {
@@ -209,33 +215,45 @@ pub struct HttpClient {
 impl HttpClient {
     /// Creates a new [`HttpClient`] instance.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if any header key or value is invalid, or if building the underlying `reqwest::Client` fails.
-    #[must_use]
+    /// - Returns `InvalidProxy` if the proxy URL is malformed.
+    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
     pub fn new(
         headers: HashMap<String, String>,
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         timeout_secs: Option<u64>,
-    ) -> Self {
+        proxy_url: Option<String>,
+    ) -> Result<Self, HttpClientError> {
         // Build default headers
         let mut header_map = HeaderMap::new();
         for (key, value) in headers {
-            let header_name = HeaderName::from_str(&key).expect("Invalid header name");
-            let header_value = HeaderValue::from_str(&value).expect("Invalid header value");
+            let header_name = HeaderName::from_str(&key)
+                .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
+            let header_value = HeaderValue::from_str(&value).map_err(|e| {
+                HttpClientError::Error(format!("Invalid header value '{value}': {e}"))
+            })?;
             header_map.insert(header_name, header_value);
         }
 
         let mut client_builder = reqwest::Client::builder().default_headers(header_map);
+
         if let Some(timeout_secs) = timeout_secs {
             client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
         }
 
+        // Configure proxy if provided
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|e| HttpClientError::InvalidProxy(format!("{proxy_url}: {e}")))?;
+            client_builder = client_builder.proxy(proxy);
+        }
+
         let client = client_builder
             .build()
-            .expect("Failed to build reqwest client");
+            .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
 
         let client = InnerHttpClient {
             client,
@@ -249,10 +267,10 @@ impl HttpClient {
 
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
-        Self {
+        Ok(Self {
             client,
             rate_limiter,
-        }
+        })
     }
 
     /// Sends an HTTP request.
@@ -628,5 +646,84 @@ mod tests {
             Err(e) => panic!("Expected a timeout error, was: {e:?}"),
             Ok(resp) => panic!("Expected a timeout error, but was a successful response: {resp:?}"),
         }
+    }
+
+    #[test]
+    fn test_http_client_without_proxy() {
+        // Create client with no proxy
+        let result = HttpClient::new(
+            HashMap::new(),
+            vec![],
+            vec![],
+            None,
+            None,
+            None, // No proxy
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_http_client_with_valid_proxy() {
+        // Create client with a valid proxy URL
+        let result = HttpClient::new(
+            HashMap::new(),
+            vec![],
+            vec![],
+            None,
+            None,
+            Some("http://proxy.example.com:8080".to_string()),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_http_client_with_socks5_proxy() {
+        // Create client with a SOCKS5 proxy URL
+        let result = HttpClient::new(
+            HashMap::new(),
+            vec![],
+            vec![],
+            None,
+            None,
+            Some("socks5://127.0.0.1:1080".to_string()),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_http_client_with_malformed_proxy() {
+        // Note: reqwest::Proxy::all() is lenient and accepts most strings.
+        // It only fails on obviously malformed URLs like "://invalid" or "http://".
+        // More subtle issues (like "not-a-valid-url") are caught when connecting.
+        let result = HttpClient::new(
+            HashMap::new(),
+            vec![],
+            vec![],
+            None,
+            None,
+            Some("://invalid".to_string()),
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
+    }
+
+    #[test]
+    fn test_http_client_with_empty_proxy_string() {
+        // Create client with an empty proxy URL string
+        let result = HttpClient::new(
+            HashMap::new(),
+            vec![],
+            vec![],
+            None,
+            None,
+            Some(String::new()),
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
     }
 }
