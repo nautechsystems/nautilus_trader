@@ -33,10 +33,10 @@ use crate::common::{
     },
 };
 
-/// Response payload returned by `GET /v5/market/server-time`.
+/// Response payload returned by `GET /v5/market/time`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/server-time>
+/// - <https://bybit-exchange.github.io/docs/v5/market/time>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitServerTime {
@@ -49,7 +49,7 @@ pub struct BybitServerTime {
 /// Type alias for the server time response envelope.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/server-time>
+/// - <https://bybit-exchange.github.io/docs/v5/market/time>
 pub type BybitServerTimeResponse = BybitResponse<BybitServerTime>;
 
 /// Ticker payload for spot instruments.
@@ -342,7 +342,7 @@ pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
 /// Instrument definition for spot symbols.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentSpot {
@@ -359,7 +359,7 @@ pub struct BybitInstrumentSpot {
 /// Instrument definition for linear contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentLinear {
@@ -383,7 +383,7 @@ pub struct BybitInstrumentLinear {
 /// Instrument definition for inverse contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentInverse {
@@ -407,7 +407,7 @@ pub struct BybitInstrumentInverse {
 /// Instrument definition for option contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentOption {
@@ -427,22 +427,22 @@ pub struct BybitInstrumentOption {
 /// Response alias for instrument info requests that return spot instruments.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentSpotResponse = BybitCursorListResponse<BybitInstrumentSpot>;
 /// Response alias for instrument info requests that return linear contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentLinearResponse = BybitCursorListResponse<BybitInstrumentLinear>;
 /// Response alias for instrument info requests that return inverse contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentInverseResponse = BybitCursorListResponse<BybitInstrumentInverse>;
 /// Response alias for instrument info requests that return option contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrumentOption>;
 
 /// Fee rate structure returned by `GET /v5/account/fee-rate`.
@@ -564,7 +564,6 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 /// Order representation as returned by order-related endpoints.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/realtime>
 /// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -615,7 +614,7 @@ pub struct BybitOrder {
 /// Response alias for open order queries.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/realtime>
+/// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
 pub type BybitOpenOrdersResponse = BybitCursorListResponse<BybitOrder>;
 /// Response alias for order history queries with pagination.
 ///
@@ -660,7 +659,7 @@ pub type BybitCancelOrderResponse = BybitResponse<BybitCancelOrderResult>;
 /// Execution/Fill payload returned by `GET /v5/execution/list`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/execution>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitExecution {
@@ -697,13 +696,13 @@ pub struct BybitExecution {
 /// Response alias for trade history requests.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/execution>
 pub type BybitTradeHistoryResponse = BybitCursorListResponse<BybitExecution>;
 
 /// Represents a position returned by the Bybit API.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+/// - <https://bybit-exchange.github.io/docs/v5/position>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitPosition {
@@ -746,7 +745,7 @@ pub struct BybitPosition {
 /// Response alias for position list requests.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+/// - <https://bybit-exchange.github.io/docs/v5/position>
 pub type BybitPositionListResponse = BybitCursorListResponse<BybitPosition>;
 
 /// Reason detail for set margin mode failures.

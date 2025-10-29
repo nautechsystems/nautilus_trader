@@ -437,7 +437,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments<T: DeserializeOwned>(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -454,7 +454,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_spot(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -470,7 +470,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_linear(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -486,7 +486,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_inverse(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -502,7 +502,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_option(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -782,7 +782,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/position>
     pub async fn http_get_positions(
         &self,
         params: &BybitPositionListParams,
@@ -2294,7 +2294,7 @@ impl BybitHttpInnerClient {
     ///
     /// # References
     ///
-    /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    /// <https://bybit-exchange.github.io/docs/v5/position>
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
@@ -2579,7 +2579,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments<T: DeserializeOwned>(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -2597,7 +2597,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_spot(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -2615,7 +2615,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_linear(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -2633,7 +2633,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_inverse(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -2651,7 +2651,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
     pub async fn http_get_instruments_option(
         &self,
         params: &BybitInstrumentsInfoParams,
@@ -2761,7 +2761,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    /// - <https://bybit-exchange.github.io/docs/v5/position>
     pub async fn http_get_positions(
         &self,
         params: &BybitPositionListParams,
@@ -3104,7 +3104,7 @@ impl BybitHttpClient {
     ///
     /// # References
     ///
-    /// <https://bybit-exchange.github.io/docs/v5/position/position-info>
+    /// <https://bybit-exchange.github.io/docs/v5/position>
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
