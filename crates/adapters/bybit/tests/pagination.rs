@@ -19,14 +19,9 @@
 //! 1. Market Data (bars/klines) - chronological ordering, multi-page fetching
 //! 2. Execution Endpoints - orders, trade history, positions with cursor pagination
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr};
 
-use axum::{
-    Router,
-    extract::{Query, State},
-    response::Json,
-    routing::get,
-};
+use axum::{Router, extract::Query, response::Json, routing::get};
 use chrono::{DateTime, Duration, Utc};
 use nautilus_bybit::{
     common::{enums::BybitProductType, parse::parse_linear_instrument},
@@ -46,23 +41,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::{
-    net::TcpListener,
-    sync::{Mutex, OnceCell},
-};
-
-#[derive(Clone)]
-struct PaginationTestState {
-    request_count: Arc<Mutex<usize>>,
-}
-
-impl Default for PaginationTestState {
-    fn default() -> Self {
-        Self {
-            request_count: Arc::new(Mutex::new(0)),
-        }
-    }
-}
+use tokio::{net::TcpListener, sync::OnceCell};
 
 // Generate mock kline data with timestamps
 fn generate_kline(timestamp_ms: i64, open: &str, high: &str, low: &str, close: &str) -> Value {
@@ -78,10 +57,7 @@ fn generate_kline(timestamp_ms: i64, open: &str, high: &str, low: &str, close: &
 }
 
 // Mock endpoint that simulates pagination
-async fn mock_klines_paginated(
-    Query(params): Query<HashMap<String, String>>,
-    State(_state): State<PaginationTestState>,
-) -> Json<Value> {
+async fn mock_klines_paginated(Query(params): Query<HashMap<String, String>>) -> Json<Value> {
     let end_ms = params
         .get("end")
         .and_then(|s| s.parse::<i64>().ok())
@@ -153,14 +129,10 @@ async fn mock_instruments_info(Query(_params): Query<HashMap<String, String>>) -
     }))
 }
 
-async fn start_pagination_test_server() -> Result<(SocketAddr, PaginationTestState), anyhow::Error>
-{
-    let state = PaginationTestState::default();
-
+async fn start_pagination_test_server() -> Result<SocketAddr, anyhow::Error> {
     let app = Router::new()
         .route("/v5/market/kline", get(mock_klines_paginated))
-        .route("/v5/market/instruments-info", get(mock_instruments_info))
-        .with_state(state.clone());
+        .route("/v5/market/instruments-info", get(mock_instruments_info));
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -172,7 +144,7 @@ async fn start_pagination_test_server() -> Result<(SocketAddr, PaginationTestSta
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    Ok((addr, state))
+    Ok(addr)
 }
 
 static INSTRUMENT_CACHE: OnceCell<()> = OnceCell::const_new();
@@ -212,7 +184,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
 #[rstest]
 #[tokio::test]
 async fn test_bars_chronological_order_single_page() {
-    let (addr, _state) = start_pagination_test_server().await.unwrap();
+    let addr = start_pagination_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
     let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
@@ -260,7 +232,7 @@ async fn test_bars_chronological_order_single_page() {
 #[rstest]
 #[tokio::test]
 async fn test_bars_chronological_order_multiple_pages() {
-    let (addr, _state) = start_pagination_test_server().await.unwrap();
+    let addr = start_pagination_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
     let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
@@ -311,7 +283,7 @@ async fn test_bars_chronological_order_multiple_pages() {
 #[rstest]
 #[tokio::test]
 async fn test_bars_limit_returns_most_recent() {
-    let (addr, _state) = start_pagination_test_server().await.unwrap();
+    let addr = start_pagination_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
     let client = BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None).unwrap();
