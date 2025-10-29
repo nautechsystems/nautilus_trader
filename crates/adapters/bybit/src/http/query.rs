@@ -292,56 +292,80 @@ pub struct BybitSetTradingStopParams {
 #[serde(rename_all = "camelCase")]
 pub struct BybitBatchPlaceOrderEntry {
     pub symbol: String,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_leverage: Option<i32>,
     pub side: BybitOrderSide,
     pub order_type: BybitOrderType,
     pub qty: String,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub market_unit: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_direction: Option<BybitTriggerDirection>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_filter: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<BybitTimeInForce>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<i32>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub take_profit: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_loss: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_on_trigger: Option<bool>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smp_type: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tpsl_mode: Option<BybitTpSlMode>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_limit_price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_limit_price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_order_type: Option<BybitOrderType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_order_type: Option<BybitOrderType>,
 }
@@ -367,8 +391,10 @@ pub struct BybitPlaceOrderParams {
     #[serde(flatten)]
     pub order: BybitBatchPlaceOrderEntry,
     pub category: BybitProductType,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage_tolerance_type: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage_tolerance: Option<String>,
 }

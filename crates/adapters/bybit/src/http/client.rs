@@ -1007,6 +1007,7 @@ impl BybitHttpInnerClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         reduce_only: bool,
+        is_leverage: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -1045,6 +1046,14 @@ impl BybitHttpInnerClient {
         if reduce_only {
             order_entry.reduce_only(Some(true));
         }
+
+        // Set is_leverage field: only for SPOT products use the user value, otherwise None
+        let is_leverage_value = if product_type == BybitProductType::Spot {
+            Some(i32::from(is_leverage))
+        } else {
+            None
+        };
+        order_entry.is_leverage(is_leverage_value);
 
         let order_entry = order_entry.build().map_err(|e| anyhow::anyhow!(e))?;
 
@@ -2820,6 +2829,7 @@ impl BybitHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         reduce_only: bool,
+        is_leverage: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         self.inner
             .submit_order(
@@ -2833,6 +2843,7 @@ impl BybitHttpClient {
                 time_in_force,
                 price,
                 reduce_only,
+                is_leverage,
             )
             .await
     }
