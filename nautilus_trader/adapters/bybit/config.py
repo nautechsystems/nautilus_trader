@@ -15,19 +15,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
-
-
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.bybit.common.enums import BybitMarginMode
-    from nautilus_trader.adapters.bybit.common.enums import BybitPositionMode
-    from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-    from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginMode
+from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -44,8 +38,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_SECRET` or
         `BYBIT_TESTNET_API_SECRET` environment variables.
-    product_types : list[BybitProductType], optional
-        The Bybit product type for the client.
+    product_types : tuple[BybitProductType, ...], optional
+        The Bybit product types for the client.
         If not specified then will use all products.
     demo : bool, default False
         If the client is connecting to the Bybit demo API.
@@ -53,6 +47,12 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the Bybit testnet API.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    max_retries : PositiveInt, optional
+        The maximum number of times an HTTP request will be retried.
+    retry_delay_initial_ms : PositiveInt, optional
+        The initial delay (milliseconds) between retries.
+    retry_delay_max_ms : PositiveInt, optional
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
     bars_timestamp_on_close : bool, default True
@@ -63,11 +63,14 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_types: list[BybitProductType] | None = None
+    product_types: tuple[BybitProductType, ...] | None = None
     base_url_http: str | None = None
     demo: bool = False
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
+    max_retries: PositiveInt | None = None
+    retry_delay_initial_ms: PositiveInt | None = None
+    retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
     bars_timestamp_on_close: bool = True
 
@@ -86,8 +89,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
         `BYBIT_TESTNET_API_KEY` environment variables.
-    product_types : list[BybitProductType], optional
-        The Bybit product type for the client.
+    product_types : tuple[BybitProductType, ...], optional
+        The Bybit product types for the client.
         If None then will default to 'SPOT', you also cannot mix 'SPOT' with
         any other product type for execution, and it will use a `CASH` account
         type, vs `MARGIN` for the other derivative products.
@@ -104,11 +107,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         (this is useful if managing GTD orders locally).
     use_ws_execution_fast : bool, default False
         If use fast execution stream.
-    use_ws_trade_api : bool, default False
-        If the client is using websocket to send order requests.
     use_http_batch_api : bool, default False
-        If the client is using http api to send batch order requests.
-        Effective only when `use_ws_trade_api` is set to `True`.
+        If the client is using http api to send batch order requests (deprecated).
     use_spot_position_reports : bool, default False
         If True, wallet balances for SPOT instruments will be reported as positions:
         - Positive balances are reported as LONG positions.
@@ -130,9 +130,9 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The timeout for trade websocket messages.
     ws_auth_timeout_secs : PositiveFloat, default 5.0
         The timeout for auth websocket messages.
-    futures_leverages : dict[BybitSymbol, PositiveInt], optional
+    futures_leverages : dict[str, PositiveInt], optional
         The leverages for futures.
-    position_mode : dict[BybitSymbol, BybitPositionMode], optional
+    position_mode : dict[str, BybitPositionMode], optional
         The position mode for `USDT perpetual` and `Inverse futures`.
     margin_mode : BybitMarginMode, optional
         Set Margin Mode.
@@ -145,7 +145,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_types: list[BybitProductType] | None = None
+    product_types: tuple[BybitProductType, ...] | None = None
     base_url_http: str | None = None
     base_url_ws_private: str | None = None
     base_url_ws_trade: str | None = None
@@ -153,7 +153,6 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
     use_ws_execution_fast: bool = False
-    use_ws_trade_api: bool = False
     use_http_batch_api: bool = False
     ignore_uncached_instrument_executions: bool = False
     max_retries: PositiveInt | None = None
@@ -162,7 +161,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     recv_window_ms: PositiveInt = 5_000
     ws_trade_timeout_secs: PositiveFloat | None = 5.0
     ws_auth_timeout_secs: PositiveFloat | None = 5.0
-    futures_leverages: dict[BybitSymbol, PositiveInt] | None = None
-    position_mode: dict[BybitSymbol, BybitPositionMode] | None = None
+    futures_leverages: dict[str, PositiveInt] | None = None
+    position_mode: dict[str, BybitPositionMode] | None = None
     margin_mode: BybitMarginMode | None = None
     use_spot_position_reports: bool = False

@@ -22,7 +22,7 @@ from zipfile import is_zipfile
 
 import pandas as pd
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.model.enums import RecordFlag
 
 

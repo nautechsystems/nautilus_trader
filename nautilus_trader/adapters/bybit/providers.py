@@ -13,36 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
+from typing import Any
 
-from typing import TYPE_CHECKING
-
-import msgspec
-
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_MULTIPLIERS
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
-from nautilus_trader.adapters.bybit.http.asset import BybitAssetHttpAPI
-from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentInverse
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLinear
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
-from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
+from nautilus_trader.adapters.bybit.constants import BYBIT_MULTIPLIERS
+from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.objects import Currency
-
-
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-    from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
-    from nautilus_trader.common.component import LiveClock
-    from nautilus_trader.config import InstrumentProviderConfig
-    from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class BybitInstrumentProvider(InstrumentProvider):
@@ -51,11 +32,9 @@ class BybitInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : BybitHttpClient
+    client : nautilus_pyo3.BybitHttpClient
         The Bybit HTTP client.
-    clock : LiveClock
-        The clock instance.
-    product_types : list[BybitProductType]
+    product_types : tuple[BybitProductType, ...]
         The product types to load.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
@@ -64,33 +43,39 @@ class BybitInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: BybitHttpClient,
-        clock: LiveClock,
-        product_types: list[BybitProductType],
+        client: nautilus_pyo3.BybitHttpClient,
+        product_types: tuple[BybitProductType, ...],
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
-        self._clock = clock
         self._client = client
         self._product_types = product_types
-
-        self._http_asset = BybitAssetHttpAPI(
-            client=client,
-            clock=clock,
-        )
-
-        self._http_market = BybitMarketHttpAPI(
-            client=client,
-            clock=clock,
-        )
-        self._http_account = BybitAccountHttpAPI(
-            client=client,
-            clock=clock,
-        )
-
         self._log_warnings = config.log_warnings if config else True
-        self._decoder = msgspec.json.Decoder()
-        self._encoder = msgspec.json.Encoder()
+
+        self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
+
+    @property
+    def product_types(self) -> tuple[BybitProductType, ...]:
+        """
+        Return the Bybit product types configured for the provider.
+
+        Returns
+        -------
+        tuple[BybitProductType, ...]
+
+        """
+        return self._product_types
+
+    def instruments_pyo3(self) -> list[Any]:
+        """
+        Return all Bybit PyO3 instrument definitions held by the provider.
+
+        Returns
+        -------
+        list[nautilus_pyo3.Instrument]
+
+        """
+        return self._instruments_pyo3
 
     def _strip_multiplier_prefix(self, code: str, symbol: str) -> str:
         """
@@ -133,55 +118,17 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        await self._load_coins()
-
-        instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
-        fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
-
-        # Extract base_coin from filters if provided
-        base_coin = filters.get("base_coin") if filters else None
+        all_pyo3_instruments = []
 
         for product_type in self._product_types:
-            # For options, use base_coin filter if provided
-            if product_type == BybitProductType.OPTION and base_coin:
-                self._log.info(f"Loading {base_coin} options only...")
-                instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
-                    product_type,
-                    base_coin=base_coin,
-                )
-                # Scope fee-rate to the base coin to reduce payload
-                fee_rates[product_type] = await self._http_account.fetch_fee_rate(
-                    product_type,
-                    base_coin=base_coin,
-                )
-            else:
-                instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
-                    product_type,
-                )
-                fee_rates[product_type] = await self._http_account.fetch_fee_rate(
-                    product_type,
-                )
+            pyo3_instruments = await self._client.request_instruments(product_type, None)
+            all_pyo3_instruments.extend(pyo3_instruments)
 
-        for product_type, instruments in instrument_infos.items():
-            for instrument in instruments:
-                target_fee_rate = next(
-                    (
-                        item
-                        for item in fee_rates[product_type]
-                        if item.symbol == instrument.symbol
-                        or (
-                            product_type == BybitProductType.OPTION
-                            and instrument.baseCoin == item.baseCoin
-                        )
-                    ),
-                    None,
-                )
-                if target_fee_rate:
-                    self._parse_instrument(instrument, target_fee_rate)
-                else:
-                    self._log.warning(
-                        f"Unable to find fee rate for instrument {instrument}",
-                    )
+        self._instruments_pyo3 = all_pyo3_instruments
+        instruments = instruments_from_pyo3(all_pyo3_instruments)
+        for instrument in instruments:
+            self.add(instrument=instrument)
+
         self._log.info(f"Loaded {len(self._instruments)} instruments")
 
     async def load_ids_async(
@@ -193,169 +140,24 @@ class BybitInstrumentProvider(InstrumentProvider):
             self._log.warning("No instrument IDs given for loading")
             return
 
-        await self._load_coins()
-
-        # Check all instrument IDs valid for Bybit
+        # Check all instrument IDs
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, BYBIT_VENUE, "instrument_id.venue", "BYBIT")
 
-        # Group instruments by product type
-        instruments_by_type: dict[BybitProductType, list[InstrumentId]] = {}
-        for instrument_id in instrument_ids:
-            bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-            product_type = bybit_symbol.product_type
+        all_pyo3_instruments = []
 
-            if product_type not in instruments_by_type:
-                instruments_by_type[product_type] = []
+        for product_type in self._product_types:
+            pyo3_instruments = await self._client.request_instruments(product_type, None)
+            all_pyo3_instruments.extend(pyo3_instruments)
 
-            instruments_by_type[product_type].append(instrument_id)
+        self._instruments_pyo3 = all_pyo3_instruments
+        instruments = instruments_from_pyo3(all_pyo3_instruments)
 
-        fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
-
-        for product_type in instruments_by_type.keys():
-            if product_type in self._product_types:
-                fee_rates[product_type] = await self._http_account.fetch_fee_rate(product_type)
-
-        for instrument_id in instrument_ids:
-            bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-            product_type = bybit_symbol.product_type
-
-            instrument = await self._http_market.fetch_instrument(
-                product_type,
-                bybit_symbol.raw_symbol,
-            )
-
-            # Match fee rate by symbol for non-options; for options match on base coin
-            fee_rate_list = fee_rates.get(product_type, [])
-
-            if product_type == BybitProductType.OPTION:
-                target_fee_rate = next(
-                    (item for item in fee_rate_list if item.baseCoin == instrument.baseCoin),
-                    None,
-                )
-            else:
-                target_fee_rate = next(
-                    (item for item in fee_rate_list if item.symbol == instrument.symbol),
-                    None,
-                )
-
-            if target_fee_rate:
-                self._parse_instrument(instrument, target_fee_rate)
-            else:
-                self._log.warning(
-                    f"Unable to find fee rate for instrument {instrument}",
-                )
+        for instrument in instruments:
+            if instrument.id not in instrument_ids:
+                continue  # Filter instrument ID
+            self.add(instrument=instrument)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         await self.load_ids_async([instrument_id], filters)
-
-    async def _load_coins(self) -> None:
-        coin_infos = await self._http_asset.fetch_coin_info()
-
-        for coin_info in coin_infos:
-            if coin_info.coin == "EVERY":
-                # Has precision 18 (exceeds max 9) and not used for any instrument?
-                continue
-            try:
-                currency = Currency.from_str(coin_info.coin)
-                if currency is None:
-                    currency = coin_info.parse_to_currency()
-            except ValueError as e:
-                self._log.warning(f"Unable to parse currency {coin_info}: {e}")
-                continue
-
-            self.add_currency(currency)
-
-    def _parse_instrument(
-        self,
-        instrument: BybitInstrument,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        if isinstance(instrument, BybitInstrumentSpot):
-            self._parse_spot_instrument(instrument, fee_rate)
-        elif isinstance(instrument, BybitInstrumentLinear):
-            # Perpetual and futures
-            self._parse_linear_instrument(instrument, fee_rate)
-        elif isinstance(instrument, BybitInstrumentInverse):
-            # Perpetual and futures (inverse)
-            self._parse_inverse_instrument(instrument, fee_rate)
-        elif isinstance(instrument, BybitInstrumentOption):
-            self._parse_option_instrument(instrument, fee_rate)
-        else:
-            raise TypeError(f"Unsupported Bybit instrument, was {instrument}")
-
-    def _parse_to_instrument(
-        self,
-        instrument: BybitInstrument,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        try:
-            base_coin = self._strip_multiplier_prefix(instrument.baseCoin, instrument.symbol)
-            quote_coin = self._strip_multiplier_prefix(instrument.quoteCoin, instrument.symbol)
-
-            base_currency = self.currency(base_coin)
-            quote_currency = self.currency(quote_coin)
-            ts_event = self._clock.timestamp_ns()
-            ts_init = self._clock.timestamp_ns()
-
-            # Handle different instrument types with their specific parse_to_instrument signatures
-            if isinstance(instrument, BybitInstrumentOption):
-                # Options only need quote_currency
-                parsed_instrument = instrument.parse_to_instrument(
-                    quote_currency=quote_currency,
-                )
-            else:
-                # Other instrument types need all parameters
-                parsed_instrument = instrument.parse_to_instrument(
-                    base_currency=base_currency,
-                    quote_currency=quote_currency,
-                    fee_rate=fee_rate,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-
-            self.add(instrument=parsed_instrument)
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(
-                    f"Unable to parse {instrument.__class__.__name__} instrument {instrument.symbol}: {e}",
-                )
-
-    def _parse_spot_instrument(
-        self,
-        data: BybitInstrumentSpot,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        self._parse_to_instrument(data, fee_rate)
-
-    def _parse_linear_instrument(
-        self,
-        data: BybitInstrumentLinear,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        self._parse_to_instrument(data, fee_rate)
-
-    def _parse_inverse_instrument(
-        self,
-        data: BybitInstrumentInverse,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        self._parse_to_instrument(data, fee_rate)
-
-    def _parse_option_instrument(
-        self,
-        data: BybitInstrumentOption,
-        fee_rate: BybitFeeRate,
-    ) -> None:
-        try:
-            quote_currency = self.currency(data.quoteCoin)
-            instrument = data.parse_to_instrument(
-                quote_currency=quote_currency,
-            )
-            self.add(instrument=instrument)
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(
-                    f"Unable to parse {data.__class__.__name__} instrument {data.symbol}: {e}",
-                )

@@ -76,14 +76,15 @@ pub fn extract_raw_symbol(symbol: &str) -> &str {
 /// assert_eq!(symbol.as_str(), "ETHUSDT-LINEAR");
 /// ```
 #[must_use]
-pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Ustr {
+pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProductType) -> Ustr {
+    let raw = raw_symbol.as_ref();
     let suffix = match product_type {
         BybitProductType::Spot => "-SPOT",
         BybitProductType::Linear => "-LINEAR",
         BybitProductType::Inverse => "-INVERSE",
         BybitProductType::Option => "-OPTION",
     };
-    Ustr::from(&format!("{raw_symbol}{suffix}"))
+    Ustr::from(&format!("{raw}{suffix}"))
 }
 
 /// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
@@ -211,6 +212,18 @@ pub fn parse_linear_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    // Validate required fields
+    anyhow::ensure!(
+        !definition.base_coin.is_empty(),
+        "base_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+    anyhow::ensure!(
+        !definition.quote_coin.is_empty(),
+        "quote_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -325,6 +338,18 @@ pub fn parse_inverse_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    // Validate required fields
+    anyhow::ensure!(
+        !definition.base_coin.is_empty(),
+        "base_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+    anyhow::ensure!(
+        !definition.quote_coin.is_empty(),
+        "quote_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -729,17 +754,7 @@ pub fn parse_account_state(
             coin.wallet_balance.parse::<f64>()?
         };
 
-        // TODO: extract this logic to a function
-        let spot_borrow_f64 = if let Some(ref spot_borrow) = coin.spot_borrow {
-            if spot_borrow.is_empty() {
-                0.0
-            } else {
-                spot_borrow.parse::<f64>()?
-            }
-        } else {
-            0.0
-        };
-
+        let spot_borrow_f64 = parse_optional_balance_field(&coin.spot_borrow)?;
         let total_f64 = wallet_balance_f64 - spot_borrow_f64;
 
         let locked_f64 = if coin.locked.is_empty() {
@@ -894,6 +909,19 @@ fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
         .get(2)
         .ok_or_else(|| anyhow::anyhow!("invalid option symbol '{symbol}'"))?;
     parse_price(strike, "option strike")
+}
+
+fn parse_optional_balance_field(value: &Option<String>) -> anyhow::Result<f64> {
+    if let Some(s) = value {
+        if s.is_empty() {
+            Ok(0.0)
+        } else {
+            s.parse::<f64>()
+                .with_context(|| format!("Failed to parse balance field '{s}'"))
+        }
+    } else {
+        Ok(0.0)
+    }
 }
 
 /// Parses a Bybit order into a Nautilus OrderStatusReport.

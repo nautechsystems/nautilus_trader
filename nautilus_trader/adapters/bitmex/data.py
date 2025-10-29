@@ -165,6 +165,8 @@ class BitmexDataClient(LiveMarketDataClient):
             )
 
     async def _disconnect(self) -> None:
+        self._http_client.cancel_all_requests()
+
         # Cancel periodic update task if running
         if self._update_instruments_task:
             self._log.debug("Canceling update instruments task")

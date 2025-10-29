@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn test_public_endpoints() -> anyhow::Result<()> {
-    let client = BybitHttpClient::new(None, Some(60), None, None, None)?;
+    let client = BybitHttpClient::new(None, Some(60), None, None, None, None)?;
 
     // Test 1: Get server time
     println!("1. Testing GET /v5/market/time");
@@ -186,6 +186,7 @@ async fn test_authenticated_endpoints(api_key: &str, api_secret: &str) -> anyhow
         api_secret.to_string(),
         Some(base_url),
         Some(60),
+        None,
         None,
         None,
         None,
