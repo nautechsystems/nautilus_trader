@@ -131,6 +131,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         Note: there will be a performance penalty parsing the JSON without an efficient msgspec decoder.
     ack_timeout_secs : PositiveFloat, default 5.0
         The timeout (seconds) to wait for order/trade acknowledgment from cache.
+    use_gamma_api : bool, default True
+        If True, uses the Gamma API for fetching user positions.
+        If False, uses the CLOB API balance/allowance endpoint.
 
     """
 
@@ -149,3 +152,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     generate_order_history_from_trades: bool = False
     log_raw_ws_messages: bool = False
     ack_timeout_secs: PositiveFloat = 5.0
+    use_gamma_api: bool = False

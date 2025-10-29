@@ -19,6 +19,8 @@ from collections import defaultdict
 from collections import deque
 from collections.abc import Coroutine
 from typing import Any
+import urllib.parse
+import urllib.request
 
 import msgspec
 from py_clob_client.client import BalanceAllowanceParams
@@ -172,8 +174,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         validate_ethereum_address(wallet_address)
         self._wallet_address = wallet_address
+
+        # Get the user address (funder) - this is the address that holds positions
+        # For proxy wallets, this differs from the signer address
+        user_address = http_client.builder.funder if hasattr(http_client, 'builder') else wallet_address
+        validate_ethereum_address(user_address)
+        self._user_address = user_address
+
         self._api_key = http_client.creds.api_key
         self._log.info(f"{wallet_address=}", LogColor.BLUE)
+        self._log.info(f"{user_address=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = http_client
@@ -295,6 +305,53 @@ class PolymarketExecutionClient(LiveExecutionClient):
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
+
+    def _fetch_user_positions(self, *, limit: int = 100, size_threshold: int = 0) -> list[dict[str, Any]]:
+        """
+        Fetch all current positions for the configured user using the Polymarket Data API.
+
+        Implements pagination as the endpoint returns a maximum of 100 entries per request.
+        """
+        base_url = "https://data-api.polymarket.com/positions"
+        results: list[dict[str, Any]] = []
+        offset = 0
+
+        while True:
+            query = {
+                "user": self._user_address,
+                "limit": str(limit),
+                "offset": str(offset),
+                "sizeThreshold": str(size_threshold),
+                "sortBy": "TOKENS",
+                "sortDirection": "DESC",
+            }
+            url = f"{base_url}?{urllib.parse.urlencode(query)}"
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/118.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+            }
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
+                payload = resp.read()
+            data = msgspec.json.decode(payload)
+            if not data:
+                break
+            if isinstance(data, list):
+                results.extend(data)
+                if len(data) < limit:
+                    break
+            else:
+                # Unexpected shape; stop to avoid loop
+                break
+            offset += limit
+            if offset > 10000:
+                self._log.warning("Offset exceeded 10000; stopping")
+                break
+
+        return results
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -630,27 +687,25 @@ class PolymarketExecutionClient(LiveExecutionClient):
         else:
             instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
 
-        for instrument_id in instrument_ids:
-            self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
-            token_id = get_polymarket_token_id(instrument_id)
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            response: dict[str, Any] = await asyncio.to_thread(
-                self._http_client.get_balance_allowance,
-                params,
-            )
-            usdce_balance = usdce_from_units(int(response["balance"]))
-            position_side = PositionSide.LONG if usdce_balance.raw > 0 else PositionSide.FLAT
-            now = self._clock.timestamp_ns()
+        if self._config.use_gamma_api:
+            # Fetch all positions once (bulk operation)
+            quantities_by_instrument = await self._fetch_quantities_from_gamma_api(instrument_ids)
+        else:
+            # Fetch positions individually (one API call per instrument)
+            quantities_by_instrument = await self._fetch_quantities_from_clob_api(instrument_ids)
 
+        # Generate reports from quantities
+        for instrument_id, quantity in quantities_by_instrument.items():
+            position_side = PositionSide.LONG if quantity > 0 else PositionSide.FLAT
+            if position_side == PositionSide.LONG:
+                self._log.info(f"Long position for {instrument_id} of {quantity} shares")
+
+            now = self._clock.timestamp_ns()
             report = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument_id,
                 position_side=position_side,
-                quantity=Quantity.from_raw(usdce_balance.raw, precision=USDC_POS.precision),
+                quantity=quantity,
                 report_id=UUID4(),
                 ts_last=now,
                 ts_init=now,
@@ -662,6 +717,69 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(f"Received {len(reports)} PositionReport{plural}")
 
         return reports
+
+    async def _fetch_quantities_from_gamma_api(
+        self,
+        instrument_ids: list[InstrumentId],
+    ) -> dict[InstrumentId, Quantity]:
+        """Fetch position quantities using Gamma API (bulk fetch)."""
+        self._log.debug("Fetching positions from Gamma API")
+
+        # Fetch all user positions once (paginated)
+        positions: list[dict[str, Any]] = await asyncio.to_thread(
+            self._fetch_user_positions,
+            limit=100,
+            size_threshold=0,
+        )
+
+        # Map asset (token id) -> size (shares)
+        size_by_asset: dict[str, float] = {}
+        for p in positions:
+            asset = str(p.get("asset", ""))
+            size_val = p.get("size", 0) or 0
+            try:
+                size_by_asset[asset] = float(size_val)
+            except Exception:
+                continue
+
+        # Convert to quantities by instrument ID
+        quantities: dict[InstrumentId, Quantity] = {}
+        precision = USDC_POS.precision
+
+        for instrument_id in instrument_ids:
+            token_id = str(get_polymarket_token_id(instrument_id))
+            size = size_by_asset.get(token_id, 0.0)
+
+            # Gamma API returns size as decimal float (e.g., 1.5 shares)
+            # Create Quantity directly from the float value
+            quantities[instrument_id] = Quantity(float(size), precision=precision)
+
+        return quantities
+
+    async def _fetch_quantities_from_clob_api(
+        self,
+        instrument_ids: list[InstrumentId],
+    ) -> dict[InstrumentId, Quantity]:
+        """Fetch position quantities using CLOB API (individual queries)."""
+        quantities: dict[InstrumentId, Quantity] = {}
+
+        for instrument_id in instrument_ids:
+            self._log.debug(f"Requesting position for {instrument_id} from CLOB API")
+            token_id = str(get_polymarket_token_id(instrument_id))
+
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.CONDITIONAL,
+                token_id=token_id,
+                signature_type=self._config.signature_type,
+            )
+            response: dict[str, Any] = await asyncio.to_thread(
+                self._http_client.get_balance_allowance,
+                params,
+            )
+            quantities[instrument_id] = usdce_from_units(int(response["balance"]))
+
+        return quantities
+
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
