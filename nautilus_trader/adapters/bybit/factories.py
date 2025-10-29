@@ -13,69 +13,69 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
+import asyncio
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
-from nautilus_trader.adapters.bybit.common.credentials import get_api_key
-from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
-from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
-from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
-from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_trade
+from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
-from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-if TYPE_CHECKING:
-    import asyncio
-
-    from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-    from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-    from nautilus_trader.cache.cache import Cache
-    from nautilus_trader.common.component import LiveClock
-    from nautilus_trader.common.component import MessageBus
-    from nautilus_trader.config import InstrumentProviderConfig
-
-
 @lru_cache(1)
-def get_bybit_http_client(
-    clock: LiveClock,
-    key: str | None = None,
-    secret: str | None = None,
+def get_cached_bybit_http_client(
+    api_key: str | None = None,
+    api_secret: str | None = None,
     base_url: str | None = None,
-    is_demo: bool = False,
-    is_testnet: bool = False,
-    recv_window_ms: int = 5_000,
-) -> BybitHttpClient:
+    demo: bool = False,
+    testnet: bool = False,
+    timeout_secs: int | None = None,
+    max_retries: int | None = None,
+    retry_delay_ms: int | None = None,
+    retry_delay_max_ms: int | None = None,
+    recv_window_ms: int | None = None,
+) -> nautilus_pyo3.BybitHttpClient:
     """
     Cache and return a Bybit HTTP client with the given key and secret.
+
+    If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
+    environment variables ``BYBIT_API_KEY`` and ``BYBIT_API_SECRET`` for production,
+    ``BYBIT_DEMO_API_KEY`` and ``BYBIT_DEMO_API_SECRET`` when ``demo=True``,
+    or ``BYBIT_TESTNET_API_KEY`` and ``BYBIT_TESTNET_API_SECRET`` when ``testnet=True``.
 
     If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
-    clock : LiveClock
-        The clock for the client.
-    key : str, optional
+    api_key : str, optional
         The API key for the client.
-    secret : str, optional
+    api_secret : str, optional
         The API secret for the client.
     base_url : str, optional
         The base URL for the API endpoints.
-    is_demo : bool, default False
+    demo : bool, default False
         If the client is connecting to the demo API.
-    is_testnet : bool, default False
+    testnet : bool, default False
         If the client is connecting to the testnet API.
-    recv_window_ms : PositiveInt, default 5000
+    timeout_secs : int, optional
+        The timeout for HTTP requests in seconds.
+    max_retries : int, optional
+        The maximum number of retry attempts for failed requests.
+    retry_delay_ms : int, optional
+        The initial delay (milliseconds) between retries.
+    retry_delay_max_ms : int, optional
+        The maximum delay (milliseconds) between retries.
+    recv_window_ms : int, optional
         The receive window (milliseconds) for Bybit HTTP requests.
 
     Returns
@@ -83,63 +83,49 @@ def get_bybit_http_client(
     BybitHttpClient
 
     """
-    key = key or get_api_key(is_demo, is_testnet)
-    secret = secret or get_api_secret(is_demo, is_testnet)
-    http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
+    if base_url is None:
+        # Priority: demo > testnet > mainnet
+        if demo:
+            environment = nautilus_pyo3.BybitEnvironment.DEMO
+        elif testnet:
+            environment = nautilus_pyo3.BybitEnvironment.TESTNET
+        else:
+            environment = nautilus_pyo3.BybitEnvironment.MAINNET
+        base_url = nautilus_pyo3.get_bybit_http_base_url(environment)
 
-    # Set up rate limit quotas
-    # Current rate limit in Bybit is 120 requests in any 5-second window,
-    # and that is 24 requests per second.
-    # https://bybit-exchange.github.io/docs/v5/rate-limit
-    global_key = "bybit:global"
-    global_quota = Quota.rate_per_second(24)
-    ratelimiter_default_quota = global_quota
-    ratelimiter_quotas: list[tuple[str, Quota]] = [
-        (global_key, global_quota),
-        ("bybit:/v5/market/kline", Quota.rate_per_second(20)),
-        ("bybit:/v5/market/trades", Quota.rate_per_second(24)),
-        ("bybit:/v5/order/create", Quota.rate_per_second(10)),
-        ("bybit:/v5/order/cancel", Quota.rate_per_second(10)),
-        ("bybit:/v5/order/create-batch", Quota.rate_per_second(5)),
-        ("bybit:/v5/order/cancel-batch", Quota.rate_per_second(5)),
-        ("bybit:/v5/order/cancel-all", Quota.rate_per_second(2)),
-    ]
-
-    return BybitHttpClient(
-        clock=clock,
-        api_key=key,
-        api_secret=secret,
-        base_url=http_base_url,
+    return nautilus_pyo3.BybitHttpClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        base_url=base_url,
+        demo=demo,
+        testnet=testnet,
+        timeout_secs=timeout_secs,
+        max_retries=max_retries,
+        retry_delay_ms=retry_delay_ms,
+        retry_delay_max_ms=retry_delay_max_ms,
         recv_window_ms=recv_window_ms,
-        ratelimiter_quotas=ratelimiter_quotas,
-        ratelimiter_default_quota=ratelimiter_default_quota,
     )
 
 
 @lru_cache(1)
-def get_bybit_instrument_provider(
-    client: BybitHttpClient,
-    clock: LiveClock,
-    product_types: frozenset[BybitProductType],
-    config: InstrumentProviderConfig,
+def get_cached_bybit_instrument_provider(
+    client: nautilus_pyo3.BybitHttpClient,
+    product_types: tuple[BybitProductType, ...],
+    config: InstrumentProviderConfig | None = None,
 ) -> BybitInstrumentProvider:
     """
     Cache and return a Bybit instrument provider.
 
-    If a cached provider already exists, then that cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------
     client : BybitHttpClient
-        The client for the instrument provider.
-    clock : LiveClock
-        The clock for the instrument provider.
-    product_types : list[BybitProductType]
+        The Bybit HTTP client.
+    product_types : tuple[BybitProductType, ...]
         The product types to load.
-    is_testnet : bool
-        If the provider is for the Spot testnet.
-    config : InstrumentProviderConfig
-        The configuration for the instrument provider.
+    config : InstrumentProviderConfig, optional
+        The instrument provider configuration, by default None.
 
     Returns
     -------
@@ -148,9 +134,8 @@ def get_bybit_instrument_provider(
     """
     return BybitInstrumentProvider(
         client=client,
+        product_types=product_types,
         config=config,
-        clock=clock,
-        product_types=list(product_types),
     )
 
 
@@ -192,28 +177,23 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
 
         """
         product_types = config.product_types or BYBIT_ALL_PRODUCTS
-        client: BybitHttpClient = get_bybit_http_client(
-            clock=clock,
-            key=config.api_key,
-            secret=config.api_secret,
+        client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
             base_url=config.base_url_http,
-            is_demo=config.demo,
-            is_testnet=config.testnet,
+            demo=config.demo,
+            testnet=config.testnet,
+            timeout_secs=None,  # Use Rust default (60s)
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
         )
-        provider = get_bybit_instrument_provider(
+        provider = get_cached_bybit_instrument_provider(
             client=client,
-            clock=clock,
-            product_types=frozenset(product_types),
+            product_types=tuple(product_types),
             config=config.instrument_provider,
         )
-        ws_base_urls: dict[BybitProductType, str] = {}
-        for product_type in product_types:
-            ws_base_urls[product_type] = get_ws_base_url_public(
-                product_type=product_type,
-                is_demo=config.demo,
-                is_testnet=config.testnet,
-            )
         return BybitDataClient(
             loop=loop,
             client=client,
@@ -221,8 +201,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_types=product_types,
-            ws_base_urls=ws_base_urls,
             config=config,
             name=name,
         )
@@ -265,25 +243,25 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         BybitExecutionClient
 
         """
-        client: BybitHttpClient = get_bybit_http_client(
-            clock=clock,
-            key=config.api_key,
-            secret=config.api_secret,
+        product_types = config.product_types or BYBIT_ALL_PRODUCTS
+        # Use Rust HTTP client
+        client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
             base_url=config.base_url_http,
-            is_demo=config.demo,
-            is_testnet=config.testnet,
+            demo=config.demo,
+            testnet=config.testnet,
+            timeout_secs=None,  # Use Rust default (60s)
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
         )
-        provider = get_bybit_instrument_provider(
+        provider = get_cached_bybit_instrument_provider(
             client=client,
-            clock=clock,
-            product_types=frozenset(config.product_types or BYBIT_ALL_PRODUCTS),
+            product_types=tuple(product_types),
             config=config.instrument_provider,
         )
-
-        base_url_ws_private: str = get_ws_base_url_private(config.testnet)
-        base_url_ws_trade: str = get_ws_base_url_trade(config.testnet)
-
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -291,9 +269,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_types=config.product_types or [BybitProductType.SPOT],
-            base_url_ws_private=config.base_url_ws_private or base_url_ws_private,
-            base_url_ws_trade=config.base_url_ws_trade or base_url_ws_trade,
             config=config,
             name=name,
         )

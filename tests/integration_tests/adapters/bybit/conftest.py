@@ -14,27 +14,34 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
+from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 @pytest.fixture(scope="session")
@@ -47,20 +54,147 @@ def live_logger():
     return Logger("TEST_LOGGER")
 
 
-@pytest.fixture(scope="session")
-def bybit_http_client(session_event_loop, live_clock):
-    client = BybitHttpClient(
-        clock=live_clock,
-        api_key="BYBIT_API_KEY",
-        api_secret="BYBIT_API_SECRET",
-        base_url="https://api-testnet.bybit.com",
-    )
-    return client
+@pytest.fixture()
+def venue() -> Venue:
+    return BYBIT_VENUE
 
 
 @pytest.fixture()
-def venue() -> Venue:
-    raise BYBIT_VENUE
+def account_id(venue) -> AccountId:
+    return AccountId(f"{venue.value}-123")
+
+
+@pytest.fixture()
+def instrument() -> CurrencyPair:
+    return CurrencyPair(
+        instrument_id=InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("0.001"),
+        taker_fee=Decimal("0.001"),
+    )
+
+
+@pytest.fixture()
+def account_state(account_id) -> AccountState:
+    return AccountState(
+        account_id=account_id,
+        account_type=AccountType.CASH,
+        base_currency=USDT,
+        reported=True,
+        balances=[
+            AccountBalance(
+                total=Money(100_000, USDT),
+                locked=Money(0, USDT),
+                free=Money(100_000, USDT),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=TestIdStubs.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+@pytest.fixture()
+def mock_http_client():
+    mock = MagicMock(spec=nautilus_pyo3.BybitHttpClient)
+    mock.api_key = "test_api_key"
+    mock.api_secret = "test_api_secret"
+
+    mock.request_instruments = AsyncMock(return_value=[])
+    mock.add_instrument = MagicMock()
+    mock.cancel_all_requests = MagicMock()
+    mock.is_initialized = MagicMock(return_value=True)
+
+    mock_account_state = MagicMock()
+    mock_account_state.to_dict = MagicMock(
+        return_value={
+            "account_id": "BYBIT-123",
+            "account_type": "CASH",
+            "base_currency": "USDT",
+            "reported": True,
+            "balances": [
+                {
+                    "currency": "USDT",
+                    "total": "100000.00000000",
+                    "locked": "0.00000000",
+                    "free": "100000.00000000",
+                },
+            ],
+            "margins": [],
+            "info": {},
+            "event_id": str(TestIdStubs.uuid()),
+            "ts_event": 0,
+            "ts_init": 0,
+        },
+    )
+    mock.request_account_state = AsyncMock(return_value=mock_account_state)
+
+    mock.request_order_status_reports = AsyncMock(return_value=[])
+    mock.request_fill_reports = AsyncMock(return_value=[])
+    mock.request_position_status_reports = AsyncMock(return_value=[])
+
+    mock.submit_order = AsyncMock()
+    mock.modify_order = AsyncMock()
+    mock.cancel_order = AsyncMock()
+    mock.cancel_all_orders = AsyncMock(return_value=[])
+
+    return mock
+
+
+def _create_ws_mock() -> MagicMock:
+    mock = MagicMock(spec=nautilus_pyo3.BybitWebSocketClient)
+    mock.url = "wss://test.bybit.com/realtime"
+    mock.is_closed = MagicMock(return_value=False)
+    mock.is_active = AsyncMock(return_value=True)
+    mock.connect = AsyncMock()
+    mock.wait_until_active = AsyncMock()
+    mock.close = AsyncMock()
+    mock.subscribe_orderbook = AsyncMock()
+    mock.subscribe_ticker = AsyncMock()
+    mock.subscribe_trades = AsyncMock()
+    mock.subscribe_klines = AsyncMock()
+    mock.unsubscribe_orderbook = AsyncMock()
+    mock.unsubscribe_ticker = AsyncMock()
+    mock.unsubscribe_trades = AsyncMock()
+    mock.unsubscribe_klines = AsyncMock()
+    mock.add_instrument = MagicMock()
+    mock.subscribe_orders = AsyncMock()
+    mock.subscribe_executions = AsyncMock()
+    mock.subscribe_positions = AsyncMock()
+    mock.subscribe_wallet = AsyncMock()
+    mock.unsubscribe_orders = AsyncMock()
+    mock.unsubscribe_executions = AsyncMock()
+    mock.unsubscribe_positions = AsyncMock()
+    mock.unsubscribe_wallet = AsyncMock()
+    return mock
+
+
+@pytest.fixture()
+def mock_ws_clients():
+    return _create_ws_mock(), _create_ws_mock()
+
+
+@pytest.fixture()
+def mock_instrument_provider(instrument):
+    provider = MagicMock(spec=BybitInstrumentProvider)
+    provider.initialize = AsyncMock()
+    provider.instruments_pyo3 = MagicMock(return_value=[MagicMock(name="py_instrument")])
+    provider.get_all = MagicMock(return_value={instrument.id: instrument})
+    provider.currencies = MagicMock(return_value={})
+    provider.find = MagicMock(return_value=instrument)
+    provider.product_types = (nautilus_pyo3.BybitProductType.SPOT,)
+    provider._product_types = (nautilus_pyo3.BybitProductType.SPOT,)
+    return provider
 
 
 @pytest.fixture()
@@ -71,21 +205,6 @@ def data_client():
 @pytest.fixture()
 def exec_client():
     pass
-
-
-@pytest.fixture()
-def instrument():
-    pass
-
-
-@pytest.fixture()
-def account_state():
-    pass
-
-
-@pytest.fixture()
-def linear_btcusdt_symbol():
-    return BybitSymbol("BTCUSDT.LINEAR")
 
 
 def create_bybit_spot_instrument(base_currency, quote_currency):

@@ -8,9 +8,11 @@ Released on TBD (UTC).
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
+- Ported Bybit integration adapter to Rust
 
 ### Breaking Changes
 - Dropped support for Python 3.11
+- Removed `use_ws_trade_api` config option from Bybit execution client (using WebSocket trade API only)
 
 ### Security
 TBD

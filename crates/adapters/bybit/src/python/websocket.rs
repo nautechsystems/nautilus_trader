@@ -15,16 +15,14 @@
 
 //! Python bindings for the Bybit WebSocket client.
 
-use std::{num::NonZero, sync::Arc};
-
 use futures_util::StreamExt;
-use nautilus_core::{nanos::UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
+use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
-    enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::{AccountId, InstrumentId},
-    instruments::Instrument,
+    data::{Data, OrderBookDeltas_API},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
 
@@ -32,16 +30,10 @@ use crate::{
     common::{
         credential::Credential,
         enums::{BybitEnvironment, BybitProductType},
-        parse::make_bybit_symbol,
     },
     websocket::{
         client::BybitWebSocketClient,
-        messages::{BybitWebSocketError, BybitWebSocketMessage},
-        parse::{
-            parse_kline_topic, parse_millis_i64, parse_orderbook_deltas, parse_ws_account_state,
-            parse_ws_fill_report, parse_ws_kline_bar, parse_ws_order_status_report,
-            parse_ws_position_status_report, parse_ws_trade_tick,
-        },
+        messages::{BybitWebSocketError, NautilusWsMessage},
     },
 };
 
@@ -96,33 +88,59 @@ impl BybitWebSocketClient {
 
     #[staticmethod]
     #[pyo3(name = "new_private")]
-    #[pyo3(signature = (environment, api_key, api_secret, url=None, heartbeat=None))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
     fn py_new_private(
         environment: BybitEnvironment,
-        api_key: String,
-        api_secret: String,
+        api_key: Option<String>,
+        api_secret: Option<String>,
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        // If both api_key and api_secret are None, try to load from environment
+        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
+            let (key_var, secret_var) = match environment {
+                BybitEnvironment::Testnet => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
+                _ => ("BYBIT_API_KEY", "BYBIT_API_SECRET"),
+            };
+            let env_key = std::env::var(key_var).ok().unwrap_or_default();
+            let env_secret = std::env::var(secret_var).ok().unwrap_or_default();
+            (env_key, env_secret)
+        } else {
+            (api_key.unwrap_or_default(), api_secret.unwrap_or_default())
+        };
+
         tracing::debug!(
             "Creating private WebSocket client with API key: {}",
-            &api_key[..api_key.len().min(10)]
+            &final_api_key[..final_api_key.len().min(10)]
         );
-        let credential = crate::common::credential::Credential::new(api_key, api_secret);
+        let credential = Credential::new(final_api_key, final_api_secret);
         Self::new_private(environment, credential, url, heartbeat)
     }
 
     #[staticmethod]
     #[pyo3(name = "new_trade")]
-    #[pyo3(signature = (environment, api_key, api_secret, url=None, heartbeat=None))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
     fn py_new_trade(
         environment: BybitEnvironment,
-        api_key: String,
-        api_secret: String,
+        api_key: Option<String>,
+        api_secret: Option<String>,
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
-        let credential = Credential::new(api_key, api_secret);
+        // If both api_key and api_secret are None, try to load from environment
+        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
+            let (key_var, secret_var) = match environment {
+                BybitEnvironment::Testnet => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
+                _ => ("BYBIT_API_KEY", "BYBIT_API_SECRET"),
+            };
+            let env_key = std::env::var(key_var).ok().unwrap_or_default();
+            let env_secret = std::env::var(secret_var).ok().unwrap_or_default();
+            (env_key, env_secret)
+        } else {
+            (api_key.unwrap_or_default(), api_secret.unwrap_or_default())
+        };
+
+        let credential = Credential::new(final_api_key, final_api_secret);
         Self::new_trade(environment, credential, url, heartbeat)
     }
 
@@ -136,6 +154,12 @@ impl BybitWebSocketClient {
     #[pyo3(name = "subscription_count")]
     fn py_subscription_count(&self) -> usize {
         self.subscription_count()
+    }
+
+    #[pyo3(name = "masked_api_key")]
+    #[must_use]
+    pub fn py_masked_api_key(&self) -> Option<String> {
+        self.credential().map(|c| c.masked_api_key())
     }
 
     #[pyo3(name = "add_instrument")]
@@ -162,428 +186,81 @@ impl BybitWebSocketClient {
 
             let stream = client.stream();
 
-            let instruments = Arc::clone(client.instruments());
-            let account_id = client.account_id();
-            let product_type = client.product_type();
-            let quote_cache = Arc::clone(client.quote_cache());
-
             tokio::spawn(async move {
                 tokio::pin!(stream);
 
-                let clock = get_atomic_clock_realtime();
-
                 while let Some(msg) = stream.next().await {
                     match msg {
-                        BybitWebSocketMessage::Orderbook(msg) => {
-                            let raw_symbol = msg.data.s;
-
-                            let symbol = product_type.map_or(raw_symbol, |pt| {
-                                make_bybit_symbol(raw_symbol.as_str(), pt)
+                        NautilusWsMessage::Data(data_vec) => {
+                            Python::attach(|py| {
+                                for data in data_vec {
+                                    let py_obj = data_to_pycapsule(py, data);
+                                    call_python(py, &callback, py_obj);
+                                }
                             });
-
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                            {
-                                let instrument = instrument_entry.value();
-                                let ts_init = clock.get_time_ns();
-
-                                match parse_orderbook_deltas(&msg, instrument, ts_init) {
-                                    Ok(deltas) => {
-                                        Python::attach(|py| {
-                                            let py_obj = data_to_pycapsule(
-                                                py,
-                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                            );
-                                            call_python(py, &callback, py_obj);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Error parsing orderbook deltas: {e}");
-                                    }
-                                }
-                            } else {
-                                tracing::warn!(
-                                    raw_symbol = %raw_symbol,
-                                    full_symbol = %symbol,
-                                    "No instrument found for symbol"
-                                );
-                            }
                         }
-                        BybitWebSocketMessage::TickerLinear(msg) => {
-                            let raw_symbol = msg.data.symbol;
-
-                            let symbol = product_type.map_or(raw_symbol, |pt| {
-                                make_bybit_symbol(raw_symbol.as_str(), pt)
+                        NautilusWsMessage::Deltas(deltas) => {
+                            Python::attach(|py| {
+                                let py_obj = data_to_pycapsule(
+                                    py,
+                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                );
+                                call_python(py, &callback, py_obj);
                             });
-
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                            {
-                                let instrument = instrument_entry.value();
-                                let instrument_id = instrument.id();
-                                let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
-                                    .unwrap_or_else(|_| get_atomic_clock_realtime().get_time_ns());
-                                let ts_init = clock.get_time_ns();
-
-                                match quote_cache.write().await.process_linear_ticker(
-                                    &msg.data,
-                                    instrument_id,
-                                    instrument,
-                                    ts_event,
-                                    ts_init,
-                                ) {
-                                    Ok(quote) => {
-                                        Python::attach(|py| {
-                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                                            call_python(py, &callback, py_obj);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        tracing::debug!("Skipping partial ticker update: {e}");
-                                    }
-                                }
-                            } else {
-                                tracing::warn!(
-                                    raw_symbol = %raw_symbol,
-                                    full_symbol = %symbol,
-                                    "No instrument found for symbol"
-                                );
-                            }
                         }
-                        BybitWebSocketMessage::TickerOption(msg) => {
-                            let raw_symbol = &msg.data.symbol;
-
-                            let symbol = product_type.map_or_else(
-                                || raw_symbol.as_str().into(),
-                                |pt| make_bybit_symbol(raw_symbol, pt),
-                            );
-
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                            {
-                                let instrument = instrument_entry.value();
-                                let instrument_id = instrument.id();
-                                let ts_event = parse_millis_i64(msg.ts, "ticker.ts")
-                                    .unwrap_or_else(|_| get_atomic_clock_realtime().get_time_ns());
-                                let ts_init = clock.get_time_ns();
-
-                                match quote_cache.write().await.process_option_ticker(
-                                    &msg.data,
-                                    instrument_id,
-                                    instrument,
-                                    ts_event,
-                                    ts_init,
-                                ) {
-                                    Ok(quote) => {
-                                        Python::attach(|py| {
-                                            let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                                            call_python(py, &callback, py_obj);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        tracing::debug!("Skipping partial ticker update: {e}");
-                                    }
-                                }
-                            } else {
-                                tracing::warn!(
-                                    raw_symbol = %raw_symbol,
-                                    full_symbol = %symbol,
-                                    "No instrument found for symbol"
-                                );
-                            }
-                        }
-                        BybitWebSocketMessage::Trade(msg) => {
-                            for trade in &msg.data {
-                                let raw_symbol = trade.s;
-
-                                let symbol = product_type.map_or(raw_symbol, |pt| {
-                                    make_bybit_symbol(raw_symbol.as_str(), pt)
+                        NautilusWsMessage::FundingRates(rates) => {
+                            for rate in rates {
+                                call_python_with_data(&callback, move |py| {
+                                    rate.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
-
-                                if let Some(instrument_entry) = instruments
-                                    .iter()
-                                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                                {
-                                    let instrument = instrument_entry.value();
-                                    let ts_init = clock.get_time_ns();
-
-                                    match parse_ws_trade_tick(trade, instrument, ts_init) {
-                                        Ok(tick) => {
-                                            Python::attach(|py| {
-                                                let py_obj =
-                                                    data_to_pycapsule(py, Data::Trade(tick));
-                                                call_python(py, &callback, py_obj);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Error parsing trade tick: {e}");
-                                        }
-                                    }
-                                } else {
-                                    tracing::warn!(
-                                        raw_symbol = %raw_symbol,
-                                        full_symbol = %symbol,
-                                        "No instrument found for symbol"
-                                    );
-                                }
                             }
                         }
-                        BybitWebSocketMessage::Kline(msg) => {
-                            let (interval_str, raw_symbol) = match parse_kline_topic(&msg.topic) {
-                                Ok(parts) => parts,
-                                Err(e) => {
-                                    tracing::warn!("Failed to parse kline topic: {e}");
-                                    continue;
-                                }
-                            };
-
-                            let symbol = product_type.map_or_else(
-                                || raw_symbol.into(),
-                                |pt| make_bybit_symbol(raw_symbol, pt),
-                            );
-
-                            if let Some(instrument_entry) = instruments
-                                .iter()
-                                .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                            {
-                                let instrument = instrument_entry.value();
-                                let ts_init = clock.get_time_ns();
-
-                                let (step, aggregation) = match interval_str.parse::<usize>() {
-                                    Ok(minutes) if minutes > 0 => (minutes, BarAggregation::Minute),
-                                    _ => {
-                                        // Handle other intervals (D, W, M) if needed
-                                        tracing::warn!(
-                                            "Unsupported kline interval: {}",
-                                            interval_str
-                                        );
-                                        continue;
-                                    }
-                                };
-
-                                if let Some(non_zero_step) = NonZero::new(step) {
-                                    let bar_spec = BarSpecification {
-                                        step: non_zero_step,
-                                        aggregation,
-                                        price_type: PriceType::Last,
-                                    };
-                                    let bar_type = BarType::new(
-                                        instrument.id(),
-                                        bar_spec,
-                                        AggregationSource::External,
-                                    );
-
-                                    for kline in &msg.data {
-                                        match parse_ws_kline_bar(
-                                            kline, instrument, bar_type, false, ts_init,
-                                        ) {
-                                            Ok(bar) => {
-                                                Python::attach(|py| {
-                                                    let py_obj =
-                                                        data_to_pycapsule(py, Data::Bar(bar));
-                                                    call_python(py, &callback, py_obj);
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("Error parsing kline to bar: {e}");
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    tracing::error!("Invalid step value: {}", step);
-                                }
-                            } else {
-                                tracing::warn!(
-                                    raw_symbol = %raw_symbol,
-                                    full_symbol = %symbol,
-                                    "No instrument found for symbol"
-                                );
+                        NautilusWsMessage::OrderStatusReports(reports) => {
+                            for report in reports {
+                                call_python_with_data(&callback, move |py| {
+                                    report.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
                             }
                         }
-
-                        BybitWebSocketMessage::AccountOrder(msg) => {
-                            if let Some(account_id) = account_id {
-                                for order in &msg.data {
-                                    let raw_symbol = order.symbol;
-
-                                    let symbol =
-                                        make_bybit_symbol(raw_symbol.as_str(), order.category);
-
-                                    if let Some(instrument_entry) = instruments
-                                        .iter()
-                                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                                    {
-                                        let instrument = instrument_entry.value();
-                                        let ts_init = clock.get_time_ns();
-
-                                        match parse_ws_order_status_report(
-                                            order, instrument, account_id, ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                Python::attach(|py| {
-                                                    if let Ok(py_obj) = report.into_py_any(py) {
-                                                        call_python(py, &callback, py_obj);
-                                                    }
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Error parsing order status report: {e}"
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            raw_symbol = %raw_symbol,
-                                            full_symbol = %symbol,
-                                            "No instrument found for symbol"
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::error!(
-                                    "Received AccountOrder message but account_id is not set"
-                                );
+                        NautilusWsMessage::FillReports(reports) => {
+                            for report in reports {
+                                call_python_with_data(&callback, move |py| {
+                                    report.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
                             }
                         }
-                        BybitWebSocketMessage::AccountExecution(msg) => {
-                            if let Some(account_id) = account_id {
-                                for execution in &msg.data {
-                                    let raw_symbol = execution.symbol;
-                                    let symbol =
-                                        make_bybit_symbol(raw_symbol.as_str(), execution.category);
-
-                                    if let Some(instrument_entry) = instruments
-                                        .iter()
-                                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                                    {
-                                        let instrument = instrument_entry.value();
-                                        let ts_init = clock.get_time_ns();
-
-                                        match parse_ws_fill_report(
-                                            execution, account_id, instrument, ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                Python::attach(|py| {
-                                                    if let Ok(py_obj) = report.into_py_any(py) {
-                                                        call_python(py, &callback, py_obj);
-                                                    }
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("Error parsing fill report: {e}");
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            raw_symbol = %raw_symbol,
-                                            full_symbol = %symbol,
-                                            "No instrument found for symbol"
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::error!(
-                                    "Received AccountExecution message but account_id is not set"
-                                );
-                            }
-                        }
-                        BybitWebSocketMessage::AccountWallet(msg) => {
-                            if let Some(account_id) = account_id {
-                                for wallet in &msg.data {
-                                    let ts_event =
-                                        UnixNanos::from(msg.creation_time as u64 * 1_000_000);
-                                    let ts_init = clock.get_time_ns();
-
-                                    match parse_ws_account_state(
-                                        wallet, account_id, ts_event, ts_init,
-                                    ) {
-                                        Ok(state) => {
-                                            Python::attach(|py| {
-                                                if let Ok(py_obj) = state.into_py_any(py) {
-                                                    call_python(py, &callback, py_obj);
-                                                }
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Error parsing account state: {e}");
-                                        }
-                                    }
-                                }
-                            } else {
-                                tracing::error!(
-                                    "Received AccountWallet message but account_id is not set"
-                                );
-                            }
-                        }
-                        BybitWebSocketMessage::AccountPosition(msg) => {
-                            if let Some(account_id) = account_id {
-                                for position in &msg.data {
-                                    let raw_symbol = position.symbol;
-
-                                    // For positions, find instrument by matching raw symbol prefix
-                                    // since position messages don't include product type category
-                                    if let Some(instrument_entry) = instruments.iter().find(|e| {
-                                        let inst_symbol = e.key().symbol.as_str();
-                                        // Check if instrument symbol starts with raw_symbol and has hyphen
-                                        inst_symbol.starts_with(raw_symbol.as_str())
-                                            && inst_symbol.len() > raw_symbol.len()
-                                            && inst_symbol.as_bytes().get(raw_symbol.len())
-                                                == Some(&b'-')
-                                    }) {
-                                        let instrument = instrument_entry.value();
-                                        let ts_init = clock.get_time_ns();
-
-                                        match parse_ws_position_status_report(
-                                            position, account_id, instrument, ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                Python::attach(|py| {
-                                                    if let Ok(py_obj) = report.into_py_any(py) {
-                                                        call_python(py, &callback, py_obj);
-                                                    }
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Error parsing position status report: {e}"
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            raw_symbol = %raw_symbol,
-                                            "No instrument found for symbol"
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::error!(
-                                    "Received AccountPosition message but account_id is not set"
-                                );
-                            }
-                        }
-                        BybitWebSocketMessage::Error(msg) => {
-                            call_python_with_data(&callback, |py| {
-                                msg.into_py_any(py).map(|obj| obj.into_bound(py))
+                        NautilusWsMessage::PositionStatusReport(report) => {
+                            call_python_with_data(&callback, move |py| {
+                                report.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
-                        BybitWebSocketMessage::Reconnected => {}
-                        BybitWebSocketMessage::Pong => {}
-                        BybitWebSocketMessage::Response(msg) => {
-                            tracing::debug!("Received response message: {:?}", msg);
+                        NautilusWsMessage::AccountState(state) => {
+                            call_python_with_data(&callback, move |py| {
+                                state.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
                         }
-                        BybitWebSocketMessage::Auth(msg) => {
-                            tracing::debug!("Received auth message: {:?}", msg);
+                        NautilusWsMessage::OrderRejected(event) => {
+                            call_python_with_data(&callback, move |py| {
+                                event.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
                         }
-                        BybitWebSocketMessage::Subscription(msg) => {
-                            tracing::debug!("Received subscription message: {:?}", msg);
+                        NautilusWsMessage::OrderCancelRejected(event) => {
+                            call_python_with_data(&callback, move |py| {
+                                event.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
                         }
-                        BybitWebSocketMessage::Raw(value) => {
-                            tracing::debug!("Received raw/unhandled message, skipping: {value}");
+                        NautilusWsMessage::OrderModifyRejected(event) => {
+                            call_python_with_data(&callback, move |py| {
+                                event.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
+                        }
+                        NautilusWsMessage::Error(err) => {
+                            call_python_with_data(&callback, move |py| {
+                                err.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
+                        }
+                        NautilusWsMessage::Reconnected => {
+                            tracing::info!("WebSocket reconnected");
                         }
                     }
                 }
@@ -906,15 +583,15 @@ impl BybitWebSocketClient {
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
-        product_type: crate::common::enums::BybitProductType,
-        instrument_id: nautilus_model::identifiers::InstrumentId,
-        client_order_id: nautilus_model::identifiers::ClientOrderId,
-        order_side: nautilus_model::enums::OrderSide,
-        order_type: nautilus_model::enums::OrderType,
-        quantity: nautilus_model::types::Quantity,
-        time_in_force: Option<nautilus_model::enums::TimeInForce>,
-        price: Option<nautilus_model::types::Price>,
-        trigger_price: Option<nautilus_model::types::Price>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -954,12 +631,12 @@ impl BybitWebSocketClient {
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
-        product_type: crate::common::enums::BybitProductType,
-        instrument_id: nautilus_model::identifiers::InstrumentId,
-        venue_order_id: Option<nautilus_model::identifiers::VenueOrderId>,
-        client_order_id: Option<nautilus_model::identifiers::ClientOrderId>,
-        quantity: Option<nautilus_model::types::Quantity>,
-        price: Option<nautilus_model::types::Price>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -989,10 +666,10 @@ impl BybitWebSocketClient {
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
-        product_type: crate::common::enums::BybitProductType,
-        instrument_id: nautilus_model::identifiers::InstrumentId,
-        venue_order_id: Option<nautilus_model::identifiers::VenueOrderId>,
-        client_order_id: Option<nautilus_model::identifiers::ClientOrderId>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -1001,6 +678,143 @@ impl BybitWebSocketClient {
                 .cancel_order_by_id(product_type, instrument_id, venue_order_id, client_order_id)
                 .await
                 .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "batch_cancel_orders")]
+    #[pyo3(signature = (
+        product_type,
+        instrument_ids,
+        venue_order_ids,
+        client_order_ids,
+    ))]
+    fn py_batch_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        instrument_ids: Vec<InstrumentId>,
+        venue_order_ids: Vec<Option<VenueOrderId>>,
+        client_order_ids: Vec<Option<ClientOrderId>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .batch_cancel_orders_by_id(
+                    product_type,
+                    instrument_ids,
+                    venue_order_ids,
+                    client_order_ids,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "build_place_order_params")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_build_place_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+    ) -> PyResult<crate::python::params::BybitWsPlaceOrderParams> {
+        let params = self
+            .build_place_order_params(
+                product_type,
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                time_in_force,
+                price,
+                trigger_price,
+                post_only,
+                reduce_only,
+            )
+            .map_err(to_pyruntime_err)?;
+        Ok(params.into())
+    }
+
+    #[pyo3(name = "build_amend_order_params")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_build_amend_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> PyResult<crate::python::params::BybitWsAmendOrderParams> {
+        let params = self
+            .build_amend_order_params(
+                product_type,
+                instrument_id,
+                venue_order_id,
+                client_order_id,
+                quantity,
+                price,
+            )
+            .map_err(to_pyruntime_err)?;
+        Ok(params.into())
+    }
+
+    #[pyo3(name = "batch_place_orders")]
+    fn py_batch_place_orders<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<crate::python::params::BybitWsPlaceOrderParams>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let order_params: Vec<_> = orders
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(to_pyruntime_err)?;
+
+            client
+                .batch_place_orders(order_params)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "batch_modify_orders")]
+    fn py_batch_modify_orders<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<crate::python::params::BybitWsAmendOrderParams>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let order_params: Vec<_> = orders
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(to_pyruntime_err)?;
+
+            client
+                .batch_amend_orders(order_params)
+                .await
+                .map_err(to_pyruntime_err)?;
+
             Ok(())
         })
     }

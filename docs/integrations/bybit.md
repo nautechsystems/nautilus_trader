@@ -341,8 +341,7 @@ The product types for each client must be specified in the configurations.
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
 | `use_ws_execution_fast`          | `False` | Subscribe to the low-latency execution stream. |
-| `use_ws_trade_api`               | `False` | Send order requests over WebSocket instead of HTTP. |
-| `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (requires WebSocket trading enabled). |
+| `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |
 | `use_spot_position_reports`      | `False` | Report SPOT wallet balances as positions when `True`. |
 | `ignore_uncached_instrument_executions` | `False` | Ignore execution messages for instruments not yet cached. |
 | `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |

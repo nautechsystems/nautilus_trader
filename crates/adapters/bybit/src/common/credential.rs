@@ -62,6 +62,22 @@ impl Credential {
         &self.api_key
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn masked_api_key(&self) -> String {
+        let key = self.api_key.as_str();
+        let len = key.len();
+
+        if len <= 8 {
+            "*".repeat(len)
+        } else {
+            format!("{}...{}", &key[..4], &key[len - 4..])
+        }
+    }
+
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.
     ///
     /// `expires` should be the millisecond timestamp used by the login payload.

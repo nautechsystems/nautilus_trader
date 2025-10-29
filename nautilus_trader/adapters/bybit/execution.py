@@ -12,116 +12,75 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Bybit execution client implementation.
 
-from __future__ import annotations
+This module provides a LiveExecutionClient that interfaces with Bybit's REST and
+WebSocket APIs for order management and execution. The client uses Rust-based HTTP and
+WebSocket clients exposed via PyO3 for performance.
 
-from asyncio import TaskGroup
-from decimal import Decimal
-from typing import TYPE_CHECKING
+"""
 
-import msgspec
+import asyncio
+from typing import Any
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.credentials import get_api_key
-from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
-from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
-from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
-from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
-from nautilus_trader.adapters.bybit.common.fees import determine_fee_currency
-from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
-from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
-from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
-from nautilus_trader.adapters.bybit.http.errors import BybitError
-from nautilus_trader.adapters.bybit.http.errors import should_retry
-from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionFast
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionFastMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
-from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
+from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
+from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.datetime import secs_to_millis
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
+from nautilus_trader.core.nautilus_pyo3 import BybitAccountType
+from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import account_type_to_str
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.functions import order_side_to_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
+from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import LimitIfTouchedOrder
-from nautilus_trader.model.orders import LimitOrder
-from nautilus_trader.model.orders import MarketIfTouchedOrder
-from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
-from nautilus_trader.model.orders import StopLimitOrder
-from nautilus_trader.model.orders import StopMarketOrder
-from nautilus_trader.model.orders import TrailingStopLimitOrder
-from nautilus_trader.model.orders import TrailingStopMarketOrder
-
-
-if TYPE_CHECKING:
-    import asyncio
-
-    from nautilus_trader.adapters.bybit.common.enums import BybitPositionMode
-    from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-    from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
-    from nautilus_trader.cache.cache import Cache
-    from nautilus_trader.common.component import LiveClock
-    from nautilus_trader.common.component import MessageBus
-    from nautilus_trader.execution.messages import BatchCancelOrders
-    from nautilus_trader.execution.messages import CancelAllOrders
-    from nautilus_trader.execution.messages import CancelOrder
-    from nautilus_trader.execution.messages import GenerateFillReports
-    from nautilus_trader.execution.messages import GenerateOrderStatusReport
-    from nautilus_trader.execution.messages import GenerateOrderStatusReports
-    from nautilus_trader.execution.messages import GeneratePositionStatusReports
-    from nautilus_trader.execution.messages import ModifyOrder
-    from nautilus_trader.execution.messages import QueryAccount
-    from nautilus_trader.execution.messages import SubmitOrder
-    from nautilus_trader.execution.messages import SubmitOrderList
-    from nautilus_trader.execution.reports import FillReport
-    from nautilus_trader.execution.reports import OrderStatusReport
-    from nautilus_trader.model.position import Position
 
 
 class BybitExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the Bybit centralized crypto exchange.
+    Execution client for Bybit exchange.
+
+    Provides order management and execution via Bybit's REST and WebSocket APIs.
+    Supports both HTTP and WebSocket-based order submission.
 
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : BybitHttpClient
+    client : nautilus_pyo3.BybitHttpClient
         The Bybit HTTP client.
     msgbus : MessageBus
         The message bus for the client.
@@ -131,48 +90,39 @@ class BybitExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : BybitInstrumentProvider
         The instrument provider.
-    product_types : list[BybitProductType]
-        The product types for the client.
-    base_url_ws_private : str
-        The base URL for the `private` WebSocket client.
-    base_url_ws_trade : str
-        The base URL for the `trade` WebSocket client.
     config : BybitExecClientConfig
         The configuration for the client.
     name : str, optional
         The custom client ID.
-
-    Notes
-    -----
-    Time-In-Force (TIF) handling:
-    - GTD (Good-Till-Date) orders are converted to GTC (Good-Till-Cancel) when
-      `use_gtd` is False in the configuration, as Bybit does not support GTD.
-    - This conversion is logged for transparency and preserves the venue's TIF
-      value when possible rather than masking inconsistencies.
 
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: BybitHttpClient,
+        client: nautilus_pyo3.BybitHttpClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BybitInstrumentProvider,
-        product_types: list[BybitProductType],
-        base_url_ws_private: str,
-        base_url_ws_trade: str,
         config: BybitExecClientConfig,
         name: str | None,
     ) -> None:
+        # None = all product types
+        product_types = config.product_types or (
+            BybitProductType.SPOT,
+            BybitProductType.LINEAR,
+            BybitProductType.INVERSE,
+            BybitProductType.OPTION,
+        )
+
         if set(product_types) == {BybitProductType.SPOT}:
-            account_type = AccountType.CASH
+            self._account_type = AccountType.CASH
             # Bybit SPOT accounts support margin trading (borrowing)
             AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
             # UTA (Unified Trading Account) for derivatives or mixed products
-            account_type = AccountType.MARGIN
+            self._account_type = AccountType.MARGIN
 
         super().__init__(
             loop=loop,
@@ -180,7 +130,7 @@ class BybitExecutionClient(LiveExecutionClient):
             venue=BYBIT_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=account_type,
+            account_type=self._account_type,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -188,172 +138,220 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
         # Configuration
-        self._product_types = product_types
+        self._config = config
+        self._product_types = list(product_types)
         self._use_gtd = config.use_gtd
-        self._use_ws_trade_api = config.use_ws_trade_api
         self._use_ws_execution_fast = config.use_ws_execution_fast
         self._use_http_batch_api = config.use_http_batch_api
-
         self._futures_leverages = config.futures_leverages
         self._margin_mode = config.margin_mode
         self._position_mode = config.position_mode
         self._use_spot_position_reports = config.use_spot_position_reports
         self._ignore_uncached_instrument_executions = config.ignore_uncached_instrument_executions
 
-        self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
-        self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
+        self._log.info(f"Account type: {self._account_type.name}", LogColor.BLUE)
+        self._log.info(f"Product types: {[str(p) for p in self._product_types]}", LogColor.BLUE)
+        self._log.info(f"{config.testnet=}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
-        self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
-        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
-        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
-        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
-        self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.futures_leverages=}", LogColor.BLUE)
-        self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
-        self._log.info(f"{config.position_mode=}", LogColor.BLUE)
 
-        if self._use_spot_position_reports:
-            self._log.warning(
-                "SPOT position reports enabled - positive wallet balances will be treated as LONG positions "
-                "and negative balances (borrowing) as SHORT positions; this may lead to unintended "
-                "liquidation of wallet assets if strategies are not designed to handle SPOT positions properly",
-                LogColor.YELLOW,
-            )
-
-        self._enum_parser = BybitEnumParser()
-
+        # Set account ID
         account_id = AccountId(f"{name or BYBIT_VENUE.value}-UNIFIED")
         self._set_account_id(account_id)
 
+        # Create pyo3 account ID for Rust HTTP client
+        self.pyo3_account_id = nautilus_pyo3.AccountId(account_id.value)
+
         # HTTP API
-        self._http_account = BybitAccountHttpAPI(
-            client=client,
-            clock=clock,
-        )
+        self._http_client = client
+        masked_key = self._http_client.masked_api_key()
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
-        # WebSocket private client
-        self._ws_private_client = BybitWebSocketClient(
-            clock=clock,
-            handler=self._handle_ws_message_private,
-            handler_reconnect=None,
-            base_url=base_url_ws_private,
-            is_private=True,
-            api_key=config.api_key or get_api_key(config.demo, config.testnet),
-            api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
-            loop=loop,
-        )
+        # Configure HTTP client settings
+        self._http_client.set_use_spot_position_reports(self._use_spot_position_reports)
 
-        # WebSocket trade client
-        self._order_single_client: BybitWebSocketClient | BybitAccountHttpAPI
-        self._order_batch_client: BybitWebSocketClient | BybitAccountHttpAPI
-        if self._use_ws_trade_api:
-            self._ws_order_client = BybitWebSocketClient(
-                clock=clock,
-                handler=self._handle_ws_message_trade,
-                handler_reconnect=None,
-                base_url=base_url_ws_trade,
-                is_trade=True,
-                api_key=config.api_key or get_api_key(config.demo, config.testnet),
-                api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
-                loop=loop,
-                ws_trade_timeout_secs=config.ws_trade_timeout_secs,
-                recv_window_ms=config.recv_window_ms,
-            )
-            self._order_single_client = self._ws_order_client
-            if config.use_http_batch_api:
-                self._order_batch_client = self._http_account
-            else:
-                self._order_batch_client = self._ws_order_client
+        # WebSocket API - environment setup
+        # Priority: demo > testnet > mainnet
+        if config.demo:
+            environment = nautilus_pyo3.BybitEnvironment.DEMO
+        elif config.testnet:
+            environment = nautilus_pyo3.BybitEnvironment.TESTNET
         else:
-            self._order_single_client = self._http_account
-            self._order_batch_client = self._http_account
+            environment = nautilus_pyo3.BybitEnvironment.MAINNET
 
-        self._is_order_single_client_ws = isinstance(
-            self._order_single_client,
-            BybitWebSocketClient,
+        # WebSocket API - Private channel
+        self._ws_private_client = nautilus_pyo3.BybitWebSocketClient.new_private(
+            environment=environment,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            url=config.base_url_ws_private,
+            heartbeat=20,
         )
-        self._is_order_batch_client_ws = isinstance(self._order_batch_client, BybitWebSocketClient)
+        self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Order submission
-        self._submit_order_methods = {
-            OrderType.MARKET: self._submit_market_order,
-            OrderType.LIMIT: self._submit_limit_order,
-            OrderType.STOP_MARKET: self._submit_stop_market_order,
-            OrderType.STOP_LIMIT: self._submit_stop_limit_order,
-            OrderType.MARKET_IF_TOUCHED: self._submit_market_if_touched_order,
-            OrderType.LIMIT_IF_TOUCHED: self._submit_limit_if_touched_order,
-            OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market,
-        }
-
-        self._batch_order_create_handlers = {
-            OrderType.MARKET: self._create_market_batch_order,
-            OrderType.LIMIT: self._create_limit_batch_order,
-            OrderType.LIMIT_IF_TOUCHED: self._create_limit_if_touched_batch_order,
-            OrderType.STOP_MARKET: self._create_stop_market_batch_order,
-            OrderType.MARKET_IF_TOUCHED: self._create_market_if_touched_batch_order,
-        }
-
-        # Decoders
-        self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
-        # self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
-
-        self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
-        self._decoder_ws_account_execution_update = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
-        self._decoder_ws_account_execution_fast_update = msgspec.json.Decoder(
-            BybitWsAccountExecutionFastMsg,
+        # WebSocket API - Trade channel (always enabled)
+        self._ws_trade_client: nautilus_pyo3.BybitWebSocketClient = (
+            nautilus_pyo3.BybitWebSocketClient.new_trade(
+                environment=environment,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                url=config.base_url_ws_trade,
+                heartbeat=20,
+            )
         )
-        # self._decoder_ws_account_position_update = msgspec.json.Decoder(BybitWsAccountPositionMsg)
-        self._decoder_ws_account_wallet_update = msgspec.json.Decoder(BybitWsAccountWalletMsg)
 
-        # Hot caches
-        self._instrument_ids: dict[str, InstrumentId] = {}
-        self._pending_trailing_stops: dict[ClientOrderId, Order] = {}
-
-        self._retry_manager_pool = RetryManagerPool[None](
-            pool_size=100,
-            max_retries=config.max_retries or 0,
-            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
-            delay_max_ms=config.retry_delay_max_ms or 10_000,
-            backoff_factor=2,
-            logger=self._log,
-            exc_types=(BybitError,),
-            retry_check=should_retry,
-        )
+    @property
+    def bybit_instrument_provider(self) -> BybitInstrumentProvider:
+        return self._instrument_provider  # type: ignore
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
+        await self._cache_instruments()
         await self._update_account_state()
         await self._await_account_registered()
 
-        self._log.info("Bybit API key authenticated", LogColor.GREEN)
-        self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
+        # Set account_id on WebSocket clients so they can parse account messages
+        self._ws_private_client.set_account_id(self.pyo3_account_id)
+        self._ws_trade_client.set_account_id(self.pyo3_account_id)
 
-        await self._ws_private_client.connect()
+        # Connect to private WebSocket
+        await self._ws_private_client.connect(callback=self._handle_msg)
 
-        await self._ws_private_client.subscribe_orders_update()
-        await self._ws_private_client.subscribe_wallet_update()
+        # Wait for connection to be established
+        await self._ws_private_client.wait_until_active(timeout_secs=10.0)
+        self._log.info("Connected to private WebSocket", LogColor.BLUE)
 
-        if self._use_ws_execution_fast:
-            await self._ws_private_client.subscribe_executions_fast_update()
-        else:
-            await self._ws_private_client.subscribe_executions_update()
+        await self._ws_private_client.subscribe_orders()
+        await self._ws_private_client.subscribe_executions()
+        await self._ws_private_client.subscribe_positions()
+        await self._ws_private_client.subscribe_wallet()
 
-        if self._use_ws_trade_api:
-            await self._ws_order_client.connect()
+        # Connect to trade WebSocket
+        await self._ws_trade_client.connect(callback=self._handle_msg)
+        await self._ws_trade_client.wait_until_active(timeout_secs=10.0)
+        self._log.info("Connected to trade WebSocket", LogColor.BLUE)
 
     async def _disconnect(self) -> None:
-        await self._ws_private_client.disconnect()
+        self._http_client.cancel_all_requests()
 
-        if self._use_ws_trade_api:
-            await self._ws_order_client.disconnect()
+        # Close private WebSocket
+        if await self._ws_private_client.is_active():
+            self._log.info("Disconnecting private websocket")
+            await self._ws_private_client.close()
 
-    def _stop(self) -> None:
-        self._retry_manager_pool.shutdown()
+        # Close trade WebSocket
+        if await self._ws_trade_client.is_active():
+            self._log.info("Disconnecting trade websocket")
+            await self._ws_trade_client.close()
+
+        # Cancel any pending futures
+        for future in self._ws_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
+
+    async def _cache_instruments(self) -> None:
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self.bybit_instrument_provider.instruments_pyo3()
+
+        for inst in instruments_pyo3:
+            self._http_client.add_instrument(inst)
+            self._ws_private_client.add_instrument(inst)
+            self._ws_trade_client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    async def _update_account_state(self) -> None:
+        if self._account_type == AccountType.CASH:
+            account_type = BybitAccountType.UNIFIED  # Spot uses unified account
+        else:
+            account_type = BybitAccountType.UNIFIED
+
+        pyo3_account_state = await self._http_client.request_account_state(
+            account_type=account_type,
+            account_id=self.pyo3_account_id,
+        )
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        await self._apply_account_configuration()
+
+    async def _apply_account_configuration(self) -> None:
+        if self._futures_leverages:
+            await self._apply_leverage_settings()
+
+        if self._position_mode:
+            await self._apply_position_mode_settings()
+
+        if self._margin_mode:
+            await self._apply_margin_mode_setting()
+
+    async def _apply_leverage_settings(self) -> None:
+        if self._futures_leverages is None:
+            return
+
+        tasks = []
+
+        for symbol_str, leverage in self._futures_leverages.items():
+            try:
+                product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol_str)
+                if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+                    tasks.append(self.set_leverage(symbol_str, leverage))
+            except Exception as e:
+                self._log.warning(f"Failed to parse symbol {symbol_str}: {e}")
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _apply_position_mode_settings(self) -> None:
+        if self._position_mode is None:
+            return
+
+        tasks = []
+
+        for symbol_str, mode in self._position_mode.items():
+            try:
+                product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol_str)
+                if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+                    tasks.append(self.set_position_mode(symbol_str, mode))
+            except Exception as e:
+                self._log.warning(f"Failed to parse symbol {symbol_str}: {e}")
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _apply_margin_mode_setting(self) -> None:
+        try:
+            await self._http_client.set_margin_mode(self._margin_mode)  # type: ignore[attr-defined]
+            self._log.info(f"Set account margin mode to {self._margin_mode}")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "not been modified" in error_msg:
+                self._log.info(f"Margin mode already set to {self._margin_mode}")
+            elif "needs to be equal to or greater than" in error_msg:
+                self._log.warning(f"Cannot set margin mode: {e}")
+            else:
+                self._log.error(f"Failed to set margin mode: {e}")
+                raise
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -361,76 +359,50 @@ class BybitExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        instrument_id = command.instrument_id
+        self._log.debug(
+            f"Requesting OrderStatusReports "
+            f"{repr(command.instrument_id) if command.instrument_id else ''}"
+            "...",
+        )
 
-        self._log.debug(f"Requesting OrderStatusReports... open_only={command.open_only}")
+        pyo3_reports: list[nautilus_pyo3.OrderStatusReport] = []
         reports: list[OrderStatusReport] = []
 
         try:
-            _symbol = instrument_id.symbol.value if instrument_id is not None else None
-            symbol = BybitSymbol(_symbol) if _symbol is not None else None
+            # Extract instrument_id if provided
+            pyo3_instrument_id = None
+            if command.instrument_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
 
             for product_type in self._product_types:
-                if command.open_only:
-                    bybit_orders = await self._http_account.query_open_orders(
-                        product_type,
-                        symbol,
-                    )
-                else:
-                    # For full history mode, query BOTH endpoints to ensure we don't miss any orders
-                    # The realtime endpoint has the most up-to-date open orders
-                    # The history endpoint has recently closed orders
-                    all_orders = []
+                response = await self._http_client.request_order_status_reports(
+                    account_id=self.pyo3_account_id,
+                    product_type=product_type,
+                    instrument_id=pyo3_instrument_id,
+                    open_only=command.open_only,
+                )
+                pyo3_reports.extend(response)
 
-                    # First get open orders from realtime endpoint
-                    open_orders = await self._http_account.query_open_orders(
-                        product_type,
-                        symbol,
-                    )
-                    all_orders.extend(open_orders)
-
-                    # Then get order history (which may lag for very recent orders)
-                    history_orders = await self._http_account.query_order_history(
-                        product_type,
-                        symbol,
-                        command.open_only,
-                        command.start,
-                    )
-
-                    # De-duplicate by orderId (open orders might appear in both)
-                    seen_order_ids = {order.orderId for order in open_orders}
-                    for order in history_orders:
-                        if order.orderId not in seen_order_ids:
-                            all_orders.append(order)
-
-                    bybit_orders = all_orders
-
-                for bybit_order in bybit_orders:
-                    # Uncomment for development
-                    # self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
-                    bybit_symbol = BybitSymbol(
-                        bybit_order.symbol + f"-{product_type.value.upper()}",
-                    )
-
-                    client_order_id = (
-                        ClientOrderId(bybit_order.orderLinkId) if bybit_order.orderLinkId else None
-                    )
-                    if client_order_id is None:
-                        client_order_id = self._cache.client_order_id(
-                            VenueOrderId(bybit_order.orderId),
-                        )
-                    report = bybit_order.parse_to_order_status_report(
-                        client_order_id=client_order_id,
-                        account_id=self.account_id,
-                        instrument_id=bybit_symbol.to_instrument_id(),
-                        report_id=UUID4(),
-                        enum_parser=self._enum_parser,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    reports.append(report)
-                    self._log.debug(f"Received {report}", LogColor.MAGENTA)
-        except BybitError as e:
-            self._log.error(f"Failed to generate OrderStatusReports: {e}")
+            for pyo3_report in pyo3_reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
+                self._log.debug("OrderStatusReports request cancelled during shutdown")
+            elif "symbol` must be initialized" in str(e):
+                self._log.warning(
+                    "Order history contains instruments not in cache - "
+                    "this is expected if orders exist for uncached product types or delisted symbols. "
+                    f"Cached instruments: {len(self.bybit_instrument_provider.instruments_pyo3())}",
+                    LogColor.YELLOW,
+                )
+            else:
+                self._log.exception("Failed to generate OrderStatusReports", e)
+        except Exception as e:
+            self._log.exception("Failed to generate OrderStatusReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -447,107 +419,124 @@ class BybitExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        instrument_id = command.instrument_id
-        client_order_id = command.client_order_id
-        venue_order_id = command.venue_order_id
-
-        PyCondition.is_false(
-            client_order_id is None and venue_order_id is None,
-            "both `client_order_id` and `venue_order_id` were `None`",
+        self._log.debug(
+            f"Requesting OrderStatusReport for {command.client_order_id!r}...",
         )
 
-        if client_order_id:
-            order = self._cache.order(client_order_id)
-            if order and order.order_type in (
-                OrderType.TRAILING_STOP_MARKET,
-                OrderType.TRAILING_STOP_LIMIT,
-            ):
-                self._log.warning("Cannot query with client order ID for trailing stops")
-                client_order_id = None
-
-        self._log.info(
-            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
-        )
         try:
-            bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-            product_type = bybit_symbol.product_type
-            bybit_orders = await self._http_account.query_order(
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                command.instrument_id.symbol.value,
+            )
+            pyo3_client_order_id = (
+                nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+                if command.client_order_id
+                else None
+            )
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+                if command.venue_order_id
+                else None
+            )
+
+            self._log.debug(
+                f"About to call query_order: product_type={product_type}, "
+                f"instrument_id={pyo3_instrument_id}, "
+                f"client_order_id={pyo3_client_order_id}",
+                LogColor.CYAN,
+            )
+
+            pyo3_report = await self._http_client.query_order(
+                account_id=self.pyo3_account_id,
                 product_type=product_type,
-                symbol=instrument_id.symbol.value,
-                client_order_id=client_order_id.value if client_order_id else None,
-                order_id=venue_order_id.value if venue_order_id else None,
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
             )
-            if len(bybit_orders) == 0:
-                self._log.error(f"Received no order for {venue_order_id}")
+
+            self._log.debug(f"query_order returned: {pyo3_report}", LogColor.CYAN)
+
+            if pyo3_report is None:
+                self._log.warning(f"No order status report found for {command.client_order_id!r}")
                 return None
-            target_order = bybit_orders[0]
-            if len(bybit_orders) > 1:
-                self._log.warning(f"Received more than one order for {venue_order_id}")
-                target_order = bybit_orders[0]
 
-            order_link_id = bybit_orders[0].orderLinkId
-            client_order_id = ClientOrderId(order_link_id) if order_link_id else None
-            venue_order_id = VenueOrderId(bybit_orders[0].orderId)
-            if client_order_id is None:
-                client_order_id = self._cache.client_order_id(venue_order_id)
-
-            order_report = target_order.parse_to_order_status_report(
-                client_order_id=client_order_id,
-                account_id=self.account_id,
-                instrument_id=instrument_id,
-                report_id=UUID4(),
-                enum_parser=self._enum_parser,
-                ts_init=self._clock.timestamp_ns(),
+            report = OrderStatusReport.from_pyo3(pyo3_report)
+            self._log.debug(f"Received {report}", LogColor.MAGENTA)
+            return report
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
+                self._log.debug("OrderStatusReport query cancelled during shutdown")
+            elif "not found in cache" in str(e):
+                self._log.warning(
+                    f"Instrument {command.instrument_id} not in cache when querying order {command.client_order_id!r} - "
+                    "order may have been placed before instruments were cached",
+                    LogColor.YELLOW,
+                )
+            elif "must be initialized" in str(e):
+                self._log.error(
+                    f"PyO3 field initialization error querying order {command.client_order_id!r}: {e}. "
+                    f"This may indicate an instrument caching issue for {command.instrument_id}",
+                )
+            else:
+                self._log.exception(
+                    f"Failed to generate OrderStatusReport for {command.client_order_id!r}",
+                    e,
+                )
+            return None
+        except Exception as e:
+            self._log.exception(
+                f"Failed to generate OrderStatusReport for {command.client_order_id!r}",
+                e,
             )
-            self._log.debug(f"Received {order_report}", LogColor.MAGENTA)
-            return order_report
-        except BybitError as e:
-            self._log.error(f"Failed to generate OrderStatusReport: {e}")
-        return None
+            return None
 
     async def generate_fill_reports(
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        instrument_id = command.instrument_id
+        self._log.debug(
+            f"Requesting FillReports "
+            f"{repr(command.instrument_id) if command.instrument_id else ''}"
+            "...",
+        )
 
-        self._log.debug("Requesting FillReports...")
+        pyo3_reports: list[nautilus_pyo3.FillReport] = []
         reports: list[FillReport] = []
 
         try:
-            _symbol = instrument_id.symbol.value if instrument_id is not None else None
-            symbol = BybitSymbol(_symbol) if _symbol is not None else None
-
-            start_time_ms = secs_to_millis(command.start.timestamp()) if command.start else None
-            end_time_ms = secs_to_millis(command.end.timestamp()) if command.end else None
-
-            # active_symbols = self._get_cache_active_symbols()
-            # active_symbols.update(await self._get_active_position_symbols(symbol))
-            # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
             for product_type in self._product_types:
-                bybit_fills = await self._http_account.query_trade_history(
-                    product_type,
-                    symbol,
-                    start_time=start_time_ms,
-                    end_time=end_time_ms,
+                pyo3_instrument_id = None
+                if command.instrument_id:
+                    pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                        command.instrument_id.value,
+                    )
+
+                start_ms = None
+                end_ms = None
+                if command.start:
+                    start_dt = ensure_pydatetime_utc(command.start)
+                    if start_dt:
+                        start_ms = int(start_dt.timestamp() * 1000)
+                if command.end:
+                    end_dt = ensure_pydatetime_utc(command.end)
+                    if end_dt:
+                        end_ms = int(end_dt.timestamp() * 1000)
+
+                response = await self._http_client.request_fill_reports(
+                    account_id=self.pyo3_account_id,
+                    product_type=product_type,
+                    instrument_id=pyo3_instrument_id,
+                    start=start_ms,
+                    end=end_ms,
                 )
-                for bybit_fill in bybit_fills:
-                    # Uncomment for development
-                    # self._log.info(f"Generating fill {bybit_fill}", LogColor.MAGENTA)
-                    bybit_symbol = BybitSymbol(
-                        bybit_fill.symbol + f"-{product_type.value.upper()}",
-                    )
-                    report = bybit_fill.parse_to_fill_report(
-                        account_id=self.account_id,
-                        instrument_id=bybit_symbol.to_instrument_id(),
-                        report_id=UUID4(),
-                        enum_parser=self._enum_parser,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    reports.append(report)
-                    self._log.debug(f"Received {report}")
-        except BybitError as e:
-            self._log.error(f"Failed to generate FillReports: {e}")
+                pyo3_reports.extend(response)
+
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except Exception as e:
+            self._log.exception("Failed to generate FillReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -555,508 +544,244 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_position_status_reports(  # noqa: C901
+    async def generate_position_status_reports(
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        instrument_id = command.instrument_id
+        self._log.debug("Requesting PositionStatusReports...")
 
+        pyo3_reports: list[nautilus_pyo3.PositionStatusReport] = []
         reports: list[PositionStatusReport] = []
 
         try:
-            if instrument_id:
-                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
-                bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+            pyo3_instrument_id = None
+            if command.instrument_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
 
-                if (
-                    self._use_spot_position_reports
-                    and bybit_symbol.product_type == BybitProductType.SPOT
-                ):
-                    # Handle SPOT positions from wallet if enabled
-                    spot_reports = await self._generate_spot_position_reports_from_wallet(
-                        instrument_id,
-                    )
-                    reports.extend(spot_reports)
-                elif bybit_symbol.product_type in (
-                    BybitProductType.LINEAR,
-                    BybitProductType.OPTION,
-                ):
-                    # Only LINEAR and OPTION are supported by Bybit position endpoint
-                    positions = await self._http_account.query_position_info(
-                        bybit_symbol.product_type,
-                        bybit_symbol.raw_symbol,
-                    )
-                    for position in positions:
-                        position_report = position.parse_to_position_status_report(
-                            account_id=self.account_id,
-                            instrument_id=instrument_id,
-                            report_id=UUID4(),
-                            ts_init=self._clock.timestamp_ns(),
-                        )
-                        self._log.debug(f"Received {position_report}")
-                        reports.append(position_report)
-                else:
-                    # INVERSE or SPOT (without use_spot_position_reports) not supported
-                    self._log.debug(
-                        f"No position reports available for {instrument_id} "
-                        f"({bybit_symbol.product_type.value} not supported)",
-                    )
+            for product_type in self._product_types:
+                response = await self._http_client.request_position_status_reports(
+                    account_id=self.pyo3_account_id,
+                    product_type=product_type,
+                    instrument_id=pyo3_instrument_id,
+                )
+                pyo3_reports.extend(response)
+
+            for pyo3_report in pyo3_reports:
+                report = PositionStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except ValueError as e:
+            if "request canceled" in str(e).lower():
+                self._log.debug("PositionStatusReports request cancelled during shutdown")
             else:
-                self._log.debug("Requesting PositionStatusReports...")
-                for product_type in self._product_types:
-                    if product_type == BybitProductType.SPOT:
-                        # Handle SPOT positions from wallet if enabled
-                        if self._use_spot_position_reports:
-                            spot_reports = await self._generate_spot_position_reports_from_wallet()
-                            reports.extend(spot_reports)
-                    elif product_type in (BybitProductType.LINEAR, BybitProductType.OPTION):
-                        # Only LINEAR and OPTION are supported by Bybit position endpoint
-                        positions = await self._http_account.query_position_info(product_type)
-                        for position in positions:
-                            symbol = position.symbol
-                            bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
-                            position_report = position.parse_to_position_status_report(
-                                account_id=self.account_id,
-                                instrument_id=bybit_symbol.to_instrument_id(),
-                                report_id=UUID4(),
-                                ts_init=self._clock.timestamp_ns(),
-                            )
-                            self._log.debug(f"Received {position_report}")
-                            reports.append(position_report)
-                    else:
-                        # INVERSE not supported by position endpoint
-                        self._log.debug(
-                            f"Skipping position query for {product_type.value} "
-                            f"(not supported by Bybit position endpoint)",
-                        )
-        except BybitError as e:
-            self._log.error(f"Failed to generate PositionReports: {e}")
+                self._log.exception("Failed to generate PositionStatusReports", e)
+        except Exception as e:
+            self._log.exception("Failed to generate PositionStatusReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len_reports} PositionReport{plural}")
+        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
 
         return reports
-
-    async def _generate_spot_position_reports_from_wallet(
-        self,
-        instrument_id: InstrumentId | None = None,
-    ) -> list[PositionStatusReport]:
-        reports: list[PositionStatusReport] = []
-
-        try:
-            (balances, ts_event) = await self._http_account.query_wallet_balance()
-
-            # Build lookup table of wallet balances by coin
-            wallet_by_coin: dict[str, Decimal] = {}
-
-            for wallet in balances:
-                for coin_balance in wallet.coin:
-                    wallet_balance = Decimal(coin_balance.walletBalance or "0")
-                    spot_borrow = Decimal(coin_balance.spotBorrow or "0")
-                    actual_balance = wallet_balance - spot_borrow
-                    wallet_by_coin[coin_balance.coin] = (
-                        wallet_by_coin.get(coin_balance.coin, Decimal(0)) + actual_balance
-                    )
-
-            if instrument_id:
-                instrument = self._cache.instrument(instrument_id)
-                if instrument is None:
-                    raise ValueError(
-                        f"Cannot generate SPOT position report: instrument not found for {instrument_id}",
-                    )
-
-                coin = instrument.base_currency.code
-                wallet_balance = wallet_by_coin.get(coin, Decimal(0))
-
-                report = self._build_spot_position_report_from_wallet_balance(
-                    instrument,
-                    wallet_balance,
-                    ts_event,
-                )
-                reports.append(report)
-            else:
-                # instrument_id not specified: generate reports for loaded SPOT instruments
-                # based on wallet balances
-                for loaded in self._instrument_provider.get_all().values():
-                    # Only consider SPOT instruments
-                    if not loaded.id.symbol.value.endswith("-SPOT"):
-                        continue
-
-                    coin = loaded.base_currency.code
-                    wallet_balance = wallet_by_coin.get(coin, Decimal(0))
-                    if wallet_balance == 0:
-                        continue
-
-                    report = self._build_spot_position_report_from_wallet_balance(
-                        loaded,
-                        wallet_balance,
-                        ts_event,
-                    )
-                    reports.append(report)
-        except BybitError as e:
-            self._log.error(f"Failed to generate SPOT position report(s) from wallet: {e}")
-
-        for report in reports:
-            self._log.debug(f"Generated SPOT position report from wallet: {report}")
-
-        return reports
-
-    def _build_spot_position_report_from_wallet_balance(
-        self,
-        instrument,
-        wallet_balance: Decimal,
-        ts_event: int,
-    ) -> PositionStatusReport:
-        position_side = PositionSide.LONG if wallet_balance > 0 else PositionSide.SHORT
-        abs_balance = abs(wallet_balance)
-
-        try:
-            quantity = instrument.make_qty(str(abs_balance), round_down=True)
-        except ValueError:
-            quantity = Quantity.zero(instrument.size_precision)
-
-        if quantity == 0:
-            return PositionStatusReport.create_flat(
-                account_id=self.account_id,
-                instrument_id=instrument.id,
-                size_precision=instrument.size_precision,
-                ts_init=self._clock.timestamp_ns(),
-                report_id=UUID4(),
-            )
-
-        return PositionStatusReport(
-            account_id=self.account_id,
-            instrument_id=instrument.id,
-            position_side=position_side,
-            quantity=quantity,
-            avg_px_open=None,
-            report_id=UUID4(),
-            ts_last=millis_to_nanos(ts_event),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-    def _get_cached_instrument_id(
-        self,
-        symbol: str,
-        product_type: BybitProductType,
-    ) -> InstrumentId:
-        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
-        return bybit_symbol.to_instrument_id()
-
-    def _get_cache_active_symbols(self) -> set[str]:
-        # Check cache for all active orders
-        open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
-        open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
-        active_symbols: set[str] = set()
-        for order in open_orders:
-            active_symbols.add(BybitSymbol(order.instrument_id.symbol.value))
-        for position in open_positions:
-            active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
-        return active_symbols
-
-    def _determine_time_in_force(self, order: Order) -> BybitTimeInForce:
-        # GTD orders are converted to GTC if `use_gtd` is False (default),
-        # since Bybit does not natively support GTD. This conversion is logged
-        # for transparency.
-        time_in_force: TimeInForce = order.time_in_force
-
-        if order.time_in_force == TimeInForce.GTD:
-            if not self._use_gtd:
-                time_in_force = TimeInForce.GTC
-                self._log.info(
-                    f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
-                    LogColor.BLUE,
-                )
-            else:
-                raise RuntimeError("invalid time in force GTD unsupported by Bybit")
-
-        if order.is_post_only:
-            return BybitTimeInForce.POST_ONLY
-
-        return self._enum_parser.parse_nautilus_time_in_force(time_in_force)
-
-    async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
-        active_symbols: set[str] = set()
-        for product_type in self._product_types:
-            bybit_positions = await self._http_account.query_position_info(
-                product_type,
-                symbol,
-            )
-            for position in bybit_positions:
-                active_symbols.add(position.symbol)
-
-        return active_symbols
-
-    async def _update_account_state(self) -> None:
-        (balances, ts_event) = await self._http_account.query_wallet_balance()
-
-        for balance in balances:
-            balances = balance.parse_to_account_balance()
-            margins = balance.parse_to_margin_balance()
-            try:
-                self.generate_account_state(
-                    balances=balances,
-                    margins=margins,
-                    reported=True,
-                    ts_event=millis_to_nanos(ts_event),
-                )
-            except Exception as e:
-                self._log.exception("Failed to update account state", e)
-
-        # Set Leverages
-        if self._futures_leverages:
-            async with TaskGroup() as tg:
-                [
-                    tg.create_task(self.set_leverage(symbol=symbol, leverage=leverage))
-                    for symbol, leverage in self._futures_leverages.items()
-                    if symbol.is_linear or symbol.is_inverse
-                ]
-
-        # Set Position Mode
-        if self._position_mode:
-            async with TaskGroup() as tg:
-                [
-                    tg.create_task(self.set_position_mode(symbol=symbol, mode=mode))
-                    for symbol, mode in self._position_mode.items()
-                    if symbol.is_linear
-                ]
-
-        # Set Margin Mode
-        if self._margin_mode:
-            res_set_margin_mode = await self._http_account.set_margin_mode(self._margin_mode)
-            self._log.info(f"Set account margin mode result: {res_set_margin_mode.retMsg}")
 
     async def set_leverage(
         self,
-        symbol: BybitSymbol,
+        symbol: str,
         leverage: int,
     ) -> None:
+        """
+        Set leverage for a symbol.
+
+        Parameters
+        ----------
+        symbol : str
+            The symbol string (e.g., "ETHUSDT-LINEAR").
+        leverage : int
+            The leverage value to set.
+
+        """
         try:
-            res = await self._http_account.set_leverage(
-                category=symbol.product_type,
-                symbol=symbol.raw_symbol,
+            raw_symbol = nautilus_pyo3.bybit_extract_raw_symbol(symbol)
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol)
+
+            await self._http_client.set_leverage(  # type: ignore[attr-defined]
+                product_type=product_type,
+                symbol=raw_symbol,
                 buy_leverage=str(leverage),
                 sell_leverage=str(leverage),
             )
-            self._log.info(f"Set symbol `{symbol}` leverage to `{leverage}` result: {res.retMsg}")
-        except BybitError as e:
-            if e.code == 110043:  # Set leverage has not been modified. (already set)
-                self._log.info(
-                    f"Set symbol `{symbol}` leverage to `{leverage}` result: {e.message}",
-                )
-                return
-
-            raise e
+            self._log.info(f"Set symbol `{symbol}` leverage to `{leverage}`")
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Bybit error code 110043: Set leverage has not been modified (already set)
+            if "110043" in error_msg or "not been modified" in error_msg:
+                self._log.info(f"Symbol `{symbol}` leverage already set to `{leverage}`")
+            else:
+                self._log.error(f"Failed to set leverage for {symbol}: {e}")
+                raise
 
     async def set_position_mode(
         self,
-        symbol: BybitSymbol,
+        symbol: str,
         mode: BybitPositionMode,
     ) -> None:
-        try:
-            res = await self._http_account.switch_mode(
-                category=symbol.product_type,
-                symbol=symbol.raw_symbol,
-                mode=mode,
-            )
-            self._log.info(f"Set symbol `{symbol}` position mode to `{mode}` result: {res.retMsg}")
-        except BybitError as e:  # Position mode has not been modified. (already set)
-            if e.code == 110025:
-                self._log.info(
-                    f"Set symbol `{symbol}` position mode to `{mode}` result: {e.message}",
-                )
-                return
+        """
+        Set position mode for a symbol.
 
-            raise e
+        Parameters
+        ----------
+        symbol : str
+            The symbol string (e.g., "ETHUSDT-LINEAR").
+        mode : BybitPositionMode
+            The position mode to set.
+
+        """
+        try:
+            raw_symbol = nautilus_pyo3.bybit_extract_raw_symbol(symbol)
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol)
+
+            await self._http_client.switch_mode(  # type: ignore[attr-defined]
+                product_type=product_type,
+                mode=mode,
+                symbol=raw_symbol,
+            )
+            self._log.info(f"Set symbol `{symbol}` position mode to `{mode}`")
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Bybit error code 110025: Position mode has not been modified (already set)
+            if "110025" in error_msg or "not been modified" in error_msg:
+                self._log.info(f"Symbol `{symbol}` position mode already set to `{mode}`")
+            else:
+                self._log.error(f"Failed to set position mode for {symbol}: {e}")
+                raise
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _query_account(self, _command: QueryAccount) -> None:
         await self._update_account_state()
 
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        order: Order | None = self._cache.order(command.client_order_id)
-        if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
-            return
+    async def _submit_order(self, command: SubmitOrder) -> None:
+        order = command.order
 
         if order.is_closed:
-            self._log.warning(
-                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
-            )
+            self._log.warning(f"Cannot submit already closed order: {order}")
             return
 
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        client_order_id = command.client_order_id.value
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+        # Generate OrderSubmitted event
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
 
-        retry_manager = await self._retry_manager_pool.acquire()
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+        pyo3_time_in_force = (
+            time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
+        )
+
+        # Extract trigger price for conditional orders
+        pyo3_trigger_price = None
+        if hasattr(order, "trigger_price") and order.trigger_price is not None:
+            pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
+
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            order.instrument_id.symbol.value,
+        )
+
         try:
-            response = await retry_manager.run(
-                "cancel_order",
-                [client_order_id, venue_order_id],
-                self._order_single_client.cancel_order,
-                bybit_symbol.product_type,
-                bybit_symbol.raw_symbol,
-                client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
+            # Submit via WebSocket
+            await self._ws_trade_client.submit_order(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                time_in_force=pyo3_time_in_force,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
             )
-            if not retry_manager.result:
-                self.generate_order_cancel_rejected(
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    order.venue_order_id,
-                    retry_manager.message,
-                    self._clock.timestamp_ns(),
-                )
+        except Exception as e:
+            self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
+            error_msg = str(e)
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=error_msg,
+                ts_event=self._clock.timestamp_ns(),
+                due_post_only="EC_PostOnlyWillTakeLiquidity" in error_msg,
+            )
 
-            if response:
-                ret_code = response.retCode
-                if ret_code != 0:
-                    if ret_code == 110001:  # order not exists or too late to cancel
-                        if not order.is_closed:
-                            self.generate_order_canceled(
-                                strategy_id=order.strategy_id,
-                                instrument_id=order.instrument_id,
-                                client_order_id=order.client_order_id,
-                                venue_order_id=order.venue_order_id,
-                                ts_event=self._clock.timestamp_ns(),
-                            )
-                    else:
-                        self.generate_order_cancel_rejected(
-                            strategy_id=order.strategy_id,
-                            instrument_id=order.instrument_id,
-                            client_order_id=order.client_order_id,
-                            venue_order_id=order.venue_order_id,
-                            reason=response.retMsg,
-                            ts_event=self._clock.timestamp_ns(),
-                        )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        if not command.order_list.orders:
+            return
 
-    async def _batch_cancel_orders(  # noqa: C901 (too complex)
-        self,
-        command: BatchCancelOrders,
-    ) -> None:
-        # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
+        now_ns = self._clock.timestamp_ns()
+        order_params = []
 
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        max_batch = 20 if product_type == BybitProductType.OPTION else 10
-
-        # Check open orders for instrument
-        open_order_ids = self._cache.client_order_ids_open(instrument_id=command.instrument_id)
-
-        # Filter orders that are actually open
-        valid_cancels: list[(CancelOrder)] = []
-
-        for cancel in command.cancels:
-            if cancel.client_order_id in open_order_ids:
-                valid_cancels.append(cancel)
+        for order in command.order_list.orders:
+            if order.is_closed:
+                self._log.warning(f"Cannot submit already closed order: {order}")
                 continue
-            self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
 
-        if not valid_cancels:
-            self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
-            return
-
-        for i in range(0, len(valid_cancels), max_batch):
-            batch_cancels = valid_cancels[i : i + max_batch]
-
-            cancel_orders: list[BybitBatchCancelOrder] = [
-                BybitBatchCancelOrder(
-                    symbol=bybit_symbol.raw_symbol,
-                    orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
-                    orderLinkId=cancel.client_order_id.value,
-                )
-                for cancel in batch_cancels
-            ]
-
-            retry_manager = await self._retry_manager_pool.acquire()
-            try:
-                response = await retry_manager.run(
-                    "batch_cancel_orders",
-                    None,
-                    self._order_batch_client.batch_cancel_orders,
-                    product_type=product_type,
-                    cancel_orders=cancel_orders,
-                )
-                if not retry_manager.result:
-                    for cancel in batch_cancels:
-                        order = self._cache.order(cancel.client_order_id)
-                        if order is None or order.is_closed:
-                            continue
-                        self.generate_order_cancel_rejected(
-                            strategy_id=order.strategy_id,
-                            instrument_id=order.instrument_id,
-                            client_order_id=order.client_order_id,
-                            venue_order_id=order.venue_order_id,
-                            reason=retry_manager.message,
-                            ts_event=self._clock.timestamp_ns(),
-                        )
-
-                if response:
-                    if self._is_order_batch_client_ws:
-                        resp_data_list = response.data.list
-                    else:
-                        resp_data_list = response.result.list
-                    for idx, ret_info in enumerate(response.retExtInfo.list):
-                        ret_code = ret_info.code
-                        if ret_code != 0:
-                            order = self._cache.order(
-                                ClientOrderId(resp_data_list[idx].orderLinkId),
-                            )
-                            if order is None or order.is_closed:
-                                continue
-                            if ret_code == 110001:  # order not exists or too late to cancel
-                                self.generate_order_canceled(
-                                    strategy_id=order.strategy_id,
-                                    instrument_id=order.instrument_id,
-                                    client_order_id=order.client_order_id,
-                                    venue_order_id=order.venue_order_id,
-                                    ts_event=self._clock.timestamp_ns(),
-                                )
-                            else:
-                                self.generate_order_cancel_rejected(
-                                    strategy_id=order.strategy_id,
-                                    instrument_id=order.instrument_id,
-                                    client_order_id=order.client_order_id,
-                                    venue_order_id=order.venue_order_id,
-                                    reason=ret_info.msg,
-                                    ts_event=self._clock.timestamp_ns(),
-                                )
-            finally:
-                await self._retry_manager_pool.release(retry_manager)
-
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            await retry_manager.run(
-                "cancel_all_orders",
-                None,
-                self._http_account.cancel_all_orders,
-                product_type=bybit_symbol.product_type,
-                symbol=bybit_symbol.raw_symbol,
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=now_ns,
             )
-            if not retry_manager.result:
-                orders_open = self._cache.orders_open(instrument_id=command.instrument_id)
-                for order in orders_open:
-                    if order.is_closed:
-                        continue
-                    self.generate_order_cancel_rejected(
-                        order.strategy_id,
-                        order.instrument_id,
-                        order.client_order_id,
-                        order.venue_order_id,
-                        retry_manager.message,
-                        self._clock.timestamp_ns(),
-                    )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+            pyo3_order_side = nautilus_pyo3.OrderSide(order.side.value)
+            pyo3_order_type = nautilus_pyo3.OrderType(order.order_type.value)
+            pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+            pyo3_time_in_force = (
+                nautilus_pyo3.TimeInForce(order.time_in_force.value)
+                if order.time_in_force
+                else None
+            )
+            pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+            pyo3_trigger_price = (
+                nautilus_pyo3.Price.from_str(str(order.trigger_price))
+                if order.has_trigger_price
+                else None
+            )
+            post_only = order.is_post_only
+            reduce_only = order.is_reduce_only
+
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                order.instrument_id.symbol.value,
+            )
+
+            params = self._ws_trade_client.build_place_order_params(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                time_in_force=pyo3_time_in_force,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+                post_only=post_only,
+                reduce_only=reduce_only,
+            )
+            order_params.append(params)
+
+        if order_params:
+            await self._ws_trade_client.batch_place_orders(order_params)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -1066,849 +791,375 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
+                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
             )
             return
 
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        client_order_id = command.client_order_id.value
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
-        price = str(command.price) if command.price else None
-        trigger_price = str(command.trigger_price) if command.trigger_price else None
-        quantity = str(command.quantity) if command.quantity else None
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+        pyo3_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
 
-        retry_manager = await self._retry_manager_pool.acquire()
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            command.instrument_id.symbol.value,
+        )
+
         try:
-            await retry_manager.run(
-                "modify_order",
-                [client_order_id, venue_order_id],
-                self._order_single_client.amend_order,
-                bybit_symbol.product_type,
-                bybit_symbol.raw_symbol,
-                client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
-                trigger_price=trigger_price,
-                quantity=quantity,
-                price=price,
+            # Modify via WebSocket
+            await self._ws_trade_client.modify_order(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                venue_order_id=pyo3_venue_order_id,
+                client_order_id=pyo3_client_order_id,
+                quantity=pyo3_quantity,
+                price=pyo3_price,
             )
-            if not retry_manager.result:
-                self.generate_order_modify_rejected(
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    order.venue_order_id,
-                    retry_manager.message,
-                    self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        except Exception as e:
+            self._log.error(f"Failed to modify order {command.client_order_id}: {e}")
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
-        order = command.order
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
 
         if order.is_closed:
-            self._log.warning(f"Order {order} is already closed")
-            return
-
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        if not self._check_order_validity(order, bybit_symbol.product_type):
-            return
-
-        # Generate order submitted event, to ensure correct ordering of event
-        self.generate_order_submitted(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            is_leverage = command.params.get("is_leverage", False)
-
-            await retry_manager.run(
-                "submit_order",
-                [order.client_order_id],
-                self._submit_order_methods[order.order_type],
-                order,
-                is_leverage,
-            )
-            if not retry_manager.result:
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=retry_manager.message,
-                    ts_event=self._clock.timestamp_ns(),
-                    due_post_only=_is_post_only_rejection(retry_manager.message),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
-
-    async def _submit_order_list(  # noqa: C901 (too complex)
-        self,
-        command: SubmitOrderList,
-    ) -> None:
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        command_orders = command.order_list.orders
-        is_leverage = command.params.get("is_leverage", False)
-        max_batch = 20 if product_type == BybitProductType.OPTION else 10
-
-        for i in range(0, len(command_orders), max_batch):
-            batch_submits = command_orders[i : i + max_batch]
-            submit_orders: list[BybitBatchPlaceOrder] = []
-
-            for order in batch_submits:
-                if not self._check_order_validity(order, product_type):
-                    self._log.error(f"Error on {command}")
-                    return  # Do not submit batch
-
-                try:
-                    batch_order = self._batch_order_create_handlers[order.order_type](
-                        order,
-                        is_leverage,
-                    )
-                except KeyError:
-                    self._log.error(
-                        f"Error on {command} - Unsupported order type for 'submit_order_list': {order}",
-                    )
-                    return
-
-                submit_orders.append(batch_order)
-
-            now_ns = self._clock.timestamp_ns()
-            for order in batch_submits:
-                self.generate_order_submitted(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    ts_event=now_ns,
-                )
-
-            retry_manager = await self._retry_manager_pool.acquire()
-            try:
-                response = await retry_manager.run(
-                    "submit_order_list",
-                    None,
-                    self._order_batch_client.batch_place_orders,
-                    product_type=product_type,
-                    submit_orders=submit_orders,
-                )
-
-                if not retry_manager.result:
-                    for order in batch_submits:
-                        self.generate_order_rejected(
-                            strategy_id=order.strategy_id,
-                            instrument_id=order.instrument_id,
-                            client_order_id=order.client_order_id,
-                            reason=retry_manager.message,
-                            ts_event=self._clock.timestamp_ns(),
-                            due_post_only=_is_post_only_rejection(retry_manager.message),
-                        )
-
-                if response:
-                    if self._is_order_batch_client_ws:
-                        resp_data_list = response.data.list
-                    else:
-                        resp_data_list = response.result.list
-                    for idx, ret_info in enumerate(response.retExtInfo.list):
-                        if ret_info.code != 0:
-                            order = self._cache.order(
-                                ClientOrderId(resp_data_list[idx].orderLinkId),
-                            )
-                            if order is None:
-                                continue
-                            self.generate_order_rejected(
-                                strategy_id=order.strategy_id,
-                                instrument_id=order.instrument_id,
-                                client_order_id=order.client_order_id,
-                                reason=ret_info.msg,
-                                ts_event=self._clock.timestamp_ns(),
-                                due_post_only=_is_post_only_rejection(ret_info.msg),
-                            )
-            finally:
-                await self._retry_manager_pool.release(retry_manager)
-
-    def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
-        # Check post only
-        if order.is_post_only and order.order_type != OrderType.LIMIT:
-            self._log.error(
-                f"Cannot submit {order} has invalid post only {order.is_post_only}, unsupported on Bybit",
-            )
-            return False
-
-        # Check reduce only
-        if order.is_reduce_only and product_type == BybitProductType.SPOT:
-            self._log.error(
-                f"Cannot submit {order} is reduce_only, unsupported on Bybit SPOT",
-            )
-            return False
-
-        return True
-
-    async def _submit_market_order(self, order: MarketOrder, is_leverage: bool = False) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        await self._order_single_client.place_order(
-            product_type=bybit_symbol.product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=BybitOrderType.MARKET,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            is_leverage=is_leverage,
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-        )
-
-    async def _submit_limit_order(self, order: LimitOrder, is_leverage: bool = False) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        await self._order_single_client.place_order(
-            product_type=bybit_symbol.product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=BybitOrderType.LIMIT,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            price=str(order.price),
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-            is_leverage=is_leverage,
-        )
-
-    async def _submit_stop_market_order(
-        self,
-        order: StopMarketOrder,
-        is_leverage: bool = False,
-    ) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._order_single_client.place_order(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=BybitOrderType.MARKET,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-            close_on_trigger=True,  # Conservative for stop-loss orders
-            tpsl_mode=BybitTpSlMode.FULL,
-            trigger_direction=trigger_direction,
-            trigger_type=trigger_type,
-            sl_trigger_price=str(order.trigger_price),
-            sl_order_type=BybitOrderType.MARKET,
-            is_leverage=is_leverage,
-        )
-
-    async def _submit_stop_limit_order(
-        self,
-        order: StopLimitOrder,
-        is_leverage: bool = False,
-    ) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._order_single_client.place_order(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=BybitOrderType.LIMIT,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-            tpsl_mode=BybitTpSlMode.PARTIAL,
-            trigger_direction=trigger_direction,
-            trigger_type=trigger_type,
-            sl_trigger_price=str(order.trigger_price),
-            sl_order_type=BybitOrderType.LIMIT,
-            is_leverage=is_leverage,
-        )
-
-    async def _submit_market_if_touched_order(
-        self,
-        order: MarketIfTouchedOrder,
-        is_leverage: bool = False,
-    ) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = BybitOrderType.MARKET
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._order_single_client.place_order(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=order_type,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-            tpsl_mode=BybitTpSlMode.FULL,
-            trigger_direction=trigger_direction,
-            trigger_type=trigger_type,
-            trigger_price=str(order.trigger_price),
-            is_leverage=is_leverage,
-        )
-
-    async def _submit_limit_if_touched_order(
-        self,
-        order: LimitIfTouchedOrder,
-        is_leverage: bool = False,
-    ) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._order_single_client.place_order(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            order_type=BybitOrderType.MARKET,
-            quantity=str(order.quantity),
-            quote_quantity=order.is_quote_quantity,
-            time_in_force=time_in_force,
-            client_order_id=str(order.client_order_id),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
-            tpsl_mode=BybitTpSlMode.PARTIAL,
-            trigger_direction=trigger_direction,
-            trigger_type=trigger_type,
-            tp_trigger_price=str(order.trigger_price),
-            tp_limit_price=str(order.price),
-            tp_order_type=BybitOrderType.LIMIT,
-            is_leverage=is_leverage,
-        )
-
-    async def _submit_trailing_stop_market(
-        self,
-        order: TrailingStopMarketOrder,
-        is_leverage: bool = False,
-    ) -> None:
-        # Note: is_leverage parameter is accepted to match the method signature expected by
-        # the retry manager, but is not passed to Bybit's set_trading_stop endpoint since
-        # trailing stops are position-level operations and leverage is already set on the position
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        active_price = str(order.activation_price) if order.activation_price else None
-
-        if order.trigger_price is not None:
             self._log.warning(
-                f"Bybit trailing stops do not support `trigger_price` - will be ignored: "
-                f"only `activation_price` and `trailing_offset` are used for {order.client_order_id}",
-            )
-
-        self._pending_trailing_stops[order.client_order_id] = order
-
-        await self._http_account.set_trading_stop(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            sl_order_type=BybitOrderType.MARKET,
-            sl_quantity=str(order.quantity),
-            tpsl_mode=BybitTpSlMode.FULL,
-            trigger_type=trigger_type,
-            trailing_offset=str(order.trailing_offset),
-            active_price=active_price,
-        )
-
-    def _handle_ws_message_trade(self, raw: bytes) -> None:
-        return
-
-    def _handle_ws_message_private(self, raw: bytes) -> None:
-        try:
-            ws_message = self._decoder_ws_msg_general.decode(raw)
-            if ws_message.op == BYBIT_PONG:
-                return
-            if ws_message.success is False:
-                self._log.error(f"WebSocket error: {ws_message}")
-                return
-
-            topic = ws_message.topic
-            if not topic:
-                return
-
-            # Sort by message frequency, from high to low for better performance
-            if "order" in topic:
-                self._handle_account_order_update(raw)
-            # wallet has no `Categorised Topic`, `order` event should trigger `wallet` event
-            elif "wallet" == topic:
-                self._handle_account_wallet_update(raw)
-            elif "execution" in topic:
-                if "execution.fast" in topic:
-                    self._handle_account_execution_fast_update(raw)
-                else:
-                    self._handle_account_execution_update(raw)
-            else:
-                self._log.error(f"Unknown websocket message topic: {topic}")
-        except Exception as e:
-            self._log.exception(f"Failed to parse websocket message: {raw.decode()}", e)
-
-    def _handle_account_execution_update(self, raw: bytes) -> None:
-        try:
-            msg = self._decoder_ws_account_execution_update.decode(raw)
-
-            for trade in msg.data:
-                self._process_execution(trade)
-        except Exception as e:
-            self._log.exception(f"Failed to handle account execution update: {e}", e)
-
-    def _handle_account_execution_fast_update(self, raw: bytes) -> None:
-        try:
-            msg = self._decoder_ws_account_execution_fast_update.decode(raw)
-
-            for trade in msg.data:
-                self._process_execution(trade)
-        except Exception as e:
-            self._log.exception(f"Failed to handle account execution update: {e}", e)
-
-    def _process_execution(  # noqa: C901 (too complex)
-        self,
-        execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
-    ) -> None:
-        instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
-        order_link_id = execution.orderLinkId
-        client_order_id = ClientOrderId(order_link_id) if order_link_id else None
-        venue_order_id = VenueOrderId(execution.orderId)
-        order_side: OrderSide = self._enum_parser.parse_bybit_order_side(execution.side)
-
-        if client_order_id is None:
-            client_order_id = self._cache.client_order_id(venue_order_id)
-
-        if client_order_id is None:
-            self._log.debug(
-                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
             )
             return
 
-        order = self._cache.order(client_order_id)
-        if order is None:
-            strategy_id = self._cache.strategy_id_for_order(client_order_id)
-            trigger_direction = BybitTriggerDirection.NONE
-            if execution.stopOrderType != BybitStopOrderType.NONE:
-                trigger_direction = (
-                    BybitTriggerDirection.RISES_TO
-                    if order_side == OrderSide.SELL
-                    else BybitTriggerDirection.FALLS_TO
-                )
-
-            order_type = self._enum_parser.parse_bybit_order_type(
-                execution.orderType,
-                execution.stopOrderType,
-                execution.side,
-                trigger_direction,
-            )
-            if strategy_id is None:
-                self._log.debug(
-                    f"Cannot process order execution for {client_order_id!r}: no strategy ID found (most likely due to being an external order)",
-                )
-                return
-        else:
-            strategy_id = order.strategy_id
-            order_type = order.order_type
-
-        instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            if self._ignore_uncached_instrument_executions:
-                return
-
-            raise ValueError(
-                f"Cannot handle trade event: instrument {instrument_id} not found",
-            )
-
-        last_qty: Quantity = instrument.make_qty(execution.execQty)
-        last_px: Price = instrument.make_price(execution.execPrice)
-        quote_currency = instrument.quote_currency
-
-        is_maker = execution.isMaker
-
-        # Check if we have the actual fee to determine if it's a rebate
-        exec_fee = (
-            Decimal(execution.execFee)
-            if isinstance(execution, BybitWsAccountExecution) and execution.execFee
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
             else None
         )
 
-        # Use actual fee from execution if available, otherwise calculate
-        if exec_fee is not None:
-            # Determine fee currency based on whether this is a rebate
-            is_rebate = exec_fee < 0
-            fee_currency = determine_fee_currency(
-                execution.category,
-                instrument,
-                order_side,
-                is_maker,
-                is_rebate=is_rebate,
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            command.instrument_id.symbol.value,
+        )
+
+        try:
+            # Cancel via WebSocket
+            await self._ws_trade_client.cancel_order(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                venue_order_id=pyo3_venue_order_id,
+                client_order_id=pyo3_client_order_id,
             )
-            commission: Money = Money(exec_fee, fee_currency)
+        except Exception as e:
+            self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            command.instrument_id.symbol.value,
+        )
+
+        try:
+            reports = await self._http_client.cancel_all_orders(
+                account_id=self.pyo3_account_id,
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+            )
+
+            for pyo3_report in reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Cancelled order: {report}", LogColor.MAGENTA)
+        except Exception as e:
+            self._log.error(f"Failed to cancel all orders for {command.instrument_id}: {e}")
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        if not command.cancels:
+            return
+
+        # Extract data from cancel commands
+        instrument_ids = []
+        client_order_ids = []
+        venue_order_ids = []
+
+        for cancel in command.cancels:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+            instrument_ids.append(pyo3_instrument_id)
+
+            pyo3_client_order_id = (
+                nautilus_pyo3.ClientOrderId(cancel.client_order_id.value)
+                if cancel.client_order_id
+                else None
+            )
+            client_order_ids.append(pyo3_client_order_id)
+
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
+                if cancel.venue_order_id
+                else None
+            )
+            venue_order_ids.append(pyo3_venue_order_id)
+
+        # Derive product type from first cancel (all must be same product type for batch operation)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            command.cancels[0].instrument_id.symbol.value,
+        )
+
+        try:
+            # Batch cancel via WebSocket
+            await self._ws_trade_client.batch_cancel_orders(
+                product_type=product_type,
+                instrument_ids=instrument_ids,
+                venue_order_ids=venue_order_ids,
+                client_order_ids=client_order_ids,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel orders: {e}")
+
+    # -- MESSAGE HANDLERS -------------------------------------------------------------------------
+
+    def _handle_msg(self, msg: Any) -> None:
+        if isinstance(msg, nautilus_pyo3.BybitWebSocketError):
+            self._log.error(f"WebSocket error: {msg}")
+        elif isinstance(msg, nautilus_pyo3.AccountState):
+            self._handle_account_state(msg)
+        elif isinstance(msg, nautilus_pyo3.OrderRejected):
+            self._handle_order_rejected_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
+            self._handle_order_cancel_rejected_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
+            self._handle_order_modify_rejected_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
+            self._handle_order_status_report_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.FillReport):
+            self._handle_fill_report_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
+            self._handle_position_status_report_pyo3(msg)
+        elif isinstance(msg, str):
+            self._log.debug(f"Received raw message: {msg}", LogColor.MAGENTA)
         else:
-            # Fallback calculation when exec_fee is not available
-            fee_rate = instrument.maker_fee if is_maker else instrument.taker_fee
-            is_rebate = is_maker and fee_rate < 0
+            self._log.warning(f"Received unhandled message type: {type(msg)}")
 
-            # Determine fee currency based on rebate status
-            fee_currency = determine_fee_currency(
-                execution.category,
-                instrument,
-                order_side,
-                is_maker,
-                is_rebate=is_rebate,
+    def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(msg.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
+        )
+
+    def _handle_order_rejected_pyo3(self, msg: nautilus_pyo3.OrderRejected) -> None:
+        event = OrderRejected.from_pyo3(msg)
+        self._send_order_event(event)
+
+    def _handle_order_cancel_rejected_pyo3(self, msg: nautilus_pyo3.OrderCancelRejected) -> None:
+        event = OrderCancelRejected.from_pyo3(msg)
+        self._send_order_event(event)
+
+    def _handle_order_modify_rejected_pyo3(self, msg: nautilus_pyo3.OrderModifyRejected) -> None:
+        event = OrderModifyRejected.from_pyo3(msg)
+        self._send_order_event(event)
+
+    def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
+        self,
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> None:
+        report = OrderStatusReport.from_pyo3(pyo3_report)
+
+        if self._is_external_order(report.client_order_id):
+            self._send_order_status_report(report)
+            return
+
+        order = self._cache.order(report.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process order status report - order for {report.client_order_id!r} not found",
+            )
+            return
+
+        if order.linked_order_ids is not None:
+            report.linked_order_ids = list(order.linked_order_ids)
+
+        if report.order_status == OrderStatus.REJECTED:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                reason=report.cancel_reason or "Order rejected by exchange",
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.ACCEPTED:
+            if is_order_updated(order, report):
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity,
+                    price=report.price,
+                    trigger_price=report.trigger_price,
+                    ts_event=report.ts_last,
+                )
+            else:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+        elif report.order_status == OrderStatus.PENDING_CANCEL:
+            if order.status == OrderStatus.PENDING_CANCEL:
+                self._log.debug(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    "order already in pending cancel state locally",
+                )
+            else:
+                self._log.warning(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    f"order status {order.status_string()}",
+                )
+        elif report.order_status == OrderStatus.CANCELED:
+            # Check if this is a post-only order rejected by the exchange
+            # Bybit accepts post-only orders initially then immediately cancels them with
+            # rejectReason="EC_PostOnlyWillTakeLiquidity" if they would cross the spread
+            is_post_only_rejection = (
+                report.cancel_reason and "EC_PostOnlyWillTakeLiquidity" in report.cancel_reason
             )
 
-            # Calculate fee amount based on product type and order side
-            if execution.category == BybitProductType.SPOT:
-                if order_side == OrderSide.BUY:
-                    # SPOT BUY: fee is on base currency amount
-                    fee_amount = last_qty.as_decimal() * fee_rate
-                else:
-                    # SPOT SELL: fee is on quote currency amount (notional)
-                    notional_value = instrument.notional_value(last_qty, last_px)
-                    fee_amount = notional_value * fee_rate
+            if is_post_only_rejection:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    reason=report.cancel_reason,
+                    ts_event=report.ts_last,
+                    due_post_only=True,
+                )
             else:
-                # Derivatives: fee is on notional value in settlement currency
-                notional_value = instrument.notional_value(last_qty, last_px)
-                fee_amount = notional_value * fee_rate
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+        elif report.order_status == OrderStatus.EXPIRED:
+            self.generate_order_expired(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.TRIGGERED:
+            self.generate_order_triggered(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        else:
+            # Fills should be handled from FillReports
+            self._log.debug(f"Received unhandled OrderStatusReport: {report}")
 
-            commission = Money(fee_amount, fee_currency)
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
+        report = FillReport.from_pyo3(pyo3_report)
+
+        if self._is_external_order(report.client_order_id):
+            self._send_fill_report(report)
+            return
+
+        order = self._cache.order(report.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process fill report - order for {report.client_order_id!r} not found",
+            )
+            return
+
+        instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            if self._ignore_uncached_instrument_executions:
+                self._log.warning(
+                    f"Ignoring fill report for uncached instrument {order.instrument_id}",
+                    LogColor.YELLOW,
+                )
+                return
+            self._log.error(
+                f"Cannot process fill report - instrument {order.instrument_id} not found",
+            )
+            return
 
         self.generate_order_filled(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            venue_position_id=None,
-            trade_id=TradeId(execution.execId),
-            order_side=order_side,
-            order_type=order_type,
-            last_qty=last_qty,
-            last_px=last_px,
-            quote_currency=quote_currency,
-            commission=commission,
-            liquidity_side=LiquiditySide.MAKER if is_maker else LiquiditySide.TAKER,
-            ts_event=millis_to_nanos(float(execution.execTime)),
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=report.venue_order_id,
+            venue_position_id=report.venue_position_id,
+            trade_id=report.trade_id,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=report.last_qty,
+            last_px=report.last_px,
+            quote_currency=instrument.quote_currency,
+            commission=report.commission,
+            liquidity_side=report.liquidity_side,
+            ts_event=report.ts_event,
         )
 
-    def _handle_account_order_update(self, raw: bytes) -> None:  # noqa: C901 (too complex)
-        try:
-            msg = self._decoder_ws_account_order_update.decode(raw)
-            for bybit_order in msg.data:
-                instrument_id = self._get_cached_instrument_id(
-                    bybit_order.symbol,
-                    bybit_order.category,
-                )
-                client_order_id = (
-                    ClientOrderId(bybit_order.orderLinkId) if bybit_order.orderLinkId else None
-                )
-                venue_order_id = VenueOrderId(bybit_order.orderId)
-                if client_order_id is None:
-                    client_order_id = self._cache.client_order_id(venue_order_id)
+    def _handle_position_status_report_pyo3(self, msg: nautilus_pyo3.PositionStatusReport) -> None:
+        report = PositionStatusReport.from_pyo3(msg)
+        self._log.debug(f"Received {report}", LogColor.MAGENTA)
+        # Do not send position reports from WebSocket stream - we use HTTP endpoint for reconciliation
+        # to avoid noise from position updates every time a fill occurs
 
-                order_side = self._enum_parser.parse_bybit_order_side(bybit_order.side)
-
-                if (
-                    client_order_id is None
-                    and bybit_order.stopOrderType == BybitStopOrderType.TRAILING_STOP
-                ):
-                    for order in self._pending_trailing_stops.values():
-                        if order.instrument_id != instrument_id or order.side != order_side:
-                            continue
-                        if order.quantity != Quantity.from_str(bybit_order.qty):
-                            continue
-                        if (
-                            bybit_order.orderType == BybitOrderType.MARKET
-                            and not isinstance(
-                                order,
-                                TrailingStopMarketOrder,
-                            )
-                        ) or (
-                            bybit_order.orderType == BybitOrderType.LIMIT
-                            and not isinstance(
-                                order,
-                                TrailingStopLimitOrder,
-                            )
-                        ):
-                            continue
-
-                        if bybit_order.orderStatus == BybitOrderStatus.UNTRIGGERED:
-                            self.generate_order_accepted(
-                                strategy_id=order.strategy_id,
-                                instrument_id=order.instrument_id,
-                                client_order_id=order.client_order_id,
-                                venue_order_id=venue_order_id,
-                                ts_event=millis_to_nanos(int(bybit_order.updatedTime)),
-                            )
-                        self._pending_trailing_stops.pop(order.client_order_id)
-                        return
-
-                report = bybit_order.parse_to_order_status_report(
-                    client_order_id=client_order_id,
-                    account_id=self.account_id,
-                    instrument_id=self._get_cached_instrument_id(
-                        bybit_order.symbol,
-                        bybit_order.category,
-                    ),
-                    enum_parser=self._enum_parser,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-
-                strategy_id = None
-                if report.client_order_id:
-                    strategy_id = self._cache.strategy_id_for_order(report.client_order_id)
-
-                if strategy_id is None:
-                    # External order
-                    self._send_order_status_report(report)
-                    return
-
-                order = self._cache.order(report.client_order_id)
-                if order is None:
-                    self._log.error(f"Cannot find {report.client_order_id!r}")
-                    return
-
-                # Use parsed status from report (parser handles Rejected+fills -> Canceled remapping)
-                if report.order_status == OrderStatus.REJECTED:
-                    if order.status == OrderStatus.PENDING_UPDATE:
-                        self.generate_order_modify_rejected(
-                            strategy_id=strategy_id,
-                            instrument_id=report.instrument_id,
-                            client_order_id=report.client_order_id,
-                            venue_order_id=report.venue_order_id,
-                            reason=bybit_order.rejectReason,
-                            ts_event=report.ts_last,
-                        )
-                    else:
-                        self.generate_order_rejected(
-                            strategy_id=strategy_id,
-                            instrument_id=report.instrument_id,
-                            client_order_id=report.client_order_id,
-                            reason=bybit_order.rejectReason,
-                            ts_event=report.ts_last,
-                            due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
-                        )
-                elif bybit_order.orderStatus == BybitOrderStatus.NEW:
-                    if order.status == OrderStatus.PENDING_UPDATE:
-                        self.generate_order_updated(
-                            strategy_id=strategy_id,
-                            instrument_id=report.instrument_id,
-                            client_order_id=report.client_order_id,
-                            venue_order_id=report.venue_order_id,
-                            quantity=report.quantity,
-                            price=report.price,
-                            trigger_price=report.trigger_price,
-                            ts_event=report.ts_last,
-                        )
-                    elif not order.is_closed:
-                        # Only generate accepted if order is not in a terminal state
-                        self.generate_order_accepted(
-                            strategy_id=strategy_id,
-                            instrument_id=report.instrument_id,
-                            client_order_id=report.client_order_id,
-                            venue_order_id=report.venue_order_id,
-                            ts_event=report.ts_last,
-                        )
-                elif report.order_status == OrderStatus.CANCELED:
-                    self.generate_order_canceled(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        ts_event=report.ts_last,
-                    )
-                elif (
-                    bybit_order.orderStatus == BybitOrderStatus.TRIGGERED
-                    and order.order_type
-                    not in (
-                        OrderType.MARKET_IF_TOUCHED,
-                        OrderType.STOP_MARKET,
-                        OrderType.TRAILING_STOP_MARKET,
-                    )
-                ):
-                    self.generate_order_triggered(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        ts_event=report.ts_last,
-                    )
-                elif bybit_order.orderStatus == BybitOrderStatus.UNTRIGGERED:
-                    self.generate_order_updated(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        quantity=report.quantity,
-                        price=report.price,
-                        trigger_price=report.trigger_price,
-                        ts_event=report.ts_last,
-                    )
-        except Exception as e:
-            self._log.exception(repr(e), e)
-
-    def _handle_account_wallet_update(self, raw: bytes) -> None:
-        try:
-            self._process_wallet_update(raw)
-        except Exception as e:
-            self._log.exception("Failed to handle account wallet update", e)
-
-    def _process_wallet_update(self, raw: bytes) -> None:
-        msg: BybitWsAccountWalletMsg = self._decoder_ws_account_wallet_update.decode(raw)
-        msg.handle_account_wallet_update(self)
-
-    def _create_market_batch_order(
-        self,
-        order: MarketOrder,
-        is_leverage: bool = False,
-    ) -> BybitBatchPlaceOrder:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        return BybitBatchPlaceOrder(
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            orderType=BybitOrderType.MARKET,
-            qty=str(order.quantity),
-            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
-            isLeverage=int(is_leverage),
-            timeInForce=time_in_force,
-            orderLinkId=str(order.client_order_id),
-            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
-        )
-
-    def _create_limit_batch_order(
-        self,
-        order: LimitOrder,
-        is_leverage: bool = False,
-    ) -> BybitBatchPlaceOrder:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        return BybitBatchPlaceOrder(
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            orderType=BybitOrderType.LIMIT,
-            qty=str(order.quantity),
-            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
-            isLeverage=int(is_leverage),
-            price=str(order.price),
-            timeInForce=time_in_force,
-            orderLinkId=str(order.client_order_id),
-            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
-        )
-
-    def _create_limit_if_touched_batch_order(
-        self,
-        order: LimitIfTouchedOrder,
-        is_leverage: bool = False,
-    ) -> BybitBatchPlaceOrder:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        return BybitBatchPlaceOrder(
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            orderType=BybitOrderType.MARKET,
-            qty=str(order.quantity),
-            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
-            isLeverage=int(is_leverage),
-            price=str(order.price),
-            timeInForce=time_in_force,
-            orderLinkId=order.client_order_id.value,
-            reduceOnly=order.is_reduce_only,
-            tpslMode=BybitTpSlMode.PARTIAL if product_type != BybitProductType.SPOT else None,
-            triggerPrice=str(order.trigger_price),
-            triggerDirection=trigger_direction,
-            triggerBy=trigger_type,
-            takeProfit=str(order.trigger_price) if product_type == BybitProductType.SPOT else None,
-            tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
-            tpLimitPrice=str(order.price) if product_type != BybitProductType.SPOT else None,
-            tpOrderType=BybitOrderType.LIMIT,
-        )
-
-    def _create_stop_market_batch_order(
-        self,
-        order: MarketOrder,
-        is_leverage: bool = False,
-    ) -> BybitBatchPlaceOrder:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        return BybitBatchPlaceOrder(
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            orderType=BybitOrderType.MARKET,
-            qty=str(order.quantity),
-            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
-            isLeverage=int(is_leverage),
-            timeInForce=time_in_force,
-            orderLinkId=str(order.client_order_id),
-            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
-            closeOnTrigger=True,  # Conservative for stop-loss orders
-            tpslMode=BybitTpSlMode.FULL if product_type != BybitProductType.SPOT else None,
-            stopLoss=str(order.trigger_price) if product_type == BybitProductType.SPOT else None,
-            triggerDirection=trigger_direction if product_type != BybitProductType.SPOT else None,
-            slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
-            slOrderType=BybitOrderType.MARKET,
-        )
-
-    def _create_market_if_touched_batch_order(
-        self,
-        order: MarketOrder,
-        is_leverage: bool = False,
-    ) -> BybitBatchPlaceOrder:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        time_in_force = self._determine_time_in_force(order)
-        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        return BybitBatchPlaceOrder(
-            symbol=bybit_symbol.raw_symbol,
-            side=order_side,
-            orderType=BybitOrderType.MARKET,
-            qty=str(order.quantity),
-            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
-            isLeverage=int(is_leverage),
-            timeInForce=time_in_force,
-            orderLinkId=str(order.client_order_id),
-            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
-            tpslMode=BybitTpSlMode.FULL if product_type != BybitProductType.SPOT else None,
-            triggerPrice=(
-                str(order.trigger_price) if product_type == BybitProductType.SPOT else None
-            ),
-            triggerDirection=trigger_direction if product_type != BybitProductType.SPOT else None,
-            slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
-            slOrderType=BybitOrderType.MARKET,
-        )
+    def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
+        return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
 
 
-def _is_post_only_rejection(reason: str | None) -> bool:
-    if not reason:
-        return False
+def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
+    if order.has_price and report.price and order.price != report.price:
+        return True
 
-    return "EC_PostOnlyWillTakeLiquidity" in reason
+    if (
+        order.has_trigger_price
+        and report.trigger_price
+        and order.trigger_price != report.trigger_price
+    ):
+        return True
+
+    return order.quantity != report.quantity

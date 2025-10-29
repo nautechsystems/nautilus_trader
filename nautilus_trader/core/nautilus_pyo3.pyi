@@ -5666,10 +5666,13 @@ class BybitHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
+        demo: bool = False,
+        testnet: bool = False,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BybitHttpClient: ...
@@ -5677,6 +5680,7 @@ class BybitHttpClient:
     def base_url(self) -> str: ...
     @property
     def api_key(self) -> str | None: ...
+    def masked_api_key(self) -> str | None: ...
     def add_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
     async def request_instruments(
@@ -5686,7 +5690,6 @@ class BybitHttpClient:
     ) -> list[Instrument]: ...
     async def request_trades(
         self,
-        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         limit: int | None = None,
@@ -5694,11 +5697,11 @@ class BybitHttpClient:
     async def request_bars(
         self,
         product_type: BybitProductType,
-        instrument_id: InstrumentId,
         bar_type: BarType,
-        start_ms: int | None = None,
-        end_ms: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
+        timestamp_on_close: bool = True,
     ) -> list[Bar]: ...
     async def request_fee_rates(
         self,
@@ -5744,6 +5747,7 @@ class BybitHttpClient:
     ) -> OrderStatusReport | None: ...
     async def submit_order(
         self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -5756,6 +5760,7 @@ class BybitHttpClient:
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId | None = None,
@@ -5763,11 +5768,13 @@ class BybitHttpClient:
     ) -> OrderStatusReport: ...
     async def cancel_all_orders(
         self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
     ) -> list[OrderStatusReport]: ...
     async def modify_order(
         self,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId | None = None,
@@ -5775,6 +5782,16 @@ class BybitHttpClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> OrderStatusReport: ...
+    def set_use_spot_position_reports(self, value: bool) -> None: ...
+    async def batch_cancel_orders(
+        self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_ids: list[InstrumentId],
+        client_order_ids: list[ClientOrderId | None],
+        venue_order_ids: list[VenueOrderId | None],
+    ) -> list[OrderStatusReport]: ...
+
 
 class BybitWebSocketClient:
     @staticmethod
@@ -5787,20 +5804,21 @@ class BybitWebSocketClient:
     @staticmethod
     def new_private(
         environment: BybitEnvironment,
-        api_key: str,
-        api_secret: str,
+        api_key: str | None = None,
+        api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_trade(
         environment: BybitEnvironment,
-        api_key: str,
-        api_secret: str,
+        api_key: str | None = None,
+        api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int | None = None,
     ) -> BybitWebSocketClient: ...
     def subscription_count(self) -> int: ...
+    def masked_api_key(self) -> str | None: ...
     def set_account_id(self, account_id: AccountId) -> None: ...
     def add_instrument(self, instrument: Instrument) -> None: ...
     async def is_active(self) -> bool: ...
@@ -5855,6 +5873,84 @@ class BybitWebSocketClient:
         venue_order_id: VenueOrderId | None = None,
         client_order_id: ClientOrderId | None = None,
     ) -> None: ...
+    async def batch_cancel_orders(
+        self,
+        product_type: BybitProductType,
+        instrument_ids: list[InstrumentId],
+        venue_order_ids: list[VenueOrderId | None],
+        client_order_ids: list[ClientOrderId | None],
+    ) -> None: ...
+    def build_place_order_params(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+    ) -> BybitWsPlaceOrderParams: ...
+    def build_amend_order_params(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
+    ) -> BybitWsAmendOrderParams: ...
+    async def batch_place_orders(
+        self,
+        orders: list[BybitWsPlaceOrderParams],
+    ) -> None: ...
+    async def batch_modify_orders(
+        self,
+        orders: list[BybitWsAmendOrderParams],
+    ) -> None: ...
+
+class BybitWsPlaceOrderParams:
+    category: BybitProductType
+    symbol: str
+    side: str
+    order_type: str
+    qty: str
+    market_unit: str | None
+    price: str | None
+    time_in_force: str | None
+    order_link_id: str | None
+    reduce_only: bool | None
+    close_on_trigger: bool | None
+    trigger_price: str | None
+    trigger_by: str | None
+    trigger_direction: int | None
+    tpsl_mode: str | None
+    take_profit: str | None
+    stop_loss: str | None
+    tp_trigger_by: str | None
+    sl_trigger_by: str | None
+    sl_trigger_price: str | None
+    tp_trigger_price: str | None
+    sl_order_type: str | None
+    tp_order_type: str | None
+    sl_limit_price: str | None
+    tp_limit_price: str | None
+
+class BybitWsAmendOrderParams:
+    category: BybitProductType
+    symbol: str
+    order_id: str | None
+    order_link_id: str | None
+    qty: str | None
+    price: str | None
+    trigger_price: str | None
+    take_profit: str | None
+    stop_loss: str | None
+    tp_trigger_by: str | None
+    sl_trigger_by: str | None
 
 def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_public(
@@ -5862,8 +5958,9 @@ def get_bybit_ws_url_public(
 ) -> str: ...
 def get_bybit_ws_url_private(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_trade(environment: BybitEnvironment) -> str: ...
-def extract_raw_symbol(symbol: str) -> str: ...
-def bar_spec_to_bybit_interval(aggregation: int, step: int) -> str: ...
+def bybit_extract_raw_symbol(symbol: str) -> str: ...
+def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
+def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...
 
 # Databento
 
