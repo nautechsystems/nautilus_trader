@@ -16,6 +16,7 @@
 pub mod compare;
 pub mod position;
 pub mod profiler;
+pub mod quote;
 pub mod snapshot;
 pub mod swap_math;
 
