@@ -28,7 +28,7 @@ use crate::common::enums::{
 /// Query parameters for `GET /v5/market/instruments-info`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
@@ -138,7 +138,7 @@ impl Default for BybitTradesParams {
 /// Query parameters for `GET /v5/asset/coin/query-info`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/asset/coin/query-info>
+/// - <https://bybit-exchange.github.io/docs/v5/asset/coin-info>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
@@ -183,7 +183,7 @@ pub struct BybitWalletBalanceParams {
 /// Query parameters for `GET /v5/position/list`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/position/position>
+/// - <https://bybit-exchange.github.io/docs/v5/position>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
@@ -439,7 +439,7 @@ pub struct BybitAmendOrderParams {
 /// Cancel entry for `POST /v5/order/cancel-batch`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/cancel-batch>
+/// - <https://bybit-exchange.github.io/docs/v5/order/batch-cancel>
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitBatchCancelOrderEntry {
@@ -457,7 +457,7 @@ pub struct BybitBatchCancelOrderEntry {
 /// Body parameters for `POST /v5/order/cancel-batch`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/cancel-batch>
+/// - <https://bybit-exchange.github.io/docs/v5/order/batch-cancel>
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitBatchCancelOrderParams {
@@ -507,7 +507,7 @@ pub struct BybitCancelAllOrdersParams {
 /// Query parameters for `GET /v5/order/realtime`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/realtime>
+/// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
@@ -589,7 +589,7 @@ pub struct BybitOrderHistoryParams {
 /// Query parameters for `GET /v5/execution/list`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/execution>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
