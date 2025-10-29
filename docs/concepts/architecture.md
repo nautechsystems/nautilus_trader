@@ -406,7 +406,15 @@ library, or from third party library dependencies.
 
 ### Processes and threads
 
-:::tip
-For optimal performance and to prevent potential issues related to Python's memory
-model and equality, it is highly recommended to run each trader instance in a separate process.
+:::warning **One node per process**
+Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
+
+- **Backtest force-stop flag** - The `_FORCE_STOP` global flag is shared across all engines in the process.
+- **Logger mode and timestamps** - The logging subsystem uses global state; backtests flip between static and real-time modes.
+- **Runtime singletons** - Global Tokio runtime, callback registries, and other `OnceLock` instances are process-wide.
+
+**Sequential execution** of multiple nodes (one after another with proper disposal between runs) is fully supported and used in the test suite.
+
+For production deployments, add multiple strategies to a **single TradingNode** within a process.
+For parallel execution or workload isolation, run each node in its own separate process.
 :::

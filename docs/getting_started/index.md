@@ -36,6 +36,13 @@ NautilusTrader provides two different API levels for backtesting:
 | High-Level API | Uses `BacktestNode` and `TradingNode` | Recommended for production: easier transition to live trading; requires a Parquet-based data catalog. |
 | Low-Level API  | Uses `BacktestEngine`                 | Intended for library development: no live-trading path; direct component access; may encourage non–live-compatible patterns. |
 
+:::warning **One node per process**
+Running multiple `BacktestNode` or `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
+Sequential execution with proper disposal between runs is supported.
+
+See [Processes and threads](../concepts/architecture.md#processes-and-threads) for details.
+:::
+
 Backtesting involves running simulated trading systems on historical data.
 
 To get started backtesting with NautilusTrader you need to first understand the two different API

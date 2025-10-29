@@ -13,6 +13,13 @@ the note on [Windows signal handling](#windows-signal-handling) for guidance on 
 behavior and Ctrl+C (SIGINT) support.
 :::
 
+:::warning **One TradingNode per process**
+Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
+Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
+
+See [Processes and threads](architecture.md#processes-and-threads) for details.
+:::
+
 ## Configuration
 
 When operating a live trading system, configuring your execution engine and strategies properly is
