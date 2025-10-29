@@ -230,63 +230,6 @@ impl FromU8 for AssetClass {
     }
 }
 
-/// The instrument class.
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        frozen,
-        eq,
-        eq_int,
-        hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
-    )
-)]
-pub enum InstrumentClass {
-    /// A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
-    Spot = 1,
-    /// A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-    Swap = 2,
-    /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-    Future = 3,
-    /// A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
-    FuturesSpread = 4,
-    /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-    Forward = 5,
-    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-    Cfd = 6,
-    /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
-    Bond = 7,
-    /// An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-    Option = 8,
-    /// An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
-    OptionSpread = 9,
-    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-    Warrant = 10,
-    /// A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
-    SportsBetting = 11,
-    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
-    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
-    BinaryOption = 12,
-}
-
 /// The aggregation method through which a bar is generated and closed.
 #[repr(C)]
 #[derive(
@@ -637,6 +580,62 @@ pub enum CurrencyType {
     Fiat = 2,
     /// A type of currency that is based on the value of an underlying commodity.
     CommodityBacked = 3,
+}
+
+/// The instrument class.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+    )
+)]
+pub enum InstrumentClass {
+    /// A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+    Spot = 1,
+    /// A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+    Swap = 2,
+    /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+    Future = 3,
+    /// A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
+    FuturesSpread = 4,
+    /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+    Forward = 5,
+    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    Cfd = 6,
+    /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+    Bond = 7,
+    /// An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+    Option = 8,
+    /// An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
+    OptionSpread = 9,
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    Warrant = 10,
+    /// A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
+    SportsBetting = 11,
+    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
+    BinaryOption = 12,
 }
 
 /// The type of event for an instrument close.
@@ -1210,6 +1209,46 @@ pub enum OrderType {
     TrailingStopLimit = 9,
 }
 
+/// The type of position adjustment.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum PositionAdjustmentType {
+    /// Commission adjustment affecting position quantity.
+    Commission = 1,
+    /// Funding payment affecting position realized PnL.
+    Funding = 2,
+}
+
+impl FromU8 for PositionAdjustmentType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::Commission),
+            2 => Some(Self::Funding),
+            _ => None,
+        }
+    }
+}
+
 /// The market side for a specific position, or action related to positions.
 #[repr(C)]
 #[derive(
@@ -1605,13 +1644,13 @@ enum_strum_serde!(AccountType);
 enum_strum_serde!(AggregationSource);
 enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
-enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BarIntervalType);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);
 enum_strum_serde!(CurrencyType);
+enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(InstrumentCloseType);
 enum_strum_serde!(LiquiditySide);
 enum_strum_serde!(MarketStatus);
@@ -1622,6 +1661,7 @@ enum_strum_serde!(OrderSide);
 enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
+enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
 enum_strum_serde!(PositionSideSpecified);
 enum_strum_serde!(PriceType);

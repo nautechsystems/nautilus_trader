@@ -86,7 +86,7 @@ mod tests {
 
     use nautilus_core::{UnixNanos, approx_eq};
     use nautilus_model::{
-        enums::OrderSide,
+        enums::{InstrumentClass, OrderSide},
         identifiers::{
             AccountId, ClientOrderId, PositionId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
@@ -132,6 +132,9 @@ mod tests {
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
             commissions: HashMap::new(),
+            adjustments: Vec::new(),
+            instrument_class: InstrumentClass::Spot,
+            is_currency_pair: true,
         }
     }
 

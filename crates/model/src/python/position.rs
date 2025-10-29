@@ -24,7 +24,7 @@ use rust_decimal::prelude::ToPrimitive;
 use super::common::commissions_from_vec;
 use crate::{
     enums::{OrderSide, PositionSide},
-    events::OrderFilled,
+    events::{OrderFilled, PositionAdjusted},
     identifiers::{
         ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
         VenueOrderId,
@@ -233,6 +233,12 @@ impl Position {
     }
 
     #[getter]
+    #[pyo3(name = "adjustments")]
+    fn py_adjustments(&self) -> Vec<PositionAdjusted> {
+        self.adjustments.clone()
+    }
+
+    #[getter]
     #[pyo3(name = "client_order_ids")]
     fn py_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.client_order_ids()
@@ -312,6 +318,16 @@ impl Position {
         self.apply(fill);
     }
 
+    #[pyo3(name = "apply_adjustment")]
+    fn py_apply_adjustment(&mut self, adjustment: PositionAdjusted) {
+        self.apply_adjustment(adjustment);
+    }
+
+    #[pyo3(name = "purge_events_for_order")]
+    fn py_purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+        self.purge_events_for_order(client_order_id);
+    }
+
     #[pyo3(name = "is_opposite_side")]
     fn py_is_opposite_side(&self, side: OrderSide) -> bool {
         self.is_opposite_side(side)
@@ -349,6 +365,9 @@ impl Position {
         dict.set_item("type", stringify!(Position))?;
         let events_dict: PyResult<Vec<_>> = self.events.iter().map(|e| e.py_to_dict(py)).collect();
         dict.set_item("events", events_dict?)?;
+        let adjustments_dict: PyResult<Vec<_>> =
+            self.adjustments.iter().map(|a| a.py_to_dict(py)).collect();
+        dict.set_item("adjustments", adjustments_dict?)?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

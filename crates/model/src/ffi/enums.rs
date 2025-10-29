@@ -21,8 +21,8 @@ use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
     BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType, LiquiditySide,
     MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-    PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
-    TriggerType,
+    PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
+    TrailingOffsetType, TriggerType,
 };
 
 #[unsafe(no_mangle)]
@@ -446,6 +446,30 @@ pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> Position
     let value = unsafe { cstr_as_str(ptr) };
     PositionSide::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `PositionSide` enum string value, was '{value}'"))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn position_adjustment_type_to_cstr(value: PositionAdjustmentType) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+///
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `PositionAdjustmentType` variant.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn position_adjustment_type_from_cstr(
+    ptr: *const c_char,
+) -> PositionAdjustmentType {
+    let value = unsafe { cstr_as_str(ptr) };
+    PositionAdjustmentType::from_str(value).unwrap_or_else(|_| {
+        panic!("invalid `PositionAdjustmentType` enum string value, was '{value}'")
+    })
 }
 
 #[unsafe(no_mangle)]

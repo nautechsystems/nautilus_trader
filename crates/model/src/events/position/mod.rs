@@ -14,9 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::{
-    events::{PositionChanged, PositionClosed, PositionOpened},
+    events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
     identifiers::{AccountId, InstrumentId},
 };
+pub mod adjusted;
 pub mod changed;
 pub mod closed;
 pub mod opened;
@@ -27,6 +28,7 @@ pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),
     PositionClosed(PositionClosed),
+    PositionAdjusted(PositionAdjusted),
 }
 
 impl PositionEvent {
@@ -35,6 +37,7 @@ impl PositionEvent {
             Self::PositionOpened(position) => position.instrument_id,
             Self::PositionChanged(position) => position.instrument_id,
             Self::PositionClosed(position) => position.instrument_id,
+            Self::PositionAdjusted(adjustment) => adjustment.instrument_id,
         }
     }
 
@@ -43,6 +46,7 @@ impl PositionEvent {
             Self::PositionOpened(position) => position.account_id,
             Self::PositionChanged(position) => position.account_id,
             Self::PositionClosed(position) => position.account_id,
+            Self::PositionAdjusted(adjustment) => adjustment.account_id,
         }
     }
 }

@@ -427,7 +427,7 @@ mod tests {
 
     use nautilus_core::approx_eq;
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide, OrderSide},
+        enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
         events::{AccountState, OrderFilled},
         identifiers::{
             AccountId, ClientOrderId,
@@ -482,6 +482,7 @@ mod tests {
     ) -> Position {
         Position {
             events: Vec::new(),
+            adjustments: Vec::new(),
             trader_id: trader_id(),
             strategy_id: strategy_id_ema_cross(),
             instrument_id: instrument_id_aud_usd_sim(),
@@ -498,6 +499,8 @@ mod tests {
             size_precision: 2,
             multiplier: Quantity::default(),
             is_inverse: false,
+            is_currency_pair: true,
+            instrument_class: InstrumentClass::Spot,
             base_currency: None,
             quote_currency: Currency::USD(),
             settlement_currency: Currency::USD(),

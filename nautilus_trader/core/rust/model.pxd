@@ -214,7 +214,6 @@ cdef extern from "../includes/model.h":
         # A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
         SPORTS_BETTING # = 11,
         # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
-        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
         BINARY_OPTION # = 12,
 
     # The order book type, representing the type of levels granularity and delta updating heuristics.
@@ -405,6 +404,13 @@ cdef extern from "../includes/model.h":
         LONG # = 2,
         # A short position in the market, typically acquired through one or many SELL orders.
         SHORT # = 3,
+
+    # The type of position adjustment.
+    cpdef enum PositionAdjustmentType:
+        # Commission adjustment affecting position quantity.
+        COMMISSION # = 1,
+        # Funding payment affecting position realized PnL.
+        FUNDING # = 2,
 
     # A record flag bit field, indicating event end and data information.
     cpdef enum RecordFlag:
@@ -1617,6 +1623,19 @@ cdef extern from "../includes/model.h":
     #
     # Panics if the C string does not correspond to a valid `PositionSide` variant.
     PositionSide position_side_from_cstr(const char *ptr);
+
+    const char *position_adjustment_type_to_cstr(PositionAdjustmentType value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    #
+    # Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `PositionAdjustmentType` variant.
+    PositionAdjustmentType position_adjustment_type_from_cstr(const char *ptr);
 
     const char *price_type_to_cstr(PriceType value);
 

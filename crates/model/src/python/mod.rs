@@ -94,13 +94,13 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::AggregationSource>()?;
     m.add_class::<crate::enums::AggressorSide>()?;
     m.add_class::<crate::enums::AssetClass>()?;
-    m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::BarAggregation>()?;
     m.add_class::<crate::enums::BetSide>()?;
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
     m.add_class::<crate::enums::ContingencyType>()?;
     m.add_class::<crate::enums::CurrencyType>()?;
+    m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::InstrumentCloseType>()?;
     m.add_class::<crate::enums::LiquiditySide>()?;
     m.add_class::<crate::enums::MarketStatus>()?;
@@ -110,6 +110,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::OrderSide>()?;
     m.add_class::<crate::enums::OrderStatus>()?;
     m.add_class::<crate::enums::OrderType>()?;
+    m.add_class::<crate::enums::PositionAdjustmentType>()?;
     m.add_class::<crate::enums::PositionSide>()?;
     m.add_class::<crate::enums::PriceType>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
@@ -193,6 +194,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::events::OrderCanceled>()?;
     m.add_class::<crate::events::OrderExpired>()?;
     m.add_class::<crate::events::OrderSnapshot>()?;
+    m.add_class::<crate::events::PositionAdjusted>()?;
     m.add_class::<crate::events::PositionSnapshot>()?;
     // Accounts
     m.add_class::<crate::accounts::CashAccount>()?;

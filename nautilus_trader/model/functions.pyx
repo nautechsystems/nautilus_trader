@@ -55,6 +55,8 @@ from nautilus_trader.core.rust.model cimport order_status_from_cstr
 from nautilus_trader.core.rust.model cimport order_status_to_cstr
 from nautilus_trader.core.rust.model cimport order_type_from_cstr
 from nautilus_trader.core.rust.model cimport order_type_to_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_from_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_to_cstr
 from nautilus_trader.core.rust.model cimport position_side_from_cstr
 from nautilus_trader.core.rust.model cimport position_side_to_cstr
 from nautilus_trader.core.rust.model cimport price_type_from_cstr
@@ -239,6 +241,14 @@ cpdef PositionSide position_side_from_str(str value):
 
 cpdef str position_side_to_str(PositionSide value):
     return cstr_to_pystr(position_side_to_cstr(value))
+
+
+cpdef PositionAdjustmentType position_adjustment_type_from_str(str value):
+    return position_adjustment_type_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str position_adjustment_type_to_str(PositionAdjustmentType value):
+    return cstr_to_pystr(position_adjustment_type_to_cstr(value))
 
 
 cpdef PriceType price_type_from_str(str value):
