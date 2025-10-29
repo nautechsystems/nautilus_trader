@@ -48,6 +48,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -336,6 +337,49 @@ class TestExecAlgorithm:
         assert not primary_order.is_spawned
         assert not spawned_order.is_primary
         assert spawned_order.is_spawned
+
+    def test_exec_algorithm_spawned_order_caches_client_id(self) -> None:
+        """
+        Test that spawned orders are cached with the client_id from the primary order.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+
+        test_client_id = ClientId("TEST_CLIENT")
+        self.cache.add_order(primary_order, None, test_client_id)
+
+        # Act
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            time_in_force=TimeInForce.FOK,
+            reduce_only=True,
+            tags=["EXIT"],
+        )
+
+        # Submit the spawned order (which should cache it with client_id)
+        exec_algorithm.submit_order(spawned_order)
+
+        # Assert
+        cached_client_id = self.cache.client_id(spawned_order.client_order_id)
+        assert cached_client_id == test_client_id
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
         """

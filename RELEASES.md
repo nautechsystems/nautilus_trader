@@ -20,6 +20,7 @@ TBD
 
 ### Fixes
 - Fixed OKX spot margin position reports for borrowing
+- Fixed spawned order client_id caching in `ExecAlgorithm`, thanks for reporting @kirill-gr1
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
