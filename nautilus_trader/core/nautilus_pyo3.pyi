@@ -5808,6 +5808,7 @@ class BybitHttpClient:
         time_in_force: TimeInForce,
         price: Price | None = None,
         reduce_only: bool = False,
+        is_leverage: bool = False,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,

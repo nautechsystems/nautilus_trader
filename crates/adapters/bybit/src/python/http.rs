@@ -168,7 +168,8 @@ impl BybitHttpClient {
         quantity,
         time_in_force,
         price = None,
-        reduce_only = false
+        reduce_only = false,
+        is_leverage = false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -184,6 +185,7 @@ impl BybitHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         reduce_only: bool,
+        is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -200,6 +202,7 @@ impl BybitHttpClient {
                     time_in_force,
                     price,
                     reduce_only,
+                    is_leverage,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
