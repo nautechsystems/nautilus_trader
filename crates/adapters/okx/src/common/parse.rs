@@ -271,6 +271,24 @@ pub fn okx_instrument_type_from_symbol(symbol: &str) -> OKXInstrumentType {
     }
 }
 
+/// Extracts base and quote currencies from an OKX symbol.
+///
+/// All OKX instrument symbols start with {BASE}-{QUOTE}, regardless of type.
+///
+/// # Errors
+///
+/// Returns an error if the symbol doesn't contain at least two parts separated by '-'.
+pub fn parse_base_quote_from_symbol(symbol: &str) -> anyhow::Result<(&str, &str)> {
+    let mut parts = symbol.split('-');
+    let base = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("Invalid symbol format: missing base currency in '{symbol}'")
+    })?;
+    let quote = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("Invalid symbol format: missing quote currency in '{symbol}'")
+    })?;
+    Ok((base, quote))
+}
+
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
@@ -581,41 +599,68 @@ pub fn parse_order_status_report(
         let quantity_base = if let (Some(sz), Some(price)) = (sz_quote_dec, conversion_price_dec) {
             if !price.is_zero() {
                 let quantity_dec = sz / price;
-                Quantity::from_decimal(quantity_dec, size_precision).unwrap_or_default()
+                Quantity::from_decimal(quantity_dec, size_precision).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
+                        order.ord_id.as_str()
+                    )
+                })?
             } else {
                 log::warn!(
-                    "Cannot convert with zero price: ord_id={}, sz={}",
+                    "Cannot convert quote quantity with zero price: ord_id={}, sz={}, using sz as-is",
                     order.ord_id.as_str(),
                     order.sz
                 );
-                Quantity::from_str(&order.sz).unwrap_or_default()
+                Quantity::from_str(&order.sz).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
+                        order.ord_id.as_str(),
+                        order.sz
+                    )
+                })?
             }
         } else {
-            // No price available, can't convert - use sz as-is temporarily
             log::warn!(
-                "Cannot convert, using sz as-is: ord_id={}, sz={}",
+                "Cannot convert quote quantity without price: ord_id={}, sz={}, px='{}', avg_px='{}', using sz as-is",
                 order.ord_id.as_str(),
-                order.sz
+                order.sz,
+                order.px,
+                order.avg_px
             );
-            Quantity::from_str(&order.sz).unwrap_or_default()
+            Quantity::from_str(&order.sz).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
+                    order.ord_id.as_str(),
+                    order.sz
+                )
+            })?
         };
 
-        let filled_qty_dec = Decimal::from_str(&order.acc_fill_sz)
-            .ok()
-            .and_then(|d| Quantity::from_decimal(d, size_precision).ok())
-            .unwrap_or_default();
+        let filled_qty_dec = parse_quantity(&order.acc_fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse filled quantity for ord_id={}, acc_fill_sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.acc_fill_sz
+            )
+        })?;
 
         (quantity_base, filled_qty_dec)
     } else {
         // Base-quantity order: both sz and acc_fill_sz are in base currency
-        let quantity_dec = Decimal::from_str(&order.sz)
-            .ok()
-            .and_then(|d| Quantity::from_decimal(d, size_precision).ok())
-            .unwrap_or_default();
-        let filled_qty_dec = Decimal::from_str(&order.acc_fill_sz)
-            .ok()
-            .and_then(|d| Quantity::from_decimal(d, size_precision).ok())
-            .unwrap_or_default();
+        let quantity_dec = parse_quantity(&order.sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse base quantity for ord_id={}, sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.sz
+            )
+        })?;
+        let filled_qty_dec = parse_quantity(&order.acc_fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse filled quantity for ord_id={}, acc_fill_sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.acc_fill_sz
+            )
+        })?;
 
         (quantity_dec, filled_qty_dec)
     };
@@ -639,7 +684,6 @@ pub fn parse_order_status_report(
     // Note: OKX uses ordType for type and liquidity instructions; time-in-force not explicitly represented here
     let time_in_force = TimeInForce::Gtc;
 
-    // Build report
     let mut client_order_id = if order.cl_ord_id.is_empty() {
         None
     } else {
@@ -757,11 +801,10 @@ pub fn parse_position_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    // Parse position quantity using Decimal for precision
-    let pos_decimal = Decimal::from_str(&position.pos).unwrap_or_else(|e| {
+    let pos_dec = Decimal::from_str(&position.pos).unwrap_or_else(|e| {
         panic!(
-            "Failed to parse position quantity '{}' for instrument {}: {:?}",
-            position.pos, instrument_id, e
+            "Failed to parse position quantity '{}' for instrument {}: {e:?}",
+            position.pos, instrument_id
         )
     });
 
@@ -769,28 +812,20 @@ pub fn parse_position_status_report(
     // - If pos_ccy = base currency: LONG position, pos is in base currency
     // - If pos_ccy = quote currency: SHORT position, pos is in quote currency (needs conversion)
     // - If pos_ccy is empty: FLAT position (no position)
-    let (position_side, quantity_decimal) = if position.inst_type == OKXInstrumentType::Spot
+    let (position_side, quantity_dec) = if position.inst_type == OKXInstrumentType::Spot
         || position.inst_type == OKXInstrumentType::Margin
     {
         // Extract base and quote currencies from instrument symbol
-        let symbol_parts: Vec<&str> = instrument_id.symbol.as_str().split('-').collect();
-        if symbol_parts.len() < 2 {
-            anyhow::bail!(
-                "Invalid SPOT/MARGIN instrument symbol format: {}",
-                instrument_id.symbol
-            );
-        }
-        let base_ccy = symbol_parts[0];
-        let quote_ccy = symbol_parts[1];
+        let (base_ccy, quote_ccy) = parse_base_quote_from_symbol(instrument_id.symbol.as_str())?;
 
         let pos_ccy = position.pos_ccy.as_str();
 
-        if pos_ccy.is_empty() || pos_decimal.is_zero() {
+        if pos_ccy.is_empty() || pos_dec.is_zero() {
             // Flat position: no position or zero quantity
             (PositionSide::Flat, Decimal::ZERO)
         } else if pos_ccy == base_ccy {
             // Long position: pos_ccy is base currency, pos is already in base
-            (PositionSide::Long, pos_decimal.abs())
+            (PositionSide::Long, pos_dec.abs())
         } else if pos_ccy == quote_ccy {
             // Short position: pos_ccy is quote currency, need to convert to base
             // Use Decimal arithmetic to avoid floating-point precision errors
@@ -800,17 +835,17 @@ pub fn parse_position_status_report(
                 // If no avg_px, use mark_px as fallback
                 &position.mark_px
             };
-            let avg_px_decimal = Decimal::from_str(avg_px_str)?;
+            let avg_px_dec = Decimal::from_str(avg_px_str)?;
 
-            if avg_px_decimal.is_zero() {
+            if avg_px_dec.is_zero() {
                 anyhow::bail!(
                     "Cannot convert SHORT position from quote to base: avg_px is zero for {}",
                     instrument_id
                 );
             }
 
-            let quantity_decimal = pos_decimal.abs() / avg_px_decimal;
-            (PositionSide::Short, quantity_decimal)
+            let quantity_dec = pos_dec.abs() / avg_px_dec;
+            (PositionSide::Short, quantity_dec)
         } else {
             anyhow::bail!(
                 "Unknown position currency '{}' for instrument {} (base={}, quote={})",
@@ -826,11 +861,11 @@ pub fn parse_position_status_report(
         // - Net mode: posSide="net", uses signed quantities (positive=long, negative=short)
         // - Long/Short mode: posSide="long"/"short", quantities are always positive, side from field
         let side = match position.pos_side {
-            OKXPositionSide::Net => {
+            OKXPositionSide::Net | OKXPositionSide::None => {
                 // Net mode: derive side from signed quantity
-                if pos_decimal.is_sign_positive() && !pos_decimal.is_zero() {
+                if pos_dec.is_sign_positive() && !pos_dec.is_zero() {
                     PositionSide::Long
-                } else if pos_decimal.is_sign_negative() {
+                } else if pos_dec.is_sign_negative() {
                     PositionSide::Short
                 } else {
                     PositionSide::Flat
@@ -844,24 +879,14 @@ pub fn parse_position_status_report(
                 // Long/Short mode: trust the pos_side field
                 PositionSide::Short
             }
-            OKXPositionSide::None => {
-                // Fallback: use signed quantity (same as Net mode logic)
-                if pos_decimal.is_sign_positive() && !pos_decimal.is_zero() {
-                    PositionSide::Long
-                } else if pos_decimal.is_sign_negative() {
-                    PositionSide::Short
-                } else {
-                    PositionSide::Flat
-                }
-            }
         };
-        (side, pos_decimal.abs())
+        (side, pos_dec.abs())
     };
 
     let position_side = position_side.as_specified();
 
     // Convert to absolute quantity (positions are always positive in Nautilus)
-    let quantity = Quantity::from_decimal(quantity_decimal, size_precision)?;
+    let quantity = Quantity::from_decimal(quantity_dec, size_precision)?;
 
     // Generate venue position ID only for Long/Short mode (hedging)
     // In Net mode, venue_position_id must be None to signal NETTING OMS behavior
@@ -927,11 +952,11 @@ pub fn parse_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_decimal = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
-    let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_decimal, || {
+    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
         format!("fill report for instrument_id={}", instrument_id)
     });
-    let commission = Money::from_decimal(-fee_decimal, fee_currency)?;
+    let commission = Money::from_decimal(-fee_dec, fee_currency)?;
     let liquidity_side: LiquiditySide = detail.exec_type.into();
     let ts_event = parse_millisecond_timestamp(detail.ts);
 
@@ -1797,18 +1822,18 @@ pub fn parse_account_state(
             Decimal::from_str(&okx_account.imr),
             Decimal::from_str(&okx_account.mmr),
         ) {
-            (Ok(imr_decimal), Ok(mmr_decimal)) => {
-                if !imr_decimal.is_zero() || !mmr_decimal.is_zero() {
+            (Ok(imr_dec), Ok(mmr_dec)) => {
+                if !imr_dec.is_zero() || !mmr_dec.is_zero() {
                     let margin_currency = Currency::USD();
                     let margin_instrument_id =
                         InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("OKX"));
 
-                    let initial_margin = Money::from_decimal(imr_decimal, margin_currency)
+                    let initial_margin = Money::from_decimal(imr_dec, margin_currency)
                         .unwrap_or_else(|e| {
                             tracing::error!("Failed to create initial margin: {e}");
                             Money::zero(margin_currency)
                         });
-                    let maintenance_margin = Money::from_decimal(mmr_decimal, margin_currency)
+                    let maintenance_margin = Money::from_decimal(mmr_dec, margin_currency)
                         .unwrap_or_else(|e| {
                             tracing::error!("Failed to create maintenance margin: {e}");
                             Money::zero(margin_currency)
@@ -1866,6 +1891,7 @@ pub fn parse_account_state(
 mod tests {
     use nautilus_model::{identifiers::PositionId, instruments::Instrument};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -1895,34 +1921,26 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_currency_with_valid_currency() {
-        let result = parse_fee_currency("BTC", Decimal::from_str("0.001").unwrap(), || {
-            "test context".to_string()
-        });
+        let result = parse_fee_currency("BTC", dec!(0.001), || "test context".to_string());
         assert_eq!(result, Currency::BTC());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_empty_string_nonzero_fee() {
-        let result = parse_fee_currency("", Decimal::from_str("0.5").unwrap(), || {
-            "test context".to_string()
-        });
+        let result = parse_fee_currency("", dec!(0.5), || "test context".to_string());
         assert_eq!(result, Currency::USDT());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_whitespace() {
-        let result = parse_fee_currency("  ETH  ", Decimal::from_str("0.002").unwrap(), || {
-            "test context".to_string()
-        });
+        let result = parse_fee_currency("  ETH  ", dec!(0.002), || "test context".to_string());
         assert_eq!(result, Currency::ETH());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_unknown_code() {
         // Unknown currency code should create a new Currency (8 decimals, crypto)
-        let result = parse_fee_currency("NEWTOKEN", Decimal::from_str("0.5").unwrap(), || {
-            "test context".to_string()
-        });
+        let result = parse_fee_currency("NEWTOKEN", dec!(0.5), || "test context".to_string());
         assert_eq!(result.code.as_str(), "NEWTOKEN");
         assert_eq!(result.precision, 8);
     }
@@ -2437,8 +2455,8 @@ mod tests {
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
         let okx_inst = response.data.first().unwrap();
 
-        let maker_fee = Some(Decimal::new(8, 4)); // 0.0008
-        let taker_fee = Some(Decimal::new(10, 4)); // 0.0010
+        let maker_fee = Some(dec!(0.0008));
+        let taker_fee = Some(dec!(0.0010));
 
         let instrument = parse_spot_instrument(
             okx_inst,
@@ -2452,8 +2470,8 @@ mod tests {
 
         // Should apply the provided fees to the instrument
         if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, Decimal::new(8, 4));
-            assert_eq!(pair.taker_fee, Decimal::new(10, 4));
+            assert_eq!(pair.maker_fee, dec!(0.0008));
+            assert_eq!(pair.taker_fee, dec!(0.0010));
         } else {
             panic!("Expected CurrencyPair instrument");
         }
@@ -2524,8 +2542,6 @@ mod tests {
 
     #[rstest]
     fn test_fee_field_selection_for_contract_types() {
-        use rust_decimal::Decimal;
-
         // Mock OKXFeeRate with different values for crypto vs USDT-margined
         let maker_crypto = "0.0002"; // Crypto-margined maker fee
         let taker_crypto = "0.0005"; // Crypto-margined taker fee
@@ -2546,8 +2562,8 @@ mod tests {
         let maker_fee = Decimal::from_str(maker_str).unwrap();
         let taker_fee = Decimal::from_str(taker_str).unwrap();
 
-        assert_eq!(maker_fee, Decimal::new(8, 4));
-        assert_eq!(taker_fee, Decimal::new(10, 4));
+        assert_eq!(maker_fee, dec!(0.0008));
+        assert_eq!(taker_fee, dec!(0.0010));
 
         // Test Inverse (crypto-margined) - should use maker/taker
         let is_usdt_margined = false;
@@ -2563,8 +2579,8 @@ mod tests {
         let maker_fee = Decimal::from_str(maker_str).unwrap();
         let taker_fee = Decimal::from_str(taker_str).unwrap();
 
-        assert_eq!(maker_fee, Decimal::new(2, 4));
-        assert_eq!(taker_fee, Decimal::new(5, 4));
+        assert_eq!(maker_fee, dec!(0.0002));
+        assert_eq!(taker_fee, dec!(0.0005));
     }
 
     #[rstest]
