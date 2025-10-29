@@ -2147,7 +2147,7 @@ class LiveExecutionEngine(ExecutionEngine):
             # Check if order is already closed to avoid duplicate inferred fills
             if order.is_closed:
                 self._log.warning(  # TODO: Reduce level to debug after initial development phase
-                    f"{order.client_order_id!r} already {order.status_string()} but "
+                    f"{order.instrument_id} {order.client_order_id!r} already {order.status_string()} but "
                     f"reported difference in filled_qty: "
                     f"report={report.filled_qty}, cached={order.filled_qty}, "
                     f"skipping inferred fill generation for closed order",
