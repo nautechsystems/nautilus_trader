@@ -1699,6 +1699,107 @@ class TestStrategy:
             if order.side == OrderSide.SELL:
                 assert order.tags == ["EXIT"]
 
+    def test_close_position_with_quote_quantity_true(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        position = self.cache.positions_open()[0]
+
+        # Act
+        strategy.close_position(position, quote_quantity=True)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 1
+        assert closing_orders[0].is_quote_quantity
+
+    def test_close_position_with_quote_quantity_false(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        position = self.cache.positions_open()[0]
+
+        # Act
+        strategy.close_position(position, quote_quantity=False)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 1
+        assert not closing_orders[0].is_quote_quantity
+
+    def test_close_all_positions_with_quote_quantity_true(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        order1 = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.close_all_positions(_USDJPY_SIM.id, quote_quantity=True)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 2
+        for order in closing_orders:
+            assert order.is_quote_quantity
+
     @pytest.mark.parametrize(
         ("contingency_type"),
         [

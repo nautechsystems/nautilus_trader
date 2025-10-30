@@ -8,7 +8,7 @@ Released on TBD (UTC).
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
-- Added `PolymarketDataLoader` for loading historical data with docs and example
+- Added `quote_quantity` parameter for `close_position(...)` and `close_all_positions(...)` strategy methods
 - Introduced `PositionAdjusted` events for tracking quantity/PnL changes outside normal order fills (base currency commissions, funding payments, manual adjustments)
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
 
