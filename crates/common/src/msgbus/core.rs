@@ -16,7 +16,7 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fmt::{self, Display},
+    fmt::Display,
     hash::{Hash, Hasher},
     ops::Deref,
     rc::Rc,
@@ -64,7 +64,7 @@ pub struct MStr<T> {
 }
 
 impl<T> Display for MStr<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }

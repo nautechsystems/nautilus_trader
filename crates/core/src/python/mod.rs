@@ -35,6 +35,8 @@ pub mod serialization;
 pub mod uuid;
 pub mod version;
 
+use std::fmt::Display;
+
 use pyo3::{
     Py,
     conversion::IntoPyObjectExt,
@@ -109,7 +111,7 @@ pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PySt
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pyvalue_err(e: impl Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
@@ -118,7 +120,7 @@ pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pytype_err(e: impl Display) -> PyErr {
     PyTypeError::new_err(e.to_string())
 }
 
@@ -127,7 +129,7 @@ pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pyruntime_err(e: impl Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 

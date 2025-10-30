@@ -16,7 +16,7 @@
 //! Option *Greeks* data structures (delta, gamma, theta, vega, rho) used throughout the platform.
 
 use std::{
-    fmt,
+    fmt::Display,
     ops::{Add, Mul},
 };
 
@@ -278,8 +278,8 @@ impl Default for GreeksData {
     }
 }
 
-impl fmt::Display for GreeksData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for GreeksData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "GreeksData(instrument_id={}, expiry={}, itm_prob={:.2}%, vol={:.2}%, pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, quantity={}, ts_init={})",
@@ -388,8 +388,8 @@ impl Default for PortfolioGreeks {
     }
 }
 
-impl fmt::Display for PortfolioGreeks {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for PortfolioGreeks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "PortfolioGreeks(pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, ts_event={}, ts_init={})",
@@ -479,8 +479,8 @@ impl YieldCurveData {
     }
 }
 
-impl fmt::Display for YieldCurveData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for YieldCurveData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "InterestRateCurve(curve_name={}, ts_event={}, ts_init={})",
