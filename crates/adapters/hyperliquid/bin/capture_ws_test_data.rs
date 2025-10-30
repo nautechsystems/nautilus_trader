@@ -15,6 +15,8 @@
 
 // Capture WebSocket test data samples
 
+use std::{fs, time::Duration};
+
 use nautilus_hyperliquid::{
     common::consts::ws_url,
     websocket::{
@@ -22,7 +24,6 @@ use nautilus_hyperliquid::{
         messages::{HyperliquidWsMessage, SubscriptionRequest},
     },
 };
-use std::{fs, time::Duration};
 use tokio::time::{sleep, timeout};
 use ustr::Ustr;
 

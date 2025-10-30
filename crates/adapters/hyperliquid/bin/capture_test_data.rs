@@ -15,8 +15,9 @@
 
 // Simple script to capture real API responses for test fixtures
 
-use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 use std::fs;
+
+use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
