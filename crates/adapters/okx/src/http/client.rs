@@ -2257,6 +2257,19 @@ impl OKXHttpClient {
         let mut reports = Vec::with_capacity(resp.len());
 
         for detail in resp {
+            // Skip fills with zero or negative quantity (cancelled orders, etc)
+            if detail.fill_sz.is_empty() {
+                continue;
+            }
+            if let Ok(qty) = detail.fill_sz.parse::<f64>() {
+                if qty <= 0.0 {
+                    continue;
+                }
+            } else {
+                // Skip unparsable quantities
+                continue;
+            }
+
             let inst = self.instrument_or_fetch(detail.inst_id).await?;
 
             let report = parse_fill_report(
