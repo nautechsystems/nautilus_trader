@@ -72,10 +72,11 @@ use crate::{
             BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWebSocketMessage,
             BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsAccountPositionMsg,
             BybitWsAccountWalletMsg, BybitWsAmendOrderParams, BybitWsAuthResponse,
-            BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs, BybitWsCancelOrderParams,
-            BybitWsHeader, BybitWsKlineMsg, BybitWsOrderResponse, BybitWsOrderbookDepthMsg,
-            BybitWsPlaceOrderParams, BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg,
-            BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg, NautilusWsMessage,
+            BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem,
+            BybitWsBatchPlaceOrderArgs, BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg,
+            BybitWsOrderResponse, BybitWsOrderbookDepthMsg, BybitWsPlaceOrderParams,
+            BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinearMsg,
+            BybitWsTickerOptionMsg, BybitWsTradeMsg, NautilusWsMessage,
         },
         parse::{
             parse_kline_topic, parse_millis_i64, parse_orderbook_deltas,
@@ -1033,16 +1034,59 @@ impl BybitWebSocketClient {
             ));
         }
 
+        if orders.is_empty() {
+            return Ok(());
+        }
+
         if orders.len() > 20 {
             return Err(BybitWsError::ClientError(
                 "Batch order limit is 20 orders per request".to_string(),
             ));
         }
 
+        // Get category from first order (all orders in a batch must have same category)
+        let category = orders[0].category;
+
+        // Convert BybitWsPlaceOrderParams to BybitWsBatchPlaceItem (removing category field)
+        let request_items: Vec<BybitWsBatchPlaceItem> = orders
+            .into_iter()
+            .map(|order| BybitWsBatchPlaceItem {
+                symbol: order.symbol,
+                side: order.side,
+                order_type: order.order_type,
+                qty: order.qty,
+                market_unit: order.market_unit,
+                price: order.price,
+                time_in_force: order.time_in_force,
+                order_link_id: order.order_link_id,
+                reduce_only: order.reduce_only,
+                close_on_trigger: order.close_on_trigger,
+                trigger_price: order.trigger_price,
+                trigger_by: order.trigger_by,
+                trigger_direction: order.trigger_direction,
+                tpsl_mode: order.tpsl_mode,
+                take_profit: order.take_profit,
+                stop_loss: order.stop_loss,
+                tp_trigger_by: order.tp_trigger_by,
+                sl_trigger_by: order.sl_trigger_by,
+                sl_trigger_price: order.sl_trigger_price,
+                tp_trigger_price: order.tp_trigger_price,
+                sl_order_type: order.sl_order_type,
+                tp_order_type: order.tp_order_type,
+                sl_limit_price: order.sl_limit_price,
+                tp_limit_price: order.tp_limit_price,
+            })
+            .collect();
+
+        let args = BybitWsBatchPlaceOrderArgs {
+            category,
+            request: request_items,
+        };
+
         let request = BybitWsRequest {
             op: BybitWsOrderRequestOp::CreateBatch,
             header: BybitWsHeader::now(),
-            args: orders,
+            args: vec![args],
         };
 
         let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
@@ -1208,7 +1252,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1236,7 +1284,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1377,7 +1429,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 market_unit: market_unit.clone(),
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1406,7 +1462,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,

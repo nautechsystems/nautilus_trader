@@ -129,6 +129,8 @@ class BybitDataClient(LiveMarketDataClient):
             nautilus_pyo3.BybitProductType,
             nautilus_pyo3.BybitWebSocketClient,
         ] = {}
+        self._ws_client_futures: set[asyncio.Future] = set()
+
         # Priority: demo > testnet > mainnet
         if config.demo:
             environment = nautilus_pyo3.BybitEnvironment.DEMO
@@ -147,10 +149,9 @@ class BybitDataClient(LiveMarketDataClient):
             self._ws_clients[product_type] = ws_client
 
         self._depths: dict[nautilus_pyo3.InstrumentId, int] = {}
-        self._ticker_subscriptions: dict[nautilus_pyo3.InstrumentId, set[str]] = (
-            {}
-        )  # Reference counting for ticker channel
-        self._ws_client_futures: set[asyncio.Future] = set()
+
+        # Reference counting for ticker channel
+        self._ticker_subscriptions: dict[nautilus_pyo3.InstrumentId, set[str]] = {}
 
     @property
     def instrument_provider(self) -> BybitInstrumentProvider:

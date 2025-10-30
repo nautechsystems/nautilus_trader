@@ -183,6 +183,7 @@ config_tester = ExecTesterConfig(
     enable_sells=enable_sells,
     # enable_stop_buys=True,  # Test stop orders
     # enable_stop_sells=True,  # Test stop orders
+    # enable_brackets=True,
     order_qty=order_qty,
     open_position_on_start_qty=order_qty,  # Positive quantity to open LONG position
     # tob_offset_ticks=0,

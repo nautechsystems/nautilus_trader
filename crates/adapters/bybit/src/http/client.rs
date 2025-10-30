@@ -1453,6 +1453,28 @@ impl BybitHttpInnerClient {
         let mut response: BybitOpenOrdersResponse =
             self.send_request(Method::GET, &path, None, true).await?;
 
+        if response.result.list.is_empty() {
+            tracing::debug!("Order not found in open orders, trying with StopOrder filter");
+
+            let mut stop_params = BybitOpenOrdersParamsBuilder::default();
+            stop_params.category(product_type);
+            stop_params.symbol(bybit_symbol.raw_symbol().to_string());
+            stop_params.order_filter("StopOrder".to_string());
+
+            if let Some(venue_order_id) = venue_order_id {
+                stop_params.order_id(venue_order_id.to_string());
+            } else if let Some(client_order_id) = client_order_id {
+                stop_params.order_link_id(client_order_id.to_string());
+            }
+
+            let stop_params = stop_params.build().map_err(|e| anyhow::anyhow!(e))?;
+            let stop_path = Self::build_path("/v5/order/realtime", &stop_params)?;
+
+            response = self
+                .send_request(Method::GET, &stop_path, None, true)
+                .await?;
+        }
+
         // If not found in open orders, check order history
         if response.result.list.is_empty() {
             tracing::debug!("Order not found in open orders, checking order history");
@@ -1470,13 +1492,40 @@ impl BybitHttpInnerClient {
             let history_params = history_params.build().map_err(|e| anyhow::anyhow!(e))?;
             let history_path = Self::build_path("/v5/order/history", &history_params)?;
 
-            let history_response: BybitOrderHistoryResponse = self
+            let mut history_response: BybitOrderHistoryResponse = self
                 .send_request(Method::GET, &history_path, None, true)
                 .await?;
 
             if history_response.result.list.is_empty() {
-                tracing::debug!("Order not found in order history either");
-                return Ok(None);
+                tracing::debug!("Order not found in order history, trying with StopOrder filter");
+
+                let mut stop_history_params = BybitOrderHistoryParamsBuilder::default();
+                stop_history_params.category(product_type);
+                stop_history_params.symbol(bybit_symbol.raw_symbol().to_string());
+                stop_history_params.order_filter("StopOrder".to_string());
+
+                if let Some(venue_order_id) = venue_order_id {
+                    stop_history_params.order_id(venue_order_id.to_string());
+                } else if let Some(client_order_id) = client_order_id {
+                    stop_history_params.order_link_id(client_order_id.to_string());
+                }
+
+                let stop_history_params = stop_history_params
+                    .build()
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let stop_history_path =
+                    Self::build_path("/v5/order/history", &stop_history_params)?;
+
+                history_response = self
+                    .send_request(Method::GET, &stop_history_path, None, true)
+                    .await?;
+
+                if history_response.result.list.is_empty() {
+                    tracing::debug!(
+                        "Order not found in order history with StopOrder filter either"
+                    );
+                    return Ok(None);
+                }
             }
 
             // Move the order from history response to the response list

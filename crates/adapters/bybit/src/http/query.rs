@@ -557,6 +557,12 @@ pub struct BybitOpenOrdersParams {
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
+    pub open_only: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub order_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]

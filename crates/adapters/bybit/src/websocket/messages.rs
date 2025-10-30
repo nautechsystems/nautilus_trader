@@ -327,6 +327,63 @@ pub struct BybitWsBatchCancelOrderArgs {
     pub request: Vec<BybitWsBatchCancelItem>,
 }
 
+/// Item in a batch place request (same as BybitWsPlaceOrderParams but without category).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsBatchPlaceItem {
+    pub symbol: Ustr,
+    pub side: BybitOrderSide,
+    pub order_type: BybitOrderType,
+    pub qty: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub market_unit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in_force: Option<BybitTimeInForce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_link_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_on_trigger: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_direction: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tpsl_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub take_profit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_loss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_order_type: Option<BybitOrderType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_order_type: Option<BybitOrderType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_limit_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_limit_price: Option<String>,
+}
+
+/// Arguments for batch place order operation via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BybitWsBatchPlaceOrderArgs {
+    pub category: BybitProductType,
+    pub request: Vec<BybitWsBatchPlaceItem>,
+}
+
 /// Subscription acknowledgement returned by Bybit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BybitWsSubscriptionMsg {

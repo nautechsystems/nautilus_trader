@@ -118,7 +118,6 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if set(product_types) == {BybitProductType.SPOT}:
             self._account_type = AccountType.CASH
-            # Bybit SPOT accounts support margin trading (borrowing)
             AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
             # UTA (Unified Trading Account) for derivatives or mixed products
@@ -174,7 +173,6 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configure HTTP client settings
         self._http_client.set_use_spot_position_reports(self._use_spot_position_reports)
 
-        # WebSocket API - environment setup
         # Priority: demo > testnet > mainnet
         if config.demo:
             environment = nautilus_pyo3.BybitEnvironment.DEMO
@@ -191,7 +189,6 @@ class BybitExecutionClient(LiveExecutionClient):
             url=config.base_url_ws_private,
             heartbeat=20,
         )
-        self._ws_client_futures: set[asyncio.Future] = set()
 
         # WebSocket API - Trade channel (always enabled)
         self._ws_trade_client: nautilus_pyo3.BybitWebSocketClient = (
@@ -203,6 +200,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 heartbeat=20,
             )
         )
+
+        self._ws_client_futures: set[asyncio.Future] = set()
 
     @property
     def bybit_instrument_provider(self) -> BybitInstrumentProvider:
@@ -682,14 +681,13 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_order_side = order_side_to_pyo3(order.side)
         pyo3_order_type = order_type_to_pyo3(order.order_type)
         pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
-        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
         pyo3_time_in_force = (
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
 
-        # Extract trigger price for conditional orders
         pyo3_trigger_price = None
-        if hasattr(order, "trigger_price") and order.trigger_price is not None:
+        if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
@@ -744,20 +742,18 @@ class BybitExecutionClient(LiveExecutionClient):
 
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
-            pyo3_order_side = nautilus_pyo3.OrderSide(order.side.value)
-            pyo3_order_type = nautilus_pyo3.OrderType(order.order_type.value)
+            pyo3_order_side = order_side_to_pyo3(order.side)
+            pyo3_order_type = order_type_to_pyo3(order.order_type)
             pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
             pyo3_time_in_force = (
-                nautilus_pyo3.TimeInForce(order.time_in_force.value)
-                if order.time_in_force
-                else None
+                time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
             )
             pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
-            pyo3_trigger_price = (
-                nautilus_pyo3.Price.from_str(str(order.trigger_price))
-                if order.has_trigger_price
-                else None
-            )
+
+            pyo3_trigger_price = None
+            if order.has_trigger_price:
+                pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
+
             post_only = order.is_post_only
             reduce_only = order.is_reduce_only
 

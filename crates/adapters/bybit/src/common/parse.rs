@@ -765,13 +765,7 @@ pub fn parse_account_state(
 
         let total = Money::new(total_f64, currency);
         let locked = Money::new(locked_f64, currency);
-
-        // Calculate free balance
-        let free = if total.raw >= locked.raw {
-            Money::from_raw(total.raw - locked.raw, currency)
-        } else {
-            Money::new(0.0, currency)
-        };
+        let free = Money::from_raw(total.raw - locked.raw, currency);
 
         balances.push(AccountBalance::new(total, locked, free));
     }
