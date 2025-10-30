@@ -64,9 +64,9 @@ def get_cached_okx_http_client(
     max_retries : int, optional
         The maximum retry attempts for requests.
     retry_delay_ms : int, optional
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : int, optional
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     is_demo : bool, default False
         If the client is for the OKX demo API.
 

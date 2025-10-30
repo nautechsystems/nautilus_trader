@@ -135,9 +135,9 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, default 3
         The maximum retry attempts for requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, default 10_000
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     use_fills_channel : bool, default False
         If True, subscribes to the fills channel for separate fill reports (requires VIP5+).
         If False, generates fill reports from order status reports (works for all users).

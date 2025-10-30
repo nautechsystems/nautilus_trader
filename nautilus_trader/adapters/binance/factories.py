@@ -51,6 +51,7 @@ def get_cached_binance_http_client(
     base_url: str | None = None,
     is_testnet: bool = False,
     is_us: bool = False,
+    proxy_url: str | None = None,
 ) -> BinanceHttpClient:
     """
     Cache and return a Binance HTTP client with the given key and secret.
@@ -75,6 +76,8 @@ def get_cached_binance_http_client(
         If the client is connecting to the testnet API.
     is_us : bool, default False
         If the client is connecting to Binance US.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -133,6 +136,7 @@ def get_cached_binance_http_client(
         base_url=base_url or default_http_base_url,
         ratelimiter_quotas=ratelimiter_quotas,
         ratelimiter_default_quota=ratelimiter_default_quota,
+        proxy_url=proxy_url,
     )
 
 
@@ -272,6 +276,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             base_url=config.base_url_http,
             is_testnet=config.testnet,
             is_us=config.us,
+            proxy_url=config.proxy_url,
         )
 
         default_base_url_ws: str = get_ws_base_url(
@@ -380,6 +385,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             base_url=config.base_url_http,
             is_testnet=config.testnet,
             is_us=config.us,
+            proxy_url=config.proxy_url,
         )
 
         default_base_url_ws: str = get_ws_base_url(

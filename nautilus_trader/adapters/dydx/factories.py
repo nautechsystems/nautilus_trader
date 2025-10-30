@@ -78,6 +78,7 @@ def get_dydx_http_client(
     clock: LiveClock,
     base_url: str | None = None,
     is_testnet: bool = False,
+    proxy_url: str | None = None,
 ) -> DYDXHttpClient:
     """
     Cache and return a dYdX HTTP client.
@@ -92,6 +93,8 @@ def get_dydx_http_client(
         The base URL for the API endpoints.
     is_testnet : bool, default False
         If the client is connecting to the testnet API.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -102,6 +105,7 @@ def get_dydx_http_client(
     return DYDXHttpClient(
         clock=clock,
         base_url=http_base_url,
+        proxy_url=proxy_url,
     )
 
 
@@ -186,6 +190,7 @@ class DYDXLiveDataClientFactory(LiveDataClientFactory):
         client: DYDXHttpClient = get_dydx_http_client(
             clock=clock,
             is_testnet=config.is_testnet,
+            proxy_url=config.proxy_url,
         )
         wallet_address = config.wallet_address or get_wallet_address(is_testnet=config.is_testnet)
         provider = get_dydx_instrument_provider(
@@ -250,6 +255,7 @@ class DYDXLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             base_url=config.base_url_http,
             is_testnet=config.is_testnet,
+            proxy_url=config.proxy_url,
         )
         wallet_address = config.wallet_address or get_wallet_address(is_testnet=config.is_testnet)
         provider = get_dydx_instrument_provider(

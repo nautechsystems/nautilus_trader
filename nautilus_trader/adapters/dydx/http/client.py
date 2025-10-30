@@ -50,6 +50,8 @@ class DYDXHttpClient:
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -59,6 +61,7 @@ class DYDXHttpClient:
         base_url: str,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         """
         Provide a dYdX asynchronous HTTP client.
@@ -73,6 +76,7 @@ class DYDXHttpClient:
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
+            proxy_url=proxy_url,
         )
 
     @property

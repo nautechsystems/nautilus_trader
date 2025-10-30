@@ -37,6 +37,7 @@ def get_cached_betfair_client(
     username: str | None = None,
     password: str | None = None,
     app_key: str | None = None,
+    proxy_url: str | None = None,
 ) -> BetfairHttpClient:
     """
     Cache and return a Betfair HTTP client with the given credentials.
@@ -55,6 +56,8 @@ def get_cached_betfair_client(
     app_key : str, optional
         The API application key for the client.
         If None then will source from the `BETFAIR_APP_KEY` env var.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -71,6 +74,7 @@ def get_cached_betfair_client(
         username=username,
         password=password,
         app_key=app_key,
+        proxy_url=proxy_url,
     )
 
 
@@ -146,6 +150,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             username=config.username,
             password=config.password,
             app_key=config.app_key,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_cached_betfair_instrument_provider(
@@ -206,6 +211,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             username=config.username,
             password=config.password,
             app_key=config.app_key,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,

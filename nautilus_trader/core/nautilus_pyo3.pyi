@@ -4448,6 +4448,7 @@ class HttpClient:
         keyed_quotas: list[tuple[str, Quota]] | None = None,
         default_quota: Quota | None = None,
         timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     async def request(
         self,
@@ -5724,6 +5725,7 @@ class BybitHttpClient:
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         recv_window_ms: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BybitHttpClient: ...
@@ -6694,6 +6696,7 @@ class OKXHttpClient:
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         is_demo: bool = False,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> OKXHttpClient: ...

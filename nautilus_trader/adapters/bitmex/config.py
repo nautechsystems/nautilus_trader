@@ -45,9 +45,9 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, default 5_000
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 10_000
         The expiration window (milliseconds) for signed requests.
         Note: Specified in milliseconds for consistency with other adapters,
@@ -114,9 +114,9 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, default 5_000
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 10_000
         The expiration window (milliseconds) for signed requests.
         Note: Specified in milliseconds for consistency with other adapters,

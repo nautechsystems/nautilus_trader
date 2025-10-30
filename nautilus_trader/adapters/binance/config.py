@@ -48,6 +48,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
@@ -67,6 +69,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     account_type: BinanceAccountType = BinanceAccountType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     us: bool = False
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
@@ -97,6 +100,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
@@ -148,6 +153,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     account_type: BinanceAccountType = BinanceAccountType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     us: bool = False
     testnet: bool = False
     use_gtd: bool = True

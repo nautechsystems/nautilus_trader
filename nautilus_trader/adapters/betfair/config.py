@@ -47,6 +47,8 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         set for the conflation interval. Betfair interprets this as using its default behaviour for
         conflation. The default typically applies conflation, so you need to ensure
         stream_conflate_ms=0 is explicitly set to guarantee no conflation.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -59,6 +61,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
     stream_conflate_ms: PositiveInt | None = None
+    proxy_url: str | None = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
@@ -91,6 +94,8 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         If True, orders received over the stream that aren't found in the cache
         will be silently ignored. This is useful when multiple trading nodes
         share the same Betfair account across different markets.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -104,3 +109,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     request_account_state_secs: NonNegativeInt = 300
     reconcile_market_ids_only: bool = False
     ignore_external_orders: bool = False
+    proxy_url: str | None = None

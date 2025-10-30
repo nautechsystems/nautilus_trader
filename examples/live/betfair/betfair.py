@@ -137,8 +137,8 @@ async def main(
     except Exception as e:
         print(e)
         print(traceback.format_exc())
-    finally:
-        return node
+
+    return node
 
 
 if __name__ == "__main__":
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.249237262"],
+        market_ids=["1.249828372"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()
