@@ -22,10 +22,21 @@ ignore = [
   { id = "RUSTSEC-2024-0436", reason = "paste crate is unmaintained but a transitive dependency via alloy" },
 
   # fast-float has soundness issues and is unmaintained, pulled in via hypersync-client
+  # hypersync-client is optional (feature flag), so advisory only applies when feature is enabled
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for polars upgrade
   # Consider migrating to fast-float2 fork once hypersync-client updates
-  { id = "RUSTSEC-2024-0379", reason = "fast-float is transitive via hypersync-client→polars-arrow, no safe upgrade available" },
-  { id = "RUSTSEC-2025-0003", reason = "fast-float is transitive via hypersync-client→polars-arrow, no safe upgrade available" },
+  { id = "RUSTSEC-2024-0379", reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)" },
+  { id = "RUSTSEC-2025-0003", reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)" },
+
+  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen→rustpython-parser
+  # This is dev-time only for generating .pyi stub files, not a runtime security risk
+  # TODO: Monitor https://github.com/PyO3/pyo3-stub-gen for migration away from rustpython-parser
+  { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0080", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0100", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 ]
 
 # =============================================================================
