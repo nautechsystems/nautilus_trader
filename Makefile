@@ -196,8 +196,8 @@ clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage
 #== Dependencies
 
 .PHONY: outdated
-outdated: check-outdated-installed  #-- Check for outdated dependencies
-	cargo outdated --workspace --root-deps-only
+outdated: check-edit-installed  #-- Check for outdated dependencies
+	cargo upgrade --dry-run --incompatible
 	uv tree --outdated --depth 1 --all-groups
 
 .PHONY: update cargo-update
@@ -294,10 +294,10 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 		exit 1; \
 	fi
 
-.PHONY: check-outdated-installed
-check-outdated-installed:  #-- Verify cargo-outdated is installed
-	@if ! cargo outdated --version >/dev/null 2>&1; then \
-		echo "cargo-outdated is not installed. You can install it using 'cargo install cargo-outdated'"; \
+.PHONY: check-edit-installed
+check-edit-installed:  #-- Verify cargo-edit is installed
+	@if ! cargo upgrade --version >/dev/null 2>&1; then \
+		echo "cargo-edit is not installed. You can install it using 'cargo install cargo-edit'"; \
 		exit 1; \
 	fi
 
