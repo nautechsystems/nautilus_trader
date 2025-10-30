@@ -43,6 +43,7 @@ def get_bitmex_http_client(
     recv_window_ms: int | None = None,
     max_requests_per_second: int | None = None,
     max_requests_per_minute: int | None = None,
+    proxy_url: str | None = None,
 ) -> nautilus_pyo3.BitmexHttpClient:
     """
     Cache and return a BitMEX HTTP client with the given key and secret.
@@ -75,6 +76,8 @@ def get_bitmex_http_client(
         Maximum REST burst rate (requests per second).
     max_requests_per_minute : int, optional
         Maximum REST rolling rate (requests per minute).
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -93,6 +96,7 @@ def get_bitmex_http_client(
         recv_window_ms=recv_window_ms,
         max_requests_per_second=max_requests_per_second,
         max_requests_per_minute=max_requests_per_minute,
+        proxy_url=proxy_url,
     )
 
 
@@ -175,6 +179,7 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
+            proxy_url=config.http_proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(
@@ -244,6 +249,7 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
+            proxy_url=config.http_proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(

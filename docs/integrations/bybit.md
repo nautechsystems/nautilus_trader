@@ -326,6 +326,8 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None` | Maximum retry attempts for REST/WebSocket recovery. |
 | `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 
 ### Execution client configuration options
 
@@ -347,6 +349,8 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |
 | `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `recv_window_ms`                 | `5,000`| Receive window (milliseconds) for signed REST requests. |
 | `ws_trade_timeout_secs`          | `5.0`  | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
 | `ws_auth_timeout_secs`           | `5.0`  | Timeout (seconds) waiting for auth WebSocket acknowledgements. |

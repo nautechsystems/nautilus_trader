@@ -44,6 +44,7 @@ def get_cached_bybit_http_client(
     retry_delay_ms: int | None = None,
     retry_delay_max_ms: int | None = None,
     recv_window_ms: int | None = None,
+    proxy_url: str | None = None,
 ) -> nautilus_pyo3.BybitHttpClient:
     """
     Cache and return a Bybit HTTP client with the given key and secret.
@@ -77,6 +78,8 @@ def get_cached_bybit_http_client(
         The maximum delay (milliseconds) between retries.
     recv_window_ms : int, optional
         The receive window (milliseconds) for Bybit HTTP requests.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -104,6 +107,7 @@ def get_cached_bybit_http_client(
         retry_delay_ms=retry_delay_ms,
         retry_delay_max_ms=retry_delay_max_ms,
         recv_window_ms=recv_window_ms,
+        proxy_url=proxy_url,
     )
 
 
@@ -188,6 +192,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,
@@ -256,6 +261,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,

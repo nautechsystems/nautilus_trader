@@ -245,6 +245,7 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None`  | Maximum retry attempts for REST/WebSocket recovery. |
 | `retry_delay_initial_ms`         | `None`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None`  | Maximum delay (milliseconds) between retries. |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP requests. |
 
 ### Execution client configuration options
 
@@ -259,6 +260,7 @@ The product types for each client must be specified in the configurations.
 | `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
+| `proxy_url`              | `None`  | Optional proxy URL for HTTP requests. |
 
 ### Execution clients
 

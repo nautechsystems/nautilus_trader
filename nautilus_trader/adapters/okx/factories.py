@@ -43,6 +43,7 @@ def get_cached_okx_http_client(
     retry_delay_ms: int | None = None,
     retry_delay_max_ms: int | None = None,
     is_demo: bool = False,
+    proxy_url: str | None = None,
 ) -> nautilus_pyo3.OKXHttpClient:
     """
     Cache and return a OKX HTTP client with the given key and secret.
@@ -69,6 +70,8 @@ def get_cached_okx_http_client(
         The maximum delay (milliseconds) between retries.
     is_demo : bool, default False
         If the client is for the OKX demo API.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -85,6 +88,7 @@ def get_cached_okx_http_client(
         retry_delay_ms=retry_delay_ms,
         retry_delay_max_ms=retry_delay_max_ms,
         is_demo=is_demo,
+        proxy_url=proxy_url,
     )
 
 
@@ -176,6 +180,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_okx_instrument_provider(
             client=client,
@@ -243,6 +248,7 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_okx_instrument_provider(
             client=client,
