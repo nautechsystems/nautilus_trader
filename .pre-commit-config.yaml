@@ -225,7 +225,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
+    rev: v0.14.2
     hooks:
       - id: ruff
         args: ["--fix"]

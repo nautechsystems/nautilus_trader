@@ -471,7 +471,7 @@ class TestParseFiltersExpr:
         """
         Malicious code must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -498,7 +498,7 @@ class TestParseFiltersExpr:
         """
         Non-field function calls must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -515,7 +515,7 @@ class TestParseFiltersExpr:
         """
         Attribute access on field objects is forbidden.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -532,7 +532,7 @@ class TestParseFiltersExpr:
         """
         Import attempts must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(

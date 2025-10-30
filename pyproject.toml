@@ -99,11 +99,11 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 dev = [
   "cython==3.1.6",
   "setuptools>=75",
-  "mypy>=1.18.2,<2.0.0",
+  "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
   "pre-commit>=4.3.0,<5.0.0",
   "requests>=2.32.5,<3.0.0",
-  "ruff==0.12.12", # Pinned to 0.12.12 for import sorting stability
+  "ruff==0.14.2", # Pinned to 0.14.2 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-requests>=2.32,<3.0",
   "types-toml>=0.10.2,<1.0.0",
@@ -216,6 +216,7 @@ ignore = [
   "PD901", # `df` is a bad variable name. Be kinder to your future self
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "RUF059", # Unpacked variable is never used (can still be clearer than a discard in some cases)
   "S101", # Use of assert detected (OK in test suite)
   "S105", # Use of hardcoded password (spurious)
   "S106", # Use of hardcoded password (spurious)
