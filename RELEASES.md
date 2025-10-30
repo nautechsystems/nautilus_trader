@@ -41,6 +41,7 @@ TBD
 - Repaired Bybit docs links in comment (#3125), thanks @sunlei
 - Repaired Bybit HTTP order place (#3127), thanks @sunlei
 - Upgraded implied-vol crate (#3115), thanks @faysou
+- Upgraded Rust (MSRV) to 1.91.0
 
 ### Documentation Updates
 - Added Polymarket historical data loading docs
