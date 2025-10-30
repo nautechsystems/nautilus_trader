@@ -47,6 +47,7 @@ def get_cached_hyperliquid_http_client(
     base_url: str | None = None,
     timeout_secs: int = 10,
     testnet: bool = False,
+    proxy_url: str | None = None,
 ) -> HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
@@ -72,6 +73,8 @@ def get_cached_hyperliquid_http_client(
         The timeout (seconds) for HTTP requests to Hyperliquid.
     testnet : bool, default False
         If the client is connecting to the testnet API.
+    proxy_url : str, optional
+        Optional HTTP proxy URL.
 
     Returns
     -------
@@ -79,17 +82,15 @@ def get_cached_hyperliquid_http_client(
         The Hyperliquid HTTP client instance.
 
     """
-    # If credentials are needed (for execution client), try to create authenticated client
-    # The from_env() method will read HYPERLIQUID_PK/HYPERLIQUID_TESTNET_PK from environment
-    try:
-        # Try to create an authenticated client from environment variables
-        return nautilus_pyo3.HyperliquidHttpClient.from_env()
-    except Exception:
-        # If no credentials in environment, create unauthenticated client (for data only)
-        return nautilus_pyo3.HyperliquidHttpClient(
-            is_testnet=testnet,
-            timeout_secs=timeout_secs,
-        )
+    # The constructor will read credentials from environment variables if not provided
+    # This ensures proxy_url is always honored regardless of credential source
+    return nautilus_pyo3.HyperliquidHttpClient(
+        private_key=private_key,
+        vault_address=vault_address,
+        is_testnet=testnet,
+        timeout_secs=timeout_secs,
+        proxy_url=proxy_url,
+    )
 
 
 @lru_cache(1)
@@ -161,6 +162,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
             base_url=config.base_url_http,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
@@ -221,6 +223,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
             base_url=config.base_url_http,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
+            proxy_url=config.http_proxy_url,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,

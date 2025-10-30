@@ -33,12 +33,13 @@ use crate::http::client::HyperliquidHttpClient;
 #[pymethods]
 impl HyperliquidHttpClient {
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None))]
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         // Try to get credentials from parameters or environment variables
         let pk = private_key.or_else(|| {
@@ -58,10 +59,10 @@ impl HyperliquidHttpClient {
         });
 
         if let Some(key) = pk {
-            Self::from_credentials(&key, vault.as_deref(), is_testnet, timeout_secs)
+            Self::from_credentials(&key, vault.as_deref(), is_testnet, timeout_secs, proxy_url)
                 .map_err(to_pyvalue_err)
         } else {
-            Self::new(is_testnet, timeout_secs).map_err(to_pyvalue_err)
+            Self::new(is_testnet, timeout_secs, proxy_url).map_err(to_pyvalue_err)
         }
     }
 
@@ -82,15 +83,22 @@ impl HyperliquidHttpClient {
     ///
     /// Returns an authenticated HyperliquidHttpClient or raises an error if credentials are invalid.
     #[staticmethod]
-    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None))]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
     fn py_from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        Self::from_credentials(private_key, vault_address, is_testnet, timeout_secs)
-            .map_err(to_pyvalue_err)
+        Self::from_credentials(
+            private_key,
+            vault_address,
+            is_testnet,
+            timeout_secs,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     /// Get perpetuals metadata as a JSON string.

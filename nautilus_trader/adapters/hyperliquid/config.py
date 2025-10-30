@@ -34,6 +34,12 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the Hyperliquid testnet API.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -41,6 +47,8 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt = 10
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
 
 
 class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -71,6 +79,12 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     Warnings
     --------
@@ -87,3 +101,5 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     http_timeout_secs: PositiveInt = 10
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None

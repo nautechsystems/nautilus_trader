@@ -101,9 +101,17 @@ impl HyperliquidDataClient {
                 is_testnet: config.is_testnet,
                 vault_address: None,
             };
-            HyperliquidHttpClient::with_credentials(&secrets, config.http_timeout_secs)?
+            HyperliquidHttpClient::with_credentials(
+                &secrets,
+                config.http_timeout_secs,
+                config.http_proxy_url.clone(),
+            )?
         } else {
-            HyperliquidHttpClient::new(config.is_testnet, config.http_timeout_secs)?
+            HyperliquidHttpClient::new(
+                config.is_testnet,
+                config.http_timeout_secs,
+                config.http_proxy_url.clone(),
+            )?
         };
 
         let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);
