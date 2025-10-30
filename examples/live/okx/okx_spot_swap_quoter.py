@@ -34,12 +34,13 @@ from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -105,7 +106,6 @@ class SpotSwapQuoter(Strategy):
         self._opened_position = False
 
     def on_start(self) -> None:
-        # Load instruments
         self.spot_instrument = self.cache.instrument(self.config.spot_instrument_id)
         if self.spot_instrument is None:
             self.log.error(
@@ -124,9 +124,7 @@ class SpotSwapQuoter(Strategy):
         self._spot_tick_size = self.spot_instrument.price_increment.as_decimal()
         offset_ticks = max(self.config.tob_offset_ticks, 0)
         self._spot_price_offset = self._spot_tick_size * offset_ticks
-        self._spot_order_qty = self.spot_instrument.make_qty(
-            self.config.spot_order_qty,
-        )
+        self._spot_order_qty = self.spot_instrument.make_qty(self.config.spot_order_qty)
 
         # Initialize swap parameters
         self._swap_tick_size = self.swap_instrument.price_increment.as_decimal()
@@ -150,9 +148,9 @@ class SpotSwapQuoter(Strategy):
         order = self.order_factory.market(
             instrument_id=self.config.spot_instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.spot_instrument.make_qty(self.config.spot_order_qty),
+            quantity=self._spot_order_qty,
             time_in_force=TimeInForce.GTC,
-            quote_quantity=True,  # Spot BUY orders always use quote quantity
+            quote_quantity=True,  # Market BUY orders use quote quantity (USDT)
         )
 
         self.submit_order(order)
@@ -178,34 +176,53 @@ class SpotSwapQuoter(Strategy):
         if self.spot_instrument is None:
             return
 
-        # Only reset order references if filled, not if rejected or cancelled
-        # This prevents spam-creating new orders when they get rejected
-        if self._spot_bid_order and self._spot_bid_order.status == OrderStatus.FILLED:
+        if not self.is_running:
+            # Don't create new orders if stopping
+            return
+
+        assert self._spot_order_qty is not None  # type checking
+
+        # Clear order references on any terminal status
+        if self._spot_bid_order and self._spot_bid_order.is_closed:
             self._spot_bid_order = None
-        if self._spot_ask_order and self._spot_ask_order.status == OrderStatus.FILLED:
+        if self._spot_ask_order and self._spot_ask_order.is_closed:
             self._spot_ask_order = None
 
-        bid_price = quote.bid_price.as_decimal() - self._spot_price_offset
-        ask_price = quote.ask_price.as_decimal() + self._spot_price_offset
+        # Calculate desired prices with bounds checking
+        desired_bid = quote.bid_price.as_decimal() - self._spot_price_offset
+        desired_ask = quote.ask_price.as_decimal() + self._spot_price_offset
 
+        # Guard against non-positive prices
+        min_price = self.spot_instrument.price_increment
+        if desired_bid <= 0:
+            self.log.warning(
+                f"Calculated bid price {desired_bid} <= 0, using min price {min_price}",
+            )
+            desired_bid = min_price
+        if desired_ask <= desired_bid:
+            self.log.warning(f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping")
+            return
+
+        # Place BID order if none exists
         if self._spot_bid_order is None:
-            price = self.spot_instrument.make_price(bid_price)
+            price = self.spot_instrument.make_price(desired_bid)
+            base_qty = self._spot_order_qty.as_decimal() / desired_bid
+            quantity = self.spot_instrument.make_qty(base_qty)
             order = self.order_factory.limit(
                 instrument_id=self.config.spot_instrument_id,
                 order_side=OrderSide.BUY,
                 price=price,
-                quantity=self._spot_order_qty,
+                quantity=quantity,
                 post_only=True,
-                quote_quantity=True,  # Spot BUY orders use quote quantity
+                quote_quantity=False,
             )
             self._spot_bid_order = order
             self.submit_order(order)
 
+        # Place ASK order if none exists
         if self._spot_ask_order is None:
-            price = self.spot_instrument.make_price(ask_price)
-            # Calculate base quantity from quote quantity
-            # spot_order_qty is in USDT, need to convert to ETH
-            base_qty = self.config.spot_order_qty / ask_price
+            price = self.spot_instrument.make_price(desired_ask)
+            base_qty = self._spot_order_qty.as_decimal() / desired_ask
             quantity = self.spot_instrument.make_qty(base_qty)
             order = self.order_factory.limit(
                 instrument_id=self.config.spot_instrument_id,
@@ -213,7 +230,7 @@ class SpotSwapQuoter(Strategy):
                 price=price,
                 quantity=quantity,
                 post_only=True,
-                quote_quantity=False,  # Spot SELL orders use base quantity
+                quote_quantity=False,
             )
             self._spot_ask_order = order
             self.submit_order(order)
@@ -222,38 +239,57 @@ class SpotSwapQuoter(Strategy):
         if self.swap_instrument is None:
             return
 
-        # Only reset order references if filled, not if rejected or cancelled
-        # This prevents spam-creating new orders when they get rejected
-        if self._swap_bid_order and self._swap_bid_order.status == OrderStatus.FILLED:
+        if not self.is_running:
+            # Don't create new orders if stopping
+            return
+
+        # Clear order references on any terminal status
+        if self._swap_bid_order and self._swap_bid_order.is_closed:
             self._swap_bid_order = None
-        if self._swap_ask_order and self._swap_ask_order.status == OrderStatus.FILLED:
+        if self._swap_ask_order and self._swap_ask_order.is_closed:
             self._swap_ask_order = None
 
-        bid_price = quote.bid_price.as_decimal() - self._swap_price_offset
-        ask_price = quote.ask_price.as_decimal() + self._swap_price_offset
+        # Calculate desired prices with bounds checking
+        desired_bid = quote.bid_price.as_decimal() - self._swap_price_offset
+        desired_ask = quote.ask_price.as_decimal() + self._swap_price_offset
 
+        # Guard against non-positive prices
+        min_price = self.swap_instrument.price_increment
+        if desired_bid <= 0:
+            self.log.warning(
+                f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}",
+            )
+            desired_bid = min_price
+        if desired_ask <= desired_bid:
+            self.log.warning(
+                f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping",
+            )
+            return
+
+        # Place BID order if none exists
         if self._swap_bid_order is None:
-            price = self.swap_instrument.make_price(bid_price)
+            price = self.swap_instrument.make_price(desired_bid)
             order = self.order_factory.limit(
                 instrument_id=self.config.swap_instrument_id,
                 order_side=OrderSide.BUY,
                 price=price,
                 quantity=self._swap_order_qty,
                 post_only=True,
-                quote_quantity=False,  # Swap orders always use base quantity
+                quote_quantity=False,
             )
             self._swap_bid_order = order
             self.submit_order(order)
 
+        # Place ASK order if none exists
         if self._swap_ask_order is None:
-            price = self.swap_instrument.make_price(ask_price)
+            price = self.swap_instrument.make_price(desired_ask)
             order = self.order_factory.limit(
                 instrument_id=self.config.swap_instrument_id,
                 order_side=OrderSide.SELL,
                 price=price,
                 quantity=self._swap_order_qty,
                 post_only=True,
-                quote_quantity=False,  # Swap orders always use base quantity
+                quote_quantity=False,
             )
             self._swap_ask_order = order
             self.submit_order(order)
@@ -294,29 +330,50 @@ class SpotSwapQuoter(Strategy):
         assert self.swap_instrument is not None  # type checking
 
         if self.config.close_positions_on_stop:
-            # Close spot positions with special handling for short positions
+            # Close spot positions created by this strategy only
             spot_positions = self.cache.positions_open(
                 instrument_id=self.config.spot_instrument_id,
+                strategy_id=self.id,
             )
             for position in spot_positions:
-                if position.is_short:
-                    # Close short position with market order using base quantity
-                    # Note: position.quantity is negative for short, abs() gives base size
-                    close_qty = self.spot_instrument.make_qty(abs(position.quantity))
-                    order = self.order_factory.market(
-                        instrument_id=self.config.spot_instrument_id,
-                        order_side=OrderSide.BUY,  # BUY to close short
-                        quantity=close_qty,
-                        time_in_force=TimeInForce.GTC,
-                        quote_quantity=False,  # Use base quantity to close exact position size
+                if position.side == PositionSide.SHORT:
+                    # SHORT positions require BUY to close
+                    # OKX spot margin requires quote_quantity=True for MARKET BUY
+                    # Convert position quantity (ETH) to quote amount (USDT)
+                    quote_tick = self.cache.quote_tick(self.config.spot_instrument_id)
+                    if quote_tick is None:
+                        self.log.warning(
+                            f"No quote tick available for {self.config.spot_instrument_id}, cannot close SHORT position",
+                        )
+                        continue
+
+                    # Use mid price to estimate quote amount needed
+                    mid_price = (quote_tick.bid_price + quote_tick.ask_price) / 2
+                    quote_amount = position.quantity.as_decimal() * mid_price
+
+                    # Create quantity in quote currency (USDT) using price precision
+                    quote_qty = Quantity(
+                        quote_amount,
+                        precision=self.spot_instrument.price_precision,
                     )
-                    self.submit_order(order)
+
                     self.log.info(
-                        f"Closing short position {position.id} with base quantity {close_qty}",
+                        f"Closing SHORT position {position.id} with quote quantity {quote_amount:.2f} USDT",
                         LogColor.YELLOW,
                     )
+
+                    # Submit market order with quote quantity
+                    order = self.order_factory.market(
+                        instrument_id=position.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=quote_qty,
+                        time_in_force=TimeInForce.GTC,
+                        reduce_only=True,
+                        quote_quantity=True,
+                    )
+                    self.submit_order(order, position_id=position.id)
                 else:
-                    # Close long position normally
+                    # LONG positions can use normal close_position
                     self.close_position(position)
 
             # Close swap positions
