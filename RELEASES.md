@@ -42,6 +42,8 @@ TBD
 - Repaired Bybit HTTP order place (#3127), thanks @sunlei
 - Upgraded implied-vol crate (#3115), thanks @faysou
 - Upgraded Rust (MSRV) to 1.91.0
+- Upgraded `pyo3` crate to v0.27.0
+- Upgraded `pyo3-async-runtimes` crate to v0.27.0
 
 ### Documentation Updates
 - Added Polymarket historical data loading docs

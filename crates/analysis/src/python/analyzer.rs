@@ -267,7 +267,9 @@ impl PortfolioAnalyzer {
             .map(|p| {
                 // Try to get the underlying Rust Position
                 // For now, we'll need to handle Cython Position by accessing its _mem field
-                p.getattr(py, "_mem")?.extract::<Position>(py)
+                p.getattr(py, "_mem")?
+                    .extract::<Position>(py)
+                    .map_err(Into::into)
             })
             .collect::<PyResult<Vec<Position>>>()?;
 

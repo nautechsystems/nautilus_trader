@@ -109,10 +109,11 @@ impl OrderBookDeltas {
     #[allow(unsafe_code)]
     pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
         let capsule: &Bound<'_, PyCapsule> = capsule
-            .downcast::<PyCapsule>()
+            .cast::<PyCapsule>()
             .expect("Error on downcast to `&PyCapsule`");
-        let data: &OrderBookDeltas_API =
-            unsafe { &*(capsule.pointer() as *const OrderBookDeltas_API) };
+        let data: &OrderBookDeltas_API = unsafe {
+            &*(capsule.pointer_checked(None).unwrap().as_ptr() as *const OrderBookDeltas_API)
+        };
         data.deref().clone()
     }
 

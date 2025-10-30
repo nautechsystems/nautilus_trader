@@ -46,7 +46,7 @@ impl UUID4 {
     /// Sets the state of the `UUID4` instance during unpickling.
     #[allow(clippy::needless_pass_by_value)]
     fn __setstate__(&mut self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
-        let bytes: &Bound<'_, PyBytes> = state.downcast_bound::<PyBytes>(py)?;
+        let bytes: &Bound<'_, PyBytes> = state.cast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
 
         if slice.len() != UUID4_LEN {

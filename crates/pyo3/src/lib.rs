@@ -72,7 +72,7 @@ fn _shutdown_nautilus_runtime() -> PyResult<()> {
 fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;
     let modules = sys.getattr("modules")?;
-    let sys_modules: &Bound<'_, PyAny> = modules.downcast()?;
+    let sys_modules: &Bound<'_, PyAny> = modules.cast()?;
 
     #[cfg(feature = "cython-compat")]
     let module_name = "nautilus_trader.core.nautilus_pyo3";

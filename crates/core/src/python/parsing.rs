@@ -47,11 +47,13 @@ pub fn get_required_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Stri
 /// Returns `PyErr` if the key is missing or value extraction fails.
 pub fn get_required<T>(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<T>
 where
-    T: for<'py> FromPyObject<'py>,
+    T: for<'a, 'py> FromPyObject<'a, 'py>,
+    for<'a, 'py> PyErr: From<<T as FromPyObject<'a, 'py>>::Error>,
 {
     dict.get_item(key)?
         .ok_or_else(|| PyKeyError::new_err(format!("Missing required key: {key}")))?
         .extract()
+        .map_err(PyErr::from)
 }
 
 /// Helper function to get an optional value from a Python dictionary.
@@ -66,14 +68,15 @@ where
 /// Returns `PyErr` if value extraction fails (but not if the key is missing or value is None).
 pub fn get_optional<T>(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<T>>
 where
-    T: for<'py> FromPyObject<'py>,
+    T: for<'a, 'py> FromPyObject<'a, 'py>,
+    for<'a, 'py> PyErr: From<<T as FromPyObject<'a, 'py>>::Error>,
 {
     match dict.get_item(key)? {
         Some(value) => {
             if value.is_none() {
                 Ok(None)
             } else {
-                Ok(Some(value.extract()?))
+                value.extract().map(Some).map_err(PyErr::from)
             }
         }
         None => Ok(None),
@@ -145,5 +148,6 @@ pub fn get_required_list<'py>(
 ) -> PyResult<Bound<'py, PyList>> {
     dict.get_item(key)?
         .ok_or_else(|| PyKeyError::new_err(format!("Missing required key: {key}")))?
-        .extract()
+        .downcast_into()
+        .map_err(Into::into)
 }

@@ -37,7 +37,7 @@ pub fn get_python_version() -> String {
         };
 
         let version_tuple: &Bound<'_, PyTuple> = version_info
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .expect("Failed to extract version_info");
 
         let major = version_tuple

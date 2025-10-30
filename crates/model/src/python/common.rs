@@ -205,7 +205,7 @@ mod tests {
                 py_dict
                     .get_item("type")
                     .unwrap()
-                    .downcast::<PyString>()
+                    .cast::<PyString>()
                     .unwrap()
                     .to_str()
                     .unwrap(),
@@ -215,7 +215,7 @@ mod tests {
                 py_dict
                     .get_item("ts_event")
                     .unwrap()
-                    .downcast::<PyInt>()
+                    .cast::<PyInt>()
                     .unwrap()
                     .extract::<i64>()
                     .unwrap(),
@@ -225,7 +225,7 @@ mod tests {
                 !py_dict
                     .get_item("is_reconciliation")
                     .unwrap()
-                    .downcast::<PyBool>()
+                    .cast::<PyBool>()
                     .unwrap()
                     .is_true()
             );
@@ -263,7 +263,7 @@ mod tests {
                 Value::String("item2".to_string()),
             ]);
             let binding = value_to_pyobject(py, &val).unwrap();
-            let py_list: &Bound<'_, PyList> = binding.bind(py).downcast::<PyList>().unwrap();
+            let py_list: &Bound<'_, PyList> = binding.bind(py).cast::<PyList>().unwrap();
 
             assert_eq!(py_list.len(), 2);
             assert_eq!(

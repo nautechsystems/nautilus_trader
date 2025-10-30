@@ -89,23 +89,17 @@ impl MarkPriceUpdate {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let instrument_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
         let value_raw = py_tuple
             .get_item(1)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<PriceRaw>()?;
-        let value_prec = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let value_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let ts_event = py_tuple
-            .get_item(7)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
-        let ts_init = py_tuple
-            .get_item(8)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
+        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.value = Price::from_raw(value_raw, value_prec);
@@ -301,23 +295,17 @@ impl IndexPriceUpdate {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let instrument_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
         let value_raw = py_tuple
             .get_item(1)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<PriceRaw>()?;
-        let value_prec = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let value_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let ts_event = py_tuple
-            .get_item(7)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
-        let ts_init = py_tuple
-            .get_item(8)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
+        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.value = Price::from_raw(value_raw, value_prec);

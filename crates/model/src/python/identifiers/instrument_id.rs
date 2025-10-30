@@ -37,18 +37,18 @@ impl InstrumentId {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         self.symbol = Symbol::new_checked(
             py_tuple
                 .get_item(0)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(to_pyvalue_err)?;
         self.venue = Venue::new_checked(
             py_tuple
                 .get_item(1)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(to_pyvalue_err)?;
