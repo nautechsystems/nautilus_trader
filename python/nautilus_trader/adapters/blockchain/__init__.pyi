@@ -13,50 +13,30 @@ class BlockchainDataClientConfig:
     Configuration for blockchain data clients.
     """
 
-    def __init__(
-        self,
-        chain: nautilus_trader.model.Chain,
-        dex_ids: typing.Sequence[nautilus_trader.model.DexType],
-        http_rpc_url: builtins.str,
-        rpc_requests_per_second: builtins.int | None,
-        multicall_calls_per_rpc_request: builtins.int | None,
-        wss_rpc_url: builtins.str | None,
-        use_hypersync_for_live_data: builtins.bool,
-        from_block: builtins.int | None,
-        pool_filters: DexPoolFilters | None,
-        postgres_cache_database_config: (
-            nautilus_trader.infrastructure.PostgresConnectOptions | None
-        ),
-    ) -> None:
+    def __init__(self, chain: nautilus_trader.model.Chain, dex_ids: typing.Sequence[nautilus_trader.model.DexType], http_rpc_url: builtins.str, rpc_requests_per_second: builtins.int | None, multicall_calls_per_rpc_request: builtins.int | None, wss_rpc_url: builtins.str | None, use_hypersync_for_live_data: builtins.bool, from_block: builtins.int | None, pool_filters: DexPoolFilters | None, postgres_cache_database_config: nautilus_trader.infrastructure.PostgresConnectOptions | None) -> None:
         r"""
         Creates a new `BlockchainDataClientConfig` instance.
         """
-
     def chain(self) -> nautilus_trader.model.Chain:
         r"""
         Returns the chain configuration.
         """
-
     def http_rpc_url(self) -> builtins.str:
         r"""
         Returns the HTTP RPC URL.
         """
-
     def wss_rpc_url(self) -> builtins.str | None:
         r"""
         Returns the WebSocket RPC URL.
         """
-
     def rpc_requests_per_second(self) -> builtins.int | None:
         r"""
         Returns the RPC requests per second limit.
         """
-
     def use_hypersync_for_live_data(self) -> builtins.bool:
         r"""
         Returns whether to use HyperSync for live data.
         """
-
     def from_block(self) -> builtins.int | None:
         r"""
         Returns the starting block for sync.
@@ -69,6 +49,7 @@ class BlockchainDataClientFactory:
     This factory creates `BlockchainDataClient` instances configured for different blockchain networks
     (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
     """
+
 
 class DexPoolFilters:
     r"""

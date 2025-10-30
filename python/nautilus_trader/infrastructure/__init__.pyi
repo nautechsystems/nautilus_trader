@@ -6,38 +6,26 @@ import typing
 
 
 class PostgresConnectOptions:
-    def __init__(
-        self,
-        host: builtins.str,
-        port: builtins.int,
-        user: builtins.str,
-        password: builtins.str,
-        database: builtins.str,
-    ) -> None:
+    def __init__(self, host: builtins.str, port: builtins.int, user: builtins.str, password: builtins.str, database: builtins.str) -> None:
         r"""
         Creates a new `PostgresConnectOptions` instance.
         """
-
     def host(self) -> builtins.str:
         r"""
         Returns the host.
         """
-
     def port(self) -> builtins.int:
         r"""
         Returns the port.
         """
-
     def username(self) -> builtins.str:
         r"""
         Returns the username.
         """
-
     def password(self) -> builtins.str:
         r"""
         Returns the password.
         """
-
     def database(self) -> builtins.str:
         r"""
         Returns the database.

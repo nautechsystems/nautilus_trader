@@ -10,11 +10,7 @@ class DataType:
     Represents a data type including metadata.
     """
 
-    def __init__(
-        self,
-        type_name: builtins.str,
-        metadata: typing.Mapping[builtins.str, builtins.str] | None,
-    ) -> None: ...
+    def __init__(self, type_name: builtins.str, metadata: typing.Mapping[builtins.str, builtins.str] | None) -> None: ...
     def py_type_name(self) -> builtins.str: ...
     def py_metadata(self) -> builtins.dict[builtins.str, builtins.str] | None: ...
     def py_topic(self) -> builtins.str: ...
@@ -76,6 +72,7 @@ class Dex:
     r"""
     Represents a decentralized exchange (DEX) in a blockchain ecosystem.
     """
+
 
 class Blockchain(Enum):
     r"""
@@ -167,5 +164,6 @@ class Chain:
     r"""
     Defines a blockchain with its unique identifiers and connection details for network interaction.
     """
+
 
 __all__ = ["AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"]
