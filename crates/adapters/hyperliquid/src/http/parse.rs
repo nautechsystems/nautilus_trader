@@ -303,7 +303,7 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        super::models::{PerpAsset, SpotPair, SpotToken},
+        super::models::{HyperliquidL2Book, PerpAsset, SpotPair, SpotToken},
         *,
     };
 
@@ -358,6 +358,78 @@ mod tests {
         assert_eq!(delist.symbol, "DELIST-USD-PERP");
         assert_eq!(delist.base, "DELIST");
         assert!(!delist.active); // Delisted instruments are marked as inactive
+    }
+
+    fn load_test_data<T>(filename: &str) -> T
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let path = format!("test_data/{}", filename);
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[test]
+    fn test_parse_perp_instruments_from_real_data() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+
+        let defs = parse_perp_instruments(&meta).unwrap();
+
+        // Should have 3 instruments (BTC, ETH, ATOM)
+        assert_eq!(defs.len(), 3);
+
+        // Validate BTC
+        let btc = &defs[0];
+        assert_eq!(btc.symbol, "BTC-USD-PERP");
+        assert_eq!(btc.base, "BTC");
+        assert_eq!(btc.quote, "USD");
+        assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
+        assert_eq!(btc.size_decimals, 5);
+        assert_eq!(btc.max_leverage, Some(40));
+        assert!(btc.active);
+
+        // Validate ETH
+        let eth = &defs[1];
+        assert_eq!(eth.symbol, "ETH-USD-PERP");
+        assert_eq!(eth.base, "ETH");
+        assert_eq!(eth.size_decimals, 4);
+        assert_eq!(eth.max_leverage, Some(25));
+
+        // Validate ATOM
+        let atom = &defs[2];
+        assert_eq!(atom.symbol, "ATOM-USD-PERP");
+        assert_eq!(atom.base, "ATOM");
+        assert_eq!(atom.size_decimals, 2);
+        assert_eq!(atom.max_leverage, Some(5));
+    }
+
+    #[test]
+    fn test_deserialize_l2_book_from_real_data() {
+        let book: HyperliquidL2Book = load_test_data("http_l2_book_btc.json");
+
+        // Validate basic structure
+        assert_eq!(book.coin, "BTC");
+        assert_eq!(book.levels.len(), 2); // [bids, asks]
+        assert_eq!(book.levels[0].len(), 5); // 5 bid levels
+        assert_eq!(book.levels[1].len(), 5); // 5 ask levels
+
+        // Verify bids and asks are properly ordered
+        let bids = &book.levels[0];
+        let asks = &book.levels[1];
+
+        // Bids should be descending (highest first)
+        for i in 1..bids.len() {
+            let prev_price = bids[i - 1].px.parse::<f64>().unwrap();
+            let curr_price = bids[i].px.parse::<f64>().unwrap();
+            assert!(prev_price >= curr_price, "Bids should be descending");
+        }
+
+        // Asks should be ascending (lowest first)
+        for i in 1..asks.len() {
+            let prev_price = asks[i - 1].px.parse::<f64>().unwrap();
+            let curr_price = asks[i].px.parse::<f64>().unwrap();
+            assert!(prev_price <= curr_price, "Asks should be ascending");
+        }
     }
 
     #[rstest]
