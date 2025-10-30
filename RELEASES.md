@@ -30,6 +30,7 @@ TBD
 
 ### Fixes
 - Fixed spawned order client_id caching in `ExecAlgorithm`, thanks for reporting @kirill-gr1
+- Fixed Binance instrument info dict JSON serialization, thanks for reporting @woung717
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
