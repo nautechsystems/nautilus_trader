@@ -86,12 +86,12 @@ repos:
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.8
     hooks:
-      - id: actionlint-docker
+      - id: actionlint
         name: actionlint (syntax/structure)
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.16.0
+    rev: v1.16.1
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -239,22 +239,21 @@ repos:
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
-  # Temporarily disabled due to untokenize incompatibility with Python 3.14
-  # - repo: https://github.com/PyCQA/docformatter
-  #   rev: v1.7.7
-  #   hooks:
-  #     - id: docformatter
-  #       language_version: python3.13  # Pin to 3.13 due to untokenize incompatibility with 3.14
-  #       additional_dependencies: [tomli]
-  #       args: [
-  #         "--wrap-summaries", "88",
-  #         "--wrap-descriptions", "88",
-  #         "--make-summary-multi-line",
-  #         "--pre-summary-newline",
-  #         "--blank",
-  #         "--recursive",
-  #         "--in-place",
-  #       ]
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.7
+    hooks:
+      - id: docformatter
+        language_version: python3.13  # Pin to 3.13 due to untokenize incompatibility with 3.14
+        additional_dependencies: [tomli]
+        args: [
+          "--wrap-summaries", "88",
+          "--wrap-descriptions", "88",
+          "--make-summary-multi-line",
+          "--pre-summary-newline",
+          "--blank",
+          "--recursive",
+          "--in-place",
+        ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
@@ -275,7 +274,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.5  # Must match uv-version file
+    rev: 0.9.6  # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
