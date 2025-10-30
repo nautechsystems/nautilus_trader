@@ -10,6 +10,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Libraries",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Scientific/Engineering",
@@ -21,11 +22,13 @@ classifiers = [
 ]
 license = { text = "LGPL-3.0-or-later" }
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
   "click>=8.0.0,<9.0.0",
   "fsspec>=2025.2.0,<2026.0.0",
-  "msgspec>=0.19.0,<1.0.0",
+  "msgspec>=0.19.0,<1.0.0; python_version < '3.14'",
+  "msgspec @ git+https://github.com/jcrist/msgspec.git@0c764a6ed7c641918e66963b9a41367d288a8abe ; python_version >= '3.14' and sys_platform != 'win32'", # Temporary: waiting for 0.19.1+ release with Python 3.14 support
+  "msgspec>=0.19.0,<1.0.0; python_version >= '3.14' and sys_platform == 'win32'", # Fallback for Windows 3.14 (untested, may not work - see README)
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",
   "portion>=2.6.1",
@@ -73,16 +76,19 @@ generate-setup-file = false
 
 [project.optional-dependencies]
 betfair = ["betfair-parser==0.17.2"] # Pinned to 0.17.2 for stability
-ib = ["defusedxml>=0.7.1,<1.0.0", "nautilus-ibapi==10.30.1"]
+ib = [
+  "defusedxml>=0.7.1,<1.0.0; python_version < '3.14'",
+  "nautilus-ibapi==10.30.1; python_version < '3.14'",
+]
 docker = ["docker>=7.1.0,<8.0.0"]
 dydx = [
-  "v4-proto==7.0.5",
-  "grpcio==1.68.1",
-  "protobuf==5.29.1",
-  "bech32>=1.2.0,<2.0.0",
-  "ecdsa>=0.19.1,<1.0.0",
-  "bip-utils>=2.10.0,<3.0.0",
-  "pycryptodome>=3.20.0,<4.0.0",
+  "v4-proto==7.0.5; python_version < '3.14'",
+  "grpcio==1.68.1; python_version < '3.14'",
+  "protobuf==5.29.1; python_version < '3.14'",
+  "bech32>=1.2.0,<2.0.0; python_version < '3.14'",
+  "ecdsa>=0.19.1,<1.0.0; python_version < '3.14'",
+  "bip-utils>=2.10.0,<3.0.0; python_version < '3.14'",
+  "pycryptodome>=3.20.0,<4.0.0; python_version < '3.14'",
 ]
 polymarket = [
   "py-clob-client==0.28.0,<1.0.0", # Pinned to 0.28.0 for stability
@@ -93,7 +99,6 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 dev = [
   "cython==3.1.6",
   "setuptools>=75",
-  "docformatter>=1.7.7,<2.0.0",
   "mypy>=1.18.2,<2.0.0",
   "pandas-stubs>=2.3.2,<3.0.0",
   "pre-commit>=4.3.0,<5.0.0",

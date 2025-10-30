@@ -2,7 +2,13 @@
 
 Released on TBD (UTC).
 
+This release adds support for Python 3.14 with the following limitations:
+- Windows platform: Python 3.14 not supported yet (available on Python 3.12-3.13)
+- dYdX adapter extras (`[dydx]`) unavailable due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
+- Interactive Brokers adapter extras (`[ib]`) unavailable due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
+
 ### Enhancements
+- Added support for Python 3.14
 - Added initial backtest visualization tearsheets with plotly
 - Added `proxy_url` support for HTTP clients
 - Added `CAGR` portfolio statistic
@@ -16,18 +22,23 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Dropped support for Python 3.11
 - Removed `use_ws_trade_api` config option from Bybit execution client (using WebSocket trade API only)
+- dYdX adapter extras (`[dydx]`) unavailable on Python 3.14 due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
+- Interactive Brokers adapter extras (`[ib]`) unavailable on Python 3.14 due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
 
 ### Security
 TBD
 
 ### Fixes
-- Fixed OKX spot margin position reports for borrowing
 - Fixed spawned order client_id caching in `ExecAlgorithm`, thanks for reporting @kirill-gr1
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
+- Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
 - Ported Bybit integration adapter to Rust
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
+- Repaired OKX spot margin position reports for borrowing, thanks @sunlei
+- Repaired Bybit docs links in comment (#3125), thanks @sunlei
+- Repaired Bybit HTTP order place (#3127), thanks @sunlei
 - Upgraded implied-vol crate (#3115), thanks @faysou
 
 ### Documentation Updates

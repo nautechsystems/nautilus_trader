@@ -10,6 +10,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Software Development :: Libraries",
   "Topic :: Scientific/Engineering",
@@ -21,7 +22,7 @@ classifiers = [
 ]
 license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",

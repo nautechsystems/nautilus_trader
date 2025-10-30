@@ -123,7 +123,7 @@ chrono = { version = "0.4.42", default-features = false, features = [
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.50", features = ["derive", "env"] }
+clap = { version = "4.5.51", features = ["derive", "env"] }
 compare = "0.1.0"
 csv = "1.4.0"
 dashmap = "6.1.0"

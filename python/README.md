@@ -48,7 +48,7 @@ All commands should be run from within this `python/` directory.
 ### Prerequisites
 
 - Rust toolchain (via `rustup`).
-- Python 3.12-3.13
+- Python 3.12-3.14
 - A virtual environment activated at the project root (e.g., `.venv`).
 - `patchelf` (Linux only) - required for setting rpath on the compiled extension. Install with `uv pip install patchelf`.
 
@@ -110,8 +110,8 @@ pip install --index-url https://packages.nautechsystems.io/v2/simple/ --pre naut
 
 | Platform         | Python  | Develop | Nightly |
 | :--------------- | :------ | :------ | :------ |
-| `Linux (x86_64)` | 3.12-13 | ✓       | ✓       |
-| `macOS (ARM64)`  | 3.12-13 | ✓       | ✓       |
+| `Linux (x86_64)` | 3.12-14 | ✓       | ✓       |
+| `macOS (ARM64)`  | 3.12-14 | ✓       | ✓       |
 
 The `--pre` flag is required because wheels are tagged as development releases (e.g., `0.2.0.dev20250601`).
 
