@@ -460,7 +460,7 @@ async fn handle_get_orders_realtime(
     }
 
     // Track settle coin queries
-    let settle_coin = query.get("settleCoin").map(|s| s.to_string());
+    let settle_coin = query.get("settleCoin").map(|s| s.clone());
     {
         let mut queries = state.settle_coin_queries.lock().await;
         queries.push(("realtime".to_string(), settle_coin.clone()));
@@ -474,36 +474,31 @@ async fn handle_get_orders_realtime(
     let mut orders = load_test_data("http_get_orders_realtime.json");
 
     // Make order IDs unique per settle coin for regression testing
-    if let Some(coin) = &settle_coin {
-        if let Some(result) = orders.get_mut("result") {
-            if let Some(list) = result.get_mut("list") {
-                if let Some(array) = list.as_array_mut() {
-                    for order in array.iter_mut() {
-                        if let Some(order_obj) = order.as_object_mut() {
-                            if let Some(order_id) = order_obj.get("orderId") {
-                                let base_id = order_id.as_str().unwrap_or("");
-                                order_obj.insert(
-                                    "orderId".to_string(),
-                                    json!(format!("{}-{}", base_id, coin)),
-                                );
-                            }
-                        }
-                    }
-                }
+    if let Some(coin) = &settle_coin
+        && let Some(result) = orders.get_mut("result")
+        && let Some(list) = result.get_mut("list")
+        && let Some(array) = list.as_array_mut()
+    {
+        for order in array.iter_mut() {
+            if let Some(order_obj) = order.as_object_mut()
+                && let Some(order_id) = order_obj.get("orderId")
+            {
+                let base_id = order_id.as_str().unwrap_or("");
+                order_obj.insert(
+                    "orderId".to_string(),
+                    json!(format!("{}-{}", base_id, coin)),
+                );
             }
         }
     }
 
-    if let Some(limit_str) = query.get("limit") {
-        if let Ok(limit) = limit_str.parse::<usize>() {
-            if let Some(result) = orders.get_mut("result") {
-                if let Some(list) = result.get_mut("list") {
-                    if let Some(array) = list.as_array_mut() {
-                        array.truncate(limit);
-                    }
-                }
-            }
-        }
+    if let Some(limit_str) = query.get("limit")
+        && let Ok(limit) = limit_str.parse::<usize>()
+        && let Some(result) = orders.get_mut("result")
+        && let Some(list) = result.get_mut("list")
+        && let Some(array) = list.as_array_mut()
+    {
+        array.truncate(limit);
     }
 
     Json(orders).into_response()
@@ -568,7 +563,7 @@ async fn handle_get_orders_history_reconciliation(
     }
 
     // Track settle coin queries
-    let settle_coin = query.get("settleCoin").map(|s| s.to_string());
+    let settle_coin = query.get("settleCoin").map(|s| s.clone());
     {
         let mut queries = state.settle_coin_queries.lock().await;
         queries.push(("history".to_string(), settle_coin.clone()));
@@ -582,36 +577,31 @@ async fn handle_get_orders_history_reconciliation(
     let mut orders = load_test_data("http_get_orders_history_with_duplicate.json");
 
     // Make order IDs unique per settle coin for regression testing
-    if let Some(coin) = &settle_coin {
-        if let Some(result) = orders.get_mut("result") {
-            if let Some(list) = result.get_mut("list") {
-                if let Some(array) = list.as_array_mut() {
-                    for order in array.iter_mut() {
-                        if let Some(order_obj) = order.as_object_mut() {
-                            if let Some(order_id) = order_obj.get("orderId") {
-                                let base_id = order_id.as_str().unwrap_or("");
-                                order_obj.insert(
-                                    "orderId".to_string(),
-                                    json!(format!("{}-{}", base_id, coin)),
-                                );
-                            }
-                        }
-                    }
-                }
+    if let Some(coin) = &settle_coin
+        && let Some(result) = orders.get_mut("result")
+        && let Some(list) = result.get_mut("list")
+        && let Some(array) = list.as_array_mut()
+    {
+        for order in array.iter_mut() {
+            if let Some(order_obj) = order.as_object_mut()
+                && let Some(order_id) = order_obj.get("orderId")
+            {
+                let base_id = order_id.as_str().unwrap_or("");
+                order_obj.insert(
+                    "orderId".to_string(),
+                    json!(format!("{}-{}", base_id, coin)),
+                );
             }
         }
     }
 
-    if let Some(limit_str) = query.get("limit") {
-        if let Ok(limit) = limit_str.parse::<usize>() {
-            if let Some(result) = orders.get_mut("result") {
-                if let Some(list) = result.get_mut("list") {
-                    if let Some(array) = list.as_array_mut() {
-                        array.truncate(limit);
-                    }
-                }
-            }
-        }
+    if let Some(limit_str) = query.get("limit")
+        && let Ok(limit) = limit_str.parse::<usize>()
+        && let Some(result) = orders.get_mut("result")
+        && let Some(list) = result.get_mut("list")
+        && let Some(array) = list.as_array_mut()
+    {
+        array.truncate(limit);
     }
 
     Json(orders).into_response()

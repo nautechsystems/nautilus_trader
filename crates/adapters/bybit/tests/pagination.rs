@@ -483,7 +483,7 @@ fn test_position_list_response_with_cursor() {
 #[rstest]
 fn test_pagination_loop_pattern() {
     // Simulate pagination responses
-    let responses = vec![
+    let responses = [
         r#"{"retCode": 0, "retMsg": "OK", "result": {"list": ["item1", "item2"], "nextPageCursor": "page2"}, "time": 123}"#,
         r#"{"retCode": 0, "retMsg": "OK", "result": {"list": ["item3", "item4"], "nextPageCursor": "page3"}, "time": 123}"#,
         r#"{"retCode": 0, "retMsg": "OK", "result": {"list": ["item5"], "nextPageCursor": ""}, "time": 123}"#,
@@ -510,7 +510,7 @@ fn test_pagination_loop_pattern() {
         page_count += 1;
 
         let cursor = response.result.next_page_cursor;
-        if cursor.is_none() || cursor.as_ref().map_or(true, |c| c.is_empty()) {
+        if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
             break;
         }
     }
@@ -526,7 +526,7 @@ fn test_pagination_stops_on_empty_cursor() {
     let cursor: Option<String> = Some("".to_string());
 
     // This is the termination condition used in the pagination loops
-    let should_stop = cursor.is_none() || cursor.as_ref().map_or(true, |c| c.is_empty());
+    let should_stop = cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty());
 
     assert!(should_stop, "Empty cursor should terminate pagination");
 }
@@ -537,7 +537,7 @@ fn test_pagination_continues_with_valid_cursor() {
     let cursor: Option<String> = Some("next-page".to_string());
 
     // This is the termination condition used in the pagination loops
-    let should_stop = cursor.is_none() || cursor.as_ref().map_or(true, |c| c.is_empty());
+    let should_stop = cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty());
 
     assert!(!should_stop, "Valid cursor should continue pagination");
 }
