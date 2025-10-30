@@ -8,9 +8,9 @@ Released on TBD (UTC).
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
+- Added `PolymarketDataLoader` for loading historical data with docs and example
 - Introduced `PositionAdjusted` events for tracking quantity/PnL changes outside normal order fills (base currency commissions, funding payments, manual adjustments)
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
-- Ported Bybit integration adapter to Rust
 
 ### Breaking Changes
 - Dropped support for Python 3.11
@@ -25,11 +25,12 @@ TBD
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
+- Ported Bybit integration adapter to Rust
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
 - Upgraded implied-vol crate (#3115), thanks @faysou
 
 ### Documentation Updates
-None
+- Added Polymarket historical data loading docs
 
 ### Deprecations
 None

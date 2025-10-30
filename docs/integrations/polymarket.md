@@ -438,6 +438,7 @@ The following limitations and considerations are currently known:
 | `max_retries`                    | `None`       | Maximum retry attempts for submit/cancel requests. |
 | `retry_delay_initial_ms`         | `None`       | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None`       | Maximum delay (milliseconds) between retries. |
+| `ack_timeout_secs`               | `5.0`        | Timeout (seconds) to wait for order/trade acknowledgment from cache. |
 | `generate_order_history_from_trades` | `False` | Generate synthetic order history from trade reports when `True` (experimental). |
 | `log_raw_ws_messages`            | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 
@@ -445,3 +446,239 @@ The following limitations and considerations are currently known:
 For additional features or to contribute to the Polymarket adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
 :::
+
+## Historical data loading
+
+The `PolymarketDataLoader` provides methods for fetching and parsing historical market data
+for research and backtesting purposes. The loader integrates with multiple Polymarket APIs to provide the required data.
+
+### Data sources
+
+The loader fetches data from three primary sources:
+
+1. **Polymarket Gamma API** - Market metadata, instrument details, and active market listings.
+2. **DomeAPI** - Orderbook history snapshots (available from October 14th, 2025).
+3. **Polymarket CLOB API** - Price/trade history timeseries.
+
+### Finding markets
+
+Use the provided utility scripts to discover active markets:
+
+```bash
+# List all active markets
+python nautilus_trader/adapters/polymarket/scripts/active_markets.py
+
+# List BTC and ETH UpDown markets specifically
+python nautilus_trader/adapters/polymarket/scripts/list_updown_markets.py
+```
+
+### Basic usage
+
+```python
+from datetime import UTC, datetime, timedelta
+from nautilus_trader.adapters.polymarket import PolymarketDataLoader
+from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.core.datetime import millis_to_nanos
+
+# Initialize the loader
+loader = PolymarketDataLoader()
+
+# Find a market by slug
+market = loader.find_market_by_slug("fed-rate-hike-in-2025")
+condition_id = market["conditionId"]
+
+# Fetch detailed market information
+market_details = loader.fetch_market_details(condition_id)
+token = market_details["tokens"][0]
+token_id = token["token_id"]
+
+# Create the instrument
+ts_init = millis_to_nanos(int(datetime.now(tz=UTC).timestamp() * 1000))
+instrument = parse_instrument(
+    market_info=market_details,
+    token_id=token_id,
+    outcome=token["outcome"],
+    ts_init=ts_init,
+)
+```
+
+### Fetching orderbook history
+
+The `fetch_orderbook_history()` method retrieves orderbook snapshots from DomeAPI:
+
+```python
+# Define time range
+end_time = datetime.now(tz=UTC)
+start_time = end_time - timedelta(hours=24)
+start_time_ms = int(start_time.timestamp() * 1000)
+end_time_ms = int(end_time.timestamp() * 1000)
+
+# Fetch orderbook snapshots (automatic pagination handling)
+orderbook_snapshots = loader.fetch_orderbook_history(
+    token_id=token_id,
+    start_time_ms=start_time_ms,
+    end_time_ms=end_time_ms,
+)
+
+# Parse to NautilusTrader OrderBookDeltas
+book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots, instrument)
+```
+
+:::note
+DomeAPI orderbook history is only available from **October 14th, 2025** onwards. For earlier data, rely on the price history endpoint.
+:::
+
+### Fetching price history
+
+The `fetch_price_history()` method retrieves price timeseries data from the CLOB API:
+
+```python
+# Convert to seconds for CLOB API
+start_time_s = int(start_time.timestamp())
+end_time_s = int(end_time.timestamp())
+
+# Fetch price history (1-minute fidelity)
+price_history = loader.fetch_price_history(
+    token_id=token_id,
+    start_ts=start_time_s,
+    end_ts=end_time_s,
+    fidelity=1,  # 1 = 1 minute resolution
+)
+
+# Parse to NautilusTrader TradeTicks
+trades = loader.parse_price_history(price_history, instrument)
+```
+
+:::warning
+The `parse_price_history()` method creates synthetic `TradeTick` objects from price points,
+as the price history endpoint doesn't include actual trade sizes. Trade sizes are set to `1.0`
+and the aggressor side is inferred from price movements.
+:::
+
+### Complete backtest example
+
+A complete working example is available at `examples/backtest/polymarket_simple_quoter.py`:
+
+```python
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket import PolymarketDataLoader
+from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.enums import AccountType, BookType, OmsType
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Money
+
+# Initialize loader and fetch market data
+loader = PolymarketDataLoader()
+market = loader.find_market_by_slug("fed-rate-hike-in-2025")
+market_details = loader.fetch_market_details(market["conditionId"])
+token = market_details["tokens"][0]
+
+# Create instrument
+ts_init = millis_to_nanos(int(datetime.now(tz=UTC).timestamp() * 1000))
+instrument = parse_instrument(
+    market_info=market_details,
+    token_id=token["token_id"],
+    outcome=token["outcome"],
+    ts_init=ts_init,
+)
+
+# Fetch historical data
+end_time = datetime.now(tz=UTC)
+start_time = end_time - timedelta(hours=24)
+
+orderbook_snapshots = loader.fetch_orderbook_history(
+    token_id=token["token_id"],
+    start_time_ms=int(start_time.timestamp() * 1000),
+    end_time_ms=int(end_time.timestamp() * 1000),
+)
+
+price_history = loader.fetch_price_history(
+    token_id=token["token_id"],
+    start_ts=int(start_time.timestamp()),
+    end_ts=int(end_time.timestamp()),
+)
+
+# Parse data
+book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots, instrument)
+trades = loader.parse_price_history(price_history, instrument)
+
+# Configure and run backtest
+config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
+engine = BacktestEngine(config=config)
+
+engine.add_venue(
+    venue=POLYMARKET_VENUE,
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    base_currency=USDC_POS,
+    starting_balances=[Money(10_000, USDC_POS)],
+    book_type=BookType.L2_MBP,
+)
+
+engine.add_instrument(instrument)
+engine.add_data(book_deltas)
+engine.add_data(trades)
+
+strategy_config = OrderBookImbalanceConfig(
+    instrument_id=instrument.id,
+    max_trade_size=Decimal("10"),
+)
+
+strategy = OrderBookImbalance(config=strategy_config)
+engine.add_strategy(strategy=strategy)
+engine.run()
+
+# Display results
+print(engine.trader.generate_account_report(POLYMARKET_VENUE))
+```
+
+Run the complete example:
+
+```bash
+python examples/backtest/polymarket_simple_quoter.py
+```
+
+### API reference
+
+#### Data loader methods
+
+**Fetching Methods:**
+
+- `fetch_markets(active=True, closed=False, archived=False, limit=100)` - Fetch markets from Gamma API
+- `find_market_by_slug(slug)` - Find a specific market by its slug
+- `fetch_market_details(condition_id)` - Fetch detailed market information from CLOB API
+- `fetch_orderbook_history(token_id, start_time_ms, end_time_ms, limit=500)` - Fetch orderbook snapshots with automatic pagination
+- `fetch_price_history(token_id, start_ts, end_ts, fidelity=1)` - Fetch price history timeseries
+
+**Parsing Methods:**
+
+- `parse_orderbook_snapshots(snapshots, instrument)` - Convert raw snapshots to `OrderBookDeltas`
+- `parse_price_history(history, instrument)` - Convert price data to `TradeTick` objects
+
+:::tip
+All parsing methods use the instrument's `make_price()` and `make_qty()` methods to ensure
+correct precision handling, which is critical for accurate backtesting.
+:::
+
+### Helper functions
+
+The adapter provides utility functions for working with Polymarket identifiers:
+
+```python
+from nautilus_trader.adapters.polymarket import get_polymarket_instrument_id
+
+# Create NautilusTrader InstrumentId from Polymarket identifiers
+instrument_id = get_polymarket_instrument_id(
+    condition_id="0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221",
+    token_id="60487116984468020978247225474488676749601001829886755968952521846780452448915"
+)
+```

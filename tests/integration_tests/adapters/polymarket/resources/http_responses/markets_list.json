@@ -1,0 +1,41 @@
+[
+  {
+    "conditionId": "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221",
+    "questionId": "0x12345",
+    "slug": "fed-rate-hike-in-2025",
+    "question": "Fed rate hike in 2025?",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "clobTokenIds": [
+      "60487116984468020978247225474488676749601001829886755968952521846780452448915",
+      "81104637750588840860328515305303028259865221573278091453716127842023614249200"
+    ]
+  },
+  {
+    "conditionId": "0xabc123",
+    "questionId": "0x67890",
+    "slug": "btc-price-above-100k",
+    "question": "Will BTC be above $100k by end of 2025?",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "clobTokenIds": [
+      "12345678901234567890123456789012345678901234567890123456789012345678901234567",
+      "98765432109876543210987654321098765432109876543210987654321098765432109876543"
+    ]
+  },
+  {
+    "conditionId": "0xdef456",
+    "questionId": "0xabcde",
+    "slug": "eth-price-above-5k",
+    "question": "Will ETH be above $5k by end of 2025?",
+    "active": false,
+    "closed": true,
+    "archived": false,
+    "clobTokenIds": [
+      "11111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "22222222222222222222222222222222222222222222222222222222222222222222222222222"
+    ]
+  }
+]
