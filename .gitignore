@@ -40,9 +40,11 @@ logs/
 # Benchmarking and coverage
 .benchmarks*
 .coverage*
+htmlcov/
 
 # Rust related
 *target/
+**/*.rs.bk
 
 # Python related
 *.pyc
@@ -72,15 +74,26 @@ env/
 *temp/
 
 # System and editor specific
-.cursorignore
 .DS_Store
 .null-ls*
+PERF.JSON
+output.json
+
+# AI assistants and tools
+.cursorignore
+.mcp.json
+.mcp.local.json
+mcp/*.json
+.claude/
+claude.config.json
+.cursor/
+.aider*
+.continue/
+
 AGENTS.md
 CLAUDE.md
 CODEX.md
 GEMINI.md
-PERF.JSON
-output.json
 
 # Nautilus specific
 .ipynb_checkpoints/
