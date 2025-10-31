@@ -460,7 +460,7 @@ async fn handle_get_orders_realtime(
     }
 
     // Track settle coin queries
-    let settle_coin = query.get("settleCoin").map(|s| s.clone());
+    let settle_coin = query.get("settleCoin").cloned();
     {
         let mut queries = state.settle_coin_queries.lock().await;
         queries.push(("realtime".to_string(), settle_coin.clone()));
@@ -563,7 +563,7 @@ async fn handle_get_orders_history_reconciliation(
     }
 
     // Track settle coin queries
-    let settle_coin = query.get("settleCoin").map(|s| s.clone());
+    let settle_coin = query.get("settleCoin").cloned();
     {
         let mut queries = state.settle_coin_queries.lock().await;
         queries.push(("history".to_string(), settle_coin.clone()));
