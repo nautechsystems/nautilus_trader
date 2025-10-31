@@ -58,7 +58,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.38.1
+    rev: v1.38.1 # v1.38.1 (reverts to v1 on updates)
     hooks:
       - id: typos
         description: Checks for common typos.
@@ -226,7 +226,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: v0.14.3
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -275,7 +275,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.6  # Must match uv-version file
+    rev: 0.9.7  # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

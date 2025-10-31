@@ -92,13 +92,13 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # Dependencies
 # -----------------------------------------------------------------------------
 ahash = "0.8.12"
-alloy = { version = "1.0.41", default-features = false, features = [
+alloy = { version = "1.0.42", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
 alloy-primitives = { version = "1.4.1", features = ["serde"] }
-alloy-signer = { version = "1.0.41", default-features = false }
-alloy-signer-local = { version = "1.0.41", default-features = false, features = [
+alloy-signer = { version = "1.0.42", default-features = false }
+alloy-signer-local = { version = "1.0.42", default-features = false, features = [
   "mnemonic",
 ] }
 anyhow = "1.0.100"

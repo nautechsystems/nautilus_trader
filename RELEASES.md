@@ -29,8 +29,8 @@ This release adds support for Python 3.14 with the following limitations:
 TBD
 
 ### Fixes
-- Fixed spawned order client_id caching in `ExecAlgorithm`, thanks for reporting @kirill-gr1
-- Fixed Binance instrument info dict JSON serialization, thanks for reporting @woung717
+- Fixed spawned order client_id caching in `ExecAlgorithm` (#3122), thanks for reporting @kirill-gr1
+- Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 
 ### Internal Improvements
