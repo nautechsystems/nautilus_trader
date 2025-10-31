@@ -22,7 +22,7 @@ You can find active markets at: https://polymarket.com
 
 Data sources:
 - Markets API: https://gamma-api.polymarket.com/markets
-- Orderbook History: https://api.domeapi.io/v1/polymarket/orderbooks
+- Order book history: https://api.domeapi.io/v1/polymarket/orderbooks
 - Trades/Prices: https://clob.polymarket.com/prices-history
 
 Note: The DomeAPI orderbook history only has data starting from October 14th, 2025.
@@ -81,18 +81,19 @@ async def run_backtest(
     print(f"Outcome: {instrument.outcome}\n")
 
     # Calculate time range for historical data
-    end = pd.Timestamp.now(tz="UTC")
-    start = end - pd.Timedelta(hours=lookback_hours)
+    start = pd.Timestamp("2025-10-30", tz="UTC")
+    end = pd.Timestamp("2025-10-31", tz="UTC")
 
     print(f"Fetching data from {start} to {end}")
 
     # Load historical data using convenience methods
     print("Loading orderbook snapshots...")
-    book_deltas = await loader.load_orderbook_snapshots(
+
+    deltas = await loader.load_orderbook_snapshots(
         start=start,
         end=end,
     )
-    print(f"Loaded {len(book_deltas)} OrderBookDeltas")
+    print(f"Loaded {len(deltas)} OrderBookDeltas")
 
     print("Loading trade ticks...")
     trades = await loader.load_trades(
@@ -101,7 +102,7 @@ async def run_backtest(
     )
     print(f"Loaded {len(trades)} TradeTicks")
 
-    if not book_deltas and not trades:
+    if not deltas and not trades:
         raise ValueError("No historical data available for the specified time range")
 
     # Configure backtest engine
@@ -122,15 +123,15 @@ async def run_backtest(
     engine.add_instrument(instrument)
 
     # Add data
-    if book_deltas:
-        engine.add_data(book_deltas)
+    if deltas:
+        engine.add_data(deltas)
     if trades:
         engine.add_data(trades)
 
     # Configure strategy
     strategy_config = OrderBookImbalanceConfig(
         instrument_id=instrument.id,
-        max_trade_size=Decimal("10"),
+        max_trade_size=Decimal("20"),
         min_seconds_between_triggers=1.0,
     )
 

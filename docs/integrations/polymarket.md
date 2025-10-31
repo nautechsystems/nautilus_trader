@@ -461,8 +461,8 @@ All data fetching methods are **asynchronous** and must be called with `await`. 
 The loader fetches data from three primary sources:
 
 1. **Polymarket Gamma API** - Market metadata, instrument details, and active market listings.
-2. **DomeAPI** - Orderbook history snapshots (available from October 14th, 2025).
-3. **Polymarket CLOB API** - Price/trade history timeseries.
+2. **Polymarket CLOB API** - Price/trade history timeseries.
+3. **DomeAPI** - Order book history snapshots (available from October 14th, 2025).
 
 ### Finding markets
 
@@ -515,9 +515,9 @@ loader = PolymarketDataLoader(instrument=instrument, token_id=token_id)
 You can also skip the manual wiring and call `await PolymarketDataLoader.from_market_slug(...)`, which fetches the metadata and returns a loader that already has `instrument` and `token_id` set.
 :::
 
-### Fetching orderbook history
+### Fetching order book history
 
-The `load_orderbook_snapshots()` convenience method fetches and parses orderbook data in one step:
+The `load_orderbook_snapshots()` convenience method fetches and parses order book data in one step:
 
 ```python
 import pandas as pd
@@ -526,8 +526,8 @@ import pandas as pd
 end = pd.Timestamp.now(tz="UTC")
 start = end - pd.Timedelta(hours=24)
 
-# Fetch and parse orderbook snapshots (automatic pagination handling)
-book_deltas = await loader.load_orderbook_snapshots(
+# Fetch and parse order book snapshots (automatic pagination handling)
+deltas = await loader.load_orderbook_snapshots(
     start=start,
     end=end,
 )
@@ -548,11 +548,12 @@ orderbook_snapshots = await loader.fetch_orderbook_history(
 )
 
 # Parse to NautilusTrader OrderBookDeltas
-book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
+deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
 ```
 
 :::note
-DomeAPI orderbook history is only available from **October 14th, 2025** onwards. For earlier data, rely on the price history endpoint.
+DomeAPI order book history is only available from **October 14th, 2025** onwards.
+For earlier data, rely on the price history endpoint.
 :::
 
 ### Fetching price history
@@ -631,7 +632,7 @@ async def run_backtest():
     end = pd.Timestamp.now(tz="UTC")
     start = end - pd.Timedelta(hours=24)
 
-    orderbook_snapshots = await loader.load_orderbook_snapshots(
+    deltas = await loader.load_orderbook_snapshots(
         start=start,
         end=end,
     )
@@ -655,12 +656,12 @@ async def run_backtest():
     )
 
     engine.add_instrument(instrument)
-    engine.add_data(orderbook_snapshots)
+    engine.add_data(deltas)
     engine.add_data(trades)
 
     strategy_config = OrderBookImbalanceConfig(
         instrument_id=instrument.id,
-        max_trade_size=Decimal("10"),
+        max_trade_size=Decimal("20"),
     )
 
     strategy = OrderBookImbalance(config=strategy_config)
@@ -674,46 +675,11 @@ async def run_backtest():
 asyncio.run(run_backtest())
 ```
 
-Run the complete example:
+**Run the complete example**:
 
 ```bash
 python examples/backtest/polymarket_simple_quoter.py
 ```
-
-### API reference
-
-#### Data loader methods
-
-**Constructor:**
-
-- `PolymarketDataLoader(instrument, token_id=None, http_client=None)` - Initialize the loader with an instrument and optional token ID
-
-**Class Methods:**
-
-- `async from_market_slug(slug, token_index=0, http_client=None)` - Create a loader by fetching market data from Polymarket APIs
-
-**Static Discovery Methods (no instance required):**
-
-- `async fetch_markets(active=True, closed=False, archived=False, limit=100, http_client=None)` - Fetch markets from Gamma API
-- `async find_market_by_slug(slug, http_client=None)` - Find a specific market by its slug
-- `async fetch_market_details(condition_id, http_client=None)` - Fetch detailed market information from CLOB API
-
-**Instance Methods (require instrument and/or token_id):**
-
-- `async load_orderbook_snapshots(start, end, limit=500)` - Load and parse orderbook snapshots for the loader's instrument (pd.Timestamp)
-- `async load_trades(start, end, fidelity=1)` - Load and parse trade ticks for the loader's instrument (pd.Timestamp)
-- `async fetch_orderbook_history(token_id, start_time_ms, end_time_ms, limit=500)` - Fetch orderbook snapshots with automatic pagination (timestamps in milliseconds)
-- `async fetch_price_history(token_id, start_time_ms, end_time_ms, fidelity=1)` - Fetch price history timeseries (timestamps in milliseconds)
-
-**Parsing Methods (sync):**
-
-- `parse_orderbook_snapshots(snapshots)` - Convert raw snapshots to `OrderBookDeltas`
-- `parse_price_history(history)` - Convert price data to `TradeTick` objects
-
-:::tip
-All parsing methods use the instrument's `make_price()` and `make_qty()` methods to ensure
-correct precision handling, which is critical for accurate backtesting.
-:::
 
 ### Helper functions
 
