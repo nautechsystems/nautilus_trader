@@ -31,6 +31,7 @@
 // lands so we can drop the per-call heap allocation
 
 use std::{
+    fmt::Debug,
     future::Future,
     pin::Pin,
     sync::{
@@ -235,7 +236,7 @@ struct TransportClient {
     error_count: Arc<AtomicU64>,
 }
 
-impl std::fmt::Debug for TransportClient {
+impl Debug for TransportClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TransportClient")
             .field("client_id", &self.client_id)

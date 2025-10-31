@@ -15,7 +15,7 @@
 
 //! Domain types representing funding rate data for perpetual swap instruments.
 
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
@@ -54,7 +54,7 @@ impl PartialEq for FundingRateUpdate {
     }
 }
 
-impl std::hash::Hash for FundingRateUpdate {
+impl Hash for FundingRateUpdate {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Hash only the fields used in PartialEq to maintain consistency
         self.instrument_id.hash(state);

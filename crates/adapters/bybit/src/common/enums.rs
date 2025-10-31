@@ -15,6 +15,8 @@
 
 //! Enumerations that model Bybit string/int enums across HTTP and WebSocket payloads.
 
+use std::fmt::Display;
+
 use nautilus_model::enums::{AggressorSide, OrderSide};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -322,7 +324,7 @@ pub enum BybitKlineInterval {
     Month1,
 }
 
-impl std::fmt::Display for BybitKlineInterval {
+impl Display for BybitKlineInterval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Self::Minute1 => "1",
