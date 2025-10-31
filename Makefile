@@ -11,6 +11,7 @@ CARGO_AUDIT_VERSION := $(shell grep '^cargo-audit *= *"' Cargo.toml | awk -F\" '
 CARGO_DENY_VERSION := $(shell grep '^cargo-deny *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_LLVM_COV_VERSION := $(shell grep '^cargo-llvm-cov *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_NEXTEST_VERSION := $(shell grep '^cargo-nextest *= *"' Cargo.toml | awk -F\" '{print $$2}')
+LYCHEE_VERSION := $(shell grep '^lychee *= *"' Cargo.toml | awk -F\" '{print $$2}')
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -160,9 +161,30 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+.PHONY: check-links
+check-links:  #-- Check for broken links in documentation (periodic audit)
+	$(info $(M) Checking documentation links...)
+	@lychee \
+		--verbose \
+		--no-progress \
+		--exclude-all-private \
+		--max-retries 3 \
+		--retry-wait-time 5 \
+		--timeout 30 \
+		--max-concurrency 10 \
+		--accept "100..=103,200..=299,429,502..=504" \
+		--exclude-file .lycheeignore \
+		"**/*.md"
+	@printf "$(GREEN)Link check passed$(RESET)\n"
+
 .PHONY: pre-flight
 pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
 	$(info $(M) Running pre-flight checks...)
+	@if ! git diff --quiet; then \
+		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
+		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
+		exit 1; \
+	fi
 	@$(MAKE) --no-print-directory format
 	@$(MAKE) --no-print-directory pre-commit
 	@$(MAKE) --no-print-directory cargo-test-hypersync
@@ -253,7 +275,8 @@ cargo-update:  #-- Update Rust dependencies and install required tools (versions
 	&& cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
 	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
-	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked
+	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
+	&& cargo install lychee --version $(LYCHEE_VERSION) --locked
 
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building

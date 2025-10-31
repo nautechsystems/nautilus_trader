@@ -207,8 +207,8 @@ repos:
         name: cargo doc
         description: Check documentation builds without errors or warnings.
         entry:
-          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features
-          "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
+          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
+          --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
         language: system
         files: '\.(rs|toml)$'
         types: [file]
@@ -284,6 +284,9 @@ repos:
     hooks:
       - id: nbstripout
 
+  ##############################################################################
+  #  Markdown formatting and linting
+  ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.18.1
     hooks:
