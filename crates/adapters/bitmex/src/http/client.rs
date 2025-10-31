@@ -145,7 +145,7 @@ impl Default for BitmexRawHttpClient {
 }
 
 impl BitmexRawHttpClient {
-    /// Creates a new [`BitmexHttpInnerClient`] using the default BitMEX HTTP URL,
+    /// Creates a new [`BitmexRawHttpClient`] using the default BitMEX HTTP URL,
     /// optionally overridden with a custom base URL.
     ///
     /// This version of the client has **no credentials**, so it can only
@@ -206,7 +206,7 @@ impl BitmexRawHttpClient {
         })
     }
 
-    /// Creates a new [`BitmexHttpInnerClient`] configured with credentials
+    /// Creates a new [`BitmexRawHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base URL.
     ///
     /// # Errors

@@ -61,7 +61,7 @@ repos:
     rev: v1.38.1 # v1.38.1 (reverts to v1 on updates)
     hooks:
       - id: typos
-        description: Checks for common typos.
+        description: Checks for common typos
         args: ["--force-exclude"]
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
@@ -69,7 +69,7 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
-        description: Checks for common misspellings.
+        description: Checks for common misspellings
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
@@ -77,7 +77,7 @@ repos:
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
-        description: Detects hard-coded secrets prior to commit.
+        description: Detects hard-coded secrets prior to commit
         args: ["--staged", "--redact"]
 
   ##############################################################################
@@ -176,7 +176,7 @@ repos:
 
       - id: fmt
         name: cargo fmt
-        description: Format files with cargo fmt.
+        description: Format files with cargo fmt
         entry: bash .pre-commit-hooks/cargo_fmt_stable.sh
         language: system
         args: ["--all", "--", "--check"]
@@ -186,7 +186,7 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        description: Run the Clippy linter on the package.
+        description: Run the Clippy linter on the package
         entry: cargo clippy
         language: system
         args:
@@ -203,17 +203,16 @@ repos:
         types: [file]
         pass_filenames: false
 
-      # TODO: Disable temporarily (taking too long and needs to be reconfigured)
-      # - id: cargo-doc
-      #   name: cargo doc
-      #   description: Check documentation builds without errors or warnings.
-      #   entry:
-      #     bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
-      #     --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
-      #   language: system
-      #   files: '\.(rs|toml)$'
-      #   types: [file]
-      #   pass_filenames: false
+      - id: cargo-doc
+        name: cargo doc
+        description: Check documentation builds without errors or warnings
+        entry:
+          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
+          --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
+        language: system
+        files: '\.(rs|toml)$'
+        types: [file]
+        pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
