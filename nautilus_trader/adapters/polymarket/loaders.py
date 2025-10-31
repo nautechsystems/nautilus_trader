@@ -14,16 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 """
 Provides data loaders for historical Polymarket data from various APIs.
-
-This module includes loaders for:
-- Market information from Polymarket's Gamma API
-- Orderbook history from DomeAPI
-- Price/trade history from Polymarket's CLOB API
-
 """
 
-import requests
+from urllib.parse import urlencode
 
+import msgspec
+import pandas as pd
+
+from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -42,13 +41,254 @@ class PolymarketDataLoader:
 
     This loader fetches data from:
     - Polymarket Gamma API (market information)
-    - DomeAPI (orderbook history, available from October 14th, 2025)
     - Polymarket CLOB API (price/trade history)
+    - DomeAPI (orderbook history, available from October 14th, 2025)
+
+    Parameters
+    ----------
+    instrument : BinaryOption
+        The binary option instrument to load data for.
+    token_id : str, optional
+        The Polymarket token ID for this instrument.
+    http_client : nautilus_pyo3.HttpClient, optional
+        The HTTP client to use for requests. If not provided, a new client will be created.
 
     """
 
-    @staticmethod
-    def fetch_markets(
+    def __init__(
+        self,
+        instrument: BinaryOption,
+        token_id: str | None = None,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> None:
+        self._instrument = instrument
+        self._token_id = token_id
+        self._http_client = http_client or nautilus_pyo3.HttpClient()
+
+    @classmethod
+    async def from_market_slug(
+        cls,
+        slug: str,
+        token_index: int = 0,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> "PolymarketDataLoader":
+        """
+        Create a loader by fetching market data from Polymarket APIs.
+
+        Parameters
+        ----------
+        slug : str
+            The market slug to search for.
+        token_index : int, default 0
+            The index of the token to use (0 for first outcome, 1 for second).
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        PolymarketDataLoader
+
+        Raises
+        ------
+        ValueError
+            If market with slug is not found or has no tokens.
+        RuntimeError
+            If HTTP requests fail.
+
+        """
+        http_client = http_client or nautilus_pyo3.HttpClient()
+
+        # Fetch markets
+        params = {
+            "active": "true",
+            "closed": "false",
+            "archived": "false",
+            "limit": "100",
+        }
+        query_string = urlencode(params)
+        markets_url = f"https://gamma-api.polymarket.com/markets?{query_string}"
+
+        markets_response = await http_client.request(
+            method=nautilus_pyo3.HttpMethod.GET,
+            url=markets_url,
+        )
+
+        if markets_response.status != 200:
+            raise RuntimeError(
+                f"Failed to fetch markets: HTTP {markets_response.status}",
+            )
+
+        markets = msgspec.json.decode(markets_response.body)
+
+        # Find market by slug
+        market = None
+        for m in markets:
+            if m.get("slug") == slug:
+                market = m
+                break
+
+        if not market:
+            raise ValueError(f"Market with slug '{slug}' not found in active markets")
+
+        condition_id = market["conditionId"]
+
+        # Fetch detailed market info
+        details_url = f"https://clob.polymarket.com/markets/{condition_id}"
+        details_response = await http_client.request(
+            method=nautilus_pyo3.HttpMethod.GET,
+            url=details_url,
+        )
+
+        if details_response.status != 200:
+            raise RuntimeError(
+                f"Failed to fetch market details: HTTP {details_response.status}",
+            )
+
+        market_details = msgspec.json.decode(details_response.body)
+
+        # Get token information
+        tokens = market_details.get("tokens", [])
+        if not tokens:
+            raise ValueError(f"No tokens found for market: {condition_id}")
+
+        if token_index >= len(tokens):
+            raise ValueError(
+                f"Token index {token_index} out of range (market has {len(tokens)} tokens)",
+            )
+
+        token = tokens[token_index]
+        token_id = token["token_id"]
+        outcome = token["outcome"]
+
+        # Create instrument
+        instrument = parse_instrument(
+            market_info=market_details,
+            token_id=token_id,
+            outcome=outcome,
+        )
+
+        return cls(instrument, token_id=token_id, http_client=http_client)
+
+    @property
+    def instrument(self) -> BinaryOption:
+        """
+        Return the instrument for this loader.
+        """
+        return self._instrument
+
+    @property
+    def token_id(self) -> str | None:
+        """
+        Return the token ID for this loader.
+        """
+        return self._token_id
+
+    async def load_orderbook_snapshots(
+        self,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        limit: int = 500,
+    ) -> list[OrderBookDeltas]:
+        """
+        Load orderbook snapshots for the loader's instrument.
+
+        This is a convenience method that fetches and parses orderbook history
+        using the loader's stored token_id.
+
+        Parameters
+        ----------
+        start : pd.Timestamp
+            Start time for query window.
+        end : pd.Timestamp
+            End time for query window.
+        limit : int, default 500
+            Number of snapshots per request (max 500).
+
+        Returns
+        -------
+        list[OrderBookDeltas]
+            Parsed orderbook deltas ready for backtesting.
+
+        Raises
+        ------
+        ValueError
+            If token_id was not provided during initialization.
+
+        """
+        if self._token_id is None:
+            raise ValueError(
+                "token_id is required for this method. "
+                "Use from_market_slug() to create a loader with token_id, "
+                "or pass token_id to __init__()",
+            )
+
+        # Convert timestamps to milliseconds for the API
+        start_time_ms = int(start.timestamp() * 1000)
+        end_time_ms = int(end.timestamp() * 1000)
+
+        snapshots = await self.fetch_orderbook_history(
+            token_id=self._token_id,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+            limit=limit,
+        )
+
+        return self.parse_orderbook_snapshots(snapshots)
+
+    async def load_trades(
+        self,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        fidelity: int = 1,
+    ) -> list[TradeTick]:
+        """
+        Load synthetic trade ticks from price history for the loader's instrument.
+
+        This is a convenience method that fetches and parses price history
+        using the loader's stored token_id.
+
+        Parameters
+        ----------
+        start : pd.Timestamp
+            Start time for range.
+        end : pd.Timestamp
+            End time for range.
+        fidelity : int, default 1
+            Data resolution in minutes.
+
+        Returns
+        -------
+        list[TradeTick]
+            Parsed trade ticks ready for backtesting.
+
+        Raises
+        ------
+        ValueError
+            If token_id was not provided during initialization.
+
+        """
+        if self._token_id is None:
+            raise ValueError(
+                "token_id is required for this method. "
+                "Use from_market_slug() to create a loader with token_id, "
+                "or pass token_id to __init__()",
+            )
+
+        # Convert timestamps to milliseconds for the API
+        start_time_ms = int(start.timestamp() * 1000)
+        end_time_ms = int(end.timestamp() * 1000)
+
+        history = await self.fetch_price_history(
+            token_id=self._token_id,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+            fidelity=fidelity,
+        )
+
+        return self.parse_price_history(history)
+
+    async def fetch_markets(
+        self,
         active: bool = True,
         closed: bool = False,
         archived: bool = False,
@@ -74,20 +314,28 @@ class PolymarketDataLoader:
             List of market data dictionaries.
 
         """
-        url = "https://gamma-api.polymarket.com/markets"
-        params: dict[str, str | int] = {
+        params = {
             "active": str(active).lower(),
             "closed": str(closed).lower(),
             "archived": str(archived).lower(),
-            "limit": limit,
+            "limit": str(limit),
         }
+        query_string = urlencode(params)
+        url = f"https://gamma-api.polymarket.com/markets?{query_string}"
 
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
+        response = await self._http_client.request(
+            method=nautilus_pyo3.HttpMethod.GET,
+            url=url,
+        )
 
-    @staticmethod
-    def find_market_by_slug(slug: str) -> dict:
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        return msgspec.json.decode(response.body)
+
+    async def find_market_by_slug(self, slug: str) -> dict:
         """
         Find a specific market by slug.
 
@@ -107,15 +355,14 @@ class PolymarketDataLoader:
             If market with the given slug is not found.
 
         """
-        markets = PolymarketDataLoader.fetch_markets(limit=100)
+        markets = await self.fetch_markets(limit=100)
         for market in markets:
             if market.get("slug") == slug:
                 return market
 
         raise ValueError(f"Market with slug '{slug}' not found in active markets")
 
-    @staticmethod
-    def fetch_market_details(condition_id: str) -> dict:
+    async def fetch_market_details(self, condition_id: str) -> dict:
         """
         Fetch detailed market information from Polymarket CLOB API.
 
@@ -131,12 +378,21 @@ class PolymarketDataLoader:
 
         """
         url = f"https://clob.polymarket.com/markets/{condition_id}"
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
 
-    @staticmethod
-    def fetch_orderbook_history(
+        response = await self._http_client.request(
+            method=nautilus_pyo3.HttpMethod.GET,
+            url=url,
+        )
+
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        return msgspec.json.decode(response.body)
+
+    async def fetch_orderbook_history(
+        self,
         token_id: str,
         start_time_ms: int,
         end_time_ms: int,
@@ -167,12 +423,11 @@ class PolymarketDataLoader:
         This method automatically handles pagination.
 
         """
-        url = "https://api.domeapi.io/v1/polymarket/orderbooks"
         all_snapshots = []
         pagination_key = None
 
         while True:
-            params: dict[str, str | int] = {
+            params = {
                 "token_id": token_id,
                 "start_time": start_time_ms,
                 "end_time": end_time_ms,
@@ -182,9 +437,20 @@ class PolymarketDataLoader:
             if pagination_key:
                 params["pagination_key"] = pagination_key
 
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            query_string = urlencode(params)
+            url = f"https://api.domeapi.io/v1/polymarket/orderbooks?{query_string}"
+
+            response = await self._http_client.request(
+                method=nautilus_pyo3.HttpMethod.GET,
+                url=url,
+            )
+
+            if response.status != 200:
+                raise RuntimeError(
+                    f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+                )
+
+            data = msgspec.json.decode(response.body)
 
             snapshots = data.get("snapshots", [])
             all_snapshots.extend(snapshots)
@@ -199,11 +465,11 @@ class PolymarketDataLoader:
 
         return all_snapshots
 
-    @staticmethod
-    def fetch_price_history(
+    async def fetch_price_history(
+        self,
         token_id: str,
-        start_ts: int,
-        end_ts: int,
+        start_time_ms: int,
+        end_time_ms: int,
         fidelity: int = 1,
     ) -> list[dict]:
         """
@@ -213,10 +479,10 @@ class PolymarketDataLoader:
         ----------
         token_id : str
             The market/token identifier.
-        start_ts : int
-            Unix timestamp in seconds for range start.
-        end_ts : int
-            Unix timestamp in seconds for range end.
+        start_time_ms : int
+            Unix timestamp in milliseconds for range start.
+        end_time_ms : int
+            Unix timestamp in milliseconds for range end.
         fidelity : int, default 1
             Data resolution in minutes.
 
@@ -226,24 +492,36 @@ class PolymarketDataLoader:
             List of price history points with 't' (timestamp) and 'p' (price).
 
         """
-        url = "https://clob.polymarket.com/prices-history"
-        params: dict[str, str | int] = {
-            "market": token_id,
-            "startTs": start_ts,
-            "endTs": end_ts,
-            "fidelity": fidelity,
-        }
+        # Convert milliseconds to seconds for the CLOB API
+        start_time_s = start_time_ms // 1000
+        end_time_s = end_time_ms // 1000
 
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        params = {
+            "market": token_id,
+            "startTs": str(start_time_s),
+            "endTs": str(end_time_s),
+            "fidelity": str(fidelity),
+        }
+        query_string = urlencode(params)
+        url = f"https://clob.polymarket.com/prices-history?{query_string}"
+
+        response = await self._http_client.request(
+            method=nautilus_pyo3.HttpMethod.GET,
+            url=url,
+        )
+
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        data = msgspec.json.decode(response.body)
 
         return data.get("history", [])
 
-    @staticmethod
     def parse_orderbook_snapshots(
+        self,
         snapshots: list[dict],
-        instrument: BinaryOption,
     ) -> list[OrderBookDeltas]:
         """
         Parse orderbook snapshots into OrderBookDeltas.
@@ -252,8 +530,6 @@ class PolymarketDataLoader:
         ----------
         snapshots : list[dict]
             Raw orderbook snapshots from DomeAPI.
-        instrument : BinaryOption
-            The trading instrument for precision handling.
 
         Returns
         -------
@@ -261,28 +537,27 @@ class PolymarketDataLoader:
             List of OrderBookDeltas for backtesting.
 
         """
-        all_deltas = []
+        all_deltas: list[OrderBookDelta] = []
 
         for snapshot in snapshots:
             timestamp_ms = snapshot["timestamp"]
             ts_event = millis_to_nanos(timestamp_ms)
-            ts_init = ts_event
 
             deltas = []
 
             # Clear the book first
             clear_delta = OrderBookDelta.clear(
-                instrument_id=instrument.id,
+                instrument_id=self.instrument.id,
                 ts_event=ts_event,
-                ts_init=ts_init,
+                ts_init=ts_event,
                 sequence=0,
             )
             deltas.append(clear_delta)
 
             # Add bids
             for bid in snapshot.get("bids", []):
-                price = instrument.make_price(bid["price"])
-                size = instrument.make_qty(bid["size"])
+                price = self.instrument.make_price(bid["price"])
+                size = self.instrument.make_qty(bid["size"])
 
                 order = BookOrder(
                     side=OrderSide.BUY,
@@ -292,20 +567,20 @@ class PolymarketDataLoader:
                 )
 
                 delta = OrderBookDelta(
-                    instrument_id=instrument.id,
+                    instrument_id=self.instrument.id,
                     action=BookAction.ADD,
                     order=order,
                     flags=0,
                     sequence=0,
                     ts_event=ts_event,
-                    ts_init=ts_init,
+                    ts_init=ts_event,
                 )
                 deltas.append(delta)
 
             # Add asks
             for ask in snapshot.get("asks", []):
-                price = instrument.make_price(ask["price"])
-                size = instrument.make_qty(ask["size"])
+                price = self.instrument.make_price(ask["price"])
+                size = self.instrument.make_qty(ask["size"])
 
                 order = BookOrder(
                     side=OrderSide.SELL,
@@ -315,29 +590,28 @@ class PolymarketDataLoader:
                 )
 
                 delta = OrderBookDelta(
-                    instrument_id=instrument.id,
+                    instrument_id=self.instrument.id,
                     action=BookAction.ADD,
                     order=order,
                     flags=0,
                     sequence=0,
                     ts_event=ts_event,
-                    ts_init=ts_init,
+                    ts_init=ts_event,
                 )
                 deltas.append(delta)
 
             if deltas:
                 book_deltas = OrderBookDeltas(
-                    instrument_id=instrument.id,
+                    instrument_id=self.instrument.id,
                     deltas=deltas,
                 )
                 all_deltas.append(book_deltas)
 
         return all_deltas
 
-    @staticmethod
     def parse_price_history(
+        self,
         history: list[dict],
-        instrument: BinaryOption,
     ) -> list[TradeTick]:
         """
         Parse price history into TradeTicks.
@@ -346,8 +620,6 @@ class PolymarketDataLoader:
         ----------
         history : list[dict]
             Raw price history from CLOB API.
-        instrument : BinaryOption
-            The trading instrument for precision handling.
 
         Returns
         -------
@@ -360,17 +632,16 @@ class PolymarketDataLoader:
         trades from price points for demonstration purposes.
 
         """
-        trades = []
+        trades: list[TradeTick] = []
 
         for i, point in enumerate(history):
             timestamp = point["t"]  # Unix timestamp
             price_value = point["p"]
 
             ts_event = millis_to_nanos(int(timestamp * 1000))
-            ts_init = ts_event
 
-            price = instrument.make_price(price_value)
-            size = instrument.make_qty(1.0)
+            price = self.instrument.make_price(price_value)
+            size = self.instrument.make_qty(1.0)
 
             # Determine aggressor side from price movement
             aggressor_side = AggressorSide.NO_AGGRESSOR
@@ -382,13 +653,13 @@ class PolymarketDataLoader:
                     aggressor_side = AggressorSide.SELLER
 
             trade = TradeTick(
-                instrument_id=instrument.id,
+                instrument_id=self.instrument.id,
                 price=price,
                 size=size,
                 aggressor_side=aggressor_side,
                 trade_id=TradeId(str(i)),
                 ts_event=ts_event,
-                ts_init=ts_init,
+                ts_init=ts_event,
             )
             trades.append(trade)
 

@@ -203,16 +203,17 @@ repos:
         types: [file]
         pass_filenames: false
 
-      - id: cargo-doc
-        name: cargo doc
-        description: Check documentation builds without errors or warnings.
-        entry:
-          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
-          --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
-        language: system
-        files: '\.(rs|toml)$'
-        types: [file]
-        pass_filenames: false
+      # TODO: Disable temporarily (taking too long and needs to be reconfigured)
+      # - id: cargo-doc
+      #   name: cargo doc
+      #   description: Check documentation builds without errors or warnings.
+      #   entry:
+      #     bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
+      #     --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
+      #   language: system
+      #   files: '\.(rs|toml)$'
+      #   types: [file]
+      #   pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting

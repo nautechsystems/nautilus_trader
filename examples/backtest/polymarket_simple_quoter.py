@@ -29,20 +29,16 @@ Note: The DomeAPI orderbook history only has data starting from October 14th, 20
 
 """
 
+import asyncio
 import time
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
 from decimal import Decimal
 
 import pandas as pd
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import USDC_POS
@@ -61,7 +57,7 @@ from nautilus_trader.model.objects import Money
 MARKET_SLUG = "fed-rate-hike-in-2025"
 
 
-def run_backtest(
+async def run_backtest(
     market_slug: str,
     lookback_hours: int = 24,
 ) -> None:
@@ -76,91 +72,37 @@ def run_backtest(
         How many hours of historical data to fetch.
 
     """
-    # Find the market using the loader
-    loader = PolymarketDataLoader()
-    market = loader.find_market_by_slug(market_slug)
-    condition_id = market["conditionId"]
+    # Create loader by market slug (automatically fetches and parses instrument)
+    loader = await PolymarketDataLoader.from_market_slug(market_slug)
+    instrument = loader.instrument
 
-    print(f"\nMarket found: {market.get('question', 'N/A')}")
-    print(f"Slug: {market.get('slug', 'N/A')}")
-    print(f"Active: {market.get('active', False)}")
-
-    # Fetch detailed market info
-    market_details = loader.fetch_market_details(condition_id)
-
-    # Get token information
-    tokens = market_details.get("tokens", [])
-    if not tokens:
-        raise ValueError(f"No tokens found for market: {condition_id}")
-
-    token = tokens[0]  # Use first token
-    token_id = token["token_id"]
-    outcome = token["outcome"]
-
-    print(f"Outcome: {outcome}")
-    print(f"Condition ID: {condition_id}")
-    print(f"Token ID: {token_id}\n")
-
-    # Create instrument
-    ts_init = millis_to_nanos(int(datetime.now(tz=UTC).timestamp() * 1000))
-    instrument = parse_instrument(
-        market_info=market_details,
-        token_id=token_id,
-        outcome=outcome,
-        ts_init=ts_init,
-    )
+    print(f"\nMarket loaded: {instrument.description or market_slug}")
+    print(f"Instrument ID: {instrument.id}")
+    print(f"Outcome: {instrument.outcome}\n")
 
     # Calculate time range for historical data
-    end_time = datetime.now(tz=UTC)
-    start_time = end_time - timedelta(hours=lookback_hours)
+    end = pd.Timestamp.now(tz="UTC")
+    start = end - pd.Timedelta(hours=lookback_hours)
 
-    start_time_ms = int(start_time.timestamp() * 1000)
-    end_time_ms = int(end_time.timestamp() * 1000)
-    start_time_s = int(start_time.timestamp())
-    end_time_s = int(end_time.timestamp())
+    print(f"Fetching data from {start} to {end}")
 
-    print(f"Fetching data from {start_time} to {end_time}")
+    # Load historical data using convenience methods
+    print("Loading orderbook snapshots...")
+    book_deltas = await loader.load_orderbook_snapshots(
+        start=start,
+        end=end,
+    )
+    print(f"Loaded {len(book_deltas)} OrderBookDeltas")
 
-    # Fetch historical data using the loader
-    try:
-        print(f"Fetching orderbook history for token_id: {token_id}")
-        orderbook_snapshots = loader.fetch_orderbook_history(
-            token_id=token_id,
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
-        )
-        print(f"Fetched {len(orderbook_snapshots)} orderbook snapshots")
-    except Exception as e:
-        print(f"Warning: Could not fetch orderbook history: {e}")
-        orderbook_snapshots = []
+    print("Loading trade ticks...")
+    trades = await loader.load_trades(
+        start=start,
+        end=end,
+    )
+    print(f"Loaded {len(trades)} TradeTicks")
 
-    try:
-        print(f"Fetching price history for token_id: {token_id}")
-        price_history = loader.fetch_price_history(
-            token_id=token_id,
-            start_ts=start_time_s,
-            end_ts=end_time_s,
-        )
-        print(f"Fetched {len(price_history)} price points")
-    except Exception as e:
-        print(f"Warning: Could not fetch price history: {e}")
-        price_history = []
-
-    if not orderbook_snapshots and not price_history:
+    if not book_deltas and not trades:
         raise ValueError("No historical data available for the specified time range")
-
-    # Parse data using the loader
-    book_deltas = []
-    if orderbook_snapshots:
-        print("Parsing orderbook snapshots to deltas...")
-        book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots, instrument)
-        print(f"Created {len(book_deltas)} OrderBookDeltas")
-
-    trades = []
-    if price_history:
-        print("Parsing price history to trades...")
-        trades = loader.parse_price_history(price_history, instrument)
-        print(f"Created {len(trades)} TradeTicks")
 
     # Configure backtest engine
     config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
@@ -198,13 +140,8 @@ def run_backtest(
     print("\nStarting backtest...")
     time.sleep(0.1)
 
-    # Run the engine
+    # Run backtest
     engine.run()
-
-    # Display reports
-    print("\n" + "=" * 80)
-    print("BACKTEST RESULTS")
-    print("=" * 80 + "\n")
 
     with pd.option_context(
         "display.max_rows",
@@ -227,9 +164,11 @@ def run_backtest(
 
 if __name__ == "__main__":
     try:
-        run_backtest(
-            market_slug=MARKET_SLUG,
-            lookback_hours=24,  # Fetch last 24 hours of data
+        asyncio.run(
+            run_backtest(
+                market_slug=MARKET_SLUG,
+                lookback_hours=24,  # Fetch last 24 hours of data
+            ),
         )
     except Exception as e:
         print(f"Error running backtest: {e}")

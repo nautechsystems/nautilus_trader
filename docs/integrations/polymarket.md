@@ -452,6 +452,10 @@ For additional features or to contribute to the Polymarket adapter, please see o
 The `PolymarketDataLoader` provides methods for fetching and parsing historical market data
 for research and backtesting purposes. The loader integrates with multiple Polymarket APIs to provide the required data.
 
+:::note
+All data fetching methods are **asynchronous** and must be called with `await`. The loader can optionally accept an `http_client` parameter for dependency injection (useful for testing).
+:::
+
 ### Data sources
 
 The loader fetches data from three primary sources:
@@ -474,54 +478,76 @@ python nautilus_trader/adapters/polymarket/scripts/list_updown_markets.py
 
 ### Basic usage
 
+:::note
+All data loader methods are **asynchronous** and must be called with `await`.
+:::
+
 ```python
+import asyncio
 from datetime import UTC, datetime, timedelta
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.core.datetime import millis_to_nanos
 
-# Initialize the loader
-loader = PolymarketDataLoader()
+async def load_market_data():
+    # Initialize loader
+    loader = PolymarketDataLoader()
 
-# Find a market by slug
-market = loader.find_market_by_slug("fed-rate-hike-in-2025")
-condition_id = market["conditionId"]
+    # Find market by slug
+    market = await loader.find_market_by_slug("fed-rate-hike-in-2025")
+    condition_id = market["conditionId"]
 
-# Fetch detailed market information
-market_details = loader.fetch_market_details(condition_id)
-token = market_details["tokens"][0]
-token_id = token["token_id"]
+    # Fetch detailed market information
+    market_details = await loader.fetch_market_details(condition_id)
+    token = market_details["tokens"][0]
+    token_id = token["token_id"]
 
-# Create the instrument
-ts_init = millis_to_nanos(int(datetime.now(tz=UTC).timestamp() * 1000))
-instrument = parse_instrument(
-    market_info=market_details,
-    token_id=token_id,
-    outcome=token["outcome"],
-    ts_init=ts_init,
-)
+    # Create instrument
+    instrument = parse_instrument(
+        market_info=market_details,
+        token_id=token_id,
+        outcome=token["outcome"],
+    )
+
+    return instrument
+
+# Run the async function
+instrument = asyncio.run(load_market_data())
 ```
 
 ### Fetching orderbook history
 
-The `fetch_orderbook_history()` method retrieves orderbook snapshots from DomeAPI:
+The `load_orderbook_snapshots()` convenience method fetches and parses orderbook data in one step:
 
 ```python
-# Define time range
-end_time = datetime.now(tz=UTC)
-start_time = end_time - timedelta(hours=24)
-start_time_ms = int(start_time.timestamp() * 1000)
-end_time_ms = int(end_time.timestamp() * 1000)
+import pandas as pd
 
-# Fetch orderbook snapshots (automatic pagination handling)
-orderbook_snapshots = loader.fetch_orderbook_history(
+# Define time range
+end = pd.Timestamp.now(tz="UTC")
+start = end - pd.Timedelta(hours=24)
+
+# Fetch and parse orderbook snapshots (automatic pagination handling)
+book_deltas = await loader.load_orderbook_snapshots(
+    start=start,
+    end=end,
+)
+```
+
+Alternatively, you can fetch and parse separately using the lower-level methods:
+
+```python
+# Convert timestamps to milliseconds for the API
+start_time_ms = int(start.timestamp() * 1000)
+end_time_ms = int(end.timestamp() * 1000)
+
+orderbook_snapshots = await loader.fetch_orderbook_history(
     token_id=token_id,
     start_time_ms=start_time_ms,
     end_time_ms=end_time_ms,
 )
 
 # Parse to NautilusTrader OrderBookDeltas
-book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots, instrument)
+book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
 ```
 
 :::note
@@ -530,23 +556,40 @@ DomeAPI orderbook history is only available from **October 14th, 2025** onwards.
 
 ### Fetching price history
 
-The `fetch_price_history()` method retrieves price timeseries data from the CLOB API:
+The `load_trades()` convenience method fetches and parses trade data in one step:
 
 ```python
-# Convert to seconds for CLOB API
-start_time_s = int(start_time.timestamp())
-end_time_s = int(end_time.timestamp())
+import pandas as pd
 
-# Fetch price history (1-minute fidelity)
-price_history = loader.fetch_price_history(
+# Define time range
+end = pd.Timestamp.now(tz="UTC")
+start = end - pd.Timedelta(hours=24)
+
+# Fetch and parse trade ticks (1-minute fidelity)
+trades = await loader.load_trades(
+    start=start,
+    end=end,
+    fidelity=1,  # 1 = 1 minute resolution
+)
+```
+
+Alternatively, you can fetch and parse separately using the lower-level methods:
+
+```python
+# Convert timestamps to milliseconds for the API
+start_time_ms = int(start.timestamp() * 1000)
+end_time_ms = int(end.timestamp() * 1000)
+
+# Fetch raw price history
+price_history = await loader.fetch_price_history(
     token_id=token_id,
-    start_ts=start_time_s,
-    end_ts=end_time_s,
+    start_time_ms=start_time_ms,
+    end_time_ms=end_time_ms,
     fidelity=1,  # 1 = 1 minute resolution
 )
 
 # Parse to NautilusTrader TradeTicks
-trades = loader.parse_price_history(price_history, instrument)
+trades = loader.parse_price_history(price_history)
 ```
 
 :::warning
@@ -560,6 +603,7 @@ and the aggressor side is inferred from price movements.
 A complete working example is available at `examples/backtest/polymarket_simple_quoter.py`:
 
 ```python
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -576,69 +620,56 @@ from nautilus_trader.model.enums import AccountType, BookType, OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 
-# Initialize loader and fetch market data
-loader = PolymarketDataLoader()
-market = loader.find_market_by_slug("fed-rate-hike-in-2025")
-market_details = loader.fetch_market_details(market["conditionId"])
-token = market_details["tokens"][0]
+async def run_backtest():
+    # Initialize loader and fetch market data
+    loader = await PolymarketDataLoader.from_market_slug("fed-rate-hike-in-2025")
+    instrument = loader.instrument
 
-# Create instrument
-ts_init = millis_to_nanos(int(datetime.now(tz=UTC).timestamp() * 1000))
-instrument = parse_instrument(
-    market_info=market_details,
-    token_id=token["token_id"],
-    outcome=token["outcome"],
-    ts_init=ts_init,
-)
+    # Fetch historical data
+    end = pd.Timestamp.now(tz="UTC")
+    start = end - pd.Timedelta(hours=24)
 
-# Fetch historical data
-end_time = datetime.now(tz=UTC)
-start_time = end_time - timedelta(hours=24)
+    orderbook_snapshots = await loader.load_orderbook_snapshots(
+        start=start,
+        end=end,
+    )
 
-orderbook_snapshots = loader.fetch_orderbook_history(
-    token_id=token["token_id"],
-    start_time_ms=int(start_time.timestamp() * 1000),
-    end_time_ms=int(end_time.timestamp() * 1000),
-)
+    trades = await loader.load_trades(
+        start=start,
+        end=end,
+    )
 
-price_history = loader.fetch_price_history(
-    token_id=token["token_id"],
-    start_ts=int(start_time.timestamp()),
-    end_ts=int(end_time.timestamp()),
-)
+    # Configure and run backtest
+    config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
+    engine = BacktestEngine(config=config)
 
-# Parse data
-book_deltas = loader.parse_orderbook_snapshots(orderbook_snapshots, instrument)
-trades = loader.parse_price_history(price_history, instrument)
+    engine.add_venue(
+        venue=POLYMARKET_VENUE,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        base_currency=USDC_POS,
+        starting_balances=[Money(10_000, USDC_POS)],
+        book_type=BookType.L2_MBP,
+    )
 
-# Configure and run backtest
-config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
-engine = BacktestEngine(config=config)
+    engine.add_instrument(instrument)
+    engine.add_data(orderbook_snapshots)
+    engine.add_data(trades)
 
-engine.add_venue(
-    venue=POLYMARKET_VENUE,
-    oms_type=OmsType.NETTING,
-    account_type=AccountType.CASH,
-    base_currency=USDC_POS,
-    starting_balances=[Money(10_000, USDC_POS)],
-    book_type=BookType.L2_MBP,
-)
+    strategy_config = OrderBookImbalanceConfig(
+        instrument_id=instrument.id,
+        max_trade_size=Decimal("10"),
+    )
 
-engine.add_instrument(instrument)
-engine.add_data(book_deltas)
-engine.add_data(trades)
+    strategy = OrderBookImbalance(config=strategy_config)
+    engine.add_strategy(strategy=strategy)
+    engine.run()
 
-strategy_config = OrderBookImbalanceConfig(
-    instrument_id=instrument.id,
-    max_trade_size=Decimal("10"),
-)
+    # Display results
+    print(engine.trader.generate_account_report(POLYMARKET_VENUE))
 
-strategy = OrderBookImbalance(config=strategy_config)
-engine.add_strategy(strategy=strategy)
-engine.run()
-
-# Display results
-print(engine.trader.generate_account_report(POLYMARKET_VENUE))
+# Run the backtest
+asyncio.run(run_backtest())
 ```
 
 Run the complete example:
@@ -651,18 +682,31 @@ python examples/backtest/polymarket_simple_quoter.py
 
 #### Data loader methods
 
-**Fetching Methods:**
+**Constructor:**
 
-- `fetch_markets(active=True, closed=False, archived=False, limit=100)` - Fetch markets from Gamma API
-- `find_market_by_slug(slug)` - Find a specific market by its slug
-- `fetch_market_details(condition_id)` - Fetch detailed market information from CLOB API
-- `fetch_orderbook_history(token_id, start_time_ms, end_time_ms, limit=500)` - Fetch orderbook snapshots with automatic pagination
-- `fetch_price_history(token_id, start_ts, end_ts, fidelity=1)` - Fetch price history timeseries
+- `PolymarketDataLoader(instrument, token_id=None, http_client=None)` - Initialize the loader with an instrument and optional token ID
 
-**Parsing Methods:**
+**Class Methods:**
 
-- `parse_orderbook_snapshots(snapshots, instrument)` - Convert raw snapshots to `OrderBookDeltas`
-- `parse_price_history(history, instrument)` - Convert price data to `TradeTick` objects
+- `async from_market_slug(slug, token_index=0, http_client=None)` - Create a loader by fetching market data from Polymarket APIs
+
+**Convenience Methods (require token_id):**
+
+- `async load_orderbook_snapshots(start, end, limit=500)` - Load and parse orderbook snapshots for the loader's instrument (pd.Timestamp)
+- `async load_trades(start, end, fidelity=1)` - Load and parse trade ticks for the loader's instrument (pd.Timestamp)
+
+**Fetching Methods (async):**
+
+- `async fetch_markets(active=True, closed=False, archived=False, limit=100)` - Fetch markets from Gamma API
+- `async find_market_by_slug(slug)` - Find a specific market by its slug
+- `async fetch_market_details(condition_id)` - Fetch detailed market information from CLOB API
+- `async fetch_orderbook_history(token_id, start_time_ms, end_time_ms, limit=500)` - Fetch orderbook snapshots with automatic pagination (timestamps in milliseconds)
+- `async fetch_price_history(token_id, start_time_ms, end_time_ms, fidelity=1)` - Fetch price history timeseries (timestamps in milliseconds)
+
+**Parsing Methods (sync):**
+
+- `parse_orderbook_snapshots(snapshots)` - Convert raw snapshots to `OrderBookDeltas`
+- `parse_price_history(history)` - Convert price data to `TradeTick` objects
 
 :::tip
 All parsing methods use the instrument's `make_price()` and `make_qty()` methods to ensure
