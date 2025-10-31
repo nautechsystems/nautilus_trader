@@ -158,7 +158,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
             params.symbol("ETHUSDT".to_string());
             let params = params.build().unwrap();
 
-            if let Ok(response) = client.http_get_instruments_linear(&params).await {
+            if let Ok(response) = client.get_instruments_linear(&params).await {
                 use nautilus_core::time::get_atomic_clock_realtime;
                 let ts_init = get_atomic_clock_realtime().get_time_ns();
                 for definition in response.result.list {

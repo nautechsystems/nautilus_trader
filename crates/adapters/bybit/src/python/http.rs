@@ -558,7 +558,7 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .http_set_margin_mode(margin_mode)
+                .set_margin_mode(margin_mode)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -583,7 +583,7 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .http_set_leverage(product_type, &symbol, &buy_leverage, &sell_leverage)
+                .set_leverage(product_type, &symbol, &buy_leverage, &sell_leverage)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -605,7 +605,7 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .http_switch_mode(product_type, mode, symbol, coin)
+                .switch_mode(product_type, mode, symbol, coin)
                 .await
                 .map_err(to_pyvalue_err)?;
 

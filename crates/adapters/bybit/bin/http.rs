@@ -69,7 +69,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
 
     // Test 1: Get server time
     println!("1. Testing GET /v5/market/time");
-    match client.http_get_server_time().await {
+    match client.get_server_time().await {
         Ok(response) => {
             println!(
                 "   [OK] Server time: {} (seconds)",
@@ -90,7 +90,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
         .symbol("BTCUSDT")
         .build()?;
 
-    match client.http_get_instruments_linear(&params).await {
+    match client.get_instruments_linear(&params).await {
         Ok(response) => {
             println!("   [OK] Found {} instruments", response.result.list.len());
             if let Some(first) = response.result.list.first() {
@@ -111,7 +111,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
         .limit(5u32)
         .build()?;
 
-    match client.http_get_instruments_spot(&params).await {
+    match client.get_instruments_spot(&params).await {
         Ok(response) => {
             println!("   [OK] Found {} instruments", response.result.list.len());
             for instrument in response.result.list.iter().take(3) {
@@ -133,7 +133,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
         .limit(5u32)
         .build()?;
 
-    match client.http_get_klines(&params).await {
+    match client.get_klines(&params).await {
         Ok(response) => {
             println!("   [OK] Found {} klines", response.result.list.len());
             if let Some(first) = response.result.list.first() {
@@ -157,7 +157,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
         .limit(5u32)
         .build()?;
 
-    match client.http_get_recent_trades(&params).await {
+    match client.get_recent_trades(&params).await {
         Ok(response) => {
             println!("   [OK] Found {} recent trades", response.result.list.len());
             for trade in response.result.list.iter().take(3) {
@@ -196,7 +196,7 @@ async fn test_authenticated_endpoints(api_key: &str, api_secret: &str) -> anyhow
     // Test 1: Get open orders
     println!("\n1. Testing GET /v5/order/realtime (open orders)");
     match client
-        .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
         .await
     {
         Ok(response) => {

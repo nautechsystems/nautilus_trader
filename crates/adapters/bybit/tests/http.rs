@@ -714,7 +714,7 @@ async fn test_get_server_time() {
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
 
-    let response = client.http_get_server_time().await.unwrap();
+    let response = client.get_server_time().await.unwrap();
     assert!(!response.result.time_second.is_empty());
     assert!(!response.result.time_nano.is_empty());
 }
@@ -733,7 +733,7 @@ async fn test_get_instruments_linear() {
         .build()
         .unwrap();
 
-    let response = client.http_get_instruments_linear(&params).await.unwrap();
+    let response = client.get_instruments_linear(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
 }
 
@@ -751,7 +751,7 @@ async fn test_get_instruments_spot() {
         .build()
         .unwrap();
 
-    let response = client.http_get_instruments_spot(&params).await.unwrap();
+    let response = client.get_instruments_spot(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
 }
 
@@ -769,7 +769,7 @@ async fn test_get_instruments_inverse() {
         .build()
         .unwrap();
 
-    let response = client.http_get_instruments_inverse(&params).await.unwrap();
+    let response = client.get_instruments_inverse(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
 }
 
@@ -787,7 +787,7 @@ async fn test_get_instruments_option() {
         .build()
         .unwrap();
 
-    let response = client.http_get_instruments_option(&params).await.unwrap();
+    let response = client.get_instruments_option(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
 }
 
@@ -820,7 +820,7 @@ async fn test_place_order() {
         "orderLinkId": "test-order-123"
     });
 
-    let response = client.http_place_order(&order_request).await.unwrap();
+    let response = client.place_order(&order_request).await.unwrap();
     assert_eq!(response.ret_code, 0);
     assert!(response.result.order_id.is_some());
 }
@@ -837,7 +837,7 @@ async fn test_authenticated_endpoint_requires_credentials() {
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client
-        .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
         .await;
     assert!(result.is_err());
 }
@@ -865,7 +865,7 @@ async fn test_rate_limiting_returns_error() {
     let mut last_error = None;
     for _ in 0..10 {
         match client
-            .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+            .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
             .await
         {
             Ok(_) => continue,
@@ -902,7 +902,7 @@ async fn test_get_open_orders_with_symbol() {
     .unwrap();
 
     let response = client
-        .http_get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
         .await
         .unwrap();
 
@@ -930,7 +930,7 @@ async fn test_get_open_orders_without_symbol() {
     .unwrap();
 
     let response = client
-        .http_get_open_orders(BybitProductType::Linear, None)
+        .get_open_orders(BybitProductType::Linear, None)
         .await
         .unwrap();
 
@@ -953,7 +953,7 @@ async fn test_get_wallet_balance_requires_credentials() {
     };
 
     // Should fail when trying to call authenticated endpoint without credentials
-    let result = client.http_get_wallet_balance(&params).await;
+    let result = client.get_wallet_balance(&params).await;
     assert!(result.is_err());
 }
 
@@ -981,7 +981,7 @@ async fn test_get_wallet_balance_with_credentials() {
         coin: None,
     };
 
-    let response = client.http_get_wallet_balance(&params).await.unwrap();
+    let response = client.get_wallet_balance(&params).await.unwrap();
 
     assert_eq!(response.ret_code, 0);
     assert!(!response.result.list.is_empty());
@@ -1005,7 +1005,7 @@ async fn test_get_positions_requires_credentials() {
         .build()
         .unwrap();
 
-    let result = client.http_get_positions(&params).await;
+    let result = client.get_positions(&params).await;
     assert!(result.is_err());
 }
 
@@ -1033,7 +1033,7 @@ async fn test_get_positions_with_credentials() {
         .build()
         .unwrap();
 
-    let response = client.http_get_positions(&params).await.unwrap();
+    let response = client.get_positions(&params).await.unwrap();
 
     assert_eq!(response.ret_code, 0);
 }
@@ -1053,7 +1053,7 @@ async fn test_get_fee_rate_requires_credentials() {
         base_coin: None,
     };
 
-    let result = client.http_get_fee_rate(&params).await;
+    let result = client.get_fee_rate(&params).await;
     assert!(result.is_err());
 }
 
@@ -1082,7 +1082,7 @@ async fn test_get_fee_rate_with_credentials() {
         base_coin: None,
     };
 
-    let response = client.http_get_fee_rate(&params).await.unwrap();
+    let response = client.get_fee_rate(&params).await.unwrap();
 
     assert_eq!(response.ret_code, 0);
     assert!(!response.result.list.is_empty());

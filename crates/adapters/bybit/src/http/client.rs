@@ -106,7 +106,7 @@ pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";
 
 /// Inner HTTP client implementation containing the actual HTTP logic.
-pub struct BybitHttpInnerClient {
+pub struct BybitRawHttpClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
@@ -117,16 +117,16 @@ pub struct BybitHttpInnerClient {
     use_spot_position_reports: AtomicBool,
 }
 
-impl Default for BybitHttpInnerClient {
+impl Default for BybitRawHttpClient {
     fn default() -> Self {
         Self::new(None, Some(60), None, None, None, None, None)
-            .expect("Failed to create default BybitHttpInnerClient")
+            .expect("Failed to create default BybitRawHttpClient")
     }
 }
 
-impl Debug for BybitHttpInnerClient {
+impl Debug for BybitRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BybitHttpInnerClient")
+        f.debug_struct("BybitRawHttpClient")
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
             .field("recv_window_ms", &self.recv_window_ms)
@@ -134,7 +134,7 @@ impl Debug for BybitHttpInnerClient {
     }
 }
 
-impl BybitHttpInnerClient {
+impl BybitRawHttpClient {
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.cancellation_token.cancel();
@@ -145,7 +145,7 @@ impl BybitHttpInnerClient {
         &self.cancellation_token
     }
 
-    /// Creates a new [`BybitHttpInnerClient`] using the default Bybit HTTP URL.
+    /// Creates a new [`BybitRawHttpClient`] using the default Bybit HTTP URL.
     ///
     /// # Errors
     ///
@@ -198,7 +198,7 @@ impl BybitHttpInnerClient {
         })
     }
 
-    /// Creates a new [`BybitHttpInnerClient`] configured with credentials.
+    /// Creates a new [`BybitRawHttpClient`] configured with credentials.
     ///
     /// # Errors
     ///
@@ -424,7 +424,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/time>
-    pub async fn http_get_server_time(&self) -> Result<BybitServerTimeResponse, BybitHttpError> {
+    pub async fn get_server_time(&self) -> Result<BybitServerTimeResponse, BybitHttpError> {
         self.send_request(Method::GET, "/v5/market/time", None, false)
             .await
     }
@@ -438,7 +438,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments<T: DeserializeOwned>(
+    pub async fn get_instruments<T: DeserializeOwned>(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<T, BybitHttpError> {
@@ -455,11 +455,11 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_spot(
+    pub async fn get_instruments_spot(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentSpotResponse, BybitHttpError> {
-        self.http_get_instruments(params).await
+        self.get_instruments(params).await
     }
 
     /// Fetches linear instrument information from Bybit.
@@ -471,11 +471,11 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_linear(
+    pub async fn get_instruments_linear(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentLinearResponse, BybitHttpError> {
-        self.http_get_instruments(params).await
+        self.get_instruments(params).await
     }
 
     /// Fetches inverse instrument information from Bybit.
@@ -487,11 +487,11 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_inverse(
+    pub async fn get_instruments_inverse(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentInverseResponse, BybitHttpError> {
-        self.http_get_instruments(params).await
+        self.get_instruments(params).await
     }
 
     /// Fetches option instrument information from Bybit.
@@ -503,11 +503,11 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_option(
+    pub async fn get_instruments_option(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentOptionResponse, BybitHttpError> {
-        self.http_get_instruments(params).await
+        self.get_instruments(params).await
     }
 
     /// Fetches kline/candlestick data from Bybit.
@@ -519,7 +519,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/kline>
-    pub async fn http_get_klines(
+    pub async fn get_klines(
         &self,
         params: &BybitKlinesParams,
     ) -> Result<BybitKlinesResponse, BybitHttpError> {
@@ -536,7 +536,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
-    pub async fn http_get_recent_trades(
+    pub async fn get_recent_trades(
         &self,
         params: &BybitTradesParams,
     ) -> Result<BybitTradesResponse, BybitHttpError> {
@@ -553,7 +553,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
-    pub async fn http_get_open_orders(
+    pub async fn get_open_orders(
         &self,
         category: BybitProductType,
         symbol: Option<&str>,
@@ -580,7 +580,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/create-order>
-    pub async fn http_place_order(
+    pub async fn place_order(
         &self,
         request: &serde_json::Value,
     ) -> Result<BybitPlaceOrderResponse, BybitHttpError> {
@@ -598,7 +598,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
-    pub async fn http_get_wallet_balance(
+    pub async fn get_wallet_balance(
         &self,
         params: &BybitWalletBalanceParams,
     ) -> Result<BybitWalletBalanceResponse, BybitHttpError> {
@@ -615,7 +615,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
-    pub async fn http_get_fee_rate(
+    pub async fn get_fee_rate(
         &self,
         params: &BybitFeeRateParams,
     ) -> Result<BybitFeeRateResponse, BybitHttpError> {
@@ -639,7 +639,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
-    pub async fn http_set_margin_mode(
+    pub async fn set_margin_mode(
         &self,
         margin_mode: BybitMarginMode,
     ) -> Result<BybitSetMarginModeResponse, BybitHttpError> {
@@ -674,7 +674,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position/leverage>
-    pub async fn http_set_leverage(
+    pub async fn set_leverage(
         &self,
         product_type: BybitProductType,
         symbol: &str,
@@ -710,7 +710,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position/position-mode>
-    pub async fn http_switch_mode(
+    pub async fn switch_mode(
         &self,
         product_type: BybitProductType,
         mode: BybitPositionMode,
@@ -746,7 +746,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/tickers>
-    pub async fn http_get_tickers<T: DeserializeOwned>(
+    pub async fn get_tickers<T: DeserializeOwned>(
         &self,
         params: &BybitTickersParams,
     ) -> Result<T, BybitHttpError> {
@@ -763,7 +763,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/execution>
-    pub async fn http_get_trade_history(
+    pub async fn get_trade_history(
         &self,
         params: &BybitTradeHistoryParams,
     ) -> Result<BybitTradeHistoryResponse, BybitHttpError> {
@@ -783,7 +783,7 @@ impl BybitHttpInnerClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position>
-    pub async fn http_get_positions(
+    pub async fn get_positions(
         &self,
         params: &BybitPositionListParams,
     ) -> Result<BybitPositionListResponse, BybitHttpError> {
@@ -871,7 +871,7 @@ impl BybitHttpInnerClient {
             coin: None,
         };
 
-        let response = self.http_get_wallet_balance(&params).await?;
+        let response = self.get_wallet_balance(&params).await?;
         let ts_init = self.generate_ts_init();
 
         // Build lookup table of wallet balances by coin
@@ -980,10 +980,6 @@ impl BybitHttpInnerClient {
         Ok(reports)
     }
 
-    // =========================================================================
-    // High-level domain methods
-    // =========================================================================
-
     /// Submit a new order.
     ///
     /// # Errors
@@ -1064,7 +1060,7 @@ impl BybitHttpInnerClient {
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let body = serde_json::to_value(&params)?;
-        let response = self.http_place_order(&body).await?;
+        let response = self.place_order(&body).await?;
 
         let order_id = response
             .result
@@ -1616,15 +1612,14 @@ impl BybitHttpInnerClient {
 
         match product_type {
             BybitProductType::Spot => {
-                let response: BybitInstrumentSpotResponse =
-                    self.http_get_instruments(&params).await?;
+                let response: BybitInstrumentSpotResponse = self.get_instruments(&params).await?;
 
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
-                        match self.http_get_fee_rate(&params).await {
+                        match self.get_fee_rate(&params).await {
                             Ok(fee_response) => fee_response
                                 .result
                                 .list
@@ -1655,15 +1650,14 @@ impl BybitHttpInnerClient {
                 }
             }
             BybitProductType::Linear => {
-                let response: BybitInstrumentLinearResponse =
-                    self.http_get_instruments(&params).await?;
+                let response: BybitInstrumentLinearResponse = self.get_instruments(&params).await?;
 
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
-                        match self.http_get_fee_rate(&params).await {
+                        match self.get_fee_rate(&params).await {
                             Ok(fee_response) => fee_response
                                 .result
                                 .list
@@ -1695,14 +1689,14 @@ impl BybitHttpInnerClient {
             }
             BybitProductType::Inverse => {
                 let response: BybitInstrumentInverseResponse =
-                    self.http_get_instruments(&params).await?;
+                    self.get_instruments(&params).await?;
 
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
-                        match self.http_get_fee_rate(&params).await {
+                        match self.get_fee_rate(&params).await {
                             Ok(fee_response) => fee_response
                                 .result
                                 .list
@@ -1733,8 +1727,7 @@ impl BybitHttpInnerClient {
                 }
             }
             BybitProductType::Option => {
-                let response: BybitInstrumentOptionResponse =
-                    self.http_get_instruments(&params).await?;
+                let response: BybitInstrumentOptionResponse = self.get_instruments(&params).await?;
 
                 for definition in response.result.list {
                     if let Ok(instrument) = parse_option_instrument(&definition, ts_init, ts_init) {
@@ -1788,7 +1781,7 @@ impl BybitHttpInnerClient {
         }
 
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
-        let response = self.http_get_recent_trades(&params).await?;
+        let response = self.get_recent_trades(&params).await?;
 
         let ts_init = self.generate_ts_init();
         let mut trades = Vec::new();
@@ -1864,7 +1857,7 @@ impl BybitHttpInnerClient {
             }
 
             let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
-            let response = self.http_get_klines(&params).await?;
+            let response = self.get_klines(&params).await?;
 
             let klines = response.result.list;
             if klines.is_empty() {
@@ -1963,7 +1956,7 @@ impl BybitHttpInnerClient {
             base_coin,
         };
 
-        let response = self.http_get_fee_rate(&params).await?;
+        let response = self.get_fee_rate(&params).await?;
         Ok(response.result.list)
     }
 
@@ -1988,7 +1981,7 @@ impl BybitHttpInnerClient {
             coin: None,
         };
 
-        let response = self.http_get_wallet_balance(&params).await?;
+        let response = self.get_wallet_balance(&params).await?;
         let ts_init = self.generate_ts_init();
 
         // Take the first wallet balance from the list
@@ -2306,7 +2299,7 @@ impl BybitHttpInnerClient {
                 cursor: cursor.clone(),
             };
 
-            let response = self.http_get_trade_history(&params).await?;
+            let response = self.get_trade_history(&params).await?;
             let list_len = response.result.list.len();
             all_executions.extend(response.result.list);
             total_executions += list_len;
@@ -2398,7 +2391,7 @@ impl BybitHttpInnerClient {
                         cursor: cursor.clone(),
                     };
 
-                    let response = self.http_get_positions(&params).await?;
+                    let response = self.get_positions(&params).await?;
 
                     for position in response.result.list {
                         if position.symbol.is_empty() {
@@ -2443,7 +2436,7 @@ impl BybitHttpInnerClient {
                     cursor: cursor.clone(),
                 };
 
-                let response = self.http_get_positions(&params).await?;
+                let response = self.get_positions(&params).await?;
 
                 for position in response.result.list {
                     if position.symbol.is_empty() {
@@ -2490,7 +2483,7 @@ impl BybitHttpInnerClient {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct BybitHttpClient {
-    pub(crate) inner: Arc<BybitHttpInnerClient>,
+    pub(crate) inner: Arc<BybitRawHttpClient>,
 }
 
 impl Default for BybitHttpClient {
@@ -2525,7 +2518,7 @@ impl BybitHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         Ok(Self {
-            inner: Arc::new(BybitHttpInnerClient::new(
+            inner: Arc::new(BybitRawHttpClient::new(
                 base_url,
                 timeout_secs,
                 max_retries,
@@ -2555,7 +2548,7 @@ impl BybitHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
         Ok(Self {
-            inner: Arc::new(BybitHttpInnerClient::with_credentials(
+            inner: Arc::new(BybitRawHttpClient::with_credentials(
                 api_key,
                 api_secret,
                 base_url,
@@ -2618,8 +2611,8 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/time>
-    pub async fn http_get_server_time(&self) -> Result<BybitServerTimeResponse, BybitHttpError> {
-        self.inner.http_get_server_time().await
+    pub async fn get_server_time(&self) -> Result<BybitServerTimeResponse, BybitHttpError> {
+        self.inner.get_server_time().await
     }
 
     /// Fetches instrument information from Bybit for a given product category.
@@ -2633,11 +2626,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments<T: DeserializeOwned>(
+    pub async fn get_instruments<T: DeserializeOwned>(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<T, BybitHttpError> {
-        self.inner.http_get_instruments(params).await
+        self.inner.get_instruments(params).await
     }
 
     /// Fetches spot instrument information from Bybit.
@@ -2651,11 +2644,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_spot(
+    pub async fn get_instruments_spot(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentSpotResponse, BybitHttpError> {
-        self.inner.http_get_instruments_spot(params).await
+        self.inner.get_instruments_spot(params).await
     }
 
     /// Fetches linear instrument information from Bybit.
@@ -2669,11 +2662,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_linear(
+    pub async fn get_instruments_linear(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentLinearResponse, BybitHttpError> {
-        self.inner.http_get_instruments_linear(params).await
+        self.inner.get_instruments_linear(params).await
     }
 
     /// Fetches inverse instrument information from Bybit.
@@ -2687,11 +2680,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_inverse(
+    pub async fn get_instruments_inverse(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentInverseResponse, BybitHttpError> {
-        self.inner.http_get_instruments_inverse(params).await
+        self.inner.get_instruments_inverse(params).await
     }
 
     /// Fetches option instrument information from Bybit.
@@ -2705,11 +2698,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn http_get_instruments_option(
+    pub async fn get_instruments_option(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<BybitInstrumentOptionResponse, BybitHttpError> {
-        self.inner.http_get_instruments_option(params).await
+        self.inner.get_instruments_option(params).await
     }
 
     /// Fetches kline/candlestick data from Bybit.
@@ -2723,11 +2716,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/kline>
-    pub async fn http_get_klines(
+    pub async fn get_klines(
         &self,
         params: &BybitKlinesParams,
     ) -> Result<BybitKlinesResponse, BybitHttpError> {
-        self.inner.http_get_klines(params).await
+        self.inner.get_klines(params).await
     }
 
     /// Fetches recent trades from Bybit.
@@ -2741,11 +2734,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
-    pub async fn http_get_recent_trades(
+    pub async fn get_recent_trades(
         &self,
         params: &BybitTradesParams,
     ) -> Result<BybitTradesResponse, BybitHttpError> {
-        self.inner.http_get_recent_trades(params).await
+        self.inner.get_recent_trades(params).await
     }
 
     /// Fetches open orders (requires authentication).
@@ -2759,12 +2752,12 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
-    pub async fn http_get_open_orders(
+    pub async fn get_open_orders(
         &self,
         category: BybitProductType,
         symbol: Option<&str>,
     ) -> Result<BybitOpenOrdersResponse, BybitHttpError> {
-        self.inner.http_get_open_orders(category, symbol).await
+        self.inner.get_open_orders(category, symbol).await
     }
 
     /// Places a new order (requires authentication).
@@ -2778,11 +2771,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/create-order>
-    pub async fn http_place_order(
+    pub async fn place_order(
         &self,
         request: &serde_json::Value,
     ) -> Result<BybitPlaceOrderResponse, BybitHttpError> {
-        self.inner.http_place_order(request).await
+        self.inner.place_order(request).await
     }
 
     /// Fetches wallet balance (requires authentication).
@@ -2796,11 +2789,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
-    pub async fn http_get_wallet_balance(
+    pub async fn get_wallet_balance(
         &self,
         params: &BybitWalletBalanceParams,
     ) -> Result<BybitWalletBalanceResponse, BybitHttpError> {
-        self.inner.http_get_wallet_balance(params).await
+        self.inner.get_wallet_balance(params).await
     }
 
     /// Fetches position information (requires authentication).
@@ -2815,11 +2808,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position>
-    pub async fn http_get_positions(
+    pub async fn get_positions(
         &self,
         params: &BybitPositionListParams,
     ) -> Result<BybitPositionListResponse, BybitHttpError> {
-        self.inner.http_get_positions(params).await
+        self.inner.get_positions(params).await
     }
 
     /// Fetches fee rate (requires authentication).
@@ -2834,11 +2827,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
-    pub async fn http_get_fee_rate(
+    pub async fn get_fee_rate(
         &self,
         params: &BybitFeeRateParams,
     ) -> Result<BybitFeeRateResponse, BybitHttpError> {
-        self.inner.http_get_fee_rate(params).await
+        self.inner.get_fee_rate(params).await
     }
 
     // =========================================================================
@@ -3230,11 +3223,11 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
-    pub async fn http_set_margin_mode(
+    pub async fn set_margin_mode(
         &self,
         margin_mode: BybitMarginMode,
     ) -> Result<BybitSetMarginModeResponse, BybitHttpError> {
-        self.inner.http_set_margin_mode(margin_mode).await
+        self.inner.set_margin_mode(margin_mode).await
     }
 
     /// Sets leverage for a symbol.
@@ -3253,7 +3246,7 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position/leverage>
-    pub async fn http_set_leverage(
+    pub async fn set_leverage(
         &self,
         product_type: BybitProductType,
         symbol: &str,
@@ -3261,7 +3254,7 @@ impl BybitHttpClient {
         sell_leverage: &str,
     ) -> Result<BybitSetLeverageResponse, BybitHttpError> {
         self.inner
-            .http_set_leverage(product_type, symbol, buy_leverage, sell_leverage)
+            .set_leverage(product_type, symbol, buy_leverage, sell_leverage)
             .await
     }
 
@@ -3281,7 +3274,7 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position/position-mode>
-    pub async fn http_switch_mode(
+    pub async fn switch_mode(
         &self,
         product_type: BybitProductType,
         mode: BybitPositionMode,
@@ -3289,7 +3282,7 @@ impl BybitHttpClient {
         coin: Option<String>,
     ) -> Result<BybitSwitchModeResponse, BybitHttpError> {
         self.inner
-            .http_switch_mode(product_type, mode, symbol, coin)
+            .switch_mode(product_type, mode, symbol, coin)
             .await
     }
 }
@@ -3346,7 +3339,7 @@ mod tests {
             symbol: "BTCUSDT".to_string(),
         };
 
-        let path = BybitHttpInnerClient::build_path("/v5/market/test", &params);
+        let path = BybitRawHttpClient::build_path("/v5/market/test", &params);
         assert!(path.is_ok());
         assert!(path.unwrap().contains("category=linear"));
     }
@@ -3354,7 +3347,7 @@ mod tests {
     #[rstest]
     fn test_build_path_without_params() {
         let params = ();
-        let path = BybitHttpInnerClient::build_path("/v5/market/time", &params);
+        let path = BybitRawHttpClient::build_path("/v5/market/time", &params);
         assert!(path.is_ok());
         assert_eq!(path.unwrap(), "/v5/market/time");
     }
