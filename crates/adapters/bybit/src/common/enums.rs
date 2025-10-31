@@ -20,7 +20,7 @@ use std::fmt::Display;
 use nautilus_model::enums::{AggressorSide, OrderSide};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, EnumIter, EnumString};
 
 /// Unified margin account status values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
@@ -39,8 +39,22 @@ pub enum BybitUnifiedMarginStatus {
 }
 
 /// Margin mode used by Bybit when switching risk profiles.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -52,8 +66,22 @@ pub enum BybitMarginMode {
 }
 
 /// Position mode as returned by the v5 API.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
 #[repr(i32)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -82,7 +110,7 @@ pub enum BybitPositionIdx {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -106,7 +134,7 @@ pub enum BybitAccountType {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -135,7 +163,7 @@ pub enum BybitEnvironment {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     Default,
     PartialEq,
     Eq,

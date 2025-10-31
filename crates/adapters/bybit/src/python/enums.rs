@@ -21,7 +21,9 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use strum::IntoEnumIterator;
 
-use crate::common::enums::{BybitAccountType, BybitEnvironment, BybitProductType};
+use crate::common::enums::{
+    BybitAccountType, BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType,
+};
 
 #[pymethods]
 impl BybitProductType {
@@ -221,5 +223,153 @@ impl BybitAccountType {
     #[pyo3(name = "UNIFIED")]
     fn py_unified() -> Self {
         Self::Unified
+    }
+}
+
+#[pymethods]
+impl BybitMarginMode {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(BybitMarginMode),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.as_ref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> String {
+        match self {
+            Self::IsolatedMargin => "ISOLATED_MARGIN".to_string(),
+            Self::RegularMargin => "REGULAR_MARGIN".to_string(),
+            Self::PortfolioMargin => "PORTFOLIO_MARGIN".to_string(),
+        }
+    }
+
+    #[staticmethod]
+    #[must_use]
+    fn variants() -> Vec<String> {
+        Self::iter().map(|x| x.to_string()).collect()
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: String = data.str()?.extract()?;
+        Self::from_str(&data_str).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "ISOLATED_MARGIN")]
+    fn py_isolated_margin() -> Self {
+        Self::IsolatedMargin
+    }
+
+    #[classattr]
+    #[pyo3(name = "REGULAR_MARGIN")]
+    fn py_regular_margin() -> Self {
+        Self::RegularMargin
+    }
+
+    #[classattr]
+    #[pyo3(name = "PORTFOLIO_MARGIN")]
+    fn py_portfolio_margin() -> Self {
+        Self::PortfolioMargin
+    }
+}
+
+#[pymethods]
+impl BybitPositionMode {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: {}>",
+            stringify!(BybitPositionMode),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.as_ref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> i32 {
+        *self as i32
+    }
+
+    #[staticmethod]
+    #[must_use]
+    fn variants() -> Vec<String> {
+        Self::iter().map(|x| x.to_string()).collect()
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // Try to extract as integer first (for API payloads that send 0 or 3)
+        if let Ok(int_val) = data.extract::<i32>() {
+            return match int_val {
+                0 => Ok(Self::MergedSingle),
+                3 => Ok(Self::BothSides),
+                _ => Err(to_pyvalue_err(anyhow::anyhow!(
+                    "Invalid BybitPositionMode value: {int_val}"
+                ))),
+            };
+        }
+
+        // Fall back to string parsing for variant names
+        let data_str: String = data.str()?.extract()?;
+        Self::from_str(&data_str).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "MERGED_SINGLE")]
+    fn py_merged_single() -> Self {
+        Self::MergedSingle
+    }
+
+    #[classattr]
+    #[pyo3(name = "BOTH_SIDES")]
+    fn py_both_sides() -> Self {
+        Self::BothSides
     }
 }

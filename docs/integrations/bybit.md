@@ -318,6 +318,8 @@ The product types for each client must be specified in the configurations.
 | `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
 | `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `update_instruments_interval_mins` | `60` | Interval (minutes) between instrument catalogue refreshes. |
@@ -326,8 +328,6 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None` | Maximum retry attempts for REST/WebSocket recovery. |
 | `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
-| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 
 ### Execution client configuration options
 
@@ -339,6 +339,8 @@ The product types for each client must be specified in the configurations.
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
@@ -349,8 +351,6 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |
 | `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None` | Maximum delay (milliseconds) between retries. |
-| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `recv_window_ms`                 | `5,000`| Receive window (milliseconds) for signed REST requests. |
 | `ws_trade_timeout_secs`          | `5.0`  | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
 | `ws_auth_timeout_secs`           | `5.0`  | Timeout (seconds) waiting for auth WebSocket acknowledgements. |

@@ -41,6 +41,9 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types : tuple[BybitProductType, ...], optional
         The Bybit product types for the client.
         If not specified then will use all products.
+    base_url_http : str, optional
+        The base URL for Bybit HTTP API.
+        If ``None`` then will use the default URL based on environment.
     http_proxy_url : str, optional
         Optional HTTP proxy URL.
     ws_proxy_url : str, optional
@@ -102,6 +105,9 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         If None then will default to 'SPOT', you also cannot mix 'SPOT' with
         any other product type for execution, and it will use a `CASH` account
         type, vs `MARGIN` for the other derivative products.
+    base_url_http : str, optional
+        The base URL for Bybit HTTP API.
+        If ``None`` then will use the default URL based on environment.
     base_url_ws_private : str, optional
         The base URL for the `private` WebSocket client.
     base_url_ws_trade : str, optional
