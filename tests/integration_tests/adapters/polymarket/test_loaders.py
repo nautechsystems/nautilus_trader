@@ -86,7 +86,7 @@ def loader(test_instrument):
 
 
 @pytest.mark.asyncio
-async def test_fetch_markets(test_instrument, markets_list_data):
+async def test_fetch_markets(markets_list_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -94,10 +94,11 @@ async def test_fetch_markets(test_instrument, markets_list_data):
     mock_response.body = msgspec.json.encode(markets_list_data)
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
     # Act
-    markets = await loader.fetch_markets(limit=10)
+    markets = await PolymarketDataLoader.fetch_markets(
+        limit=10,
+        http_client=mock_http_client,
+    )
 
     # Assert
     mock_http_client.request.assert_called_once()
@@ -107,7 +108,7 @@ async def test_fetch_markets(test_instrument, markets_list_data):
 
 
 @pytest.mark.asyncio
-async def test_find_market_by_slug(test_instrument, markets_list_data):
+async def test_find_market_by_slug(markets_list_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -115,10 +116,11 @@ async def test_find_market_by_slug(test_instrument, markets_list_data):
     mock_response.body = msgspec.json.encode(markets_list_data)
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
     # Act
-    market = await loader.find_market_by_slug("btc-price-above-100k")
+    market = await PolymarketDataLoader.find_market_by_slug(
+        "btc-price-above-100k",
+        http_client=mock_http_client,
+    )
 
     # Assert
     assert market["slug"] == "btc-price-above-100k"
@@ -127,7 +129,7 @@ async def test_find_market_by_slug(test_instrument, markets_list_data):
 
 
 @pytest.mark.asyncio
-async def test_find_market_by_slug_not_found(test_instrument, markets_list_data):
+async def test_find_market_by_slug_not_found(markets_list_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -135,15 +137,16 @@ async def test_find_market_by_slug_not_found(test_instrument, markets_list_data)
     mock_response.body = msgspec.json.encode(markets_list_data)
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
     # Act & Assert
     with pytest.raises(ValueError, match="not found in active markets"):
-        await loader.find_market_by_slug("nonexistent-market")
+        await PolymarketDataLoader.find_market_by_slug(
+            "nonexistent-market",
+            http_client=mock_http_client,
+        )
 
 
 @pytest.mark.asyncio
-async def test_fetch_market_details(test_instrument, market_details_data):
+async def test_fetch_market_details(market_details_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -152,10 +155,11 @@ async def test_fetch_market_details(test_instrument, market_details_data):
     mock_http_client.request = AsyncMock(return_value=mock_response)
     condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
 
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
     # Act
-    details = await loader.fetch_market_details(condition_id)
+    details = await PolymarketDataLoader.fetch_market_details(
+        condition_id,
+        http_client=mock_http_client,
+    )
 
     # Assert
     mock_http_client.request.assert_called_once()

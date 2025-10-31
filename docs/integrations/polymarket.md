@@ -490,30 +490,30 @@ from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.core.datetime import millis_to_nanos
 
 async def load_market_data():
-    # Initialize loader
-    loader = PolymarketDataLoader()
-
-    # Find market by slug
-    market = await loader.find_market_by_slug("fed-rate-hike-in-2025")
+    # Discovery methods are static - no instance needed
+    market = await PolymarketDataLoader.find_market_by_slug("fed-rate-hike-in-2025")
     condition_id = market["conditionId"]
 
-    # Fetch detailed market information
-    market_details = await loader.fetch_market_details(condition_id)
+    market_details = await PolymarketDataLoader.fetch_market_details(condition_id)
     token = market_details["tokens"][0]
     token_id = token["token_id"]
 
-    # Create instrument
     instrument = parse_instrument(
         market_info=market_details,
         token_id=token_id,
         outcome=token["outcome"],
     )
 
-    return instrument
+    return instrument, token_id
 
-# Run the async function
-instrument = asyncio.run(load_market_data())
+# Run the async function and create a loader bound to the instrument
+instrument, token_id = asyncio.run(load_market_data())
+loader = PolymarketDataLoader(instrument=instrument, token_id=token_id)
 ```
+
+:::note
+You can also skip the manual wiring and call `await PolymarketDataLoader.from_market_slug(...)`, which fetches the metadata and returns a loader that already has `instrument` and `token_id` set.
+:::
 
 ### Fetching orderbook history
 
@@ -539,6 +539,7 @@ Alternatively, you can fetch and parse separately using the lower-level methods:
 # Convert timestamps to milliseconds for the API
 start_time_ms = int(start.timestamp() * 1000)
 end_time_ms = int(end.timestamp() * 1000)
+token_id = loader.token_id
 
 orderbook_snapshots = await loader.fetch_orderbook_history(
     token_id=token_id,
@@ -579,6 +580,7 @@ Alternatively, you can fetch and parse separately using the lower-level methods:
 # Convert timestamps to milliseconds for the API
 start_time_ms = int(start.timestamp() * 1000)
 end_time_ms = int(end.timestamp() * 1000)
+token_id = loader.token_id
 
 # Fetch raw price history
 price_history = await loader.fetch_price_history(
@@ -690,16 +692,16 @@ python examples/backtest/polymarket_simple_quoter.py
 
 - `async from_market_slug(slug, token_index=0, http_client=None)` - Create a loader by fetching market data from Polymarket APIs
 
-**Convenience Methods (require token_id):**
+**Static Discovery Methods (no instance required):**
+
+- `async fetch_markets(active=True, closed=False, archived=False, limit=100, http_client=None)` - Fetch markets from Gamma API
+- `async find_market_by_slug(slug, http_client=None)` - Find a specific market by its slug
+- `async fetch_market_details(condition_id, http_client=None)` - Fetch detailed market information from CLOB API
+
+**Instance Methods (require instrument and/or token_id):**
 
 - `async load_orderbook_snapshots(start, end, limit=500)` - Load and parse orderbook snapshots for the loader's instrument (pd.Timestamp)
 - `async load_trades(start, end, fidelity=1)` - Load and parse trade ticks for the loader's instrument (pd.Timestamp)
-
-**Fetching Methods (async):**
-
-- `async fetch_markets(active=True, closed=False, archived=False, limit=100)` - Fetch markets from Gamma API
-- `async find_market_by_slug(slug)` - Find a specific market by its slug
-- `async fetch_market_details(condition_id)` - Fetch detailed market information from CLOB API
 - `async fetch_orderbook_history(token_id, start_time_ms, end_time_ms, limit=500)` - Fetch orderbook snapshots with automatic pagination (timestamps in milliseconds)
 - `async fetch_price_history(token_id, start_time_ms, end_time_ms, fidelity=1)` - Fetch price history timeseries (timestamps in milliseconds)
 

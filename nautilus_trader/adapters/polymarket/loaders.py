@@ -96,55 +96,15 @@ class PolymarketDataLoader:
             If HTTP requests fail.
 
         """
-        http_client = http_client or nautilus_pyo3.HttpClient()
-
-        # Fetch markets
-        params = {
-            "active": "true",
-            "closed": "false",
-            "archived": "false",
-            "limit": "100",
-        }
-        query_string = urlencode(params)
-        markets_url = f"https://gamma-api.polymarket.com/markets?{query_string}"
-
-        markets_response = await http_client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=markets_url,
-        )
-
-        if markets_response.status != 200:
-            raise RuntimeError(
-                f"Failed to fetch markets: HTTP {markets_response.status}",
-            )
-
-        markets = msgspec.json.decode(markets_response.body)
-
         # Find market by slug
-        market = None
-        for m in markets:
-            if m.get("slug") == slug:
-                market = m
-                break
-
-        if not market:
-            raise ValueError(f"Market with slug '{slug}' not found in active markets")
-
+        market = await cls.find_market_by_slug(slug, http_client=http_client)
         condition_id = market["conditionId"]
 
         # Fetch detailed market info
-        details_url = f"https://clob.polymarket.com/markets/{condition_id}"
-        details_response = await http_client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=details_url,
+        market_details = await cls.fetch_market_details(
+            condition_id,
+            http_client=http_client,
         )
-
-        if details_response.status != 200:
-            raise RuntimeError(
-                f"Failed to fetch market details: HTTP {details_response.status}",
-            )
-
-        market_details = msgspec.json.decode(details_response.body)
 
         # Get token information
         tokens = market_details.get("tokens", [])
@@ -287,12 +247,13 @@ class PolymarketDataLoader:
 
         return self.parse_price_history(history)
 
+    @staticmethod
     async def fetch_markets(
-        self,
         active: bool = True,
         closed: bool = False,
         archived: bool = False,
         limit: int = 100,
+        http_client: nautilus_pyo3.HttpClient | None = None,
     ) -> list[dict]:
         """
         Fetch markets from Polymarket Gamma API.
@@ -307,6 +268,8 @@ class PolymarketDataLoader:
             Include archived markets.
         limit : int, default 100
             Maximum number of markets to return.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
 
         Returns
         -------
@@ -314,6 +277,7 @@ class PolymarketDataLoader:
             List of market data dictionaries.
 
         """
+        client = http_client or nautilus_pyo3.HttpClient()
         params = {
             "active": str(active).lower(),
             "closed": str(closed).lower(),
@@ -323,7 +287,7 @@ class PolymarketDataLoader:
         query_string = urlencode(params)
         url = f"https://gamma-api.polymarket.com/markets?{query_string}"
 
-        response = await self._http_client.request(
+        response = await client.request(
             method=nautilus_pyo3.HttpMethod.GET,
             url=url,
         )
@@ -335,7 +299,11 @@ class PolymarketDataLoader:
 
         return msgspec.json.decode(response.body)
 
-    async def find_market_by_slug(self, slug: str) -> dict:
+    @staticmethod
+    async def find_market_by_slug(
+        slug: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> dict:
         """
         Find a specific market by slug.
 
@@ -343,6 +311,8 @@ class PolymarketDataLoader:
         ----------
         slug : str
             The market slug to search for.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
 
         Returns
         -------
@@ -355,14 +325,21 @@ class PolymarketDataLoader:
             If market with the given slug is not found.
 
         """
-        markets = await self.fetch_markets(limit=100)
+        markets = await PolymarketDataLoader.fetch_markets(
+            limit=100,
+            http_client=http_client,
+        )
         for market in markets:
             if market.get("slug") == slug:
                 return market
 
         raise ValueError(f"Market with slug '{slug}' not found in active markets")
 
-    async def fetch_market_details(self, condition_id: str) -> dict:
+    @staticmethod
+    async def fetch_market_details(
+        condition_id: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> dict:
         """
         Fetch detailed market information from Polymarket CLOB API.
 
@@ -370,6 +347,8 @@ class PolymarketDataLoader:
         ----------
         condition_id : str
             The market condition ID.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
 
         Returns
         -------
@@ -377,9 +356,10 @@ class PolymarketDataLoader:
             Detailed market information.
 
         """
+        client = http_client or nautilus_pyo3.HttpClient()
         url = f"https://clob.polymarket.com/markets/{condition_id}"
 
-        response = await self._http_client.request(
+        response = await client.request(
             method=nautilus_pyo3.HttpMethod.GET,
             url=url,
         )
