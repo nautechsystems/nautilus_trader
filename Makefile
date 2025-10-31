@@ -12,6 +12,7 @@ CARGO_DENY_VERSION := $(shell grep '^cargo-deny *= *"' Cargo.toml | awk -F\" '{p
 CARGO_LLVM_COV_VERSION := $(shell grep '^cargo-llvm-cov *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_NEXTEST_VERSION := $(shell grep '^cargo-nextest *= *"' Cargo.toml | awk -F\" '{print $$2}')
 LYCHEE_VERSION := $(shell grep '^lychee *= *"' Cargo.toml | awk -F\" '{print $$2}')
+UV_VERSION := $(shell cat uv-version | tr -d '\n')
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -222,10 +223,18 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	cargo upgrade --dry-run --incompatible
 	uv tree --outdated --depth 1 --all-groups
 
-.PHONY: update cargo-update
-update: cargo-update  #-- Update all dependencies (uv and cargo)
-	uv self update
+.PHONY: update update-tools cargo-update
+update: update-tools cargo-update  #-- Update all dependencies (cargo and uv)
 	uv lock --upgrade
+
+.PHONY: update-tools
+update-tools:  #-- Update or install required development tools (Rust tools from Cargo.toml, uv from uv-version)
+	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
+	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
+	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
+	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
+	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
+	&& uv self update $(UV_VERSION)
 
 #== Security
 
@@ -270,13 +279,8 @@ cargo-build:  #-- Build Rust crates in release mode
 	cargo build --release --all-features
 
 .PHONY: cargo-update
-cargo-update:  #-- Update Rust dependencies and install required tools (versions from Cargo.toml)
-	cargo update \
-	&& cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
-	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
-	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
-	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
-	&& cargo install lychee --version $(LYCHEE_VERSION) --locked
+cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)
+	cargo update
 
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
