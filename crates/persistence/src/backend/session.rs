@@ -110,8 +110,12 @@ impl DataBackendSession {
             parsed_uri.scheme(),
             "s3" | "gs" | "gcs" | "az" | "abfs" | "http" | "https"
         ) {
-            // For cloud storage, register with the generic protocol URL
-            let base_url = format!("{}://", parsed_uri.scheme());
+            // For cloud storage, register with the base URL (scheme + netloc)
+            let base_url = format!(
+                "{}://{}",
+                parsed_uri.scheme(),
+                parsed_uri.host_str().unwrap_or("")
+            );
             let base_parsed_url = Url::parse(&base_url)?;
             self.register_object_store(&base_parsed_url, object_store);
         }

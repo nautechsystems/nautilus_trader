@@ -30,8 +30,7 @@ TBD
 
 ### Fixes
 - Fixed spawned order client_id caching in `ExecAlgorithm`, thanks for reporting @kirill-gr1
-- Fixed DataFusion object store registration for custom S3 endpoints (#3120), thanks for reporting @rgauny
-- Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
+- Fixed Binance instrument info dict JSON serialization, thanks for reporting @woung717
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 
 ### Internal Improvements

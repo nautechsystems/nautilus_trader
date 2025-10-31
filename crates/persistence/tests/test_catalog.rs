@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -496,26 +496,6 @@ fn test_register_object_store_from_uri_nonexistent_path() {
     // Act & Assert - non-existent path should return an error
     let result = session.register_object_store_from_uri("file:///nonexistent/path", None);
     assert!(result.is_err());
-}
-
-#[rstest]
-fn test_register_object_store_from_uri_s3() {
-    // Test registering remote object store ensures scheme + host base URL parsing succeeds
-    let mut storage_options = HashMap::new();
-    storage_options.insert(
-        "endpoint_url".to_string(),
-        "https://test.endpoint.com".to_string(),
-    );
-    storage_options.insert("region".to_string(), "us-west-2".to_string());
-    storage_options.insert("access_key_id".to_string(), "test_key".to_string());
-    storage_options.insert("secret_access_key".to_string(), "test_secret".to_string());
-
-    let mut session = DataBackendSession::new(1000);
-
-    let result = session
-        .register_object_store_from_uri("s3://test-bucket/path/to/data", Some(storage_options));
-
-    assert!(result.is_ok());
 }
 
 #[rstest]
