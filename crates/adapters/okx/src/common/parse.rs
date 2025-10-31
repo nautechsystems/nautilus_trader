@@ -23,7 +23,6 @@ use nautilus_core::{
     nanos::UnixNanos,
 };
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{
         Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         TradeTick,
@@ -197,10 +196,11 @@ where
     Ok(OKXVipLevel::from(level_num))
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
 ///
 /// If the code is empty, logs a warning with context and returns USDT as fallback.
-/// For unknown but valid codes, creates a new Currency (preserves newly listed OKX assets).
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed OKX assets.
 fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
     let trimmed = code.trim();
     let ctx = context.unwrap_or("unknown");
@@ -212,17 +212,7 @@ fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
         return Currency::USDT();
     }
 
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(trimmed)
-        .copied()
-        .unwrap_or_else(|| {
-            // For unknown codes, create a new currency (8 decimals, crypto type)
-            // This preserves newly listed OKX assets that aren't in CURRENCY_MAP yet
-            use nautilus_model::enums::CurrencyType;
-            Currency::new(trimmed, 8, 0, trimmed, CurrencyType::Crypto)
-        })
+    Currency::get_or_create_crypto(trimmed)
 }
 
 /// Returns the [`OKXInstrumentType`] that corresponds to the supplied

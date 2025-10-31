@@ -22,8 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, CurrencyType, LiquiditySide,
-        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        AccountType, AggressorSide, AssetClass, BarAggregation, LiquiditySide, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -901,9 +901,12 @@ fn resolve_settlement_currency(
     }
 }
 
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed Bybit assets.
 fn get_currency(code: &str) -> Currency {
-    Currency::try_from_str(code)
-        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {

@@ -24,7 +24,7 @@ use nautilus_model::{
             BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_30_MINUTE_LAST,
         },
     },
-    enums::{AggressorSide, CurrencyType, LiquiditySide, PositionSide},
+    enums::{AggressorSide, LiquiditySide, PositionSide},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Money, Price, Quantity},
 };
@@ -56,15 +56,12 @@ where
     }
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
 ///
-/// # Panics
-///
-/// Panics if the internal currency map lock is poisoned.
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed Coinbase International Exchange assets.
 pub fn get_currency(code: &str) -> Currency {
-    Currency::try_from_str(code)
-        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 /// Parses a Nautilus instrument ID from the given Coinbase `symbol` value.

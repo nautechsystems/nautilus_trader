@@ -20,9 +20,7 @@ use std::str::FromStr;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
-    enums::{
-        ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
-    },
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -922,10 +920,12 @@ pub fn parse_position_report(
     ))
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed BitMEX assets.
 fn get_currency(code: &str) -> Currency {
-    Currency::try_from_str(code)
-        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
