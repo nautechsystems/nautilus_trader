@@ -213,7 +213,6 @@ ignore = [
   "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
   "E501", # Line too long (will lint separately)
   "E741", # Ambiguous variable name (single char)
-  "PD901", # `df` is a bad variable name. Be kinder to your future self
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF059", # Unpacked variable is never used (can still be clearer than a discard in some cases)
@@ -222,8 +221,6 @@ ignore = [
   "S106", # Use of hardcoded password (spurious)
   "S113", # Probable use of requests call without timeout **fix**
   "S603", # `subprocess` call: check for execution of untrusted input **fix**
-  "UP006", # Use list instead of List - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
-  "UP035", # typing.List is deprecated - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

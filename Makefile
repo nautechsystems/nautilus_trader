@@ -163,28 +163,12 @@ pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: check-code
-check-code:  #-- Run format, clippy with hypersync features, and ruff --fix
+check-code: format  #-- Run format, clippy with hypersync features, and ruff --fix
 	$(info $(M) Running code quality checks...)
-	@$(MAKE) --no-print-directory format
 	@cargo clippy --all-targets --features "ffi,python,high-precision,defi,hypersync" -- -D warnings
 	@uv run --active --no-sync ruff check . --fix
-	@printf "$(GREEN)Code quality checks passed$(RESET)\n"
+	@printf "$(GREEN)Checks passed$(RESET)\n"
 
-.PHONY: check-links
-check-links:  #-- Check for broken links in documentation (periodic audit)
-	$(info $(M) Checking documentation links...)
-	@lychee \
-		--verbose \
-		--no-progress \
-		--exclude-all-private \
-		--max-retries 3 \
-		--retry-wait-time 5 \
-		--timeout 30 \
-		--max-concurrency 10 \
-		--accept "100..=103,200..=299,429,502..=504" \
-		--exclude-file .lycheeignore \
-		"**/*.md"
-	@printf "$(GREEN)Link check passed$(RESET)\n"
 
 .PHONY: pre-flight
 pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
@@ -279,6 +263,22 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +nightly hack --workspace doc --no-deps --all-features
+
+.PHONY: docs-check-links
+docs-check-links:  #-- Check for broken links in documentation (periodic audit)
+	$(info $(M) Checking documentation links...)
+	@lychee \
+		--verbose \
+		--no-progress \
+		--exclude-all-private \
+		--max-retries 3 \
+		--retry-wait-time 5 \
+		--timeout 30 \
+		--max-concurrency 10 \
+		--accept "100..=103,200..=299,429,502..=504" \
+		--exclude-file .lycheeignore \
+		"**/*.md"
+	@printf "$(GREEN)Link check passed$(RESET)\n"
 
 #== Rust Development
 
