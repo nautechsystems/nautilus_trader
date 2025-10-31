@@ -64,8 +64,8 @@ impl Default for TestServerState {
 #[allow(dead_code)]
 fn load_test_data(filename: &str) -> Value {
     let path = format!("test_data/{}", filename);
-    let content = std::fs::read_to_string(path).expect("Failed to read test data");
-    serde_json::from_str(&content).expect("Failed to parse test data")
+    let content = std::fs::read_to_string(path).unwrap();
+    serde_json::from_str(&content).unwrap()
 }
 
 // Mock endpoint handlers

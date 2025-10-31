@@ -226,7 +226,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _check_clock_sync(self) -> None:
         try:
-            server_time: int = await self._http_client.http_get_server_time()
+            server_time: int = await self._http_client.get_server_time()
             nautilus_time: int = self._clock.timestamp_ms()
             self._log.info(f"OKX server time {server_time} UNIX (ms)")
             self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
@@ -713,7 +713,7 @@ class OKXExecutionClient(LiveExecutionClient):
         reports: list[PositionStatusReport] = []
 
         try:
-            okx_balance_details = await self._http_client.http_get_balance()
+            okx_balance_details = await self._http_client.get_balance()
 
             if not okx_balance_details:
                 self._log.warning("No OKX balance details returned from balance query")

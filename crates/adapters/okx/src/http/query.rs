@@ -466,21 +466,6 @@ pub struct GetPositionsHistoryParams {
     pub limit: Option<u32>,
 }
 
-/// Parameters for the GET /api/v5/trade/orders-pending endpoint.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
-#[builder(default)]
-#[builder(setter(into, strip_option))]
-#[serde(rename_all = "camelCase")]
-pub struct GetPendingOrdersParams {
-    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
-    pub inst_type: OKXInstrumentType,
-    /// Instrument ID, e.g. "BTC-USDT".
-    pub inst_id: String,
-    /// Position side (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pos_side: Option<OKXPositionSide>,
-}
-
 /// Parameters for the GET /api/v5/trade/order endpoint (fetch order details).
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
 #[builder(default)]

@@ -30,11 +30,11 @@ use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
 use nautilus_okx::{
     common::enums::{OKXInstrumentType, OKXOrderStatus},
     http::{
-        client::OKXHttpInnerClient,
+        client::OKXRawHttpClient,
         error::OKXHttpError,
         query::{
-            GetInstrumentsParamsBuilder, GetOrderHistoryParams, GetOrderParamsBuilder,
-            GetPendingOrdersParams,
+            GetInstrumentsParamsBuilder, GetOrderHistoryParams, GetOrderListParams,
+            GetOrderParamsBuilder,
         },
     },
 };
@@ -57,8 +57,8 @@ fn manifest_path() -> PathBuf {
 
 fn load_test_data(filename: &str) -> Value {
     let path = manifest_path().join("test_data").join(filename);
-    let content = std::fs::read_to_string(path).expect("failed to read test data");
-    serde_json::from_str(&content).expect("failed to parse test data")
+    let content = std::fs::read_to_string(path).unwrap();
+    serde_json::from_str(&content).unwrap()
 }
 
 fn has_auth_headers(headers: &HeaderMap) -> bool {
@@ -72,7 +72,7 @@ fn load_instruments_any() -> Vec<InstrumentAny> {
     let payload = load_test_data("http_get_instruments_spot.json");
     let response: nautilus_okx::http::client::OKXResponse<
         nautilus_okx::common::models::OKXInstrument,
-    > = serde_json::from_value(payload).expect("invalid instrument payload");
+    > = serde_json::from_value(payload).unwrap();
     let ts_init = UnixNanos::default();
     response
         .data
@@ -228,15 +228,13 @@ fn create_router(state: Arc<TestServerState>) -> Router {
 
 async fn start_test_server(state: Arc<TestServerState>) -> SocketAddr {
     let router = create_router(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("failed to bind test server");
-    let addr = listener.local_addr().expect("missing local addr");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
         axum::serve(listener, router.into_make_service())
             .await
-            .expect("test server failed");
+            .unwrap();
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -252,8 +250,8 @@ async fn test_http_get_instruments_returns_data() {
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
         .build()
-        .expect("failed to build instrument params");
-    let client = OKXHttpInnerClient::new(
+        .unwrap();
+    let client = OKXRawHttpClient::new(
         Some(base_url.clone()),
         Some(60),
         None,
@@ -262,12 +260,9 @@ async fn test_http_get_instruments_returns_data() {
         false,
         None,
     )
-    .expect("failed to create http client");
+    .unwrap();
 
-    let instruments = client
-        .http_get_instruments(params)
-        .await
-        .expect("failed to fetch instruments");
+    let instruments = client.get_instruments(params).await.unwrap();
 
     assert!(!instruments.is_empty());
     assert_eq!(instruments[0].inst_type, OKXInstrumentType::Spot);
@@ -279,10 +274,10 @@ async fn test_http_get_balance_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None, false, None)
-        .expect("failed to create http client");
+    let client =
+        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
-    let result = client.http_get_balance().await;
+    let result = client.get_balance().await;
 
     match result {
         Err(OKXHttpError::MissingCredentials) => {}
@@ -296,7 +291,7 @@ async fn test_http_get_balance_with_credentials_succeeds() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::with_credentials(
+    let client = OKXRawHttpClient::with_credentials(
         "test_key".to_string(),
         "test_secret".to_string(),
         "passphrase".to_string(),
@@ -308,12 +303,9 @@ async fn test_http_get_balance_with_credentials_succeeds() {
         false,
         None,
     )
-    .expect("failed to create authenticated client");
+    .unwrap();
 
-    let accounts = client
-        .http_get_balance()
-        .await
-        .expect("expected balance response");
+    let accounts = client.get_balance().await.unwrap();
 
     assert!(!accounts.is_empty());
 }
@@ -328,8 +320,8 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
         .build()
-        .expect("failed to build instrument params");
-    let client = OKXHttpInnerClient::new(
+        .unwrap();
+    let client = OKXRawHttpClient::new(
         Some(base_url.clone()),
         Some(60),
         Some(0),
@@ -338,11 +330,11 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
         false,
         None,
     )
-    .expect("failed to create http client");
+    .unwrap();
 
     let mut last_error = None;
     for _ in 0..5 {
-        match client.http_get_instruments(params.clone()).await {
+        match client.get_instruments(params.clone()).await {
             Ok(_) => continue,
             Err(e) => {
                 last_error = Some(e);
@@ -351,7 +343,7 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
         }
     }
 
-    match last_error.expect("expected rate limit error") {
+    match last_error.unwrap() {
         OKXHttpError::OkxError { error_code, .. } => assert_eq!(error_code, "50116"),
         other => panic!("expected OkxError, got {other:?}"),
     }
@@ -363,16 +355,20 @@ async fn test_http_get_pending_orders_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::new(Some(base_url), Some(60), None, None, None, false, None)
-        .expect("failed to create anonymous client");
+    let client =
+        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
-    let params = GetPendingOrdersParams {
-        inst_type: OKXInstrumentType::Swap,
-        inst_id: "BTC-USDT-SWAP".to_string(),
-        pos_side: None,
+    let params = GetOrderListParams {
+        inst_type: Some(OKXInstrumentType::Swap),
+        inst_id: Some("BTC-USDT-SWAP".to_string()),
+        inst_family: None,
+        state: None,
+        after: None,
+        before: None,
+        limit: None,
     };
 
-    match client.http_get_pending_orders(params).await {
+    match client.get_orders_pending(params).await {
         Err(OKXHttpError::MissingCredentials) => {}
         other => panic!("expected MissingCredentials error, got {other:?}"),
     }
@@ -385,7 +381,7 @@ async fn test_http_get_pending_orders_returns_live_orders() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::with_credentials(
+    let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
         "secret".to_string(),
         "pass".to_string(),
@@ -397,18 +393,19 @@ async fn test_http_get_pending_orders_returns_live_orders() {
         false,
         None,
     )
-    .expect("failed to create authenticated client");
+    .unwrap();
 
-    let params = GetPendingOrdersParams {
-        inst_type: OKXInstrumentType::Swap,
-        inst_id: "BTC-USDT-SWAP".to_string(),
-        pos_side: None,
+    let params = GetOrderListParams {
+        inst_type: Some(OKXInstrumentType::Swap),
+        inst_id: Some("BTC-USDT-SWAP".to_string()),
+        inst_family: None,
+        state: None,
+        after: None,
+        before: None,
+        limit: None,
     };
 
-    let orders = client
-        .http_get_pending_orders(params)
-        .await
-        .expect("expected pending orders response");
+    let orders = client.get_orders_pending(params).await.unwrap();
 
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].state, OKXOrderStatus::Live);
@@ -419,7 +416,7 @@ async fn test_http_get_pending_orders_returns_live_orders() {
         .lock()
         .await
         .clone()
-        .expect("pending orders query missing");
+        .unwrap();
     assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
     assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
 }
@@ -431,7 +428,7 @@ async fn test_http_get_order_history_applies_filters() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::with_credentials(
+    let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
         "secret".to_string(),
         "pass".to_string(),
@@ -443,7 +440,7 @@ async fn test_http_get_order_history_applies_filters() {
         false,
         None,
     )
-    .expect("failed to create authenticated client");
+    .unwrap();
 
     let params = GetOrderHistoryParams {
         inst_type: OKXInstrumentType::Swap,
@@ -457,18 +454,10 @@ async fn test_http_get_order_history_applies_filters() {
         limit: Some(50),
     };
 
-    let orders = client
-        .http_get_order_history(params)
-        .await
-        .expect("expected order history response");
+    let orders = client.get_orders_history(params).await.unwrap();
     assert!(!orders.is_empty());
 
-    let query = state
-        .last_order_history_query
-        .lock()
-        .await
-        .clone()
-        .expect("order history query missing");
+    let query = state.last_order_history_query.lock().await.clone().unwrap();
     assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
     assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
     assert_eq!(query.get("state"), Some(&"filled".to_string()));
@@ -482,7 +471,7 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
-    let client = OKXHttpInnerClient::with_credentials(
+    let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
         "secret".to_string(),
         "pass".to_string(),
@@ -494,7 +483,7 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
         false,
         None,
     )
-    .expect("failed to create authenticated client");
+    .unwrap();
 
     let params = GetOrderParamsBuilder::default()
         .inst_type(OKXInstrumentType::Swap)
@@ -502,20 +491,12 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
         .ord_id("1234567890123456789")
         .cl_ord_id("client-order-1")
         .build()
-        .expect("failed to build order params");
+        .unwrap();
 
-    let orders = client
-        .http_get_order(params)
-        .await
-        .expect("expected order detail response");
+    let orders = client.get_order(params).await.unwrap();
     assert_eq!(orders.len(), 1);
 
-    let query = state
-        .last_order_detail_query
-        .lock()
-        .await
-        .clone()
-        .expect("order detail query missing");
+    let query = state.last_order_detail_query.lock().await.clone().unwrap();
     assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
     assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
     assert_eq!(query.get("ordId"), Some(&"1234567890123456789".to_string()));
@@ -537,7 +518,7 @@ async fn test_request_trades_uses_after_before() {
         false,
         None,
     )
-    .expect("failed to create http client");
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.add_instrument(instrument);
@@ -554,7 +535,7 @@ async fn test_request_trades_uses_after_before() {
             Some(150),
         )
         .await
-        .expect("request_trades should succeed");
+        .unwrap();
     assert!(trades.is_empty());
 
     let query = state
@@ -562,7 +543,7 @@ async fn test_request_trades_uses_after_before() {
         .lock()
         .await
         .clone()
-        .expect("history trades query missing");
+        .unwrap();
 
     assert_eq!(query.get("instId"), Some(&"BTC-USD".to_string()));
     assert_eq!(

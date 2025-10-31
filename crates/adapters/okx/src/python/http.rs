@@ -138,7 +138,8 @@ impl OKXHttpClient {
                 .set_position_mode(position_mode)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::attach(|py| py.None()))
+
+            Python::attach(|py| Ok(py.None()))
         })
     }
 
@@ -185,7 +186,8 @@ impl OKXHttpClient {
                 .request_account_state(account_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::attach(|py| account_state.into_py_any_unwrap(py)))
+
+            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
         })
     }
 
@@ -206,6 +208,7 @@ impl OKXHttpClient {
                 .request_trades(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -230,6 +233,7 @@ impl OKXHttpClient {
                 .request_bars(bar_type, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let pylist =
                     PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
@@ -251,7 +255,8 @@ impl OKXHttpClient {
                 .request_mark_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::attach(|py| mark_price.into_py_any_unwrap(py)))
+
+            Python::attach(|py| Ok(mark_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -268,7 +273,8 @@ impl OKXHttpClient {
                 .request_index_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::attach(|py| index_price.into_py_any_unwrap(py)))
+
+            Python::attach(|py| Ok(index_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -301,6 +307,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
@@ -397,6 +404,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -420,6 +428,7 @@ impl OKXHttpClient {
                 .request_position_status_reports(account_id, instrument_type, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
@@ -481,6 +490,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let dict = PyDict::new(py);
                 dict.set_item("algo_id", resp.algo_id)?;
@@ -515,6 +525,7 @@ impl OKXHttpClient {
                 .cancel_algo_order_with_domain_types(instrument_id, algo_id)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::attach(|py| {
                 let dict = PyDict::new(py);
                 dict.set_item("algo_id", resp.algo_id)?;
@@ -529,30 +540,23 @@ impl OKXHttpClient {
         })
     }
 
-    #[pyo3(name = "http_get_server_time")]
-    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "get_server_time")]
+    fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let timestamp = client
-                .http_get_server_time()
-                .await
-                .map_err(to_pyvalue_err)?;
+            let timestamp = client.get_server_time().await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| timestamp.into_py_any(py))
         })
     }
 
-    #[pyo3(name = "http_get_balance")]
-    fn py_http_get_balance<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "get_balance")]
+    fn py_get_balance<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let accounts = client
-                .inner
-                .http_get_balance()
-                .await
-                .map_err(to_pyvalue_err)?;
+            let accounts = client.inner.get_balance().await.map_err(to_pyvalue_err)?;
 
             let details: Vec<_> = accounts
                 .into_iter()

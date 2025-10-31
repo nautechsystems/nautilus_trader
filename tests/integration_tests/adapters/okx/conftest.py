@@ -162,7 +162,7 @@ def mock_http_client():
     mock.add_instrument = MagicMock()
     mock.cancel_all_requests = MagicMock()
     mock.is_initialized = MagicMock(return_value=True)
-    mock.http_get_server_time = AsyncMock(return_value=1234567890000)
+    mock.get_server_time = AsyncMock(return_value=1234567890000)
 
     mock_account_state = MagicMock()
     mock_account_state.to_dict = MagicMock(
