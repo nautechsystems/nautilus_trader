@@ -405,6 +405,8 @@ impl ExecutionClient for OKXExecutionClient {
             instrument_types = ?self.config.instrument_types,
             use_fills_channel = self.config.use_fills_channel,
             is_demo = self.config.is_demo,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
             "OKX execution client started"
         );
         Ok(())

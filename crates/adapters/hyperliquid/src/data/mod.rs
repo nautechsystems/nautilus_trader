@@ -415,7 +415,13 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting Hyperliquid data client {}", self.client_id);
+        tracing::info!(
+            client_id = %self.client_id,
+            is_testnet = self.config.is_testnet,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting Hyperliquid data client"
+        );
         Ok(())
     }
 

@@ -115,6 +115,8 @@ class BitmexDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # Periodic updates
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins

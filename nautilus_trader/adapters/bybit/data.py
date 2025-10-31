@@ -118,6 +118,8 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client

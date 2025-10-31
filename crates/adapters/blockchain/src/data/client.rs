@@ -823,8 +823,12 @@ impl DataClient for BlockchainDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!(
-            "Starting blockchain data client for '{chain_name}'",
-            chain_name = self.chain.name
+            chain_name = %self.chain.name,
+            dex_ids = ?self.config.dex_ids,
+            use_hypersync_for_live_data = self.config.use_hypersync_for_live_data,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting blockchain data client"
         );
         Ok(())
     }

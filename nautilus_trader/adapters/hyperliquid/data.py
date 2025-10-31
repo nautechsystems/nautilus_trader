@@ -105,6 +105,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._config = config
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # HTTP client
         self._http_client = client

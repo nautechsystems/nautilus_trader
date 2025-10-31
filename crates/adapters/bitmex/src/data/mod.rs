@@ -352,7 +352,13 @@ impl DataClient for BitmexDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting BitMEX data client {id}", id = self.client_id);
+        tracing::info!(
+            client_id = %self.client_id,
+            use_testnet = self.config.use_testnet,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting BitMEX data client"
+        );
         Ok(())
     }
 

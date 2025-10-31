@@ -315,7 +315,18 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.ensure_instruments_initialized()?;
         self.started = true;
-        tracing::info!("BitMEX execution client {} started", self.core.client_id);
+        tracing::info!(
+            client_id = %self.core.client_id,
+            account_id = %self.core.account_id,
+            use_testnet = self.config.use_testnet,
+            submitter_pool_size = ?self.config.submitter_pool_size,
+            canceller_pool_size = ?self.config.canceller_pool_size,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            submitter_proxy_urls = ?self.config.submitter_proxy_urls,
+            canceller_proxy_urls = ?self.config.canceller_proxy_urls,
+            "BitMEX execution client started"
+        );
         Ok(())
     }
 

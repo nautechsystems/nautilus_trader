@@ -134,6 +134,10 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
         self._log.info(f"{config.submitter_pool_size=}", LogColor.BLUE)
         self._log.info(f"{config.canceller_pool_size=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.submitter_proxy_urls=}", LogColor.BLUE)
+        self._log.info(f"{config.canceller_proxy_urls=}", LogColor.BLUE)
 
         # Set initial account ID (will be updated with actual account number on connect)
         self._account_id_prefix = name or BITMEX_VENUE.value

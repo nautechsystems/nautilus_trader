@@ -358,7 +358,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        tracing::info!("Starting Hyperliquid execution client");
+        tracing::info!(
+            client_id = %self.core.client_id,
+            account_id = %self.core.account_id,
+            is_testnet = self.config.is_testnet,
+            vault_address = ?self.config.vault_address,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting Hyperliquid execution client"
+        );
 
         // Ensure instruments are initialized
         self.ensure_instruments_initialized()?;

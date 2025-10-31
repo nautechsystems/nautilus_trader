@@ -128,6 +128,8 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.vip_level=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client

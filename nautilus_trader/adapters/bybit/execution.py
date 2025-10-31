@@ -157,6 +157,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # Set account ID
         account_id = AccountId(f"{name or BYBIT_VENUE.value}-UNIFIED")
