@@ -10,7 +10,7 @@ Explore this section to understand how NautilusTrader aggregates and updates por
 
 ## Portfolio statistics
 
-There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics)
+There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/analysis/src/statistics)
 which are used to analyse a trading portfolios performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.

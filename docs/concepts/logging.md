@@ -193,7 +193,7 @@ logger = Logger("MyLogger")
 ```
 
 :::info
-See the `init_logging` [API Reference](../api_reference/common) for further details.
+See the `init_logging` [API Reference](../api_reference/common.md) for further details.
 :::
 
 :::warning

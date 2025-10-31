@@ -164,7 +164,7 @@ For full details see the `LiveExecEngineConfig` [API Reference](../api_reference
 | `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
 | `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
-See [Execution reconciliation](../concepts/execution#execution-reconciliation) for additional background.
+See [Execution reconciliation](#execution-reconciliation) for additional background.
 
 #### Order filtering
 

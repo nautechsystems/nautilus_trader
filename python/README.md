@@ -119,7 +119,7 @@ The `--pre` flag is required because wheels are tagged as development releases (
 
 Type stubs (`.pyi` files) provide full type information for the compiled Rust extension, enabling IDE autocompletion and static type checking with tools like `mypy`.
 
-Stubs are automatically generated using [`pyo3-stub-gen`](https://github.com/PyO3/pyo3-stub-gen). To regenerate them after modifying Rust bindings:
+Stubs are automatically generated using [`pyo3-stub-gen`](https://github.com/Jij-Inc/pyo3-stub-gen). To regenerate them after modifying Rust bindings:
 
 ```bash
 python generate_stubs.py
