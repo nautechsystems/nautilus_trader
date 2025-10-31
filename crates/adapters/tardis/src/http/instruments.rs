@@ -15,7 +15,6 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     enums::CurrencyType,
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
@@ -28,13 +27,8 @@ use crate::parse::parse_option_kind;
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
 pub(crate) fn get_currency(code: &str) -> Currency {
-    // SAFETY: Mutex should not be poisoned in normal operation
-    CURRENCY_MAP
-        .lock()
-        .expect("Failed to acquire CURRENCY_MAP lock")
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::try_from_str(code)
+        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -17,7 +17,6 @@ use std::str::FromStr;
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{
         BarSpecification,
         bar::{
@@ -64,12 +63,8 @@ where
 ///
 /// Panics if the internal currency map lock is poisoned.
 pub fn get_currency(code: &str) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::try_from_str(code)
+        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
 /// Parses a Nautilus instrument ID from the given Coinbase `symbol` value.

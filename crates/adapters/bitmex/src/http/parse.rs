@@ -19,7 +19,6 @@ use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{Bar, BarType, TradeTick},
     enums::{
         ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
@@ -198,8 +197,8 @@ pub fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
 
@@ -289,9 +288,9 @@ pub fn parse_perpetual_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -384,9 +383,9 @@ pub fn parse_futures_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let underlying = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let underlying = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -924,13 +923,9 @@ pub fn parse_position_report(
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: String) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(&code)
-        .copied()
-        .unwrap_or(Currency::new(&code, 8, 0, &code, CurrencyType::Crypto))
+fn get_currency(code: &str) -> Currency {
+    Currency::try_from_str(code)
+        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

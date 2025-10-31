@@ -746,8 +746,6 @@ pub fn parse_account_state(
 
     // Parse each coin balance
     for coin in &wallet_balance.coin {
-        let currency = Currency::from_str(&coin.coin)?;
-
         let wallet_balance_f64 = if coin.wallet_balance.is_empty() {
             0.0
         } else {
@@ -763,6 +761,7 @@ pub fn parse_account_state(
             coin.locked.parse::<f64>()?
         };
 
+        let currency = get_currency(&coin.coin);
         let total = Money::new(total_f64, currency);
         let locked = Money::new(locked_f64, currency);
         let free = Money::from_raw(total.raw - locked.raw, currency);
@@ -774,8 +773,6 @@ pub fn parse_account_state(
 
     // Parse margin balances for each coin with position margin data
     for coin in &wallet_balance.coin {
-        let currency = Currency::from_str(&coin.coin)?;
-
         let initial_margin_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
             _ => 0.0,
@@ -785,6 +782,8 @@ pub fn parse_account_state(
             Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
             _ => 0.0,
         };
+
+        let currency = get_currency(&coin.coin);
 
         // Only create margin balance if there are actual margin requirements
         if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {

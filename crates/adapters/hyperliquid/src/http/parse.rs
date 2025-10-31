@@ -182,7 +182,6 @@ fn pow10_neg(decimals: u32) -> Result<Decimal, String> {
 
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     enums::CurrencyType,
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
@@ -192,11 +191,7 @@ use nautilus_model::{
 use crate::common::consts::HYPERLIQUID_VENUE;
 
 fn get_currency(code: &str) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .expect("Failed to acquire CURRENCY_MAP lock")
-        .get(code)
-        .copied()
+    Currency::try_from_str(code)
         .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
