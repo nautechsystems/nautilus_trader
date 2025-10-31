@@ -114,7 +114,7 @@ where
 /// Returns an error if the string cannot be parsed into an `OKXTargetCurrency`.
 pub fn deserialize_target_currency_as_none<'de, D>(
     deserializer: D,
-) -> Result<Option<crate::common::enums::OKXTargetCurrency>, D::Error>
+) -> Result<Option<OKXTargetCurrency>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -1462,6 +1462,21 @@ pub fn parse_spot_instrument(
     )
 }
 
+/// Validates that the underlying field is not empty for derivative instruments.
+///
+/// # Errors
+///
+/// Returns an error if the underlying field is empty, which typically indicates
+/// a pre-open or misconfigured instrument.
+fn validate_underlying(inst_id: Ustr, uly: Ustr) -> anyhow::Result<()> {
+    if uly.is_empty() {
+        anyhow::bail!(
+            "Empty underlying for {inst_id}: instrument may be pre-open or misconfigured"
+        );
+    }
+    Ok(())
+}
+
 /// Parses an OKX swap instrument definition into a Nautilus crypto perpetual.
 ///
 /// # Errors
@@ -1475,8 +1490,8 @@ pub fn parse_swap_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
+
     let context = format!("SWAP instrument {}", definition.inst_id);
     let (base_currency, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
@@ -1485,6 +1500,9 @@ pub fn parse_swap_instrument(
             definition.inst_id
         )
     })?;
+
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let base_currency = get_currency_with_context(base_currency, Some(&context));
     let quote_currency = get_currency_with_context(quote_currency, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
@@ -1564,10 +1582,9 @@ pub fn parse_futures_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
+
     let context = format!("FUTURES instrument {}", definition.inst_id);
-    let underlying = get_currency_with_context(&definition.uly, Some(&context));
     let (_, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
             "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
@@ -1575,6 +1592,10 @@ pub fn parse_futures_instrument(
             definition.inst_id
         )
     })?;
+
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    let underlying = get_currency_with_context(&definition.uly, Some(&context));
     let quote_currency = get_currency_with_context(quote_currency, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
@@ -1657,12 +1678,9 @@ pub fn parse_option_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let option_kind: OptionKind = definition.opt_type.into();
-    let strike_price = Price::from(&definition.stk);
-    let context = format!("OPTION instrument {}", definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
 
+    let context = format!("OPTION instrument {}", definition.inst_id);
     let (underlying_str, quote_ccy_str) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
             "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
@@ -1671,7 +1689,11 @@ pub fn parse_option_instrument(
         )
     })?;
 
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let underlying = get_currency_with_context(underlying_str, Some(&context));
+    let option_kind: OptionKind = definition.opt_type.into();
+    let strike_price = Price::from(&definition.stk);
     let quote_currency = get_currency_with_context(quote_ccy_str, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
 
@@ -3811,5 +3833,125 @@ mod tests {
         assert_eq!(report.position_side, PositionSide::Flat.as_specified());
         assert_eq!(report.quantity, Quantity::from("0"));
         assert_eq!(report.venue_position_id, None); // Net mode
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Swap,
+            inst_id: Ustr::from("ETH-USD_UM-SWAP"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "1".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "USD".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: "".to_string(),
+            list_time: None,
+            exp_time: None,
+            lever: "".to_string(),
+            tick_sz: "0.1".to_string(),
+            lot_sz: "1".to_string(),
+            min_sz: "1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: "".to_string(),
+            max_lmt_sz: "".to_string(),
+            max_mkt_sz: "".to_string(),
+            max_lmt_amt: "".to_string(),
+            max_mkt_amt: "".to_string(),
+            max_twap_sz: "".to_string(),
+            max_iceberg_sz: "".to_string(),
+            max_trigger_sz: "".to_string(),
+            max_stop_sz: "".to_string(),
+        };
+
+        let result =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Futures,
+            inst_id: Ustr::from("ETH-USD_UM-250328"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "1".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "USD".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: "".to_string(),
+            list_time: None,
+            exp_time: Some(1743004800000),
+            lever: "".to_string(),
+            tick_sz: "0.1".to_string(),
+            lot_sz: "1".to_string(),
+            min_sz: "1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: "".to_string(),
+            max_lmt_sz: "".to_string(),
+            max_mkt_sz: "".to_string(),
+            max_lmt_amt: "".to_string(),
+            max_mkt_amt: "".to_string(),
+            max_twap_sz: "".to_string(),
+            max_iceberg_sz: "".to_string(),
+            max_trigger_sz: "".to_string(),
+            max_stop_sz: "".to_string(),
+        };
+
+        let result =
+            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_option_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Option,
+            inst_id: Ustr::from("BTC-USD-250328-50000-C"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "0.01".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "BTC".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::Call,
+            stk: "50000".to_string(),
+            list_time: None,
+            exp_time: Some(1743004800000),
+            lever: "".to_string(),
+            tick_sz: "0.0005".to_string(),
+            lot_sz: "0.1".to_string(),
+            min_sz: "0.1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: "".to_string(),
+            max_lmt_sz: "".to_string(),
+            max_mkt_sz: "".to_string(),
+            max_lmt_amt: "".to_string(),
+            max_mkt_amt: "".to_string(),
+            max_twap_sz: "".to_string(),
+            max_iceberg_sz: "".to_string(),
+            max_trigger_sz: "".to_string(),
+            max_stop_sz: "".to_string(),
+        };
+
+        let result =
+            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
 }

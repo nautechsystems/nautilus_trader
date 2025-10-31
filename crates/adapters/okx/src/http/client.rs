@@ -91,8 +91,8 @@ use crate::{
         consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
         enums::{
-            OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXSide,
-            OKXTradeMode, OKXTriggerType,
+            OKXAlgoOrderType, OKXContractType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXOrderStatus, OKXPositionMode, OKXSide, OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -1235,10 +1235,15 @@ impl OKXHttpClient {
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         for inst in &resp {
+            // Skip pre-open instruments which have incomplete/empty field values
+            // Keep suspended instruments as they have valid metadata and may return to live
+            if inst.state == OKXInstrumentStatus::Preopen {
+                continue;
+            }
+
             // Determine which fee fields to use based on contract type
             let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
-                let is_usdt_margined =
-                    inst.ct_type == crate::common::enums::OKXContractType::Linear;
+                let is_usdt_margined = inst.ct_type == OKXContractType::Linear;
                 let (maker_str, taker_str) = if is_usdt_margined {
                     (&fee_rate.maker_u, &fee_rate.taker_u)
                 } else {

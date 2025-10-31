@@ -1145,7 +1145,7 @@ mod tests {
             op: OKXWsOperation::Subscribe,
             args: vec![OKXSubscriptionArg {
                 channel: OKXWsChannel::Tickers,
-                inst_type: Some(crate::common::enums::OKXInstrumentType::Spot),
+                inst_type: Some(OKXInstrumentType::Spot),
                 inst_family: None,
                 inst_id: Some(Ustr::from("BTC-USDT")),
             }],
