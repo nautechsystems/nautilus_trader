@@ -41,6 +41,13 @@ pub struct BybitDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// Optional REST timeout in seconds.
     pub http_timeout_secs: Option<u64>,
     /// Optional maximum retry attempts for REST requests.
@@ -55,13 +62,6 @@ pub struct BybitDataClientConfig {
     pub recv_window_ms: Option<u64>,
     /// Optional interval (minutes) for instrument refresh from REST.
     pub update_instruments_interval_mins: Option<u64>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
 }
 
 impl Default for BybitDataClientConfig {
@@ -74,6 +74,8 @@ impl Default for BybitDataClientConfig {
             base_url_http: None,
             base_url_ws_public: None,
             base_url_ws_private: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
@@ -81,8 +83,6 @@ impl Default for BybitDataClientConfig {
             heartbeat_interval_secs: Some(20),
             recv_window_ms: Some(5_000),
             update_instruments_interval_mins: Some(60),
-            http_proxy_url: None,
-            ws_proxy_url: None,
         }
     }
 }
@@ -163,6 +163,13 @@ pub struct BybitExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the trade WebSocket URL.
     pub base_url_ws_trade: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// Optional REST timeout in seconds.
     pub http_timeout_secs: Option<u64>,
     /// Optional maximum retry attempts for REST requests.
@@ -185,13 +192,6 @@ pub struct BybitExecClientConfig {
     pub position_mode: Option<HashMap<String, BybitPositionMode>>,
     /// Unified margin mode setting.
     pub margin_mode: Option<BybitMarginMode>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
 }
 
 impl Default for BybitExecClientConfig {
@@ -204,6 +204,8 @@ impl Default for BybitExecClientConfig {
             base_url_http: None,
             base_url_ws_private: None,
             base_url_ws_trade: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
@@ -215,8 +217,6 @@ impl Default for BybitExecClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
         }
     }
 }

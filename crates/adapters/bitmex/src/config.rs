@@ -32,6 +32,13 @@ pub struct BitmexDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Optional HTTP proxy URL for general HTTP client operations.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL for WebSocket client.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// Optional REST timeout in seconds.
     pub http_timeout_secs: Option<u64>,
     /// Optional maximum retry attempts for REST requests.
@@ -68,13 +75,6 @@ pub struct BitmexDataClientConfig {
     pub max_requests_per_second: Option<u32>,
     /// Maximum number of requests per minute (rolling window).
     pub max_requests_per_minute: Option<u32>,
-    /// Optional HTTP proxy URL for general HTTP client operations.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL for WebSocket client.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
 }
 
 impl Default for BitmexDataClientConfig {
@@ -84,6 +84,8 @@ impl Default for BitmexDataClientConfig {
             api_secret: None,
             base_url_http: None,
             base_url_ws: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
@@ -95,8 +97,6 @@ impl Default for BitmexDataClientConfig {
             use_testnet: false,
             max_requests_per_second: Some(10),
             max_requests_per_minute: Some(120),
-            http_proxy_url: None,
-            ws_proxy_url: None,
         }
     }
 }
@@ -150,6 +150,13 @@ pub struct BitmexExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Optional HTTP proxy URL for general HTTP client operations.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL for WebSocket client.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// Optional REST timeout in seconds.
     pub http_timeout_secs: Option<u64>,
     /// Optional maximum retry attempts for REST requests.
@@ -190,13 +197,6 @@ pub struct BitmexExecClientConfig {
     pub submitter_pool_size: Option<usize>,
     /// Number of HTTP clients in the cancel broadcaster pool (defaults to 1).
     pub canceller_pool_size: Option<usize>,
-    /// Optional HTTP proxy URL for general HTTP client operations.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL for WebSocket client.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
     /// Optional list of proxy URLs for submit broadcaster pool (path diversity).
     pub submitter_proxy_urls: Option<Vec<String>>,
     /// Optional list of proxy URLs for cancel broadcaster pool (path diversity).
@@ -210,6 +210,8 @@ impl Default for BitmexExecClientConfig {
             api_secret: None,
             base_url_http: None,
             base_url_ws: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
@@ -223,8 +225,6 @@ impl Default for BitmexExecClientConfig {
             max_requests_per_minute: Some(120),
             submitter_pool_size: None,
             canceller_pool_size: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
             submitter_proxy_urls: None,
             canceller_proxy_urls: None,
         }

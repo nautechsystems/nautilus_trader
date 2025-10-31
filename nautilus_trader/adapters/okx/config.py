@@ -53,6 +53,12 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to OKX's websocket API.
         If ``None`` then will source the url from `get_ws_base_url()`.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
     is_demo : bool, default False
         If the client is connecting to the OKX demo API.
     update_instruments_interval_mins: PositiveInt or None, default 60
@@ -61,12 +67,6 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         The account VIP level to determine book subscriptions.
         - Only VIP4 and above in trading fee tier are allowed to subscribe to "books50-l2-tbt" 50 depth channels (10 ms updates).
         - Only VIP5 and above in trading fee tier are allowed to subscribe to "books-l2-tbt" 400 depth channels (10 ms updates).
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -78,6 +78,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     contract_types: tuple[OKXContractType, ...] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
     is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
@@ -85,8 +87,6 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
     vip_level: OKXVipLevel | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
 
 
 class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -120,6 +120,12 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to OKX's websocket API.
         If ``None`` then will source the url from `get_ws_base_url()`.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
     is_demo : bool, default False
         If the client is connecting to the OKX demo API.
     margin_mode : OKXMarginMode, optional
@@ -151,12 +157,6 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         (borrowing) as SHORT positions. This may lead to unintended liquidation of wallet assets
         if strategies are not designed to handle SPOT positions properly.
         If False, SPOT instruments return FLAT position reports (default behavior).
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
 
     """
 
@@ -168,6 +168,8 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     instrument_families: tuple[str, ...] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
     is_demo: bool = False
     margin_mode: OKXMarginMode | None = None
     use_spot_margin: bool = False
@@ -178,5 +180,3 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     use_fills_channel: bool = False
     use_mm_mass_cancel: bool = False
     use_spot_cash_position_reports: bool = False
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None

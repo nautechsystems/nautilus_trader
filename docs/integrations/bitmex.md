@@ -437,6 +437,7 @@ The submit broadcaster is configured via the execution client configuration:
 | Option                 | Default | Description                                                                               |
 |------------------------|---------|-------------------------------------------------------------------------------------------|
 | `submitter_pool_size`  | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
+| `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity. When set, each HTTP client in the pool uses a different proxy. |
 
 **Example configuration**:
 
@@ -501,9 +502,10 @@ These metrics can be accessed programmatically via the `get_metrics()` and `get_
 
 The cancel broadcaster is configured via the execution client configuration:
 
-| Option                | Default | Description                                                                               |
-|-----------------------|---------|-------------------------------------------------------------------------------------------|
-| `canceller_pool_size` | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
+| Option                 | Default | Description                                                                               |
+|------------------------|---------|-------------------------------------------------------------------------------------------|
+| `canceller_pool_size`  | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
+| `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity. When set, each HTTP client in the pool uses a different proxy. |
 
 **Example configuration**:
 
