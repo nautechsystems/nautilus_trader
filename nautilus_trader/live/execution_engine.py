@@ -2011,6 +2011,9 @@ class LiveExecutionEngine(ExecutionEngine):
         trades: list[FillReport],
         is_external: bool = True,
     ) -> bool:
+        if self._is_shutting_down:
+            return True  # Skip reconciliation during shutdown
+
         client_order_id: ClientOrderId = report.client_order_id
 
         if client_order_id is None:
@@ -2146,6 +2149,15 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.filled_qty > order.filled_qty:
             # Check if order is already closed to avoid duplicate inferred fills
             if order.is_closed:
+                # Use the higher precision for tolerance check
+                precision = max(report.filled_qty.precision, order.filled_qty.precision)
+                if self._is_within_single_unit_tolerance(
+                    report.filled_qty.as_decimal(),
+                    order.filled_qty.as_decimal(),
+                    precision,
+                ):
+                    return True
+
                 self._log.warning(  # TODO: Reduce level to debug after initial development phase
                     f"{order.instrument_id} {order.client_order_id!r} already {order.status_string()} but "
                     f"reported difference in filled_qty: "
@@ -2180,6 +2192,9 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_fill_report_single(self, report: FillReport) -> bool:
+        if self._is_shutting_down:
+            return True  # Skip reconciliation during shutdown
+
         if not self._consider_for_reconciliation(report.instrument_id):
             self._log_skipping_reconciliation_on_instrument_id(report)
             return True  # Filtered
@@ -2379,6 +2394,20 @@ class LiveExecutionEngine(ExecutionEngine):
             and cached_fill.ts_event == report.ts_event
         )
 
+    def _is_within_single_unit_tolerance(
+        self,
+        value1: Decimal,
+        value2: Decimal,
+        precision: int,
+    ) -> bool:
+        # Handles rounding discrepancies from venues (e.g., OKX fillSz vs accFillSz)
+        # Only apply tolerance for fractional quantities (precision > 0)
+        if precision == 0:
+            return value1 == value2  # Integer quantities require exact match
+
+        tolerance = Decimal(10) ** -precision
+        return abs(value1 - value2) <= tolerance
+
     def _check_position_discrepancy(
         self,
         cached_positions: list[Position],
@@ -2394,6 +2423,19 @@ class LiveExecutionEngine(ExecutionEngine):
         if venue_report is None:
             # We think we have a position, but venue says flat (or no report)
             if cached_qty != 0:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is not None:
+                    if self._is_within_single_unit_tolerance(
+                        cached_qty,
+                        Decimal(0),
+                        instrument.size_precision,
+                    ):
+                        return False
+                else:
+                    self._log.debug(
+                        f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
+                    )
+
                 self._log.warning(
                     f"Position discrepancy for {instrument_id}: "
                     f"cached_qty={cached_qty}, venue has no position report",
@@ -2409,9 +2451,25 @@ class LiveExecutionEngine(ExecutionEngine):
         if cached_qty == venue_qty:
             return False
 
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is not None:
+            if self._is_within_single_unit_tolerance(
+                cached_qty,
+                venue_qty,
+                instrument.size_precision,
+            ):
+                return False
+        else:
+            self._log.debug(
+                f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
+            )
+
         return True
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
+        if self._is_shutting_down:
+            return True  # Skip reconciliation during shutdown
+
         if not self._consider_for_reconciliation(report.instrument_id):
             self._log_skipping_reconciliation_on_instrument_id(report)
             return True  # Filtered

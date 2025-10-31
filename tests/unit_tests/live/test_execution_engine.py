@@ -937,3 +937,293 @@ class TestLiveExecutionEngine:
 
         # Assert - client methods should NOT have been called due to early exit
         mock_generate_order_status.assert_not_called()
+
+    def test_is_within_single_unit_tolerance_integer_precision(self):
+        """
+        Test tolerance check for integer precision requires exact match.
+        """
+        # Arrange
+        engine = self.exec_engine
+
+        # Act & Assert
+        assert engine._is_within_single_unit_tolerance(Decimal("10"), Decimal("10"), 0)
+        assert not engine._is_within_single_unit_tolerance(Decimal("10"), Decimal("11"), 0)
+        assert not engine._is_within_single_unit_tolerance(Decimal("100"), Decimal("101"), 0)
+
+    def test_is_within_single_unit_tolerance_fractional_precision(self):
+        """
+        Test tolerance check for fractional precision accepts 1-unit difference.
+        """
+        # Arrange
+        engine = self.exec_engine
+
+        # Act & Assert
+        assert engine._is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000524"),
+            6,
+        )
+        assert engine._is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000526"),
+            6,
+        )
+        assert not engine._is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000523"),
+            6,
+        )
+
+        assert engine._is_within_single_unit_tolerance(Decimal("1.00"), Decimal("1.01"), 2)
+        assert not engine._is_within_single_unit_tolerance(Decimal("1.00"), Decimal("1.02"), 2)
+
+        assert engine._is_within_single_unit_tolerance(
+            Decimal("0.12345678"),
+            Decimal("0.12345679"),
+            8,
+        )
+        assert not engine._is_within_single_unit_tolerance(
+            Decimal("0.12345678"),
+            Decimal("0.12345680"),
+            8,
+        )
+
+    def test_is_within_single_unit_tolerance_handles_mixed_precision(self):
+        """
+        Test tolerance check works with different precisions by using max precision.
+        """
+        # Arrange
+        engine = self.exec_engine
+        precision = max(6, 2)
+
+        # Act & Assert
+        assert engine._is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000524"),
+            precision,
+        )
+        assert not engine._is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000523"),
+            precision,
+        )
+
+    def test_check_position_discrepancy_both_flat(self):
+        """
+        Test no discrepancy when both cached and venue are flat.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[],
+            venue_report=None,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_exact_match(self):
+        """
+        Test no discrepancy when cached and venue quantities match exactly.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("1000"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("1000")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_within_tolerance_fractional(self):
+        """
+        Test no discrepancy when difference is within 1 unit of precision (fractional).
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=eth_usdt.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.000525"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.000524")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_within_tolerance_cached_zero(self):
+        """
+        Test no discrepancy when cached is near-zero within tolerance and venue is flat.
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.000001")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=None,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_exceeds_tolerance(self):
+        """
+        Test discrepancy detected when difference exceeds 1 unit of precision.
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=eth_usdt.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.00052"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.00050")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_integer_precision_requires_exact_match(self):
+        """
+        Test discrepancy detected for integer precision (futures) with 1-contract
+        difference.
+        """
+        # Arrange
+        engine = self.exec_engine
+        es_future = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=12)
+        self.cache.add_instrument(es_future)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("CME-001"),
+            instrument_id=es_future.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(11),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("10")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=es_future.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_cached_nonzero_venue_none(self):
+        """
+        Test discrepancy when cached has position but venue has no report.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("1000")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=None,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_instrument_not_in_cache(self):
+        """
+        Test discrepancy detected when instrument is not in cache (no tolerance
+        applied).
+        """
+        # Arrange
+        engine = self.exec_engine
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.000001"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert has_discrepancy

@@ -408,7 +408,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
-        # log_level_file="DEBUG",
+        log_level_file="DEBUG",
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
