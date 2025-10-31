@@ -33,7 +33,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
-    enums::{BarAggregation, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -77,15 +77,15 @@ use crate::{
         consts::BYBIT_NAUTILUS_BROKER_ID,
         credential::Credential,
         enums::{
-            BybitAccountType, BybitEnvironment, BybitKlineInterval, BybitMarginMode,
-            BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
+            BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOrderSide, BybitOrderType,
+            BybitPositionMode, BybitProductType, BybitTimeInForce,
         },
         models::BybitResponse,
         parse::{
-            make_bybit_symbol, parse_account_state, parse_fill_report, parse_inverse_instrument,
-            parse_kline_bar, parse_linear_instrument, parse_option_instrument,
-            parse_order_status_report, parse_position_status_report, parse_spot_instrument,
-            parse_trade_tick,
+            bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
+            parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
+            parse_option_instrument, parse_order_status_report, parse_position_status_report,
+            parse_spot_instrument, parse_trade_tick,
         },
         symbol::BybitSymbol,
         urls::bybit_http_base_url,
@@ -1826,16 +1826,11 @@ impl BybitHttpInnerClient {
         let instrument = self.instrument_from_cache(&bar_type.instrument_id().symbol)?;
         let bybit_symbol = BybitSymbol::new(bar_type.instrument_id().symbol.as_str())?;
 
-        // Convert Nautilus BarAggregation to BybitKlineInterval
-        let interval = match bar_type.spec().aggregation {
-            BarAggregation::Minute => BybitKlineInterval::Minute1,
-            BarAggregation::Hour => BybitKlineInterval::Hour1,
-            BarAggregation::Day => BybitKlineInterval::Day1,
-            _ => anyhow::bail!(
-                "Unsupported bar aggregation: {:?}",
-                bar_type.spec().aggregation
-            ),
-        };
+        // Convert Nautilus BarSpec to Bybit interval
+        let interval = bar_spec_to_bybit_interval(
+            bar_type.spec().aggregation,
+            bar_type.spec().step.get() as u64,
+        )?;
 
         let start_ms = start.map(|dt| dt.timestamp_millis());
         let mut all_bars: Vec<Bar> = Vec::new();

@@ -322,6 +322,27 @@ pub enum BybitKlineInterval {
     Month1,
 }
 
+impl std::fmt::Display for BybitKlineInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Minute1 => "1",
+            Self::Minute3 => "3",
+            Self::Minute5 => "5",
+            Self::Minute15 => "15",
+            Self::Minute30 => "30",
+            Self::Hour1 => "60",
+            Self::Hour2 => "120",
+            Self::Hour4 => "240",
+            Self::Hour6 => "360",
+            Self::Hour12 => "720",
+            Self::Day1 => "D",
+            Self::Week1 => "W",
+            Self::Month1 => "M",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Order status values returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum BybitOrderStatus {

@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{BybitContractType, BybitOptionType, BybitProductType},
+        enums::{BybitContractType, BybitKlineInterval, BybitOptionType, BybitProductType},
         symbol::BybitSymbol,
     },
     http::models::{
@@ -87,7 +87,7 @@ pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProduc
     Ustr::from(&format!("{raw}{suffix}"))
 }
 
-/// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
+/// Converts a Nautilus bar aggregation and step to a Bybit kline interval.
 ///
 /// Bybit supported intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes), D, W, M
 ///
@@ -97,43 +97,53 @@ pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProduc
 pub fn bar_spec_to_bybit_interval(
     aggregation: BarAggregation,
     step: u64,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<BybitKlineInterval> {
     match aggregation {
-        BarAggregation::Minute => {
-            if !BYBIT_MINUTE_INTERVALS.contains(&step) {
-                anyhow::bail!(
-                    "Bybit only supports the following minute intervals: {:?}",
-                    BYBIT_MINUTE_INTERVALS
-                );
-            }
-            Ok(step.to_string())
-        }
-        BarAggregation::Hour => {
-            if !BYBIT_HOUR_INTERVALS.contains(&step) {
-                anyhow::bail!(
-                    "Bybit only supports the following hour intervals: {:?}",
-                    BYBIT_HOUR_INTERVALS
-                );
-            }
-            Ok((step * 60).to_string())
-        }
+        BarAggregation::Minute => match step {
+            1 => Ok(BybitKlineInterval::Minute1),
+            3 => Ok(BybitKlineInterval::Minute3),
+            5 => Ok(BybitKlineInterval::Minute5),
+            15 => Ok(BybitKlineInterval::Minute15),
+            30 => Ok(BybitKlineInterval::Minute30),
+            // Bybit normalizes minute intervals ≥60 to hour intervals
+            60 => Ok(BybitKlineInterval::Hour1),
+            120 => Ok(BybitKlineInterval::Hour2),
+            240 => Ok(BybitKlineInterval::Hour4),
+            360 => Ok(BybitKlineInterval::Hour6),
+            720 => Ok(BybitKlineInterval::Hour12),
+            _ => anyhow::bail!(
+                "Bybit only supports the following minute intervals: {:?}",
+                BYBIT_MINUTE_INTERVALS
+            ),
+        },
+        BarAggregation::Hour => match step {
+            1 => Ok(BybitKlineInterval::Hour1),
+            2 => Ok(BybitKlineInterval::Hour2),
+            4 => Ok(BybitKlineInterval::Hour4),
+            6 => Ok(BybitKlineInterval::Hour6),
+            12 => Ok(BybitKlineInterval::Hour12),
+            _ => anyhow::bail!(
+                "Bybit only supports the following hour intervals: {:?}",
+                BYBIT_HOUR_INTERVALS
+            ),
+        },
         BarAggregation::Day => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 DAY interval bars");
             }
-            Ok("D".to_string())
+            Ok(BybitKlineInterval::Day1)
         }
         BarAggregation::Week => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 WEEK interval bars");
             }
-            Ok("W".to_string())
+            Ok(BybitKlineInterval::Week1)
         }
         BarAggregation::Month => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 MONTH interval bars");
             }
-            Ok("M".to_string())
+            Ok(BybitKlineInterval::Month1)
         }
         _ => {
             anyhow::bail!("Bybit does not support {:?} bars", aggregation);
@@ -1253,5 +1263,75 @@ mod tests {
             report.client_order_id.as_ref().unwrap().to_string(),
             "O-20251001-164609-APEX-000-49"
         );
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Minute, 1, BybitKlineInterval::Minute1)]
+    #[case(BarAggregation::Minute, 3, BybitKlineInterval::Minute3)]
+    #[case(BarAggregation::Minute, 5, BybitKlineInterval::Minute5)]
+    #[case(BarAggregation::Minute, 15, BybitKlineInterval::Minute15)]
+    #[case(BarAggregation::Minute, 30, BybitKlineInterval::Minute30)]
+    #[case(BarAggregation::Minute, 60, BybitKlineInterval::Hour1)]
+    #[case(BarAggregation::Minute, 120, BybitKlineInterval::Hour2)]
+    #[case(BarAggregation::Minute, 240, BybitKlineInterval::Hour4)]
+    #[case(BarAggregation::Minute, 360, BybitKlineInterval::Hour6)]
+    #[case(BarAggregation::Minute, 720, BybitKlineInterval::Hour12)]
+    fn test_bar_spec_to_bybit_interval_minutes(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Hour, 1, BybitKlineInterval::Hour1)]
+    #[case(BarAggregation::Hour, 2, BybitKlineInterval::Hour2)]
+    #[case(BarAggregation::Hour, 4, BybitKlineInterval::Hour4)]
+    #[case(BarAggregation::Hour, 6, BybitKlineInterval::Hour6)]
+    #[case(BarAggregation::Hour, 12, BybitKlineInterval::Hour12)]
+    fn test_bar_spec_to_bybit_interval_hours(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Day, 1, BybitKlineInterval::Day1)]
+    #[case(BarAggregation::Week, 1, BybitKlineInterval::Week1)]
+    #[case(BarAggregation::Month, 1, BybitKlineInterval::Month1)]
+    fn test_bar_spec_to_bybit_interval_day_week_month(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Minute, 2)]
+    #[case(BarAggregation::Minute, 10)]
+    #[case(BarAggregation::Hour, 3)]
+    #[case(BarAggregation::Hour, 24)]
+    #[case(BarAggregation::Day, 2)]
+    #[case(BarAggregation::Week, 2)]
+    #[case(BarAggregation::Month, 2)]
+    fn test_bar_spec_to_bybit_interval_unsupported_steps(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_bar_spec_to_bybit_interval_unsupported_aggregation() {
+        let result = bar_spec_to_bybit_interval(BarAggregation::Second, 1);
+        assert!(result.is_err());
     }
 }

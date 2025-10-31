@@ -56,7 +56,8 @@ fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String>
             "Invalid BarAggregation value: {aggregation}"
         ))
     })?;
-    bar_spec_to_bybit_interval(aggregation, step).map_err(to_pyvalue_err)
+    let interval = bar_spec_to_bybit_interval(aggregation, step).map_err(to_pyvalue_err)?;
+    Ok(interval.to_string())
 }
 
 /// Extracts the product type from a Bybit symbol.
