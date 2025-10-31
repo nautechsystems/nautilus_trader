@@ -162,6 +162,14 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+.PHONY: check-code
+check-code:  #-- Run format, clippy with hypersync features, and ruff --fix
+	$(info $(M) Running code quality checks...)
+	@$(MAKE) --no-print-directory format
+	@cargo clippy --all-targets --features "ffi,python,high-precision,defi,hypersync" -- -D warnings
+	@uv run --active --no-sync ruff check . --fix
+	@printf "$(GREEN)Code quality checks passed$(RESET)\n"
+
 .PHONY: check-links
 check-links:  #-- Check for broken links in documentation (periodic audit)
 	$(info $(M) Checking documentation links...)
