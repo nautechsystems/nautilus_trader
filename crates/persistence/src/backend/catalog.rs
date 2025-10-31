@@ -940,10 +940,10 @@ impl ParquetDataCatalog {
         // Register the object store with the session for remote URIs
         if self.is_remote_uri() {
             let url = url::Url::parse(&self.original_uri)?;
-            let host = url
-                .host_str()
-                .ok_or_else(|| anyhow::anyhow!("Remote URI missing host/bucket name"))?;
-            let base_url = url::Url::parse(&format!("{}://{}", url.scheme(), host))?;
+
+            // DataFusion requires registration with protocol-level URLs (e.g., "s3://")
+            // rather than bucket-specific URLs (e.g., "s3://bucket-name")
+            let base_url = url::Url::parse(&format!("{}://", url.scheme()))?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
         }
