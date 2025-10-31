@@ -126,7 +126,9 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
             try:
                 active = response["active"]
-                if filter_is_active and not active:
+                closed = response["closed"]
+
+                if filter_is_active and (not active or closed):
                     continue
 
                 condition_id = response["condition_id"]
@@ -178,7 +180,9 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             for market_info in response["data"]:
                 try:
                     active = market_info["active"]
-                    if filter_is_active and not active:
+                    closed = market_info["closed"]
+
+                    if filter_is_active and (not active or closed):
                         continue
 
                     condition_id = market_info["condition_id"]
@@ -193,6 +197,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                         if not token_id:
                             self._log.warning(f"Market {condition_id} had an empty token")
                             continue
+
                         outcome = token_info["outcome"]
                         self._load_instrument(market_info, token_id, outcome)
                 except ValueError as e:
@@ -215,5 +220,6 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         )
         if market_info["end_date_iso"] is None:
             self._log.warning(f"{instrument.id} expiration is missing, assuming it is still active")
+
         self.add(instrument)
         return instrument
