@@ -66,7 +66,7 @@ use crate::{
     websocket::{
         auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
         cache,
-        enums::BybitWsOperation,
+        enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
         messages::{
             BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWebSocketMessage,
@@ -705,7 +705,10 @@ impl BybitWebSocketClient {
         depth: u32,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("orderbook.{}.{}", depth, raw_symbol);
+        let topic = format!(
+            "{}.{depth}.{raw_symbol}",
+            BybitWsPublicChannel::OrderBook.as_ref()
+        );
         self.subscribe(vec![topic]).await
     }
 
@@ -716,7 +719,10 @@ impl BybitWebSocketClient {
         depth: u32,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("orderbook.{}.{}", depth, raw_symbol);
+        let topic = format!(
+            "{}.{depth}.{raw_symbol}",
+            BybitWsPublicChannel::OrderBook.as_ref()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -731,14 +737,20 @@ impl BybitWebSocketClient {
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/trade>
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("publicTrade.{}", raw_symbol);
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::PublicTrade.as_ref()
+        );
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from public trade updates for a specific instrument.
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("publicTrade.{}", raw_symbol);
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::PublicTrade.as_ref()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -753,14 +765,14 @@ impl BybitWebSocketClient {
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/ticker>
     pub async fn subscribe_ticker(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("tickers.{}", raw_symbol);
+        let topic = format!("{}.{raw_symbol}", BybitWsPublicChannel::Tickers.as_ref());
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from ticker updates for a specific instrument.
     pub async fn unsubscribe_ticker(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("tickers.{}", raw_symbol);
+        let topic = format!("{}.{raw_symbol}", BybitWsPublicChannel::Tickers.as_ref());
 
         // Clear funding rate cache to ensure fresh data on resubscribe
         let symbol = self.product_type.map_or_else(
@@ -787,7 +799,11 @@ impl BybitWebSocketClient {
         interval: impl Into<String>,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("kline.{}.{}", interval.into(), raw_symbol);
+        let topic = format!(
+            "{}.{}.{raw_symbol}",
+            BybitWsPublicChannel::Kline.as_ref(),
+            interval.into()
+        );
         self.subscribe(vec![topic]).await
     }
 
@@ -798,7 +814,11 @@ impl BybitWebSocketClient {
         interval: impl Into<String>,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("kline.{}.{}", interval.into(), raw_symbol);
+        let topic = format!(
+            "{}.{}.{raw_symbol}",
+            BybitWsPublicChannel::Kline.as_ref(),
+            interval.into()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -817,12 +837,14 @@ impl BybitWebSocketClient {
                 "Order subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["order".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Order.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from order updates.
     pub async fn unsubscribe_orders(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["order".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Order.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to execution/fill updates.
@@ -840,12 +862,14 @@ impl BybitWebSocketClient {
                 "Execution subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["execution".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Execution.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from execution/fill updates.
     pub async fn unsubscribe_executions(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["execution".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Execution.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to position updates.
@@ -863,12 +887,14 @@ impl BybitWebSocketClient {
                 "Position subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["position".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Position.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from position updates.
     pub async fn unsubscribe_positions(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["position".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Position.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to wallet/balance updates.
@@ -886,12 +912,14 @@ impl BybitWebSocketClient {
                 "Wallet subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["wallet".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Wallet.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from wallet/balance updates.
     pub async fn unsubscribe_wallet(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["wallet".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Wallet.as_ref().to_string()])
+            .await
     }
 
     /// Places an order via WebSocket.
@@ -2277,43 +2305,69 @@ impl BybitWebSocketClient {
         }
 
         if let Some(topic) = value.get("topic").and_then(Value::as_str) {
-            if topic.starts_with("orderbook") {
+            let orderbook_channel = BybitWsPublicChannel::OrderBook.as_ref();
+            let public_trade_channel = BybitWsPublicChannel::PublicTrade.as_ref();
+            let trade_channel = BybitWsPublicChannel::Trade.as_ref();
+            let kline_channel = BybitWsPublicChannel::Kline.as_ref();
+            let tickers_channel = BybitWsPublicChannel::Tickers.as_ref();
+            let order_channel = BybitWsPrivateChannel::Order.as_ref();
+            let execution_channel = BybitWsPrivateChannel::Execution.as_ref();
+            let wallet_channel = BybitWsPrivateChannel::Wallet.as_ref();
+            let position_channel = BybitWsPrivateChannel::Position.as_ref();
+
+            if topic.starts_with(orderbook_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsOrderbookDepthMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Orderbook(msg));
                 }
-            } else if topic.contains("publicTrade") || topic.starts_with("trade") {
+            } else if topic.contains(public_trade_channel) || topic.starts_with(trade_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTradeMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Trade(msg));
                 }
-            } else if topic.contains("kline") {
+            } else if topic.contains(kline_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsKlineMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Kline(msg));
                 }
-            } else if topic.contains("tickers") {
+            } else if topic.contains(tickers_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerOptionMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::TickerOption(msg));
                 }
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerLinearMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::TickerLinear(msg));
                 }
-            } else if topic == "order" || topic.starts_with("order.") {
+            } else if topic == order_channel
+                || topic
+                    .strip_prefix(order_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountOrder(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize order message: {e}\n{value}"),
                 }
-            } else if topic == "execution" || topic.starts_with("execution.") {
+            } else if topic == execution_channel
+                || topic
+                    .strip_prefix(execution_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountExecution(msg)),
                     Err(e) => {
                         tracing::warn!("Failed to deserialize execution message: {e}\n{value}");
                     }
                 }
-            } else if topic == "wallet" || topic.starts_with("wallet.") {
+            } else if topic == wallet_channel
+                || topic
+                    .strip_prefix(wallet_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountWallet(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize wallet message: {e}\n{value}"),
                 }
-            } else if topic == "position" || topic.starts_with("position.") {
+            } else if topic == position_channel
+                || topic
+                    .strip_prefix(position_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountPosition(msg)),
                     Err(e) => {
