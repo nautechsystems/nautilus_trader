@@ -27,7 +27,7 @@ use axum::{
 use nautilus_bitmex::{
     common::enums::{BitmexOrderType, BitmexSide},
     http::{
-        client::{BitmexHttpClient, BitmexHttpInnerClient},
+        client::{BitmexHttpClient, BitmexRawHttpClient},
         query::{DeleteOrderParams, GetOrderParamsBuilder, PostOrderParams},
     },
 };
@@ -51,7 +51,8 @@ impl Default for TestServerState {
 
 // Load test data from existing files
 fn load_test_data(filename: &str) -> Value {
-    let path = format!("test_data/{}", filename);
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{}/test_data/{}", manifest_dir, filename);
     let content = std::fs::read_to_string(path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -259,7 +260,7 @@ async fn test_get_instruments() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::new(
+    let client = BitmexRawHttpClient::new(
         Some(base_url),
         Some(60),
         None,
@@ -271,7 +272,7 @@ async fn test_get_instruments() {
         None,
     )
     .unwrap();
-    let instruments = client.http_get_instruments(true).await.unwrap();
+    let instruments = client.get_instruments(true).await.unwrap();
 
     assert_eq!(instruments.len(), 1);
     assert_eq!(instruments[0].symbol, "XBTUSD");
@@ -283,7 +284,7 @@ async fn test_get_instrument_single_result() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::new(
+    let client = BitmexRawHttpClient::new(
         Some(base_url),
         Some(60),
         None,
@@ -295,7 +296,7 @@ async fn test_get_instrument_single_result() {
         None,
     )
     .unwrap();
-    let instrument = client.http_get_instrument("XBTUSD").await.unwrap();
+    let instrument = client.get_instrument("XBTUSD").await.unwrap();
 
     assert!(instrument.is_some());
     assert_eq!(instrument.unwrap().symbol, "XBTUSD");
@@ -338,7 +339,7 @@ async fn test_get_wallet_requires_auth() {
     let base_url = format!("http://{}", addr);
 
     // Test without credentials - should fail
-    let client = BitmexHttpInnerClient::new(
+    let client = BitmexRawHttpClient::new(
         Some(base_url.clone()),
         Some(60),
         None,
@@ -350,11 +351,11 @@ async fn test_get_wallet_requires_auth() {
         None, // proxy_url
     )
     .unwrap();
-    let result = client.http_get_wallet().await;
+    let result = client.get_wallet().await;
     assert!(result.is_err());
 
     // Test with credentials - should succeed
-    let client = BitmexHttpInnerClient::with_credentials(
+    let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
@@ -368,7 +369,7 @@ async fn test_get_wallet_requires_auth() {
         None, // proxy_url
     )
     .unwrap();
-    let wallet = client.http_get_wallet().await.unwrap();
+    let wallet = client.get_wallet().await.unwrap();
     assert_eq!(wallet.currency, "XBt");
 }
 
@@ -378,7 +379,7 @@ async fn test_get_orders() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::with_credentials(
+    let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
@@ -394,7 +395,7 @@ async fn test_get_orders() {
     .unwrap();
 
     let params = GetOrderParamsBuilder::default().build().unwrap();
-    let orders = client.http_get_orders(params).await.unwrap();
+    let orders = client.get_orders(params).await.unwrap();
 
     assert!(!orders.is_empty());
     assert!(orders[0].symbol.is_some());
@@ -406,7 +407,7 @@ async fn test_place_order() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::with_credentials(
+    let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
@@ -431,7 +432,7 @@ async fn test_place_order() {
         ..Default::default()
     };
 
-    let order = client.http_place_order(params).await.unwrap();
+    let order = client.place_order(params).await.unwrap();
 
     assert_eq!(order["clOrdID"], "TEST-ORDER-123");
     assert_eq!(order["symbol"], "XBTUSD");
@@ -445,7 +446,7 @@ async fn test_cancel_order() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::with_credentials(
+    let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
@@ -466,7 +467,7 @@ async fn test_cancel_order() {
         text: None,
     };
 
-    let result = client.http_cancel_orders(params).await.unwrap();
+    let result = client.cancel_orders(params).await.unwrap();
     assert!(result.is_array());
     let result_array = result.as_array().unwrap();
     assert_eq!(result_array.len(), 1);
@@ -480,7 +481,7 @@ async fn test_rate_limiting() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::with_credentials(
+    let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
@@ -498,7 +499,7 @@ async fn test_rate_limiting() {
     // Make multiple requests to trigger rate limiting
     let params = GetOrderParamsBuilder::default().build().unwrap();
     for i in 0..7 {
-        let result = client.http_get_orders(params.clone()).await;
+        let result = client.get_orders(params.clone()).await;
         if i < 5 {
             assert!(result.is_ok(), "Request {} should succeed", i + 1);
         } else {

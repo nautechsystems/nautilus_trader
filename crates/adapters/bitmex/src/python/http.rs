@@ -522,19 +522,12 @@ impl BitmexHttpClient {
         self.cancel_all_requests();
     }
 
-    #[pyo3(name = "http_get_margin")]
-    fn py_http_get_margin<'py>(
-        &self,
-        py: Python<'py>,
-        currency: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "get_margin")]
+    fn py_get_margin<'py>(&self, py: Python<'py>, currency: String) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let margin = client
-                .http_get_margin(&currency)
-                .await
-                .map_err(to_pyvalue_err)?;
+            let margin = client.get_margin(&currency).await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
                 // Create a simple Python object with just the account field we need
@@ -631,15 +624,12 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "http_get_server_time")]
-    fn py_http_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "get_server_time")]
+    fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let timestamp = client
-                .http_get_server_time()
-                .await
-                .map_err(to_pyvalue_err)?;
+            let timestamp = client.get_server_time().await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| timestamp.into_py_any(py))
         })

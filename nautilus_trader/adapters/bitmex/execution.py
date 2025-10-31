@@ -231,7 +231,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info("BitMEX API key authenticated", LogColor.GREEN)
 
         # Check BitMEX-Nautilus clock sync
-        server_time: int = await self._http_client.http_get_server_time()
+        server_time: int = await self._http_client.get_server_time()
         self._log.info(f"BitMEX server time {server_time} UNIX (ms)")
 
         nautilus_time: int = self._clock.timestamp_ms()
@@ -268,7 +268,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
     async def _update_account_state(self) -> None:
         # First get the margin data to extract the actual account number
-        account_number = await self._http_client.http_get_margin("XBt")
+        account_number = await self._http_client.get_margin("XBt")
 
         # Update account ID with actual account number from BitMEX
         if account_number:

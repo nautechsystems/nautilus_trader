@@ -112,7 +112,7 @@ impl SubmitExecutor for BitmexHttpClient {
 
     fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
         Box::pin(async move {
-            Self::http_get_server_time(self)
+            Self::get_server_time(self)
                 .await
                 .map(|_| ())
                 .map_err(|e| anyhow::anyhow!("{e}"))
