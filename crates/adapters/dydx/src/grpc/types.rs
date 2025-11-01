@@ -13,13 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Core constants shared across the dYdX adapter components.
+//! Type definitions for dYdX v4 gRPC operations.
 
-/// dYdX adapter name.
-pub const DYDX: &str = "DYDX";
+use cosmrs::tendermint::{Error, chain::Id};
+use serde::{Deserialize, Serialize};
+use strum::{AsRefStr, Display};
 
-/// dYdX mainnet chain ID.
-pub const DYDX_CHAIN_ID: &str = "dydx-mainnet-1";
+/// [Chain ID](https://docs.dydx.xyz/nodes/network-constants#chain-id)
+/// serves as a unique chain identifier to prevent replay attacks.
+///
+/// See also [Cosmos ecosystem](https://cosmos.directory/).
+#[derive(Debug, Eq, PartialEq, Clone, Display, AsRefStr, Deserialize, Serialize)]
+pub enum ChainId {
+    /// Testnet.
+    #[strum(serialize = "dydx-testnet-4")]
+    #[serde(rename = "dydx-testnet-4")]
+    Testnet4,
+    /// Mainnet.
+    #[strum(serialize = "dydx-mainnet-1")]
+    #[serde(rename = "dydx-mainnet-1")]
+    Mainnet1,
+}
 
-/// dYdX testnet chain ID.
-pub const DYDX_TESTNET_CHAIN_ID: &str = "dydx-testnet-4";
+impl TryFrom<ChainId> for Id {
+    type Error = Error;
+
+    fn try_from(chain_id: ChainId) -> Result<Self, Self::Error> {
+        chain_id.as_ref().parse()
+    }
+}
