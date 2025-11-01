@@ -13,16 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common functionality shared across the dYdX adapter.
-//!
-//! This module provides core utilities, constants, and data structures used throughout
-//! the dYdX integration, including:
-//!
-//! - Common constants for venues and identifiers.
-//! - URL management for HTTP and WebSocket endpoints.
-//! - Shared data types and models.
-//! - Test utilities for development.
-
 pub mod consts;
 pub mod types;
 pub mod urls;
