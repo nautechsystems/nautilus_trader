@@ -169,6 +169,9 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         If borrowing is allowed for cash accounts (negative balances).
     frozen_account : bool, default False
         If the account for this exchange is frozen (balances will not change).
+    price_protection_points : float, default 0.0
+        Defines an exchange-calculated price boundary (in points) to prevent
+        marketable orders from executing at excessively aggressive prices.
 
     """
 
@@ -197,6 +200,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     trade_execution: bool = False
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
+    price_protection_points: float = 0.0
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):

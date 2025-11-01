@@ -290,6 +290,9 @@ pub struct BacktestVenueConfig {
     default_leverage: Option<f64>,
     /// The instrument specific leverage configuration (for margin accounts).
     leverages: Option<HashMap<Currency, f64>>,
+    /// Defines an exchange-calculated price boundary to prevent a market order from being
+    /// filled at an extremely aggressive price.
+    price_protection_points: f64,
 }
 
 impl BacktestVenueConfig {
@@ -315,6 +318,7 @@ impl BacktestVenueConfig {
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
         leverages: Option<HashMap<Currency, f64>>,
+        price_protection_points: Option<f64>,
     ) -> Self {
         Self {
             name,
@@ -336,6 +340,7 @@ impl BacktestVenueConfig {
             base_currency,
             default_leverage,
             leverages,
+            price_protection_points: price_protection_points.unwrap_or(0.0),
         }
     }
 }

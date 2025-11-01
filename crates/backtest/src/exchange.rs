@@ -135,6 +135,7 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
     allow_cash_borrowing: bool,
     frozen_account: bool,
+    price_protection_points: Decimal,
 }
 
 impl Debug for SimulatedExchange {
@@ -180,6 +181,7 @@ impl SimulatedExchange {
         use_message_queue: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        price_protection_points: Option<Decimal>,
     ) -> anyhow::Result<Self> {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
@@ -219,6 +221,7 @@ impl SimulatedExchange {
             use_message_queue: use_message_queue.unwrap_or(true),
             allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
+            price_protection_points: price_protection_points.unwrap_or(Decimal::ZERO),
         })
     }
 
@@ -273,6 +276,12 @@ impl SimulatedExchange {
 
         self.instruments.insert(instrument.id(), instrument.clone());
 
+        let price_protection = if self.price_protection_points.is_zero() {
+            None
+        } else {
+            Some(self.price_protection_points)
+        };
+
         let matching_engine_config = OrderMatchingEngineConfig::new(
             self.bar_execution,
             self.reject_stop_orders,
@@ -281,7 +290,8 @@ impl SimulatedExchange {
             self.use_position_ids,
             self.use_random_ids,
             self.use_reduce_only,
-        );
+        )
+        .with_price_protection_points(price_protection);
         let instrument_id = instrument.id();
         let matching_engine = OrderMatchingEngine::new(
             instrument,
@@ -864,6 +874,7 @@ mod tests {
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
+                None,
                 None,
                 None,
                 None,

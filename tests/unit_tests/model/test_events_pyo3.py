@@ -191,13 +191,13 @@ def test_order_updated():
     assert (
         str(event)
         == "OrderUpdated(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
-        + "account_id=SIM-000, quantity=1.5, price=1_500.0, trigger_price=None, ts_event=0)"
+        + "account_id=SIM-000, quantity=1.5, price=1_500.0, trigger_price=None, protection_price=None, ts_event=0)"
     )
     assert (
         repr(event)
         == "OrderUpdated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
         + "venue_order_id=123456, account_id=SIM-000, quantity=1.5, price=1_500.0, trigger_price=None, "
-        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+        + "protection_price=None, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
 
 

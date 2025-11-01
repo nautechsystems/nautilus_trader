@@ -65,6 +65,7 @@ use crate::{
         fee::{FeeModel, FeeModelAny},
         fill::FillModel,
     },
+    protection::protection_price_calculate,
     trailing::trailing_stop_calculate,
 };
 
@@ -735,9 +736,15 @@ impl OrderMatchingEngine {
         }
 
         match order.order_type() {
+            OrderType::Market if self.config.price_protection_points.is_some() => {
+                self.process_market_order_with_protection(order);
+            }
             OrderType::Market => self.process_market_order(order),
             OrderType::Limit => self.process_limit_order(order),
             OrderType::MarketToLimit => self.process_market_to_limit_order(order),
+            OrderType::StopMarket if self.config.price_protection_points.is_some() => {
+                self.process_stop_market_order_with_protection(order);
+            }
             OrderType::StopMarket => self.process_stop_market_order(order),
             OrderType::StopLimit => self.process_stop_limit_order(order),
             OrderType::MarketIfTouched => self.process_market_if_touched_order(order),
@@ -843,6 +850,57 @@ impl OrderMatchingEngine {
         self.fill_market_order(order);
     }
 
+    fn process_market_order_with_protection(&mut self, order: &mut OrderAny) {
+        if order.time_in_force() == TimeInForce::AtTheOpen
+            || order.time_in_force() == TimeInForce::AtTheClose
+        {
+            log::error!(
+                "Market auction for the time in force {} is currently not supported",
+                order.time_in_force()
+            );
+            return;
+        }
+
+        // Check if market exists
+        let order_side = order.order_side();
+        let is_ask_initialized = self.core.is_ask_initialized;
+        let is_bid_initialized = self.core.is_bid_initialized;
+        if (order_side == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order_side == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        self.update_protection_price(order);
+
+        let protection_price = order
+            .price()
+            .expect("Market order with protection must have a protection price");
+
+        // Order is valid and accepted
+        self.accept_order(order);
+
+        // Check for immediate fill
+        if self
+            .core
+            .is_limit_matched(order.order_side_specified(), protection_price)
+        {
+            // Filling as liquidity taker
+            if order.liquidity_side().is_some()
+                && order.liquidity_side().unwrap() == LiquiditySide::NoLiquiditySide
+            {
+                order.set_liquidity_side(LiquiditySide::Taker);
+            }
+            self.fill_limit_order(order);
+        } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+            self.cancel_order(order, None);
+        }
+    }
+
     fn process_limit_order(&mut self, order: &mut OrderAny) {
         let limit_px = order.price().expect("Limit order must have a price");
         if order.is_post_only()
@@ -940,6 +998,67 @@ impl OrderMatchingEngine {
         }
 
         // order is not matched but is valid and we accept it
+        self.accept_order(order);
+    }
+
+    fn process_stop_market_order_with_protection(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
+
+        let order_side = order.order_side();
+        let is_ask_initialized = self.core.is_ask_initialized;
+        let is_bid_initialized = self.core.is_bid_initialized;
+        if (order_side == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order_side == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        self.update_protection_price(order);
+        let protection_price = order
+            .price()
+            .expect("Market order with protection must have a protection price");
+
+        if self
+            .core
+            .is_stop_matched(order.order_side_specified(), stop_px)
+        {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            } else {
+                // Order is valid and accepted
+                self.accept_order(order);
+            }
+
+            if self
+                .core
+                .is_limit_matched(order.order_side_specified(), protection_price)
+            {
+                self.fill_limit_order(order);
+            }
+            return;
+        }
+        // Order is valid and accepted
         self.accept_order(order);
     }
 
@@ -1542,7 +1661,7 @@ impl OrderMatchingEngine {
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
             {
-                self.generate_order_updated(order, order.quantity(), Some(fill_px), None);
+                self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
                 initial_market_to_limit_fill = true;
             }
 
@@ -1577,7 +1696,7 @@ impl OrderMatchingEngine {
 
                 // Only emit an update if the order quantity actually changes
                 if order.quantity() != adjusted_fill_qty {
-                    self.generate_order_updated(order, adjusted_fill_qty, None, None);
+                    self.generate_order_updated(order, adjusted_fill_qty, None, None, None);
                 }
             }
 
@@ -1827,12 +1946,12 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            self.generate_order_updated(order, quantity, Some(price), None);
+            self.generate_order_updated(order, quantity, Some(price), None, None);
             order.set_liquidity_side(LiquiditySide::Taker);
             self.fill_limit_order(order);
             return;
         }
-        self.generate_order_updated(order, quantity, Some(price), None);
+        self.generate_order_updated(order, quantity, Some(price), None, None);
     }
 
     fn update_stop_market_order(
@@ -1871,7 +1990,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.generate_order_updated(order, quantity, None, Some(trigger_price));
+        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
     }
 
     fn update_stop_limit_order(
@@ -1906,7 +2025,7 @@ impl OrderMatchingEngine {
                     );
                     return;
                 }
-                self.generate_order_updated(order, quantity, Some(price), None);
+                self.generate_order_updated(order, quantity, Some(price), None, None);
                 order.set_liquidity_side(LiquiditySide::Taker);
                 self.fill_limit_order(order);
                 return; // Filled
@@ -1944,7 +2063,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price));
+        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
     }
 
     fn update_market_if_touched_order(
@@ -1984,7 +2103,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.generate_order_updated(order, quantity, None, Some(trigger_price));
+        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
     }
 
     fn update_limit_if_touched_order(
@@ -2020,7 +2139,7 @@ impl OrderMatchingEngine {
                     // Cannot update order
                     return;
                 }
-                self.generate_order_updated(order, quantity, Some(price), None);
+                self.generate_order_updated(order, quantity, Some(price), None, None);
                 order.set_liquidity_side(LiquiditySide::Taker);
                 self.fill_limit_order(order);
                 return;
@@ -2058,7 +2177,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price));
+        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
     }
 
     fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
@@ -2077,7 +2196,27 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price);
+        self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price, None);
+    }
+
+    fn update_protection_price(&mut self, order: &mut OrderAny) {
+        let protection_price = protection_price_calculate(
+            self.instrument.price_increment(),
+            order,
+            self.config.price_protection_points,
+            self.core.bid,
+            self.core.ask,
+        );
+
+        if let Ok(protection_price) = protection_price {
+            self.generate_order_updated(
+                order,
+                order.quantity(),
+                None,
+                None,
+                Some(protection_price),
+            );
+        }
     }
 
     // -- EVENT HANDLING -----------------------------------------------------
@@ -2373,6 +2512,7 @@ impl OrderMatchingEngine {
         quantity: Quantity,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        protection_price: Option<Price>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::Updated(OrderUpdated::new(
@@ -2389,6 +2529,7 @@ impl OrderMatchingEngine {
             order.account_id(),
             price,
             trigger_price,
+            protection_price,
         ));
         msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
 

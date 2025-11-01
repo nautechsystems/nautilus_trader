@@ -148,6 +148,7 @@ impl BacktestEngine {
         trade_execution: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        price_protection_points: Option<Decimal>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
@@ -182,6 +183,7 @@ impl BacktestEngine {
             use_message_queue,
             allow_cash_borrowing,
             frozen_account,
+            price_protection_points,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
@@ -532,6 +534,7 @@ mod tests {
                 vec![],
                 FillModel::default(),
                 FeeModelAny::default(),
+                None,
                 None,
                 None,
                 None,

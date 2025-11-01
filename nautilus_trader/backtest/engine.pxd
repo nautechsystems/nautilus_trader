@@ -248,6 +248,8 @@ cdef class SimulatedExchange:
     """If the processing order of bar prices is adaptive based on a heuristic.\n\n:returns: `bool`"""
     cdef readonly bint trade_execution
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
+    cdef readonly price_protection_points
+    """Defines an exchange-calculated price boundary (in points) to prevent marketable orders from executing at excessively aggressive prices.\n\n:returns: `Decimal`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
@@ -342,6 +344,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _bar_adaptive_high_low_ordering
     cdef bint _trade_execution
+    cdef object _price_protection_points
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas
