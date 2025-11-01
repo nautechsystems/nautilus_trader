@@ -18,6 +18,8 @@ Configuration for tearsheet generation and visualization.
 
 from __future__ import annotations
 
+from typing import Any
+
 import msgspec
 
 from nautilus_trader.common.config import NautilusConfig
@@ -76,7 +78,7 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
     charts : list[str], default ["stats_table", "equity", "drawdown", "monthly_returns", "distribution", "rolling_sharpe", "yearly_returns"]
         List of chart names to include in the tearsheet.
         Available charts: "stats_table", "equity", "drawdown", "monthly_returns",
-        "distribution", "rolling_sharpe", "yearly_returns".
+        "distribution", "rolling_sharpe", "yearly_returns", "bars_with_fills".
     theme : str, default "plotly_white"
         Theme name for visualization styling.
         Built-in themes: "plotly_white", "plotly_dark", "nautilus".
@@ -93,6 +95,10 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
         Total height of the tearsheet in pixels.
     show_logo : bool, default True
         Whether to display NautilusTrader logo in the tearsheet.
+    chart_args : dict[str, dict[str, Any]] | None, default None
+        Optional arguments to pass to specific charts.
+        Keys are chart names, values are dictionaries of arguments for that chart.
+        Example: {"bars_with_fills": {"bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL"}}
 
     """
 
@@ -104,3 +110,4 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
     benchmark_name: str = "Benchmark"
     height: PositiveInt = 1500
     show_logo: bool = True
+    chart_args: dict[str, dict[str, Any]] | None = None
