@@ -2793,16 +2793,14 @@ def default_time_range_generator(RequestData request):
     """
     cdef uint64_t prev_request_end_ns = request.start.value
     cdef uint64_t last_end_ns = request.end.value
+    cdef uint64_t duration_ns = 0
 
     point_data = request.params.get("point_data", False)
     durations_seconds = request.params.get("durations_seconds", [None])
-    durations_ns = [duration_seconds * 1e9 if duration_seconds is not None else None
-                    for duration_seconds in durations_seconds]
 
     iteration_index = 0
-
     while True:
-        for duration_ns in durations_ns:
+        for duration_seconds in durations_seconds:
             # Possibility to use durations of various lengths to take into account weekends or market breaks
             # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration], etc.
             # When point_data we do a query for [request_start_ns, request_start_ns] only
@@ -2812,7 +2810,8 @@ def default_time_range_generator(RequestData request):
             if request_start_ns > last_end_ns:
                 return
 
-            if duration_ns is not None:
+            if duration_seconds is not None:
+                duration_ns = duration_seconds * NANOSECONDS_IN_SECOND
                 request_end_ns = min(request_start_ns + duration_ns - offset, last_end_ns)
             else:
                 request_end_ns = last_end_ns
