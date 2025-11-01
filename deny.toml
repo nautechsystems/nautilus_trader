@@ -65,6 +65,7 @@ allow = [
   "LGPL-3.0-or-later",
   "OpenSSL",
   "Unlicense",
+  "LicenseRef-dYdX-Custom", # dydx-proto custom license (Apache-2.0 based)
 ]
 
 confidence-threshold = 0.8
