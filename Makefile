@@ -27,11 +27,23 @@ VERBOSE ?= true
 # allowing the full test suite to run.
 FAIL_FAST ?= false
 
+# HYPERSYNC controls whether hypersync feature is included in cargo features.
+# When set to `true` the hypersync feature is included. When `false` (the default)
+# the feature is excluded. Can be overridden: make check-code HYPERSYNC=true
+HYPERSYNC ?= false
+
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
 FAIL_FAST_FLAG :=
 else
 FAIL_FAST_FLAG := --no-fail-fast
+endif
+
+# Select cargo features based on HYPERSYNC flag (can be overridden with CARGO_FEATURES=...)
+ifeq ($(HYPERSYNC),true)
+CARGO_FEATURES ?= ffi,python,high-precision,defi,hypersync
+else
+CARGO_FEATURES ?= ffi,python,high-precision,defi
 endif
 
 # > Colors
@@ -162,10 +174,12 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+# The check-code target uses CARGO_FEATURES which is controlled by the HYPERSYNC flag.
+# By default, hypersync is excluded to speed up checks. Override with: make check-code HYPERSYNC=true
 .PHONY: check-code
-check-code: format  #-- Run format, clippy with hypersync features, and ruff --fix
+check-code: format  #-- Run format, clippy, and ruff --fix (use HYPERSYNC=true to include hypersync feature)
 	$(info $(M) Running code quality checks...)
-	@cargo clippy --all-targets --features "ffi,python,high-precision,defi,hypersync" -- -D warnings
+	@cargo clippy --all-targets --features "$(CARGO_FEATURES)" -- -D warnings
 	@uv run --active --no-sync ruff check . --fix
 	@printf "$(GREEN)Checks passed$(RESET)\n"
 
