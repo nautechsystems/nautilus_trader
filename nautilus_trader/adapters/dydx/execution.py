@@ -36,6 +36,7 @@ from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
+from nautilus_trader.adapters.dydx.common.errors import DYDXOrderBroadcastError
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
 from nautilus_trader.adapters.dydx.config import DYDXExecClientConfig
 from nautilus_trader.adapters.dydx.grpc.account import DYDXAccountGRPCAPI
