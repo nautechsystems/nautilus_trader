@@ -25,7 +25,6 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.engine import register_time_range_generator
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -38,6 +37,8 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
+from nautilus_trader.data.engine import default_time_range_generator
+from nautilus_trader.data.engine import register_time_range_generator
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -1097,7 +1098,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         ],
     )
 
-    register_time_range_generator("default", BacktestEngine.default_time_range_generator)
+    register_time_range_generator("default", default_time_range_generator)
 
     strategies = [
         ImportableStrategyConfig(

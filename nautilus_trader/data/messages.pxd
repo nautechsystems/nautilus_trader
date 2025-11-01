@@ -193,6 +193,11 @@ cdef class RequestBars(RequestData):
     """The bar type for the request.\n\n:returns: `BarType`"""
 
 
+cdef class RequestJoin(RequestData):
+    cdef readonly tuple request_ids
+    """The tuple of sub-request IDs.\n\n:returns: `tuple[UUID4]`"""
+
+
 cdef class DataResponse(Response):
     cdef readonly ClientId client_id
     """The data client ID for the response.\n\n:returns: `ClientId` or ``None``"""

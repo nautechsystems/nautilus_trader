@@ -21,6 +21,7 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
@@ -33,6 +34,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestJoin
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -65,7 +67,6 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
@@ -99,24 +100,17 @@ cdef class DataEngine(Component):
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
-    cdef readonly dict[UUID4, int] _query_group_n_responses
-    cdef readonly dict[UUID4, list] _query_group_responses
-    cdef readonly dict[UUID4, RequestData] _query_group_requests
 
-    cdef readonly dict[InstrumentId, str] _topic_cache_deltas
-    cdef readonly dict[InstrumentId, str] _topic_cache_quotes
-    cdef readonly dict[InstrumentId, str] _topic_cache_trades
-    cdef readonly dict[InstrumentId, str] _topic_cache_depth
-    cdef readonly dict[InstrumentId, str] _topic_cache_status
-    cdef readonly dict[BarType, str] _topic_cache_bars
-    cdef readonly dict[InstrumentId, str] _topic_cache_mark_prices
-    cdef readonly dict[InstrumentId, str] _topic_cache_index_prices
-    cdef readonly dict[InstrumentId, str] _topic_cache_funding_rates
-    cdef readonly dict[InstrumentId, str] _topic_cache_close_prices
-    cdef readonly dict[tuple, str] _topic_cache_snapshots
-    cdef readonly dict[tuple, str] _topic_cache_custom
-    cdef readonly dict[DataType, str] _topic_cache_custom_simple
-    cdef readonly dict[InstrumentId, str] _topic_cache_instruments
+    cdef readonly dict[UUID4, RequestData] _request_group_parent_request
+    cdef readonly dict[UUID4, int] _request_group_n_components
+    cdef readonly dict[UUID4, UUID4] _request_group_parent_request_id
+    cdef readonly dict[UUID4, list] _request_group_responses
+    cdef readonly dict[UUID4, object] _long_request_generator
+    cdef readonly dict[UUID4, RequestData] _requests
+    cdef readonly dict[UUID4, UUID4] _parent_long_request_id
+    cdef readonly dict[UUID4, UUID4] _parent_join_request_id
+
+    cdef readonly TopicCache _topic_cache
 
     cdef readonly str _time_bars_interval_type
     cdef readonly bint _time_bars_timestamp_on_close
@@ -144,6 +138,7 @@ cdef class DataEngine(Component):
     cpdef bint check_disconnected(self)
     cpdef set[ClientId] get_external_client_ids(self)
     cpdef bint _is_backtest_client(self, DataClient client)
+    cpdef bint is_live_mode(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -178,7 +173,8 @@ cdef class DataEngine(Component):
 
     cpdef void stop_clients(self)
     cpdef void execute(self, DataCommand command)
-    cpdef void process(self, Data data)
+    cpdef void process(self, Data data, bint historical = *)
+    cpdef void process_historical(self, Data data)
     cpdef void request(self, RequestData request)
     cpdef void response(self, DataResponse response)
 
@@ -219,12 +215,19 @@ cdef class DataEngine(Component):
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _handle_request(self, RequestData request)
+    cpdef void _handle_request_join(self, RequestJoin request)
+    cpdef void _finalize_request_join(self, DataResponse response)
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
+    cpdef tuple _bound_dates(self, RequestData request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
+    cpdef void _handle_long_request(self, DataClient client, RequestData request)
+    cpdef void _update_long_request_data(self, UUID4 main_request_id, bint data_received = *, bint is_first_call = *)
+    cpdef void _handle_long_request_response(self, DataResponse response)
+    cpdef void _finalize_long_request(self, UUID4 main_request_id)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
@@ -233,67 +236,53 @@ cdef class DataEngine(Component):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_data(self, Data data)
-    cpdef void _handle_instrument(self, Instrument instrument, bint update_catalog = *, bint force_update_catalog = *)
-    cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
-    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
-    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
-    cpdef void _handle_quote_tick(self, QuoteTick tick)
-    cpdef void _handle_trade_tick(self, TradeTick tick)
-    cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price)
-    cpdef void _handle_index_price(self, IndexPriceUpdate index_price)
-    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate)
-    cpdef void _handle_bar(self, Bar bar)
-    cpdef void _handle_custom_data(self, CustomData data)
-    cpdef void _handle_instrument_status(self, InstrumentStatus data)
-    cpdef void _handle_close_price(self, InstrumentClose data)
+    cpdef void _handle_data(self, Data data, bint historical = *)
+    cpdef void _handle_instrument(self, Instrument instrument, bint historical = *, dict params = *)
+    cpdef void _handle_order_book_delta(self, OrderBookDelta delta, bint historical = *)
+    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas, bint historical = *)
+    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth, bint historical = *)
+    cpdef void _handle_quote_tick(self, QuoteTick tick, bint historical = *)
+    cpdef void _handle_trade_tick(self, TradeTick tick, bint historical = *)
+    cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price, bint historical = *)
+    cpdef void _handle_index_price(self, IndexPriceUpdate index_price, bint historical = *)
+    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate, bint historical = *)
+    cpdef void _handle_bar(self, Bar bar, bint historical = *)
+    cpdef void _handle_custom_data(self, CustomData data, bint historical = *)
+    cpdef void _handle_instrument_status(self, InstrumentStatus data, bint historical = *)
+    cpdef void _handle_close_price(self, InstrumentClose data, bint historical = *)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cpdef void _handle_response(self, DataResponse response)
-    cpdef void _handle_instruments(self, list instruments, bint update_catalog = *, bint force_update_catalog = *)
     cpdef tuple[datetime, object] _catalog_last_timestamp(self, type data_cls, identifier: str | None = *)
-    cpdef void _new_query_group(self, RequestData request, int n_components)
-    cpdef DataResponse _handle_query_group(self, DataResponse response)
-    cdef DataResponse _handle_query_group_aux(self, DataResponse response)
+    cpdef void _new_request_group(self, RequestData request, int n_components)
+    cpdef DataResponse _handle_request_group(self, DataResponse response)
+    cdef DataResponse _handle_request_group_aux(self, DataResponse response)
     cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties)
     cpdef void _check_bounds(self, DataResponse response)
-    cpdef void _handle_quote_ticks(self, list ticks)
-    cpdef void _handle_trade_ticks(self, list ticks)
-    cpdef void _handle_order_book_depths(self, list depths)
-    cpdef void _handle_bars(self, list bars)
-    cpdef dict _handle_aggregated_bars(self, DataResponse response)
-    cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
-
-    cdef str _get_instruments_topic(self, InstrumentId instrument_id)
-    cdef str _get_book_topic(self, type book_data_type, InstrumentId instrument_id)
-    cdef str _get_deltas_topic(self, InstrumentId instrument_id)
-    cdef str _get_depth_topic(self, InstrumentId instrument_id)
-    cdef str _get_quotes_topic(self, InstrumentId instrument_id)
-    cdef str _get_trades_topic(self, InstrumentId instrument_id)
-    cdef str _get_status_topic(self, InstrumentId instrument_id)
-    cdef str _get_mark_prices_topic(self, InstrumentId instrument_id)
-    cdef str _get_index_prices_topic(self, InstrumentId instrument_id)
-    cdef str _get_funding_rates_topic(self, InstrumentId instrument_id)
-    cdef str _get_close_prices_topic(self, InstrumentId instrument_id)
-    cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms)
-    cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = *)
-    cdef str _get_bars_topic(self, BarType bar_type)
 
     cpdef void _internal_update_instruments(self, list instruments)
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
-    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type, dict params)
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
     cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)
     cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update)
     cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update)
 
+# -- INTERNAL - Bar Aggregators --------------------------------------------------------------------
+
+    cpdef void _init_historical_aggregators(self, RequestData request)
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
+    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
+    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *)
+    cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
+    cpdef void _handle_aggregated_bars(self, DataResponse response)
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *)
+    cpdef void _unsubscribe_aggregator(self, MarketDataClient client, UnsubscribeBars command)
 
 cdef class SnapshotInfo:
     cdef InstrumentId instrument_id

@@ -22,6 +22,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.component cimport component_state_from_str
 from nautilus_trader.common.component cimport component_state_to_str
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.model cimport TradingState
@@ -58,8 +59,9 @@ cdef class ShutdownSystem(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         str reason = None,
+        UUID4 correlation_id = None,
     ) -> None:
-        super().__init__(command_id, ts_init)
+        super().__init__(command_id, ts_init, correlation_id)
         self.trader_id = trader_id
         self.component_id = component_id
         self.reason = reason
@@ -100,6 +102,7 @@ cdef class ShutdownSystem(Command):
             reason=values["reason"],
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(values["correlation_id"]) if values.get("correlation_id") else None,
         )
 
     @staticmethod

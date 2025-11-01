@@ -102,6 +102,10 @@ class TestLiveDataEngine:
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
         self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
         self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+        self.msgbus.deregister(
+            endpoint="DataEngine.process_historical",
+            handler=self.engine.process_historical,
+        )
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -135,6 +139,10 @@ class TestLiveDataEngine:
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
         self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
         self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+        self.msgbus.deregister(
+            endpoint="DataEngine.process_historical",
+            handler=self.engine.process_historical,
+        )
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -173,6 +181,10 @@ class TestLiveDataEngine:
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
         self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
         self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+        self.msgbus.deregister(
+            endpoint="DataEngine.process_historical",
+            handler=self.engine.process_historical,
+        )
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -209,6 +221,10 @@ class TestLiveDataEngine:
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
         self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
         self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+        self.msgbus.deregister(
+            endpoint="DataEngine.process_historical",
+            handler=self.engine.process_historical,
+        )
 
         self.engine = LiveDataEngine(
             loop=self.loop,
