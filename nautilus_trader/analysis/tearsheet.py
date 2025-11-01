@@ -31,6 +31,12 @@ from typing import Any
 import pandas as pd
 
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.backtest.engine import BacktestEngine
 
 
 try:
@@ -259,7 +265,7 @@ def list_charts() -> list[str]:
 
 
 def create_tearsheet(  # noqa: C901
-    engine,
+    engine: BacktestEngine,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
     currency=None,
@@ -403,6 +409,7 @@ def create_tearsheet(  # noqa: C901
         config=config,
         benchmark_returns=benchmark_returns,
         benchmark_name=benchmark_name,
+        engine=engine,
     )
 
 
@@ -418,6 +425,7 @@ def create_tearsheet_from_stats(
     benchmark_name: str = "Benchmark",
     run_info: dict[str, Any] | None = None,
     account_info: dict[str, Any] | None = None,
+    engine=None,
 ) -> str | None:
     """
     Generate an interactive HTML tearsheet from precomputed statistics.
@@ -450,6 +458,8 @@ def create_tearsheet_from_stats(
         Run metadata (run ID, timestamps, backtest period, event counts).
     account_info : dict[str, Any], optional
         Account information (starting/ending balances per currency).
+    engine : BacktestEngine, optional
+        The backtest engine. Required for charts that need engine access (e.g., bars_with_fills).
 
     Returns
     -------
@@ -516,6 +526,7 @@ def create_tearsheet_from_stats(
         benchmark_name=benchmark_name,
         run_info=run_info or {},
         account_info=account_info or {},
+        engine=engine,
     )
 
     # Save to HTML or return as string
@@ -1014,6 +1025,7 @@ def _create_tearsheet_figure(
     benchmark_name: str = "Benchmark",
     run_info: dict[str, Any] | None = None,
     account_info: dict[str, Any] | None = None,
+    engine=None,
 ) -> go.Figure:
     """
     Create the complete tearsheet figure with subplots using dynamic chart registry.
@@ -1040,6 +1052,8 @@ def _create_tearsheet_figure(
         Run metadata (run ID, timestamps, backtest period, event counts).
     account_info : dict[str, Any], optional
         Account information (starting/ending balances per currency).
+    engine : BacktestEngine, optional
+        The backtest engine. Required for charts that need engine access (e.g., bars_with_fills).
 
     Returns
     -------
@@ -1103,6 +1117,11 @@ def _create_tearsheet_figure(
             # Get renderer function
             renderer = _TEARSHEET_CHART_SPECS[chart_name]["renderer"]
 
+            # Get chart-specific arguments if provided
+            chart_kwargs = {}
+            if config.chart_args and chart_name in config.chart_args:
+                chart_kwargs = config.chart_args[chart_name]
+
             # Call renderer with all available data
             renderer(
                 fig=fig,
@@ -1117,6 +1136,8 @@ def _create_tearsheet_figure(
                 benchmark_name=benchmark_name,
                 run_info=run_info or {},
                 account_info=account_info or {},
+                engine=engine,
+                **chart_kwargs,
             )
 
     # Update global layout
@@ -1579,6 +1600,274 @@ def _render_yearly_returns(
     fig.update_yaxes(title_text="Return (%)", row=row, col=col)
 
 
+def create_bars_with_fills(
+    engine: BacktestEngine,
+    bar_type: BarType,
+    title: str | None = None,
+) -> go.Figure:
+    """
+    Create a candlestick chart with order fills overlaid as bar charts.
+
+    This visualization shows price bars (OHLC) as candlesticks and order fills
+    as vertical bars colored by side (buy/sell).
+
+    Parameters
+    ----------
+    engine
+        The backtest engine with completed run.
+    bar_type : BarType
+        The bar type to visualize.
+    title : str, optional
+        Plot title. If None, uses bar_type string.
+
+    Returns
+    -------
+    go.Figure
+        Plotly figure object with candlestick and fill bars.
+
+    Raises
+    ------
+    ImportError
+        If plotly is not installed.
+
+    """
+    if not PLOTLY_AVAILABLE:
+        msg = (
+            "plotly is required for visualization. "
+            "Install it with: pip install nautilus_trader[visualization]"
+        )
+        raise ImportError(msg)
+
+    PyCondition.not_none(engine, "engine")
+    PyCondition.not_none(bar_type, "bar_type")
+
+    # Get bars for the bar type
+    bars = engine.cache.bars(bar_type)
+    if not bars:
+        # Return empty figure if no bars
+        fig = go.Figure()
+        fig.update_layout(title=title or f"{bar_type}")
+        return fig
+
+    # Create figure with subplots for rangeslider support
+    fig = make_subplots(
+        rows=1,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[1.0],
+    )
+
+    # Render bars with fills using the shared renderer
+    _render_bars_with_fills(
+        fig=fig,
+        row=1,
+        col=1,
+        engine=engine,
+        bar_type=bar_type,
+        title=title,
+    )
+
+    # Update layout
+    fig.update_layout(
+        title=title or f"{bar_type} - Bars with Order Fills",
+        yaxis_title="Price",
+        template="plotly_white",
+        height=800,
+        showlegend=True,
+        xaxis1={
+            "rangeslider": {
+                "visible": True,
+            },
+        },
+    )
+
+    # Update y-axes to allow zooming
+    fig.update_yaxes(fixedrange=False, row=1, col=1)
+
+    return fig
+
+
+def _render_bars_with_fills(
+    fig: go.Figure,
+    row: int,
+    col: int,
+    engine=None,
+    bar_type=None,
+    title: str | None = None,
+    **kwargs: Any,
+) -> None:
+    """
+    Render bars with order fills chart.
+
+    Parameters
+    ----------
+    fig : go.Figure
+        The figure to add traces to.
+    row : int
+        Row position in subplot grid.
+    col : int
+        Column position in subplot grid.
+    engine : BacktestEngine, optional
+        The backtest engine. Required.
+    bar_type : str | BarType, optional
+        The bar type to visualize. Can be a string or BarType object.
+    title : str, optional
+        Chart title override.
+    **kwargs : Any
+        Additional keyword arguments (ignored).
+
+    """
+    if engine is None:
+        return
+
+    # Convert bar_type string to BarType if needed
+    if bar_type is None:
+        bar_types = engine.cache.bar_types()
+
+        if not bar_types:
+            return
+
+        bar_type = bar_types[0]
+
+    if isinstance(bar_type, str):
+        bar_type = BarType.from_str(bar_type)
+
+    PyCondition.not_none(engine, "engine")
+    PyCondition.not_none(bar_type, "bar_type")
+
+    # Get bars for the bar type
+    bars = engine.cache.bars(bar_type)
+    if not bars:
+        return
+
+    # Convert bars to DataFrame
+    bars_df = pd.DataFrame(Bar.to_dict(bar) for bar in bars)
+    bars_df["ts_init"] = pd.to_datetime(bars_df["ts_init"])
+
+    # Convert price columns to float
+    for column in ("open", "high", "low", "close"):
+        bars_df[column] = bars_df[column].astype(float)
+
+    # Get order fills and filter by instrument_id
+    fills_df = engine.trader.generate_order_fills_report()
+
+    if not fills_df.empty:
+        # Filter fills by instrument_id from bar_type
+        instrument_id = bar_type.instrument_id
+        fills_df = fills_df[fills_df["instrument_id"] == str(instrument_id)].copy()
+
+        if not fills_df.empty:
+            fills_df["ts_init"] = pd.to_datetime(fills_df["ts_init"])
+            fills_df["filled_qty"] = pd.to_numeric(fills_df["filled_qty"], errors="coerce")
+            fills_df["avg_px"] = pd.to_numeric(fills_df["avg_px"], errors="coerce")
+
+    # Add candlestick chart
+    fig.add_trace(
+        go.Candlestick(
+            x=bars_df["ts_init"],
+            open=bars_df["open"],
+            high=bars_df["high"],
+            low=bars_df["low"],
+            close=bars_df["close"],
+            name="OHLC",
+            showlegend=False,
+        ),
+        row=row,
+        col=col,
+    )
+
+    # Add order fills as scatter markers if available
+    if not fills_df.empty and "ts_init" in fills_df.columns:
+        # Separate buy and sell fills
+        buy_fills = fills_df[fills_df["side"] == "BUY"] if "side" in fills_df.columns else pd.DataFrame()
+        sell_fills = fills_df[fills_df["side"] == "SELL"] if "side" in fills_df.columns else pd.DataFrame()
+
+        # Add buy fills (green markers)
+        _add_fill_scatter_trace(
+            fig=fig,
+            fills_df=buy_fills,
+            row=row,
+            col=col,
+            marker_symbol="triangle-up",
+            marker_color="rgba(0,255,0,0.7)",
+            name="Buy Fills",
+        )
+
+        # Add sell fills (red markers)
+        _add_fill_scatter_trace(
+            fig=fig,
+            fills_df=sell_fills,
+            row=row,
+            col=col,
+            marker_symbol="triangle-down",
+            marker_color="rgba(255,0,0,0.7)",
+            name="Sell Fills",
+        )
+
+    # Update axes with rangeslider for time navigation
+    fig.update_xaxes(
+        title_text="Time",
+        row=row,
+        col=col,
+        rangeslider={"visible": True},
+    )
+    fig.update_yaxes(title_text="Price", row=row, col=col)
+    fig.update_yaxes(fixedrange=False, row=row, col=col)
+
+
+def _add_fill_scatter_trace(
+    fig: go.Figure,
+    fills_df: pd.DataFrame,
+    row: int,
+    col: int,
+    marker_symbol: str,
+    marker_color: str,
+    name: str,
+) -> None:
+    if fills_df.empty or "avg_px" not in fills_df.columns or "filled_qty" not in fills_df.columns:
+        return
+
+    required_cols = ["strategy_id", "instrument_id", "type", "side", "filled_qty", "avg_px", "ts_init"]
+    has_all_cols = all(col in fills_df.columns for col in required_cols)
+
+    fig.add_trace(
+        go.Scatter(
+            x=fills_df["ts_init"],
+            y=fills_df["avg_px"],
+            mode="markers",
+            customdata=fills_df[required_cols].to_numpy() if has_all_cols else fills_df.to_numpy(),
+            marker_symbol=marker_symbol,
+            marker_size=13,
+            marker_line_width=2,
+            marker_line_color="rgba(0,0,0,0.7)",
+            marker_color=marker_color,
+            name=name,
+            hovertemplate=(
+                "Time: %{x}<br>"
+                "Price: %{y:.2f}<br>"
+                "Strategy: %{customdata[0]}<br>"
+                "Instrument: %{customdata[1]}<br>"
+                "Type: %{customdata[2]}<br>"
+                "Side: %{customdata[3]}<br>"
+                "Quantity: %{customdata[4]:.2f}<br>"
+                "Avg Price: %{customdata[5]:.2f}<br>"
+                "<extra></extra>"
+            )
+            if has_all_cols
+            else (
+                "<b>%{x}</b><br>"
+                "Price: %{y:.2f}<br>"
+                "Quantity: %{customdata}<br>"
+                "<extra></extra>"
+            ),
+            showlegend=True,
+        ),
+        row=row,
+        col=col,
+    )
+
+
 # Chart specifications for tearsheet integration
 _TEARSHEET_CHART_SPECS: dict[str, dict[str, Any]] = {}
 
@@ -1693,6 +1982,7 @@ register_chart("monthly_returns", create_monthly_returns_heatmap)
 register_chart("distribution", create_returns_distribution)
 register_chart("rolling_sharpe", create_rolling_sharpe)
 register_chart("yearly_returns", create_yearly_returns)
+register_chart("bars_with_fills", create_bars_with_fills)
 
 # Register built-in charts for tearsheet integration
 _register_tearsheet_chart("run_info", "table", "Run Information", _render_run_info)
@@ -1708,3 +1998,4 @@ _register_tearsheet_chart(
     _render_rolling_sharpe,
 )
 _register_tearsheet_chart("yearly_returns", "bar", "Yearly Returns", _render_yearly_returns)
+_register_tearsheet_chart("bars_with_fills", "scatter", "Bars with Order Fills", _render_bars_with_fills)
