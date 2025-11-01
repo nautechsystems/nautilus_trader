@@ -109,6 +109,10 @@ from nautilus_trader.model.orders import Order
 if TYPE_CHECKING:
     from nautilus_trader.model.objects import Currency
 
+# TODO. Make this configurable again.
+TRACK_CANCEL_TIMEOUT_SECS = 60
+TRACK_CANCEL_INTERVAL_SECS = 0.1
+
 
 class ClientOrderIdHelper:
     """
@@ -245,6 +249,14 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
         self._connect_account_timeout_secs = 10
 
+
+        # Reconciliation
+        # TODO. Make configurable again.
+        # self._reconciliation_interval_secs = config.reconciliation_interval_secs
+        self._reconciliation_interval_secs = 60
+        self._reconciliation_task: asyncio.Task | None = None
+
+
         # WebSocket API
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
@@ -327,6 +339,14 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         await self._set_leverage()
 
+        if self._reconciliation_interval_secs:
+            self._log.info(
+                f"Starting periodic position reconciliation every {self._reconciliation_interval_secs} seconds."
+            )
+            self._reconciliation_task = self.create_task(
+                self._run_periodic_reconciliation(),
+            )
+
     async def _set_leverage(self) -> None:
         timeout = self._clock.utc_now() + pd.Timedelta(seconds=self._connect_account_timeout_secs)
         account = self.get_account()
@@ -346,6 +366,10 @@ class DYDXExecutionClient(LiveExecutionClient):
             account.set_leverage(instrument_id, leverage)
 
     async def _disconnect(self) -> None:
+        if self._reconciliation_task:
+            self._log.debug("Canceling position reconciliation task")
+            self._reconciliation_task.cancel()
+
         await self._ws_client.unsubscribe_markets()
         await self._ws_client.unsubscribe_block_height()
         await self._ws_client.unsubscribe_account_update(
@@ -358,6 +382,70 @@ class DYDXExecutionClient(LiveExecutionClient):
 
     def _stop(self) -> None:
         self._retry_manager_pool.shutdown()
+
+    async def _run_periodic_reconciliation(self) -> None:
+        if self._reconciliation_interval_secs:
+             await asyncio.sleep(self._reconciliation_interval_secs)
+
+        while True:
+            try:
+                self._log.info("Running periodic position reconciliation check...")
+                await self._reconcile_positions()
+            except asyncio.CancelledError:
+                self._log.info("Position reconciliation task cancelled.")
+                break
+            except Exception as e:
+                self._log.exception("Error during periodic position reconciliation", e)
+            
+            await asyncio.sleep(self._reconciliation_interval_secs)
+
+    async def _reconcile_positions(self) -> None:
+        try:
+            command = GeneratePositionStatusReports(
+                instrument_id=None,  # None fetches for all instruments
+                start=None,
+                end=None,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            broker_reports = await self.generate_position_status_reports( command )
+
+            broker_quantities = {}
+            for report in broker_reports:
+                if report.instrument_id not in broker_quantities:
+                    broker_quantities[report.instrument_id] = 0.
+
+                if report.position_side == PositionSide.LONG:
+                    broker_quantities[report.instrument_id] += report.quantity.as_double()
+
+                elif report.position_side == PositionSide.SHORT:
+                    broker_quantities[report.instrument_id] -= report.quantity.as_double()
+
+        except Exception as e:
+            self._log.error(f"Could not fetch broker positions for reconciliation: {e}")
+            return  # Cannot proceed without the actual state
+
+        internal_positions = self._cache.positions_open()
+
+        internal_quantities = {}
+        for position in internal_positions:
+            if position.instrument_id not in internal_quantities:
+                internal_quantities[position.instrument_id] = 0.
+
+            internal_quantities[position.instrument_id] += position.signed_qty
+
+        self._log.debug( f'Broker quantities: {broker_quantities}, internal quantities: {internal_quantities}' )
+
+        all_instrument_ids = set(broker_quantities.keys()) | set(internal_quantities.keys())
+
+        for instrument_id in all_instrument_ids:
+            broker_quantity = broker_quantities.get( instrument_id, 0.0 )
+            internal_quantity = internal_quantities.get( instrument_id, 0.0 )
+
+            if broker_quantity != internal_quantity:
+                self._log.error(
+                    f"Broker quantity ( {broker_quantity} ) does not match internal quantity ( {internal_quantity} ) for {instrument_id.value}: "
+                )
 
     async def _get_order_status_report(
         self,
@@ -899,19 +987,50 @@ class DYDXExecutionClient(LiveExecutionClient):
         try:
             msg: DYDXWsSubaccountsChannelData = self._decoder_ws_msg_subaccounts_channel.decode(raw)
 
-            if msg.contents.fills is not None:
-                for fill_msg in msg.contents.fills:
-                    self._handle_fill_message(fill_msg=fill_msg)
-
             if msg.contents.orders is not None:
                 for order_msg in msg.contents.orders:
                     self._handle_order_message(order_msg=order_msg)
+
+            if msg.contents.fills is not None:
+                for fill_msg in msg.contents.fills:
+                    self._handle_fill_message(fill_msg=fill_msg)
 
         except Exception as e:
             self._log.exception(
                 f"Failed to parse subaccounts channel data: {raw.decode()}",
                 e,
             )
+
+    async def _track_order_cancel(
+        self,
+        client_order_id: ClientOrderId,
+        good_til_block: int
+    ):
+        self._log.info(f"Tracking order cancellation for {client_order_id} until block {good_til_block}...")
+
+        start = self._clock.timestamp_ns()
+
+        while self._clock.timestamp_ns() - start < TRACK_CANCEL_TIMEOUT_SECS * 1e9:
+            order = self._cache.order( client_order_id )
+
+            if order.status != OrderStatus.ACCEPTED:
+                self._log.info(f"Order {client_order_id} status changed to {order.status}. Stopping tracking.")
+                break
+
+            if self._block_height >= int( good_til_block ):
+                self._log.info(f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel request...")
+
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    ts_event=order.ts_last,
+                )
+
+                break
+
+            await asyncio.sleep( TRACK_CANCEL_INTERVAL_SECS)
 
     def _handle_order_message(
         self,
@@ -957,6 +1076,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot handle order event: order {report.client_order_id} not found")
             return
 
+
+
         if order_msg.status in (
             DYDXOrderStatus.BEST_EFFORT_OPENED,
             DYDXOrderStatus.OPEN,
@@ -969,6 +1090,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+
         elif order_msg.status == DYDXOrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=strategy_id,
@@ -977,11 +1099,28 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
-        elif order_msg.status in (DYDXOrderStatus.FILLED, DYDXOrderStatus.BEST_EFFORT_CANCELED):
-            # Skip order filled message and best effort canceled message. The _handle_fill_message generates
-            # a fill report.
-            # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
-            self._log.info(f"Skip order message: {order_msg}")
+
+        elif order_msg.status == DYDXOrderStatus.BEST_EFFORT_CANCELED:
+            self._loop.create_task( self._track_order_cancel( report.client_order_id, order_msg.goodTilBlock ) )
+
+        elif order_msg.status in (DYDXOrderStatus.FILLED,):
+            if order.status == OrderStatus.SUBMITTED:
+                self._log.warning( f'Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.' )
+                self.generate_order_accepted(
+                    strategy_id=strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+
+                self._cache.add_venue_order_id( client_order_id, report.venue_order_id )
+
+            else:
+                # Skip order filled message and best effort canceled message. The _handle_fill_message generates
+                # a fill report.
+                # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
+                self._log.info(f"Skip order message: {order_msg}, for order with status {order.status}")
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)
@@ -1003,6 +1142,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(fill_msg.orderId)
         client_order_id = self._cache.client_order_id(venue_order_id)
 
+
         if client_order_id is None:
             self._log.error(
                 f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
@@ -1022,6 +1162,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             else Money(Decimal(0), instrument.quote_currency)
         )
 
+        trade_id = TradeId(fill_msg.id)
+
+
         if order.status != OrderStatus.FILLED:
             self.generate_order_filled(
                 strategy_id=order.strategy_id,
@@ -1029,7 +1172,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 venue_position_id=None,
-                trade_id=TradeId(fill_msg.id),
+                trade_id=trade_id,
                 order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
                 order_type=order.order_type,
                 last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
@@ -1096,20 +1239,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order {order} is already closed")
             return
 
-        if order.is_quote_quantity:
-            reason = "UNSUPPORTED_QUOTE_QUANTITY"
-            self._log.error(
-                f"Cannot submit order {order.client_order_id}: {reason}",
-            )
-            self.generate_order_denied(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
         instrument = self._cache.instrument(order.instrument_id)
 
         if instrument is None:
@@ -1133,6 +1262,32 @@ class DYDXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        await self._broadcast_order( order=order )
+
+    async def _broadcast_order(self, order: Order) -> None:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                name="attempt_order_broadcast",
+                details=[order.client_order_id],
+                func=self._attempt_order_broadcast,
+                order=order,
+            )
+
+            if not retry_manager.result:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    async def _attempt_order_broadcast(self, order: Order) -> None:
+        instrument = self._cache.instrument(order.instrument_id)
+
         order_builder = self._get_order_builder(instrument)
 
         client_order_id_int = self._client_order_id_generator.generate_client_order_id_int(
@@ -1145,16 +1300,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_block: int | None = None
         execution = OrderExecution.DEFAULT
 
+        # NOTE. Ensure that the block height is refreshed before placing an order.
+        self._block_height = await self._grpc_account.latest_block_height()
+
         if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
             rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
+            raise DYDXOrderBroadcastError(rejection_reason)
 
         if dydx_order_tags.is_short_term_order:
             order_flags = OrderFlags.SHORT_TERM
@@ -1233,14 +1384,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             rejection_reason = (
                 f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
             )
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
+            raise DYDXOrderBroadcastError(rejection_reason)
 
         order_msg = order_builder.create_order(
             order_id=order_id,
@@ -1262,36 +1406,12 @@ class DYDXExecutionClient(LiveExecutionClient):
     async def _place_order(self, order_msg: DYDXOrder, order: Order) -> None:
         if self._wallet is None:
             rejection_reason = "Cannot submit order: no wallet available"
-            self._log.error(rejection_reason)
+            raise DYDXOrderBroadcastError(rejection_reason)
 
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            await retry_manager.run(
-                name="place_order",
-                details=[order.client_order_id],
-                func=self._grpc_account.place_order,
-                wallet=self._wallet,
-                order=order_msg,
-            )
-            if not retry_manager.result:
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=retry_manager.message,
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        await self._grpc_account.place_order(
+            wallet=self._wallet,
+            order=order_msg,
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_single(order=command.order)

@@ -62,7 +62,7 @@ from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
 from v4_proto.dydxprotocol.subaccounts.subaccount_pb2 import SubaccountId
 
-from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
+from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES, GOOD_TILL_BLOCK_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 
 
@@ -518,15 +518,23 @@ class DYDXAccountGRPCAPI:
         """
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-
             if response.tx_response.code == 0:
                 wallet.sequence += 1
 
             # The sequence number is not correct. Retrieve it from the gRPC channel.
             # The retry manager can retry the transaction.
-            elif response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+            elif response.tx_response.code in ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES:
+                before = wallet.sequence
                 account = await self.get_account(wallet.address)
                 wallet.sequence = account.sequence
+                print( f"Account sequence mismatch, refreshing from chain. Current sequence {before}, after {wallet.sequence}", flush=True )
+
+            elif response.tx_response.code == GOOD_TILL_BLOCK_ERROR_CODE:
+                print(f"Good till block error, likely the good_til_block has passed. Response: {response}", flush=True)
+
+
+            else:
+                print(f"Broadcast response: {response}. Code {response.tx_response.code}, message: {response.tx_response.raw_log}, {response.tx_response.code in ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES}", flush=True )
 
             return response
 
