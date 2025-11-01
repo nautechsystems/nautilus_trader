@@ -183,7 +183,7 @@ impl OKXExecutionClient {
                 continue;
             }
 
-            self.http_client.add_instruments(instruments.clone());
+            self.http_client.cache_instruments(instruments.clone());
             all_instruments.extend(instruments);
         }
 

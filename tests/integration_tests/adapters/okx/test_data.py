@@ -91,7 +91,7 @@ async def test_connect_and_disconnect_manage_resources(data_client_builder, monk
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.add_instrument.assert_called_once_with(
+        http_client.cache_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
         )
         public_ws.connect.assert_awaited_once()

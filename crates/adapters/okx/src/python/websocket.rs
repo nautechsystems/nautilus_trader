@@ -1145,6 +1145,22 @@ impl OKXWebSocketClient {
                 .map_err(to_pyvalue_err)
         })
     }
+
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(&self, py: Python<'_>, instruments: Vec<Py<PyAny>>) -> PyResult<()> {
+        let instruments: Result<Vec<_>, _> = instruments
+            .into_iter()
+            .map(|inst| pyobject_to_instrument_any(py, inst))
+            .collect();
+        self.cache_instruments(instruments?);
+        Ok(())
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
+    }
 }
 
 pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {

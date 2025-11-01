@@ -34,10 +34,10 @@ use nautilus_common::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     runner::get_data_event_sender,
@@ -239,7 +239,7 @@ impl OKXDataClient {
             return Ok(collected);
         }
 
-        self.http_client.add_instruments(collected.clone());
+        self.http_client.cache_instruments(collected.clone());
 
         if let Some(ws) = self.ws_public.as_mut() {
             ws.initialize_instruments_cache(collected.clone());
@@ -374,7 +374,7 @@ impl OKXDataClient {
         let interval = Duration::from_secs(interval_secs);
         let cancellation = self.cancellation_token.clone();
         let instruments_cache = Arc::clone(&self.instruments);
-        let mut http_client = self.http_client.clone();
+        let http_client = self.http_client.clone();
         let config = self.config.clone();
         let client_id = self.client_id;
 
@@ -413,7 +413,7 @@ impl OKXDataClient {
                             continue;
                         }
 
-                        http_client.add_instruments(collected.clone());
+                        http_client.cache_instruments(collected.clone());
 
                         {
                             let mut guard = instruments_cache
@@ -642,6 +642,39 @@ impl DataClient for OKXDataClient {
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        // Subscribe to instruments channel for all configured instrument types
+        for inst_type in &self.config.instrument_types {
+            let ws = self.public_ws()?.clone();
+            let inst_type = *inst_type;
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_instruments(inst_type)
+                        .await
+                        .context("instruments subscription")?;
+                    Ok(())
+                },
+                "subscribe_instruments",
+            );
+        }
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let ws = self.public_ws()?.clone();
+        self.spawn_ws(
+            async move {
+                ws.subscribe_instrument(instrument_id)
+                    .await
+                    .context("instrument subscription")?;
+                Ok(())
+            },
+            "subscribe_instrument",
+        );
+        Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {

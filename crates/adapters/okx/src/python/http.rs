@@ -100,7 +100,7 @@ impl OKXHttpClient {
 
     #[pyo3(name = "is_initialized")]
     #[must_use]
-    pub const fn py_is_initialized(&self) -> bool {
+    pub fn py_is_initialized(&self) -> bool {
         self.is_initialized()
     }
 
@@ -117,10 +117,27 @@ impl OKXHttpClient {
 
     /// # Errors
     ///
+    /// Returns a Python exception if adding the instruments to the cache fails.
+    #[pyo3(name = "cache_instruments")]
+    pub fn py_cache_instruments(
+        &self,
+        py: Python<'_>,
+        instruments: Vec<Py<PyAny>>,
+    ) -> PyResult<()> {
+        let instruments: Result<Vec<_>, _> = instruments
+            .into_iter()
+            .map(|inst| pyobject_to_instrument_any(py, inst))
+            .collect();
+        self.cache_instruments(instruments?);
+        Ok(())
+    }
+
+    /// # Errors
+    ///
     /// Returns a Python exception if adding the instrument to the cache fails.
-    #[pyo3(name = "add_instrument")]
-    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
-        self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
+    #[pyo3(name = "cache_instrument")]
+    pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 

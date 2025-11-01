@@ -194,6 +194,19 @@ fn channel_requires_auth(channel: &OKXWsChannel) -> bool {
     )
 }
 
+/// Commands sent to the WebSocket message handler.
+#[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Commands are ephemeral and immediately consumed"
+)]
+pub enum HandlerCommand {
+    /// Initialize the instruments cache with the given instruments.
+    InitializeInstruments(Vec<InstrumentAny>),
+    /// Update a single instrument in the cache.
+    UpdateInstrument(InstrumentAny),
+}
+
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
 #[cfg_attr(
@@ -224,7 +237,8 @@ pub struct OKXWebSocketClient {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>, // Track orders we've already emitted OrderAccepted for
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    handler_cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
     cancellation_token: CancellationToken,
 }
@@ -306,7 +320,12 @@ impl OKXWebSocketClient {
             active_client_orders: Arc::new(DashMap::new()),
             emitted_order_accepted: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
-            instruments_cache: Arc::new(AHashMap::new()),
+            handler_cmd_tx: {
+                // Placeholder channel, will be replaced when connecting
+                let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                Arc::new(tx)
+            },
+            instruments_cache: Arc::new(DashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
             cancellation_token: CancellationToken::new(),
         })
@@ -409,13 +428,31 @@ impl OKXWebSocketClient {
     }
 
     /// Initialize the instruments cache with the given `instruments`.
-    pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
-        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
-        for inst in instruments {
-            instruments_cache.insert(inst.symbol().inner(), inst.clone());
+    ///
+    /// Populates the outer cache (for API calls). When `connect()` is called,
+    /// the cached instruments will be sent to the handler's internal cache.
+    pub fn initialize_instruments_cache(&self, instruments: Vec<InstrumentAny>) {
+        for inst in &instruments {
+            self.instruments_cache
+                .insert(inst.symbol().inner(), inst.clone());
         }
+    }
 
-        self.instruments_cache = Arc::new(instruments_cache);
+    /// Caches multiple instruments.
+    ///
+    /// Any existing instruments will be replaced.
+    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
+        for inst in instruments {
+            self.instruments_cache.insert(inst.symbol().inner(), inst);
+        }
+    }
+
+    /// Caches a single instrument.
+    ///
+    /// Any existing instrument will be replaced.
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        self.instruments_cache
+            .insert(instrument.symbol().inner(), instrument);
     }
 
     /// Sets the VIP level for this client.
@@ -503,6 +540,23 @@ impl OKXWebSocketClient {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
 
         self.rx = Some(Arc::new(rx));
+
+        // Create fresh command channel for this connection
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        self.handler_cmd_tx = Arc::new(cmd_tx.clone());
+
+        // Replay cached instruments to the new handler via the new channel
+        if !self.instruments_cache.is_empty() {
+            let cached_instruments: Vec<InstrumentAny> = self
+                .instruments_cache
+                .iter()
+                .map(|entry| entry.value().clone())
+                .collect();
+            if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
+                tracing::error!("Failed to replay instruments to handler: {e}");
+            }
+        }
+
         let signal = self.signal.clone();
         let pending_place_requests = self.pending_place_requests.clone();
         let pending_cancel_requests = self.pending_cancel_requests.clone();
@@ -511,8 +565,6 @@ impl OKXWebSocketClient {
         let active_client_orders = self.active_client_orders.clone();
         let emitted_order_accepted = self.emitted_order_accepted.clone();
         let auth_tracker = self.auth_tracker.clone();
-
-        let instruments_cache = self.instruments_cache.clone();
         let inner_client = self.inner.clone();
         let credential_clone = self.credential.clone();
         let subscriptions_inst_type = self.subscriptions_inst_type.clone();
@@ -528,7 +580,7 @@ impl OKXWebSocketClient {
             async move {
                 let mut handler = OKXWsMessageHandler::new(
                     account_id,
-                    instruments_cache,
+                    cmd_rx,
                     reader,
                     signal.clone(),
                     inner_client.clone(),
@@ -1051,17 +1103,13 @@ impl OKXWebSocketClient {
         clippy::result_large_err,
         reason = "OKXWsError contains large tungstenite::Error variant"
     )]
-    fn get_instrument_type_and_family(
-        &self,
-        symbol: Ustr,
+    fn get_instrument_type_and_family_from_instrument(
+        instrument: &InstrumentAny,
     ) -> Result<(OKXInstrumentType, String), OKXWsError> {
-        // Fetch instrument from cache
-        let instrument = self.instruments_cache.get(&symbol).ok_or_else(|| {
-            OKXWsError::ClientError(format!("Instrument not found in cache: {symbol}"))
-        })?;
-
         let inst_type =
             okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+
+        let symbol = instrument.symbol().inner();
 
         // Determine instrument family based on instrument type
         let inst_family = match instrument {
@@ -2420,7 +2468,7 @@ impl OKXWebSocketClient {
             })?;
 
         let instrument_type =
-            okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+            okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let quote_currency = instrument.quote_currency();
 
         match instrument_type {
@@ -2881,8 +2929,13 @@ impl OKXWebSocketClient {
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-mass-cancel-order>
     /// Helper function to determine instrument type and family from symbol using instruments cache.
     pub async fn mass_cancel_orders(&self, inst_id: InstrumentId) -> Result<(), OKXWsError> {
+        let instrument = self
+            .instruments_cache
+            .get(&inst_id.symbol.inner())
+            .ok_or_else(|| OKXWsError::ClientError(format!("Unknown instrument {inst_id}")))?;
+
         let (inst_type, inst_family) =
-            self.get_instrument_type_and_family(inst_id.symbol.inner())?;
+            Self::get_instrument_type_and_family_from_instrument(&instrument)?;
 
         let params = WsMassCancelParams {
             inst_type,
@@ -3351,6 +3404,7 @@ struct OKXWsMessageHandler {
     handler: OKXFeedHandler,
     #[allow(dead_code)]
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
@@ -3358,7 +3412,7 @@ struct OKXWsMessageHandler {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    instruments_cache: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>,           // Key is order ID
     filled_qty_cache: AHashMap<Ustr, Quantity>, // Key is order ID
@@ -3600,11 +3654,11 @@ impl OKXWsMessageHandler {
         }
     }
 
-    /// Creates a new [`OKXFeedHandler`] instance.
+    /// Creates a new [`OKXWsMessageHandler`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_id: AccountId,
-        instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         reader: UnboundedReceiver<Message>,
         signal: Arc<AtomicBool>,
         inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
@@ -3624,6 +3678,7 @@ impl OKXWsMessageHandler {
             inner,
             handler: OKXFeedHandler::new(reader, signal),
             tx,
+            cmd_rx,
             pending_place_requests,
             pending_cancel_requests,
             pending_amend_requests,
@@ -3631,7 +3686,7 @@ impl OKXWsMessageHandler {
             active_client_orders,
             client_id_aliases,
             emitted_order_accepted,
-            instruments_cache,
+            instruments_cache: AHashMap::new(),
             last_account_state: None,
             fee_cache: AHashMap::new(),
             filled_qty_cache: AHashMap::new(),
@@ -3665,8 +3720,25 @@ impl OKXWsMessageHandler {
 
         let clock = get_atomic_clock_realtime();
 
-        while let Some(event) = self.handler.next().await {
-            let ts_init = clock.get_time_ns();
+        loop {
+            tokio::select! {
+                Some(cmd) = self.cmd_rx.recv() => {
+                    match cmd {
+                        HandlerCommand::InitializeInstruments(instruments) => {
+                            for inst in instruments {
+                                self.instruments_cache.insert(inst.symbol().inner(), inst);
+                            }
+                        }
+                        HandlerCommand::UpdateInstrument(inst) => {
+                            self.instruments_cache.insert(inst.symbol().inner(), inst);
+                        }
+                    }
+                    // Continue processing following command
+                    continue;
+                }
+
+                Some(event) = self.handler.next() => {
+                    let ts_init = clock.get_time_ns();
 
             match event {
                 OKXWebSocketEvent::Ping => {
@@ -3774,7 +3846,7 @@ impl OKXWsMessageHandler {
 
                             if let Some(instrument) = self
                                 .instruments_cache
-                                .get(&Ustr::from(instrument_id.symbol.as_str()))
+                                .get(&instrument_id.symbol.inner())
                             {
                                 match params {
                                     PendingOrderParams::Regular(order_params) => {
@@ -4314,7 +4386,12 @@ impl OKXWsMessageHandler {
                                 &mut self.funding_rate_cache,
                                 &self.instruments_cache,
                             ) {
-                                Ok(Some(msg)) => return Some(msg),
+                                Ok(Some(msg)) => {
+                                    if let NautilusWsMessage::Instrument(ref inst) = msg {
+                                        self.instruments_cache.insert(inst.symbol().inner(), inst.as_ref().clone());
+                                    }
+                                    return Some(msg);
+                                }
                                 Ok(None) => continue,
                                 Err(e) => {
                                     tracing::error!(
@@ -4372,9 +4449,15 @@ impl OKXWsMessageHandler {
                 }
                 OKXWebSocketEvent::ChannelConnCount { .. } => continue,
             }
-        }
+                }
 
-        None
+                // Handle shutdown - either channel closed or stream ended
+                else => {
+                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    return None;
+                }
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@ from nautilus_trader.adapters.okx.config import OKXDataClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -241,7 +242,7 @@ class OKXDataClient(LiveMarketDataClient):
         # price and size precisions when parsing responses
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -255,10 +256,13 @@ class OKXDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        # The WebSocket client subscribes per instrument type, so this is handled automatically
+        # when the client connects based on the configured instrument types
+        pass
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_instrument(pyo3_instrument_id)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -514,9 +518,20 @@ class OKXDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, Instrument):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, instrument: Instrument) -> None:
+        pyo3_instrument = transform_instrument_to_pyo3(instrument)
+        self._http_client.cache_instrument(pyo3_instrument)
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instruments([instrument])
+
+        self._handle_data(instrument)

@@ -30,7 +30,7 @@ use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
 use nautilus_okx::{
     common::enums::{OKXInstrumentType, OKXOrderStatus},
     http::{
-        client::OKXRawHttpClient,
+        client::{OKXHttpClient, OKXRawHttpClient},
         error::OKXHttpError,
         query::{
             GetInstrumentsParamsBuilder, GetOrderHistoryParams, GetOrderListParams,
@@ -509,19 +509,11 @@ async fn test_request_trades_uses_after_before() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{}", addr);
 
-    let mut client = nautilus_okx::http::client::OKXHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
-        None,
-    )
-    .unwrap();
+    let client =
+        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
     for instrument in load_instruments_any() {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let start = Utc::now() - ChronoDuration::minutes(5);

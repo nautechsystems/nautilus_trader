@@ -38,14 +38,17 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     str::FromStr,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
-    time::get_atomic_clock_realtime,
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -878,15 +881,25 @@ impl OKXRawHttpClient {
 ///
 /// This client wraps the underlying `OKXHttpInnerClient` to handle conversions
 /// into the Nautilus domain model.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
-    pub(crate) instruments_cache: Arc<Mutex<HashMap<Ustr, InstrumentAny>>>,
-    cache_initialized: bool,
+    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    cache_initialized: AtomicBool,
+}
+
+impl Clone for OKXHttpClient {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            instruments_cache: self.instruments_cache.clone(),
+            cache_initialized: AtomicBool::new(self.cache_initialized.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl Default for OKXHttpClient {
@@ -925,8 +938,8 @@ impl OKXHttpClient {
                 is_demo,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(Mutex::new(HashMap::new())),
-            cache_initialized: false,
+            instruments_cache: Arc::new(DashMap::new()),
+            cache_initialized: AtomicBool::new(false),
         })
     }
 
@@ -982,8 +995,8 @@ impl OKXHttpClient {
                 is_demo,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(Mutex::new(HashMap::new())),
-            cache_initialized: false,
+            instruments_cache: Arc::new(DashMap::new()),
+            cache_initialized: AtomicBool::new(false),
         })
     }
 
@@ -994,10 +1007,8 @@ impl OKXHttpClient {
     /// Returns an error if the instrument is not found in the cache.
     fn get_instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .lock()
-            .expect("`instruments_cache` lock poisoned")
             .get(&symbol)
-            .cloned()
+            .map(|entry| entry.value().clone())
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
@@ -1014,11 +1025,10 @@ impl OKXHttpClient {
             OKXInstrumentType::Option,
         ] {
             if let Ok(instruments) = self.request_instruments(group, None).await {
-                let mut guard = self.instruments_cache.lock().expect(MUTEX_POISONED);
                 for inst in instruments {
-                    guard.insert(inst.raw_symbol().inner(), inst);
+                    self.instruments_cache
+                        .insert(inst.raw_symbol().inner(), inst);
                 }
-                drop(guard);
 
                 if let Ok(inst) = self.get_instrument_from_cache(symbol) {
                     return Ok(inst);
@@ -1070,60 +1080,45 @@ impl OKXHttpClient {
     ///
     /// The client is considered initialized if any instruments have been cached from the venue.
     #[must_use]
-    pub const fn is_initialized(&self) -> bool {
-        self.cache_initialized
+    pub fn is_initialized(&self) -> bool {
+        self.cache_initialized.load(Ordering::Relaxed)
     }
 
-    /// Returns the cached instrument symbols.
-    #[must_use]
     /// Returns a snapshot of all instrument symbols currently held in the
     /// internal cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex guarding the instrument cache is poisoned
-    /// (which would indicate a previous panic while the lock was held).
+    #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
-            .lock()
-            .unwrap()
-            .keys()
-            .map(std::string::ToString::to_string)
+            .iter()
+            .map(|entry| entry.key().to_string())
             .collect()
     }
 
-    /// Adds the `instruments` to the clients instrument cache.
+    /// Caches multiple instruments.
     ///
     /// Any existing instruments will be replaced.
-    /// Inserts multiple instruments into the local cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instruments cache mutex is poisoned.
-    pub fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
+    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
         for inst in instruments {
             self.instruments_cache
-                .lock()
-                .unwrap()
                 .insert(inst.raw_symbol().inner(), inst);
         }
-        self.cache_initialized = true;
+        self.cache_initialized.store(true, Ordering::Relaxed);
     }
 
-    /// Adds the `instrument` to the clients instrument cache.
+    /// Caches a single instrument.
     ///
     /// Any existing instrument will be replaced.
-    /// Inserts a single instrument into the local cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instruments cache mutex is poisoned.
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
         self.instruments_cache
-            .lock()
-            .unwrap()
             .insert(instrument.raw_symbol().inner(), instrument);
-        self.cache_initialized = true;
+        self.cache_initialized.store(true, Ordering::Relaxed);
+    }
+
+    /// Gets an instrument from the cache by symbol.
+    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+        self.instruments_cache
+            .get(symbol)
+            .map(|entry| entry.value().clone())
     }
 
     /// Requests the account state for the `account_id` from OKX.

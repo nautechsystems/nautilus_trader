@@ -372,7 +372,7 @@ class OKXExecutionClient(LiveExecutionClient):
         # price and size precisions when parsing responses.
         instruments_pyo3 = self.okx_instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -486,11 +486,11 @@ class OKXExecutionClient(LiveExecutionClient):
         canonical_requested_id: ClientOrderId | None = None
 
         try:
-            pyo3_reports: list[nautilus_pyo3.OrderStatusReport] = (
-                await self._http_client.request_order_status_reports(
-                    account_id=self.pyo3_account_id,
-                    instrument_id=pyo3_instrument_id,
-                )
+            pyo3_reports: list[
+                nautilus_pyo3.OrderStatusReport
+            ] = await self._http_client.request_order_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
             )
 
             if not pyo3_reports:

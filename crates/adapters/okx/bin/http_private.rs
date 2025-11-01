@@ -26,12 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let mut client = OKXHttpClient::from_env().unwrap();
+    let client = OKXHttpClient::from_env().unwrap();
     let account_id = AccountId::new("OKX-001");
 
     let inst_type = OKXInstrumentType::Swap;
     let instruments = client.request_instruments(inst_type, None).await?;
-    client.add_instruments(instruments);
+    client.cache_instruments(instruments);
 
     // Set position mode
     let resp = client.set_position_mode(OKXPositionMode::NetMode).await;
