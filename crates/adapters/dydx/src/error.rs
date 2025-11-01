@@ -16,7 +16,7 @@
 //! Error handling for the dYdX adapter.
 //!
 //! This module provides error types for all dYdX operations, including
-//! HTTP and WebSocket errors.
+//! HTTP, WebSocket, and gRPC errors.
 
 use thiserror::Error;
 
@@ -33,6 +33,22 @@ pub enum DydxError {
     /// WebSocket connection errors.
     #[error("WebSocket error: {0}")]
     WebSocket(String),
+
+    /// gRPC errors from Cosmos SDK node.
+    #[error("gRPC error: {0}")]
+    Grpc(#[from] tonic::Status),
+
+    /// Transaction signing errors.
+    #[error("Signing error: {0}")]
+    Signing(String),
+
+    /// Protocol buffer encoding errors.
+    #[error("Encoding error: {0}")]
+    Encoding(#[from] prost::EncodeError),
+
+    /// Protocol buffer decoding errors.
+    #[error("Decoding error: {0}")]
+    Decoding(#[from] prost::DecodeError),
 
     /// JSON serialization/deserialization errors.
     #[error("JSON error: {message}")]
