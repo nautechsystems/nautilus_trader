@@ -99,9 +99,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
         loaded, skipped = self._ingest_instruments(instruments, filters)
 
-        if loaded:
-            self._log.info(f"Loaded {loaded} instruments for venue {HYPERLIQUID_VENUE.value}")
-        else:
+        if not loaded:
             self._log.warning("No Hyperliquid instruments matched the requested filters")
 
         if skipped:

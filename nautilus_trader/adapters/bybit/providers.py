@@ -129,8 +129,6 @@ class BybitInstrumentProvider(InstrumentProvider):
         for instrument in instruments:
             self.add(instrument=instrument)
 
-        self._log.info(f"Loaded {len(self._instruments)} instruments")
-
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],

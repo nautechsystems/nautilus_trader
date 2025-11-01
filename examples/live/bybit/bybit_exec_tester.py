@@ -143,7 +143,6 @@ config_node = TradingNodeConfig(
             product_types=product_types,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
-            recv_window_ms=5_000,  # Default
         ),
     },
     exec_clients={
@@ -157,10 +156,6 @@ config_node = TradingNodeConfig(
             use_spot_position_reports=use_spot_position_reports,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
-            max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
-            recv_window_ms=5_000,  # Default
         ),
     },
     timeout_connection=20.0,

@@ -132,9 +132,6 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
-            max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
         ),
     },
     timeout_connection=20.0,

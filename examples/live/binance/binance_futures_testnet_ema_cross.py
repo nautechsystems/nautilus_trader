@@ -91,10 +91,8 @@ config_node = TradingNodeConfig(
             us=False,  # If client is for Binance US
             testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            use_position_ids=False,
             max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
+            use_position_ids=False,
         ),
     },
     timeout_connection=30.0,
