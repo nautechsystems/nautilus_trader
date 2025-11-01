@@ -5290,6 +5290,7 @@ dependencies = [
 name = "nautilus-network"
 version = "0.52.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "axum",
  "bytes",

@@ -13,20 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! High-performance WebSocket client implementation with automatic reconnection
-//! with exponential backoff and state management.
-
-//! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
-//! - Synchronized reconnection with backoff.
-//! - Split read/write architecture.
-//! - Python callback integration.
+//! WebSocket client implementation with automatic reconnection.
 //!
-//! **Design**:
-//! - Single reader, multiple writer model.
-//! - Read half runs in dedicated task.
-//! - Write half runs in dedicated task connected with channel.
-//! - Controller task manages lifecycle.
+//! This module contains the core WebSocket client implementation including:
+//! - Connection management with automatic reconnection.
+//! - Split read/write architecture with separate tasks.
+//! - Heartbeat support.
+//! - Rate limiting integration.
 
 use std::{
     fmt::Debug,
@@ -37,22 +30,28 @@ use std::{
     time::Duration,
 };
 
-use futures_util::{
-    SinkExt, StreamExt,
-    stream::{SplitSink, SplitStream},
-};
+use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(feature = "turmoil")]
+use tokio_tungstenite::MaybeTlsStream;
+#[cfg(feature = "turmoil")]
 use tokio_tungstenite::client_async;
 #[cfg(not(feature = "turmoil"))]
 use tokio_tungstenite::connect_async;
-use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream,
-    tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
+use tokio_tungstenite::tungstenite::{
+    Error, Message, client::IntoClientRequest, http::HeaderValue,
 };
 
+use super::{
+    config::WebSocketConfig,
+    consts::{
+        CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, SEND_OPERATION_CHECK_INTERVAL_MS,
+    },
+    types::{MessageHandler, MessageReader, MessageWriter, PingHandler, WriterCommand},
+};
 #[cfg(feature = "turmoil")]
 use crate::net::TcpConnector;
 use crate::{
@@ -63,173 +62,6 @@ use crate::{
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
-
-pub const TEXT_PING: &str = "ping";
-pub const TEXT_PONG: &str = "pong";
-
-// Connection timing constants
-const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
-const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
-const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
-const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
-
-#[cfg(not(feature = "turmoil"))]
-type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, Message>;
-#[cfg(not(feature = "turmoil"))]
-pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>;
-
-#[cfg(feature = "turmoil")]
-type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<crate::net::TcpStream>>, Message>;
-#[cfg(feature = "turmoil")]
-pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<crate::net::TcpStream>>>;
-
-/// Function type for handling WebSocket messages.
-///
-/// When provided, the client will spawn an internal task to read messages and pass them
-/// to this handler. This enables automatic reconnection where the client can replace the
-/// reader internally.
-///
-/// When `None`, the client returns a `MessageReader` stream (via `connect_stream`) that
-/// the caller owns and reads from directly. This disables automatic reconnection because
-/// the reader cannot be replaced - the caller must manually reconnect.
-pub type MessageHandler = Arc<dyn Fn(Message) + Send + Sync>;
-
-/// Function type for handling WebSocket ping messages.
-pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
-
-/// Creates a channel-based message handler.
-///
-/// Returns a tuple containing the message handler and a receiver for messages.
-#[must_use]
-pub fn channel_message_handler() -> (
-    MessageHandler,
-    tokio::sync::mpsc::UnboundedReceiver<Message>,
-) {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let handler = Arc::new(move |msg: Message| {
-        if let Err(e) = tx.send(msg) {
-            tracing::debug!("Failed to send message to channel: {e}");
-        }
-    });
-    (handler, rx)
-}
-
-/// Configuration for WebSocket client connections.
-///
-/// # Connection Modes
-///
-/// The `message_handler` field determines the connection mode:
-///
-/// ## Handler Mode (`message_handler: Some(...)`)
-/// - Use with [`WebSocketClient::connect`].
-/// - Client spawns internal task to read messages and call handler.
-/// - **Supports automatic reconnection** with exponential backoff.
-/// - Reconnection config fields (`reconnect_*`) are active.
-/// - Best for long-lived connections, Python bindings, callback-based APIs.
-///
-/// ## Stream Mode (`message_handler: None`)
-/// - Use with [`WebSocketClient::connect_stream`].
-/// - Returns a [`MessageReader`] stream for the caller to read from.
-/// - **Does NOT support automatic reconnection** (reader owned by caller).
-/// - Reconnection config fields are ignored.
-/// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct WebSocketConfig {
-    /// The URL to connect to.
-    pub url: String,
-    /// The default headers.
-    pub headers: Vec<(String, String)>,
-    /// The function to handle incoming messages.
-    ///
-    /// - `Some(handler)`: Handler mode with automatic reconnection (use with `connect`).
-    /// - `None`: Stream mode without automatic reconnection (use with `connect_stream`).
-    ///
-    /// See [`WebSocketConfig`] docs for detailed explanation of modes.
-    pub message_handler: Option<MessageHandler>,
-    /// The optional heartbeat interval (seconds).
-    pub heartbeat: Option<u64>,
-    /// The optional heartbeat message.
-    pub heartbeat_msg: Option<String>,
-    /// The handler for incoming pings.
-    pub ping_handler: Option<PingHandler>,
-    /// The timeout (milliseconds) for reconnection attempts.
-    ///
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    pub reconnect_timeout_ms: Option<u64>,
-    /// The initial reconnection delay (milliseconds) for reconnects.
-    ///
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    pub reconnect_delay_initial_ms: Option<u64>,
-    /// The maximum reconnect delay (milliseconds) for exponential backoff.
-    ///
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    pub reconnect_delay_max_ms: Option<u64>,
-    /// The exponential backoff factor for reconnection delays.
-    ///
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    pub reconnect_backoff_factor: Option<f64>,
-    /// The maximum jitter (milliseconds) added to reconnection delays.
-    ///
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    pub reconnect_jitter_ms: Option<u64>,
-}
-
-impl Debug for WebSocketConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(WebSocketConfig))
-            .field("url", &self.url)
-            .field("headers", &self.headers)
-            .field(
-                "message_handler",
-                &self.message_handler.as_ref().map(|_| "<function>"),
-            )
-            .field("heartbeat", &self.heartbeat)
-            .field("heartbeat_msg", &self.heartbeat_msg)
-            .field(
-                "ping_handler",
-                &self.ping_handler.as_ref().map(|_| "<function>"),
-            )
-            .field("reconnect_timeout_ms", &self.reconnect_timeout_ms)
-            .field(
-                "reconnect_delay_initial_ms",
-                &self.reconnect_delay_initial_ms,
-            )
-            .field("reconnect_delay_max_ms", &self.reconnect_delay_max_ms)
-            .field("reconnect_backoff_factor", &self.reconnect_backoff_factor)
-            .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
-            .finish()
-    }
-}
-
-impl Clone for WebSocketConfig {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            headers: self.headers.clone(),
-            message_handler: self.message_handler.clone(),
-            heartbeat: self.heartbeat,
-            heartbeat_msg: self.heartbeat_msg.clone(),
-            ping_handler: self.ping_handler.clone(),
-            reconnect_timeout_ms: self.reconnect_timeout_ms,
-            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
-            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
-            reconnect_backoff_factor: self.reconnect_backoff_factor,
-            reconnect_jitter_ms: self.reconnect_jitter_ms,
-        }
-    }
-}
-
-/// Represents a command for the writer task.
-#[derive(Debug)]
-pub(crate) enum WriterCommand {
-    /// Update the writer reference with a new one after reconnection.
-    Update(MessageWriter),
-    /// Send message to the server.
-    Send(Message),
-}
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
 ///
@@ -246,7 +78,7 @@ pub(crate) enum WriterCommand {
 /// The client also maintains a heartbeat if given a duration in seconds.
 /// It's preferable to set the duration slightly lower - heartbeat more
 /// frequently - than the required amount.
-struct WebSocketClientInner {
+pub struct WebSocketClientInner {
     config: WebSocketConfig,
     read_task: Option<tokio::task::JoinHandle<()>>,
     write_task: tokio::task::JoinHandle<()>,
@@ -263,6 +95,10 @@ struct WebSocketClientInner {
 
 impl WebSocketClientInner {
     /// Create an inner websocket client with an existing writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the exponential backoff configuration is invalid.
     pub async fn new_with_writer(
         config: WebSocketConfig,
         writer: MessageWriter,
@@ -311,6 +147,12 @@ impl WebSocketClientInner {
     }
 
     /// Create an inner websocket client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The connection to the server fails.
+    /// - The exponential backoff configuration is invalid.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         install_cryptographic_provider();
 
@@ -380,6 +222,13 @@ impl WebSocketClientInner {
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
     /// Production version that uses `connect_async` convenience helper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The URL cannot be parsed into a valid client request.
+    /// - Header values are invalid.
+    /// - The WebSocket connection fails.
     #[inline]
     #[cfg(not(feature = "turmoil"))]
     pub async fn connect_with_server(
@@ -402,6 +251,16 @@ impl WebSocketClientInner {
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
     /// Turmoil version that uses the lower-level `client_async` API with injected stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The URL cannot be parsed into a valid client request.
+    /// - The URL is missing a hostname.
+    /// - Header values are invalid.
+    /// - The TCP connection fails.
+    /// - TLS setup fails (for wss:// URLs).
+    /// - The WebSocket handshake fails.
     #[inline]
     #[cfg(feature = "turmoil")]
     pub async fn connect_with_server(
@@ -478,6 +337,12 @@ impl WebSocketClientInner {
     /// For stream-based clients (created via `connect_stream`), reconnection is disabled
     /// because the reader is owned by the caller and cannot be replaced. Stream users
     /// should handle disconnections by creating a new connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The reconnection attempt times out.
+    /// - The connection to the server fails.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting");
 
@@ -812,6 +677,20 @@ impl CleanDrop for WebSocketClientInner {
         // Clear handlers to break potential reference cycles
         self.config.message_handler = None;
         self.config.ping_handler = None;
+    }
+}
+
+impl Debug for WebSocketClientInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSocketClientInner")
+            .field("config", &self.config)
+            .field(
+                "connection_mode",
+                &ConnectionMode::from_atomic(&self.connection_mode),
+            )
+            .field("reconnect_timeout", &self.reconnect_timeout)
+            .field("is_stream_mode", &self.is_stream_mode)
+            .finish()
     }
 }
 
@@ -1524,6 +1403,7 @@ mod rust_tests {
     use tokio_tungstenite::accept_async;
 
     use super::*;
+    use crate::websocket::types::channel_message_handler;
 
     #[rstest]
     #[tokio::test]
