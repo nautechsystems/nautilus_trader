@@ -546,38 +546,38 @@ fn test_pagination_continues_with_valid_cursor() {
 #[rstest]
 fn test_limit_calculation() {
     // Test case 1: limit=10, total=0, should request min(10, 50) = 10
-    let limit = Some(10u32);
+    let limit = 10u32;
     let total = 0;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
     assert_eq!(page_limit, 10, "Should request exactly 10 items");
 
     // Test case 2: limit=10, total=5, should request min(5, 50) = 5
     let total = 5;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
     assert_eq!(page_limit, 5, "Should request exactly 5 remaining items");
 
     // Test case 3: limit=10, total=10, should request 0
     let total = 10;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     assert_eq!(remaining, 0, "Should have no remaining items to request");
 
     // Test case 4: limit=10, total=15, should request 0 (saturating)
     let total = 15;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     assert_eq!(remaining, 0, "Should saturate at 0 when over limit");
 
     // Test case 5: limit=100, total=0, should request min(100, 50) = 50 (API max)
-    let limit = Some(100u32);
+    let limit = 100u32;
     let total = 0;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
     assert_eq!(page_limit, 50, "Should respect API maximum of 50");
 
     // Test case 6: limit=100, total=75, should request min(25, 50) = 25
     let total = 75;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
     assert_eq!(page_limit, 25, "Should request exactly 25 remaining items");
 
@@ -600,22 +600,22 @@ fn test_limit_calculation() {
 #[rstest]
 fn test_execution_limit_calculation() {
     // Test case 1: limit=50, total=0, should request min(50, 100) = 50
-    let limit = Some(50u32);
+    let limit = 50u32;
     let total = 0;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 100);
     assert_eq!(page_limit, 50, "Should request exactly 50 executions");
 
     // Test case 2: limit=150, total=0, should request min(150, 100) = 100 (API max)
-    let limit = Some(150u32);
+    let limit = 150u32;
     let total = 0;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 100);
     assert_eq!(page_limit, 100, "Should respect API maximum of 100");
 
     // Test case 3: limit=150, total=100, should request min(50, 100) = 50
     let total = 100;
-    let remaining = (limit.unwrap() as usize).saturating_sub(total);
+    let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 100);
     assert_eq!(
         page_limit, 50,

@@ -229,6 +229,10 @@ impl DexExtended {
     }
 
     /// Parses an event log into an `InitializeEvent` struct.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX does not support initialize events or parsing fails.
     pub fn parse_initialize_event(&self, log: Log) -> anyhow::Result<InitializeEvent> {
         if let Some(parse_initialize_event_fn) = &self.parse_initialize_event_fn {
             parse_initialize_event_fn(self.dex.clone(), log)

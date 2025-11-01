@@ -39,12 +39,14 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
+type SettleCoinQueries = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestServerState {
     request_count: Arc<Mutex<usize>>,
     // (endpoint, settle_coin)
-    settle_coin_queries: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    settle_coin_queries: SettleCoinQueries,
     realtime_requests: Arc<Mutex<usize>>,
     history_requests: Arc<Mutex<usize>>,
 }

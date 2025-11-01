@@ -1047,6 +1047,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
     }
 
+    /// Updates the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_last_synced_block(
         &self,
         chain_id: u32,
@@ -1101,6 +1106,11 @@ impl BlockchainCacheDatabase {
         Ok(result.and_then(|(block_number,)| block_number.map(|b| b as u64)))
     }
 
+    /// Retrieves the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn get_pool_last_synced_block(
         &self,
         chain_id: u32,
@@ -1314,6 +1324,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_flash_event table: {e}"))
     }
 
+    /// Adds a pool snapshot to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database insert fails.
     pub async fn add_pool_snapshot(
         &self,
         chain_id: u32,
@@ -1346,7 +1361,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.block_position.number as i64)
         .bind(snapshot.block_position.transaction_index as i32)
         .bind(snapshot.block_position.log_index as i32)
-        .bind(snapshot.block_position.transaction_hash.to_string())
+        .bind(snapshot.block_position.transaction_hash.clone())
         .bind(snapshot.state.current_tick)
         .bind(snapshot.state.price_sqrt_ratio_x96.to_string())
         .bind(snapshot.state.liquidity.to_string())
@@ -1554,6 +1569,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_tick table: {e}"))
     }
 
+    /// Updates the initial price and tick for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_initial_price_tick(
         &self,
         chain_id: u32,

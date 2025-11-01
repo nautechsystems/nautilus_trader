@@ -337,10 +337,10 @@ impl BlockchainDataClient {
                                 tracing::warn!("RPC burn events are not yet supported");
                             }
                             Ok(BlockchainMessage::CollectEvent(_)) => {
-                                tracing::warn!("RPC collect events are not yet supported")
+                                tracing::warn!("RPC collect events are not yet supported");
                             }
                             Ok(BlockchainMessage::FlashEvent(_)) => {
-                                tracing::warn!("RPC flash events are not yet supported")
+                                tracing::warn!("RPC flash events are not yet supported");
                             }
                             Err(e) => {
                                 tracing::error!("Error processing RPC message: {e}");
